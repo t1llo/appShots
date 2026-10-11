@@ -7,31 +7,24 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { z } from "zod";
 import {
   allow,
+  allowEmail,
   AuthError,
-  changePassword,
   confirmDelete,
-  createInvite,
-  createReset,
   createToken,
-  deleteUser,
   describeToken,
-  inviteValid,
-  listInvites,
+  hasAccess,
+  isAdmin,
+  listAllowed,
   listUsers,
-  logIn,
   logInWithGoogle,
-  ownerSession,
-  ownerSpace,
-  resetPassword,
-  resetValid,
-  revokeInvite,
+  mainSpace,
+  removePerson,
   revokeToken,
   safeEqual,
   seal,
   SESSION_TTL,
   sessionHolder,
   setSignupMode,
-  signUp,
   signupMode,
   spaceById,
   spaceOfUser,
@@ -70,7 +63,7 @@ import { slideHtml } from "./template.ts";
 import { writeZip } from "./zip.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
-/** The gallery and the sign-in pages, built from web/ by `npm run build`. */
+/** The gallery and the home page, built from web/ by `npm run build`. */
 const webDir = path.join(root, "web", "dist");
 
 // ---------------------------------------------------------------- fonts
@@ -91,11 +84,10 @@ async function buildFontCss(): Promise<string> {
 
 const SESSION_COOKIE = "appshots_session";
 const OAUTH_COOKIE = "appshots_oauth";
-const googleEnabled = Boolean(config.token && config.google.clientId && config.google.clientSecret);
 
 interface Identity {
   space: Space;
-  /** Set for accounts. The owner, who signs in with APPSHOTS_TOKEN, has none. */
+  /** Who is signed in. Absent only while sign-in is off. */
   user?: User;
   /** Signed in through the browser rather than with a bearer token. Account settings require it. */
   session: boolean;
@@ -110,21 +102,18 @@ function cookie(req: Request, name: string): string | undefined {
 }
 
 function identify(req: Request): Identity | null {
-  // Without APPSHOTS_TOKEN there is no sign-in at all: whoever reaches the port is the owner.
-  if (!config.token) return { space: ownerSpace, session: true };
+  // With sign-in off, whoever reaches the port works in the server's own space.
+  if (!config.auth) return { space: mainSpace, session: true };
   if (safeEqual(req.get("x-appshots-internal") ?? "", config.internalSecret)) {
     const space = spaceById(req.get("x-appshots-space"));
     return space && { space, session: false };
   }
   const header = req.get("authorization");
   if (header?.startsWith("Bearer ")) {
-    const token = header.slice(7).trim();
-    if (safeEqual(token, config.token)) return { space: ownerSpace, session: false };
-    const user = userByToken(token);
+    const user = userByToken(header.slice(7).trim());
     return user && { space: spaceOfUser(user), user, session: false };
   }
   const holder = sessionHolder(cookie(req, SESSION_COOKIE));
-  if (holder === "owner") return { space: ownerSpace, session: true };
   return holder && { space: spaceOfUser(holder), user: holder, session: true };
 }
 
@@ -152,7 +141,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   }
   // Only a browser navigation prefers HTML; curl and fetch send */* and should get the 401.
   const wantsPage = req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/mcp") && req.accepts(["json", "html"]) === "html";
-  if (wantsPage) return res.redirect("/login");
+  if (wantsPage) return res.redirect("/");
   res.status(401).set("WWW-Authenticate", "Bearer").json({ error: "Unauthorized: send Authorization: Bearer <token>" });
 }
 
@@ -163,8 +152,6 @@ function setSession(req: Request, res: Response, value: string): void {
   res.cookie(SESSION_COOKIE, value, { httpOnly: true, sameSite: "lax", secure: req.secure, maxAge: SESSION_TTL, path: "/" });
 }
 
-const tooMany = () => Object.assign(new Error("Too many attempts. Try again in a few minutes."), { status: 429 });
-
 // ---------------------------------------------------------------- app
 
 const app = express();
@@ -173,7 +160,7 @@ app.disable("x-powered-by");
 app.set("trust proxy", 1);
 
 app.use((_req, res, next) => {
-  // Invite and reset codes travel in URLs, so they must not leak through Referer. Slide previews are framed by the gallery only.
+  // Slide previews are framed by the gallery only.
   res.set({ "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "X-Frame-Options": "SAMEORIGIN" });
   next();
 });
@@ -182,6 +169,13 @@ const baseUrl = (req: Request) => config.publicUrl || `${req.protocol}://${req.g
 
 app.get("/healthz", (_req, res) => {
   res.type("text").send("ok");
+});
+
+// The Claude skill that runs the whole flow, from the simulator to the rendered set. It holds no secrets,
+// so it is public and one curl installs it. The server fills in its own address.
+const skill = await readFile(path.join(root, "skill", "SKILL.md"), "utf8");
+app.get("/skill.md", (req, res) => {
+  res.type("text/markdown").set("Cache-Control", "no-cache").send(skill.replaceAll("{{SERVER}}", baseUrl(req)));
 });
 
 const fontCss = await buildFontCss();
@@ -194,70 +188,39 @@ app.get("/fonts/:font/:file", (req, res) => {
   res.set("Cache-Control", "public, max-age=31536000, immutable").sendFile(path.join(root, "node_modules", font.pkg, "files", req.params.file));
 });
 
-// ---------------------------------------------------------------- signing in
+// ---------------------------------------------------------------- home page and signing in
 
-// The sign-in pages are the only part of the UI that works without a session. The built scripts and styles
-// carry no data and have content hashes in their names, so they are public and cached for good.
+// The built scripts and styles carry no data and have content hashes in their names, so they are public and cached for good.
 app.use("/assets", express.static(path.join(webDir, "assets"), { immutable: true, maxAge: "1y" }));
-const authPage = (res: Response) => void res.set("Cache-Control", "no-cache").sendFile(path.join(webDir, "auth.html"));
-app.get(["/login", "/signup"], (req, res) => {
-  if (identify(req)) return res.redirect("/");
-  authPage(res);
-});
-app.get("/reset", (_req, res) => authPage(res));
+
+function sendPage(res: Response, name: string): void {
+  const page = path.join(webDir, name);
+  if (!existsSync(page)) return void res.status(503).type("text").send("The web pages have not been built yet. Run: npm run build");
+  res.set("Cache-Control", "no-cache").sendFile(page);
+}
+
+/** One address, two pages: the gallery for whoever is signed in, the public home page for everybody else. */
+app.get("/", (req, res) => sendPage(res, identify(req) ? "index.html" : "home.html"));
+// The home page under its own address too, so it can be looked at while signed in or with sign-in off.
+app.get("/home", (_req, res) => sendPage(res, "home.html"));
+// Addresses from before the home page did the signing in.
+app.get(["/login", "/signup", "/reset"], (_req, res) => res.redirect("/"));
 
 const auth = express.Router();
-auth.use(express.json({ limit: "8kb" }));
-auth.use((req, res, next) => (READ_ONLY.has(req.method) || sameOrigin(req) ? next() : refuseCrossSite(res)));
 
-auth.get("/config", (req, res) => {
-  res.json({
-    accounts: Boolean(config.token),
-    google: googleEnabled,
-    signup: signupMode(),
-    invite: inviteValid(req.query.invite),
-    reset: resetValid(req.query.reset),
-  });
-});
-
-auth.post("/login", async (req, res) => {
-  const { email, password, token } = (req.body ?? {}) as Record<string, unknown>;
-  if (!allow(`login:${req.ip}`, 20, 15 * 60_000)) throw tooMany();
-  if (typeof token === "string" && token) {
-    if (!config.token || !safeEqual(token.trim(), config.token)) {
-      // Slow down guessing of the owner's token.
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      throw new AuthError("That server token is not correct.");
-    }
-    setSession(req, res, ownerSession());
-    return void res.json({ ok: true });
-  }
-  if (typeof email === "string" && !allow(`login:${email.trim().toLowerCase()}`, 10, 15 * 60_000)) throw tooMany();
-  setSession(req, res, userSession(await logIn(email, password)));
-  res.json({ ok: true });
-});
-
-auth.post("/signup", async (req, res) => {
-  if (!allow(`signup:${req.ip}`, 10, 3600_000)) throw tooMany();
-  setSession(req, res, userSession(await signUp(req.body ?? {})));
-  res.status(201).json({ ok: true });
-});
-
-auth.post("/reset", async (req, res) => {
-  if (!allow(`reset:${req.ip}`, 20, 3600_000)) throw tooMany();
-  setSession(req, res, userSession(await resetPassword(req.body?.code, req.body?.password)));
-  res.json({ ok: true });
+auth.get("/config", (_req, res) => {
+  res.json({ signup: signupMode() });
 });
 
 const googleRedirect = (req: Request) => `${baseUrl(req)}/auth/google/callback`;
 
 auth.get("/google", (req, res) => {
-  if (!googleEnabled) return res.redirect("/login?error=google_off");
+  if (!config.auth) return res.redirect("/");
+  if (!allow(`google:${req.ip}`, 30, 15 * 60_000)) return res.redirect("/?error=too_many");
   const pending = {
     state: randomBytes(16).toString("base64url"),
     nonce: randomBytes(16).toString("base64url"),
     verifier: randomBytes(32).toString("base64url"),
-    invite: typeof req.query.invite === "string" ? req.query.invite.slice(0, 100) : undefined,
   };
   res.cookie(OAUTH_COOKIE, seal("oauth", pending, 600_000), { httpOnly: true, sameSite: "lax", secure: req.secure, maxAge: 600_000, path: "/auth/google" });
   const url = new URL(config.google.authUrl);
@@ -276,12 +239,12 @@ auth.get("/google", (req, res) => {
 });
 
 auth.get("/google/callback", async (req, res) => {
-  const pending = unseal<{ state: string; nonce: string; verifier: string; invite?: string }>("oauth", cookie(req, OAUTH_COOKIE));
+  const pending = unseal<{ state: string; nonce: string; verifier: string }>("oauth", cookie(req, OAUTH_COOKIE));
   res.clearCookie(OAUTH_COOKIE, { path: "/auth/google" });
-  const fail = (code: string) => res.redirect(`/login?error=${code}`);
+  const fail = (code: string) => res.redirect(`/?error=${code}`);
   const { code, state, error } = req.query;
   if (typeof error === "string") return fail("google_cancelled");
-  if (!googleEnabled || !pending || typeof state !== "string" || !safeEqual(state, pending.state) || typeof code !== "string") return fail("google_state");
+  if (!config.auth || !pending || typeof state !== "string" || !safeEqual(state, pending.state) || typeof code !== "string") return fail("google_state");
   try {
     const response = await fetch(config.google.tokenUrl, {
       method: "POST",
@@ -306,7 +269,7 @@ auth.get("/google/callback", async (req, res) => {
       throw new Error("Google returned an ID token that does not belong to this sign-in");
     }
     if (claims.email_verified !== true || typeof claims.email !== "string") return fail("google_unverified");
-    const user = await logInWithGoogle({ sub: claims.sub, email: claims.email, name: typeof claims.name === "string" ? claims.name : undefined }, pending.invite);
+    const user = await logInWithGoogle({ sub: claims.sub, email: claims.email, name: typeof claims.name === "string" ? claims.name : undefined });
     setSession(req, res, userSession(user));
     res.redirect("/");
   } catch (failure) {
@@ -321,7 +284,7 @@ app.use("/auth", auth);
 app.post("/logout", (req, res) => {
   if (!sameOrigin(req)) return refuseCrossSite(res);
   res.clearCookie(SESSION_COOKIE, { path: "/" });
-  res.redirect("/login");
+  res.redirect("/");
 });
 
 app.use(requireAuth);
@@ -390,9 +353,9 @@ api.get("/meta", (_req, res) => {
     deviceColors: DEVICE_COLOR_IDS,
     badgeTypes: BADGE_TYPES,
     icons: ICON_IDS,
-    authEnabled: Boolean(config.token),
-    /** Null for the owner, who is configured through APPSHOTS_TOKEN rather than an account. */
-    account: user ? { email: user.email, name: user.name, password: Boolean(user.password), google: Boolean(user.googleSub) } : null,
+    authEnabled: config.auth,
+    /** Null only while sign-in is off. */
+    account: user ? { email: user.email, name: user.name, admin: isAdmin(user) } : null,
   });
 });
 
@@ -450,14 +413,12 @@ api.get("/projects/:id/export.zip", async (req, res) => {
 
 // ---------------------------------------------------------------- account and people
 
-// A leaked API token must not be able to mint more tokens, change the password or manage other people.
+// A leaked API token must not be able to mint more tokens or manage other people.
 const requireSession = (_req: Request, res: Response, next: NextFunction) =>
   identityOf(res).session ? next() : void res.status(403).json({ error: "This needs a browser sign-in, not an API token." });
 
 const account = express.Router();
-account.use(requireSession, (_req, res, next) =>
-  identityOf(res).user ? next() : void res.status(400).json({ error: "The owner has no account settings; the owner's token is APPSHOTS_TOKEN." }),
-);
+account.use(requireSession, (_req, res, next) => (identityOf(res).user ? next() : void res.status(400).json({ error: "There are no accounts while sign-in is off." })));
 const userOf = (res: Response) => identityOf(res).user!;
 
 account.get("/tokens", (_req, res) => {
@@ -471,13 +432,6 @@ account.delete("/tokens/:id", async (req, res) => {
   await revokeToken(userOf(res), req.params.id);
   res.status(204).end();
 });
-account.post("/password", async (req, res) => {
-  const user = userOf(res);
-  await changePassword(user, req.body?.current, req.body?.password);
-  // The change ended every session, this one included, so hand the browser a fresh one.
-  setSession(req, res, userSession(user));
-  res.status(204).end();
-});
 account.delete("/", async (req, res) => {
   await confirmDelete(userOf(res), req.body?.confirm);
   res.clearCookie(SESSION_COOKIE, { path: "/" });
@@ -486,40 +440,41 @@ account.delete("/", async (req, res) => {
 api.use("/account", account);
 
 const admin = express.Router();
-admin.use(requireSession, (_req, res, next) =>
-  !identityOf(res).user && config.token ? next() : void res.status(403).json({ error: "Only the owner of this server can manage people." }),
-);
+admin.use(requireSession, (_req, res, next) => {
+  const { user } = identityOf(res);
+  if (user && isAdmin(user)) return next();
+  res.status(403).json({ error: "Only the admin of this server can manage people." });
+});
 
+/** Everybody the admin should know about: the admin, the accounts, and the addresses on the list that have not signed in yet. */
 admin.get("/people", async (_req, res) => {
-  const users = await Promise.all(
-    listUsers().map(async (user) => ({
-      id: user.id,
+  const listed = new Set(listAllowed());
+  const users = listUsers();
+  const accounts = await Promise.all(
+    users.map(async (user) => ({
       email: user.email,
       name: user.name,
-      createdAt: user.createdAt,
-      signIn: user.googleSub ? "Google" : "Password",
+      admin: isAdmin(user),
+      joinedAt: user.createdAt,
       projects: await countProjects(spaceOfUser(user)),
+      access: hasAccess(user),
     })),
   );
-  res.json({ signup: signupMode(), google: googleEnabled, users, invites: listInvites() });
+  const known = new Set(users.map((user) => user.email));
+  const waiting = [config.adminEmail, ...listed].filter((email) => !known.has(email)).map((email) => ({ email, admin: email === config.adminEmail, access: true }));
+  res.json({ signup: signupMode(), people: [...accounts, ...waiting].sort((a, b) => Number(b.admin) - Number(a.admin) || a.email.localeCompare(b.email)) });
 });
 admin.put("/signup", async (req, res) => {
-  await setSignupMode(z.enum(["invite", "open"]).parse(req.body?.mode));
+  await setSignupMode(z.enum(["list", "open"]).parse(req.body?.mode));
   res.status(204).end();
 });
-admin.post("/invites", async (req, res) => {
-  const { code, link } = await createInvite();
-  res.status(201).json({ id: link.id, expiresAt: link.expiresAt, url: `${baseUrl(req)}/signup?invite=${code}` });
-});
-admin.delete("/invites/:id", async (req, res) => {
-  await revokeInvite(req.params.id);
+admin.post("/people", async (req, res) => {
+  await allowEmail(req.body?.email);
   res.status(204).end();
 });
-admin.post("/users/:id/reset", async (req, res) => {
-  res.status(201).json({ url: `${baseUrl(req)}/reset?code=${await createReset(req.params.id)}` });
-});
-admin.delete("/users/:id", async (req, res) => {
-  await deleteUser(req.params.id);
+// The address travels in the body, like everything else here, so it stays out of access logs.
+admin.delete("/people", async (req, res) => {
+  await removePerson(req.body?.email);
   res.status(204).end();
 });
 api.use("/admin", admin);
@@ -560,11 +515,6 @@ app.get("/render/:id/:index", async (req, res) => {
   res.set("Cache-Control", "no-store").type("html").send(await slideHtml({ space, project, shots, index, target, locale }));
 });
 
-app.get("/", (_req, res) => {
-  if (!existsSync(path.join(webDir, "index.html"))) return void res.status(503).type("text").send("The web gallery has not been built yet. Run: npm run build");
-  res.set("Cache-Control", "no-cache").sendFile(path.join(webDir, "index.html"));
-});
-
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
 });
@@ -585,8 +535,9 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 const server = app.listen(config.port, () => {
   console.log(`appShots listening on http://localhost:${config.port} (data in ${config.dataDir})`);
-  if (!existsSync(path.join(webDir, "index.html"))) console.warn("The web gallery has not been built yet: run `npm run build`. The API and the MCP endpoint work without it.");
-  if (!config.token) console.warn("APPSHOTS_TOKEN is not set: the UI, API and MCP endpoint are open to anyone who can reach this port, and accounts are off.");
+  if (!existsSync(path.join(webDir, "index.html"))) console.warn("The web pages have not been built yet: run `npm run build`. The API and the MCP endpoint work without them.");
+  if (config.auth) console.log(`Sign-in is by Google; the admin is ${config.adminEmail}.`);
+  else console.warn("Sign-in is off (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and ADMIN_EMAIL are not set): the UI, API and MCP endpoint are open to anyone who can reach this port.");
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

@@ -17,8 +17,8 @@ export interface Meta {
   badgeTypes: Record<string, string>;
   icons: string[];
   authEnabled: boolean;
-  /** Null for the owner, who signs in with the server token rather than an account. */
-  account: { email: string; name: string; password: boolean; google: boolean } | null;
+  /** Who is signed in. Null only while the server runs without sign-in. */
+  account: { email: string; name: string; admin: boolean } | null;
 }
 
 export interface ProjectEntry {
@@ -90,7 +90,7 @@ export const detailQuery = (id: string) => queryOptions({ queryKey: ["project", 
 export const LOCALE = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/;
 
 export const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+export const plural = (count: number, word: string, many = `${word}s`) => `${count} ${count === 1 ? word : many}`;
 export const label = (id: string) => id.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
 
 export const slugify = (value: string) =>

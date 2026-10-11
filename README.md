@@ -4,13 +4,14 @@ Self-hosted App Store screenshot generator for iPhone and iPad. Describe the sli
 
 ![An example set: five slides rendered for the 6.9-inch iPhone](docs/example.jpg)
 
-It is three things:
+It is four things:
 
 | Piece | Where it runs | What it does |
 | --- | --- | --- |
 | Server | Docker or `npm start` | Renders slides, stores projects, serves the web gallery, the REST API and the MCP endpoint at `/mcp` |
 | MCP endpoint | Part of the server | Lets Claude create projects, write slides and render them |
 | `appshots` CLI | Your Mac | Captures the simulator or a connected device and uploads the screenshot; a container cannot see your USB devices, so this part stays local |
+| `/appshots` skill | Claude Code on your Mac | Does the whole job in an app's repository: runs the app, captures the screens, writes the copy and builds the set |
 
 ## Run it locally
 
@@ -25,44 +26,68 @@ npm start         # http://localhost:3000
 
 The server runs straight from its TypeScript sources. Only the web gallery (React, TanStack Router and TanStack Query, bundled by Vite) has a build step; run `npm run build` again after changing anything in `web/`. To work on the gallery with hot reload, run `npm run dev` and `npm run dev:web` side by side and open the address Vite prints.
 
-Without `APPSHOTS_TOKEN` there is no sign-in and no accounts: whoever can reach the port is the owner. That is fine on localhost and nowhere else.
+Without the three sign-in settings (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ADMIN_EMAIL`) there is no sign-in, no home page and no accounts: whoever can reach the port works in the server's own space. That is fine on localhost and nowhere else. Set only one or two of them and the server refuses to start, so a typo cannot leave a deployed server open. The home page is also at `/home`, which is where to look at it while sign-in is off.
 
 To run the container instead:
 
 ```bash
-cp .env.example .env   # then set APPSHOTS_TOKEN
+cp .env.example .env   # then fill in the sign-in settings
 docker compose -f docker-compose.yaml -f compose.local.yaml up --build
 ```
 
+The compose file always asks for the sign-in settings. For a local container, add `http://localhost:3000/auth/google/callback` to the OAuth client's redirect URIs and set `PUBLIC_URL=http://localhost:3000`.
+
 ## Deploy
 
-1. Start the stack from this repository, with `docker-compose.yaml`.
-2. Set `APPSHOTS_TOKEN` to a long random string (`openssl rand -hex 32`). The stack refuses to start without it.
+1. Create the Google OAuth client described under [Sign in with Google](#sign-in-with-google).
+2. Start the stack from this repository, with `docker-compose.yaml`.
 3. Set `PUBLIC_URL` to the address people will use, for example `https://appshots.example.com`.
-4. Give the `appshots` service a domain on port `3000`.
+4. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `ADMIN_EMAIL`, your own Google address. The stack refuses to start without them.
+5. Give the `appshots` service a domain on port `3000`.
 
 Everything lives in the `appshots-data` volume: projects, uploaded screenshots, renders, accounts and the key that signs sessions.
 
 ## People and accounts
 
-The server has one owner and any number of accounts.
+Everybody signs in with Google. There are no passwords.
 
-- **You, the owner,** sign in with the server token (`APPSHOTS_TOKEN`) through "Sign in with the server token" on the sign-in page. The same token is your bearer token for Claude and the CLI. Changing it signs you out everywhere.
-- **Everyone else** has an account with an email and a password, or signs in with Google. Each account gets a private space: its own projects, screenshots, renders and API tokens. Accounts cannot see each other's work, and neither can they see yours.
+- **The admin** is the Google address in `ADMIN_EMAIL`. The admin is always let in, works in the server's own space without limits, and decides who else gets in. To hand the server to someone else, change the variable and redeploy.
+- **Everyone else** gets a private space on their first sign-in: their own projects, screenshots, renders and API tokens. Nobody sees anybody else's work, the admin included.
 
-Open **People** in the sidebar (owner only) to manage this:
+Visitors who are not signed in see the public home page with a "Continue with Google" button. Whether that button lets them in is set under **People** in the sidebar (admin only):
 
-- **Invite only** is the default. Create an invite link and send it to one person; it creates one account and expires after 14 days.
-- **Anyone can sign up** opens `/signup` to everybody who can reach the address. Rendering costs CPU, so open it only if you mean to.
-- Remove an account, with all of its projects, or create a password reset link for it. There is no outgoing email: you pass invite and reset links on yourself. A reset link works once, for 24 hours, and revokes the account's sessions and tokens.
+- **Only the people listed here** is the default. Add the Google address of each person you want to let in. Anyone else is turned away after choosing their Google account.
+- **Anyone with a Google account** opens the server to everybody who finds the address. Read [Opening it to everybody](#opening-it-to-everybody) first.
+- **Remove** takes a person off the list and deletes their account with all of its projects. Their sessions and tokens stop working at once.
 
-People manage their own tokens and password, or delete their account, under **Account**. Accounts other than the owner are capped at 20 projects and 40 screenshots per project (`USER_MAX_PROJECTS`, `USER_MAX_SHOTS`), and one account renders one set at a time.
+People manage their own tokens, or delete their account, under **Account**. Accounts other than the admin are capped at 20 projects and 40 screenshots per project (`USER_MAX_PROJECTS`, `USER_MAX_SHOTS`), and one account renders one set at a time.
 
 ### Sign in with Google
 
-Optional. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create an OAuth client of type "Web application", add `<PUBLIC_URL>/auth/google/callback` as an authorised redirect URI, and set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` on the server. The sign-in page then shows "Continue with Google".
+In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create an OAuth client of type "Web application" with:
 
-Sign-up rules still apply: in invite-only mode a new Google user needs an invite link, and "Sign up with Google" on that link uses it. An email that already has a password account is not linked to a Google sign-in automatically.
+- **Authorised JavaScript origin:** `<PUBLIC_URL>`, for example `https://appshots.example.com`
+- **Authorised redirect URI:** `<PUBLIC_URL>/auth/google/callback`
+
+Put its client ID and secret in `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. appShots asks Google for the name and email address only, and accepts an address only when Google says it is verified.
+
+While the OAuth consent screen is in "Testing", Google itself only lets in the test users listed there. Publish it ("In production") before inviting anyone else; the name and email scopes need no review by Google.
+
+### Opening it to everybody
+
+The server makes no paid calls. Claude runs on each person's own subscription, on their own machine, so more people cost nothing per use. What they use is this one machine:
+
+- **CPU and memory.** A render drives a headless Chromium: about a second per slide on a recent Mac, more on a small server, and a few hundred megabytes of memory while it runs. Renders are queued one at a time for the whole server, so many people at once means waiting, not a bigger bill.
+- **Disk.** This is what grows. An account can hold 20 projects of 40 screenshots, each up to 40 MB when uploaded, plus the rendered sets. A handful of people is nothing; a few hundred accounts filled to the cap would not fit on a small disk. Lower `USER_MAX_PROJECTS` and `USER_MAX_SHOTS` before opening up, and keep an eye on the volume.
+- **Abuse.** Anyone can sign in, so somebody may script uploads or renders. The caps and the render queue bound the damage, and **Remove** under People deletes an account with everything in it.
+
+A sensible path is to start with the list, add the people who ask, and switch to open sign-in once you have seen what a few dozen accounts use.
+
+### Upgrading from a version with `APPSHOTS_TOKEN`
+
+- `APPSHOTS_TOKEN` is no longer read. The projects it reached are the server's own space, which now belongs to the admin.
+- Claude and the CLI need a personal token instead: sign in, open **Connect**, create one, and run `claude mcp add` and `appshots login` again.
+- Accounts made with an email and a password, or through an invite link, are kept. Add their address under People; the account and its projects come back on the first Google sign-in with that address. Their old passwords and tokens are discarded.
 
 ## Connect Claude
 
@@ -70,13 +95,25 @@ Sign-up rules still apply: in invite-only mode a new Google user needs an invite
 claude mcp add --transport http appshots https://appshots.example.com/mcp --header "Authorization: Bearer <token>"
 ```
 
-The token is `APPSHOTS_TOKEN` for the owner, or a personal token for an account: **Connect** in the sidebar creates one and fills in the command. Then ask in plain words, for example:
+Claude cannot sign in with Google, so it uses a personal token: **Connect** in the sidebar creates one and fills in the command. Then ask in plain words, for example:
 
 > Make App Store screenshots for my habit tracker in project "streaks". Six slides, dark purple look, open with a hero slide with a laurel badge "4.8 · App Store rating" and one for "50K+ downloads", then one slide per feature using the screenshots home, stats and widgets.
 
 Claude answers with a contact sheet of the rendered set, a link to the gallery and a ZIP link. Tools: `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets`, `render`. Every tool works inside the space the token belongs to.
 
 The endpoint authenticates with a bearer header, so it works with clients that can send one (Claude Code, the Agent SDK, `mcp-remote`). It does not implement OAuth.
+
+## Let Claude do the whole set
+
+The server hands out a Claude Code skill at `/skill.md`, with its own address filled in. Install it once:
+
+```bash
+mkdir -p ~/.claude/skills/appshots && curl -fsS https://appshots.example.com/skill.md -o ~/.claude/skills/appshots/SKILL.md
+```
+
+Then open Claude Code in an app's repository and type `/appshots`, or just ask for App Store screenshots. Claude reads the code to learn what the app does, builds and runs it in the iOS Simulator (or uses a plugged-in, unlocked iPhone or iPad), fills it with believable content, captures the screens worth showing, writes the headlines, builds the set through the MCP tools, looks at the render and fixes what is off. It needs the MCP endpoint and the CLI from the two sections around this one, and tells you the command if either is missing.
+
+The skill is plain text with no secrets in it, which is why `/skill.md` needs no sign-in. Its source is [skill/SKILL.md](skill/SKILL.md); **Connect** in the gallery shows the install command with the right address.
 
 ## Capture from your Mac
 
@@ -153,11 +190,11 @@ GET    /api/projects/:id/export.zip        ?render=1 renders first
 
 A render without `slides` and `creatives` produces everything. `slides` (zero-based indexes) or `creatives` (`header`, `search`, `universal`) narrow it to those, and `"creatives": []` renders the slides alone.
 
-Account settings and the People page need a browser sign-in; an API token cannot create more tokens, change a password or manage accounts.
+Account settings and the People page need a browser sign-in; an API token cannot create more tokens or manage people.
 
 ## Good to know
 
 - Screenshots are portrait only; there is no landscape or Apple Watch/TV output.
 - Put only real figures and awards in badges. App Review rejects screenshots with invented download counts, ratings or rankings.
 - The device frames are drawn in CSS, not Apple's product images.
-- Put the server behind HTTPS. Passwords are stored as scrypt hashes and API tokens as SHA-256 hashes in `accounts.json` on the data volume; a token is shown once when it is created.
+- Put the server behind HTTPS. No passwords are stored. `accounts.json` on the data volume holds each person's name, email address and Google account id, the list of allowed addresses, and API tokens as SHA-256 hashes; a token is shown once when it is created.

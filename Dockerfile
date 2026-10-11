@@ -31,8 +31,9 @@ RUN apt-get update \
 
 COPY src ./src
 COPY --from=web /app/web/dist ./web/dist
-# Served to signed-in users from /cli/appshots.mjs.
+# Served to signed-in users from /cli/appshots.mjs, and to anybody from /skill.md.
 COPY cli ./cli
+COPY skill ./skill
 
 ENV PORT=3000 \
     DATA_DIR=/data

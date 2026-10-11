@@ -1,4 +1,4 @@
-// The four dialogs behind the sidebar: new project, connecting Claude and the CLI, the account, and (for the owner) people.
+// The four dialogs behind the sidebar: new project, connecting Claude and the CLI, the account, and (for the admin) people.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
@@ -120,10 +120,8 @@ function Connect({ meta, close }: { meta: Meta; close: () => void }) {
   const queryClient = useQueryClient();
   const { projectId = "<project>" } = useParams({ strict: false });
   const [token, setToken] = useState<string | null>(null);
-  const { account, authEnabled } = meta;
   const origin = location.origin;
-  const bearer = token ?? (account ? "<your token>" : "$APPSHOTS_TOKEN");
-  const header = authEnabled ? ` --header "Authorization: Bearer ${bearer}"` : "";
+  const header = meta.authEnabled ? ` --header "Authorization: Bearer ${token ?? "<your token>"}"` : "";
 
   const create = attempt(async () => {
     setToken((await api<FreshToken>("POST", "/account/tokens", { name: "Claude and CLI" })).token);
@@ -134,21 +132,17 @@ function Connect({ meta, close }: { meta: Meta; close: () => void }) {
     <>
       <h1>Connect</h1>
       <div className="steps">
-        {!authEnabled ? null : (
+        {!meta.authEnabled ? null : (
           <div>
             <h3>Your token</h3>
-            {!account ? (
-              <p>
-                You run this server, so your token is the <code>APPSHOTS_TOKEN</code> it was deployed with.
-              </p>
-            ) : token ? (
+            {token ? (
               <>
                 <p>Copy it now: it is shown this once. You can revoke it under Account.</p>
                 <CopyBlock text={token} />
               </>
             ) : (
               <>
-                <p>Claude and the CLI sign in with a personal token instead of your password.</p>
+                <p>Claude and the CLI cannot sign in with Google, so they use a personal token. It reaches your projects only.</p>
                 <div>
                   <button className="btn primary" type="button" onClick={create}>
                     Create a token
@@ -177,6 +171,14 @@ function Connect({ meta, close }: { meta: Meta; close: () => void }) {
           <CopyBlock text={`appshots login ${origin}`} />
           <CopyBlock text={`appshots capture --name home --project ${projectId}`} />
         </div>
+        <div>
+          <h3>Let Claude do the whole set</h3>
+          <p>
+            With this skill Claude runs your app in the simulator, or uses your plugged-in iPhone, captures the screens worth showing, writes the headlines and builds the set here. Install it once, then type <code>/appshots</code> in your
+            app's repository.
+          </p>
+          <CopyBlock text={`mkdir -p ~/.claude/skills/appshots && curl -fsS ${origin}/skill.md -o ~/.claude/skills/appshots/SKILL.md`} />
+        </div>
         <Done close={close} />
       </div>
     </>
@@ -191,8 +193,6 @@ function Account({ meta, close }: { meta: Meta; close: () => void }) {
   const tokens = useQuery({ queryKey: tokensKey, queryFn: () => api<TokenEntry[]>("GET", "/account/tokens") });
   const [fresh, setFresh] = useState<FreshToken | null>(null);
   const [tokenName, setTokenName] = useState("");
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
   const [proof, setProof] = useState("");
   const refresh = () => queryClient.invalidateQueries({ queryKey: tokensKey });
 
@@ -208,15 +208,9 @@ function Account({ meta, close }: { meta: Meta; close: () => void }) {
       if (fresh?.id === token.id) setFresh(null);
       await refresh();
     });
-  const changePassword = attempt(async () => {
-    await api("POST", "/account/password", { current, password: next });
-    setCurrent("");
-    setNext("");
-    toast("Password changed. Your other browsers were signed out.");
-  });
   const deleteAccount = attempt(async () => {
     await api("DELETE", "/account", { confirm: proof });
-    location.href = "/login";
+    location.href = "/";
   });
   const submit = (action: () => void) => (event: FormEvent) => {
     event.preventDefault();
@@ -229,12 +223,12 @@ function Account({ meta, close }: { meta: Meta; close: () => void }) {
       <div className="steps">
         <div>
           <div className="list">
-            <Row title={account.name} sub={`${account.email} · signs in with ${account.google ? "Google" : "a password"}`} />
+            <Row title={account.name} sub={`${account.email} · signs in with Google${account.admin ? " · admin of this server" : ""}`} />
           </div>
         </div>
         <div>
           <h3>API tokens</h3>
-          <p>Claude and the CLI use a token instead of your password. Each one reaches your projects only.</p>
+          <p>Claude and the CLI use a token instead of your Google sign-in. Each one reaches your projects only.</p>
           {fresh ? (
             <>
               <p>Copy "{fresh.name}" now: it is shown this once.</p>
@@ -261,44 +255,23 @@ function Account({ meta, close }: { meta: Meta; close: () => void }) {
             </button>
           </form>
         </div>
-        {account.password ? (
-          <div>
-            <h3>Password</h3>
-            <form onSubmit={submit(changePassword)}>
-              <div className="cols">
-                <Field label="Current password">
-                  <input type="password" autoComplete="current-password" required value={current} onChange={(event) => setCurrent(event.target.value)} />
-                </Field>
-                <Field label="New password">
-                  <input type="password" autoComplete="new-password" required minLength={8} value={next} onChange={(event) => setNext(event.target.value)} />
-                </Field>
-              </div>
-              <div>
-                <button className="btn" type="submit">
-                  Change password
-                </button>
-              </div>
-            </form>
-          </div>
-        ) : null}
-        <details>
-          <summary>Delete account</summary>
-          <div className="stack">
-            <form onSubmit={submit(deleteAccount)}>
-              <p>This removes every project, screenshot and render of yours for good. {account.password ? "Enter your password" : "Type your email address"} to confirm.</p>
-              <div className="row">
-                {account.password ? (
-                  <input type="password" autoComplete="current-password" required placeholder="Your password" value={proof} onChange={(event) => setProof(event.target.value)} />
-                ) : (
-                  <input type="text" required placeholder={account.email} value={proof} onChange={(event) => setProof(event.target.value)} />
-                )}
-                <button className="btn danger" type="submit">
-                  Delete account
-                </button>
-              </div>
-            </form>
-          </div>
-        </details>
+        {/* The admin is whoever ADMIN_EMAIL names, and their projects are the server's own. */}
+        {account.admin ? null : (
+          <details>
+            <summary>Delete account</summary>
+            <div className="stack">
+              <form onSubmit={submit(deleteAccount)}>
+                <p>This removes every project, screenshot and render of yours for good. Type your email address to confirm.</p>
+                <div className="row">
+                  <input type="text" required placeholder={account.email} aria-label="Your email address" value={proof} onChange={(event) => setProof(event.target.value)} />
+                  <button className="btn danger" type="submit">
+                    Delete account
+                  </button>
+                </div>
+              </form>
+            </div>
+          </details>
+        )}
         <Done close={close} />
       </div>
     </>
@@ -307,16 +280,25 @@ function Account({ meta, close }: { meta: Meta; close: () => void }) {
 
 // ---------------------------------------------------------------- people
 
+interface Person {
+  email: string;
+  admin: boolean;
+  /** False for an account whose address is not on the list while sign-in is by list. */
+  access: boolean;
+  /** These three are there once the person has signed in. */
+  name?: string;
+  joinedAt?: string;
+  projects?: number;
+}
+
 interface PeopleData {
-  signup: "invite" | "open";
-  google: boolean;
-  users: { id: string; email: string; name: string; createdAt: string; signIn: "Google" | "Password"; projects: number }[];
-  invites: { id: string; createdAt: string; expiresAt: string }[];
+  signup: "list" | "open";
+  people: Person[];
 }
 
 const peopleKey = ["admin", "people"];
 
-/** Owner only. */
+/** Admin only. */
 function People({ close }: { close: () => void }) {
   const people = useQuery({ queryKey: peopleKey, queryFn: () => api<PeopleData>("GET", "/admin/people") });
   return (
@@ -330,101 +312,86 @@ function People({ close }: { close: () => void }) {
   );
 }
 
+function describePerson(person: Person): string {
+  const parts = [person.name ? person.email : "", person.admin ? "admin" : ""];
+  if (person.joinedAt) parts.push(plural(person.projects ?? 0, "project"), `joined ${day(person.joinedAt)}`);
+  else parts.push("has not signed in yet");
+  if (!person.access) parts.push("not on the list, so cannot sign in");
+  return parts.filter(Boolean).join(" · ");
+}
+
 function PeopleLists({ data }: { data: PeopleData }) {
   const queryClient = useQueryClient();
-  /** An invite or reset link created a moment ago, shown once. */
-  const [link, setLink] = useState<{ note: string; url: string } | null>(null);
+  const [email, setEmail] = useState("");
   const refresh = () => queryClient.invalidateQueries({ queryKey: peopleKey });
+  const byList = data.signup === "list";
 
   const setMode = (mode: string) =>
     attempt(async () => {
       await api("PUT", "/admin/signup", { mode });
       await refresh();
     })();
-  const invite = attempt(async () => {
-    const created = await api<{ url: string }>("POST", "/admin/invites");
-    setLink({ note: "Send this link to one person. It creates one account and expires in 14 days.", url: created.url });
-    await refresh();
-  });
-  const revoke = (id: string) =>
+  const add = (address: string) =>
     attempt(async () => {
-      await api("DELETE", `/admin/invites/${id}`);
+      await api("POST", "/admin/people", { email: address });
+      setEmail("");
       await refresh();
     });
-  const reset = (user: PeopleData["users"][number]) =>
+  const remove = (person: Person) =>
     attempt(async () => {
-      const created = await api<{ url: string }>("POST", `/admin/users/${user.id}/reset`);
-      setLink({ note: `Send this link to ${user.email} to set a new password. It works once and expires in 24 hours.`, url: created.url });
-    });
-  const remove = (user: PeopleData["users"][number]) =>
-    attempt(async () => {
-      if (!confirm(`Remove ${user.email} with all of their projects? This cannot be undone.`)) return;
-      await api("DELETE", `/admin/users/${user.id}`);
+      if (person.joinedAt && !confirm(`Remove ${person.email} with all of their projects? This cannot be undone.`)) return;
+      await api("DELETE", "/admin/people", { email: person.email });
       await refresh();
     });
 
   return (
     <>
-    {link ? (
-        <div>
-          <p>{link.note}</p>
-          <CopyBlock text={link.url} />
-        </div>
-      ) : null}
       <div>
-        <h3>Who can join</h3>
-        <p>Everyone gets a private space: their own projects, screenshots and tokens. You sign in with the server token and are the only one who sees this page.</p>
-        <Field label="New accounts" hint={data.signup === "open" ? "Anyone who can reach this address can create an account and render with it." : "Only people you send an invite link to can create an account."}>
+        <h3>Who can sign in</h3>
+        <p>Everybody signs in with Google and gets a private space: their own projects, screenshots and tokens. Nobody sees anybody else's work.</p>
+        <Field label="Sign-in is open to" hint={byList ? "Add the Google address of everyone you want to let in." : "Anybody who finds this address can sign in, make projects and render on your server."}>
           <Select
             options={[
-              ["invite", "Invite only"],
-              ["open", "Anyone can sign up"],
+              ["list", "Only the people listed here"],
+              ["open", "Anyone with a Google account"],
             ]}
             value={data.signup}
             onChange={setMode}
           />
         </Field>
-        <span className="hint">{data.google ? "Sign in with Google is on." : "Sign in with Google is off. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server to offer it."}</span>
       </div>
       <div>
-        <h3>Invites</h3>
-        {data.invites.length > 0 ? (
-          <div className="list">
-            {data.invites.map((entry) => (
-              <Row key={entry.id} title="Invite link, not used yet" sub={`created ${day(entry.createdAt)} · expires ${day(entry.expiresAt)}`}>
-                <button className="btn small danger" type="button" onClick={revoke(entry.id)}>
-                  Revoke
-                </button>
-              </Row>
-            ))}
-          </div>
+        <h3>{plural(data.people.length, "person", "people")}</h3>
+        {byList ? (
+          <form
+            className="row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              add(email)();
+            }}
+          >
+            <input type="email" required maxLength={254} placeholder="name@gmail.com" aria-label="Google address to let in" value={email} onChange={(event) => setEmail(event.target.value)} />
+            <button className="btn primary" type="submit">
+              Add
+            </button>
+          </form>
         ) : null}
-        <div>
-          <button className="btn primary" type="button" onClick={invite}>
-            Create invite link
-          </button>
-        </div>
-      </div>
-      <div>
-        <h3>{data.users.length > 0 ? plural(data.users.length, "account") : "Accounts"}</h3>
-        {data.users.length > 0 ? (
-          <div className="list">
-            {data.users.map((user) => (
-              <Row key={user.id} title={user.name} sub={`${user.email} · ${user.signIn} · ${plural(user.projects, "project")} · joined ${day(user.createdAt)}`}>
-                {user.signIn === "Password" ? (
-                  <button className="btn small" type="button" onClick={reset(user)}>
-                    Reset link
-                  </button>
-                ) : null}
-                <button className="btn small danger" type="button" onClick={remove(user)}>
+        <div className="list">
+          {data.people.map((person) => (
+            <Row key={person.email} title={person.name ?? person.email} sub={describePerson(person)}>
+              {person.access ? null : (
+                <button className="btn small" type="button" onClick={add(person.email)}>
+                  Allow
+                </button>
+              )}
+              {person.admin ? null : (
+                <button className="btn small danger" type="button" onClick={remove(person)}>
                   Remove
                 </button>
-              </Row>
-            ))}
-          </div>
-        ) : (
-          <p>Nobody has joined yet.</p>
-        )}
+              )}
+            </Row>
+          ))}
+        </div>
       </div>
     </>
   );

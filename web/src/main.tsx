@@ -71,7 +71,7 @@ function Shell() {
           </span>
           <span className="who-text">
             <span className="who-name">{name}</span>
-            <span className="who-sub">{account ? account.email : authEnabled ? "Owner" : ""}</span>
+            <span className="who-sub">{account?.email ?? ""}</span>
           </span>
         </div>
 
@@ -96,7 +96,7 @@ function Shell() {
             <Icon path={BOLT} />
             <span className="nav-text">Connect Claude and the CLI</span>
           </button>
-          {authEnabled && !account ? (
+          {account?.admin ? (
             <button className="nav-item" type="button" onClick={() => setDialog("people")}>
               <svg className="icon" viewBox="0 0 16 16" aria-hidden="true">
                 <circle cx="6" cy="5.5" r="2.3" />

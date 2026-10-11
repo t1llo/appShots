@@ -6,6 +6,7 @@ data
 raw-shots
 store-screenshots
 *.md
+!skill/SKILL.md
 compose.local.yaml
 docker-compose.yaml
 docs

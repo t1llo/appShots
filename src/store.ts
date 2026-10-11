@@ -26,7 +26,7 @@ export interface Shot {
 export interface Space {
   id: string;
   root: string;
-  /** Caps for accounts other than the owner. */
+  /** Caps for accounts other than the admin. */
   limits?: { projects: number; shots: number };
 }
 
