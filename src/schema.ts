@@ -15,6 +15,7 @@ import {
   LOGO_SHAPE_IDS,
   LOGO_SIZE_IDS,
 } from "./design.ts";
+import { TARGET_IDS } from "./sizes.ts";
 
 /** Ids and screenshot names end up in file paths and URLs, so they stay strictly slug-shaped. */
 export const SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -87,7 +88,7 @@ export const backgroundSchema = z
   .describe('A preset name, "auto" (derived from the slide\'s screenshot), a hex colour, or a custom {type, colors} object');
 
 export const deviceSchema = z.object({
-  frame: z.enum(["auto", "iphone", "ipad", "none"]).optional().describe("auto picks the frame matching the screenshot; none shows the bare rounded screenshot"),
+  frame: z.enum(["auto", "iphone", "duo", "ipad", "none"]).optional().describe("auto picks the frame matching the screenshot; duo is the unfolded iPhone Duo; none shows the bare rounded screenshot"),
   color: z.enum(DEVICE_COLOR_IDS).optional(),
   scale: z.number().min(0.4).max(1.6).optional().describe("Size multiplier, default 1"),
   rotate: z.number().min(-45).max(45).optional().describe("Rotation in degrees"),
@@ -155,12 +156,19 @@ export const creativesSchema = z.object({
   universal: creativeSchema.optional().describe("One 16:9 file, 5244×2950, that App Store Connect crops for both places"),
 });
 
+/** The sizes a project exports. Left out, it is the standard sizes of each device the project has screenshots of. */
+export const targetsSchema = z
+  .array(z.enum(TARGET_IDS))
+  .max(TARGET_IDS.length)
+  .describe("Sizes to export. Left out or empty: the standard sizes of every device the project has screenshots of");
+
 export const projectSchema = z.object({
   id: slug,
   name: z.string().min(1).max(80),
   createdAt: z.string(),
   updatedAt: z.string(),
   locales: z.array(locale).min(1).max(40),
+  targets: targetsSchema.optional(),
   theme: themeSchema,
   slides: z.array(slideSchema).max(10),
   creatives: creativesSchema.default({}),

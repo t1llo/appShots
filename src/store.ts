@@ -98,7 +98,7 @@ async function writeProject(space: Space, project: Project): Promise<void> {
 
 export async function createProject(
   space: Space,
-  input: { name: string; locales?: string[]; theme?: Theme; slides?: Slide[]; creatives?: Creatives },
+  input: { name: string; locales?: string[]; targets?: Project["targets"] | null; theme?: Theme; slides?: Slide[]; creatives?: Creatives },
 ): Promise<Project> {
   if (space.limits && (await countProjects(space)) >= space.limits.projects) {
     throw new InputError(`This account is limited to ${space.limits.projects} projects. Delete one to make room.`);
@@ -113,6 +113,7 @@ export async function createProject(
     createdAt: now,
     updatedAt: now,
     locales: input.locales?.length ? input.locales : ["en"],
+    ...(input.targets?.length ? { targets: input.targets } : {}),
     theme: input.theme ?? {},
     slides: input.slides ?? [],
     creatives: input.creatives ?? {},
@@ -124,10 +125,12 @@ export async function createProject(
 export async function updateProject(
   space: Space,
   id: string,
-  patch: Partial<Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives">>,
+  patch: Partial<Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives">> & { targets?: Project["targets"] | null },
 ): Promise<Project> {
   const current = await getProject(space, id);
-  const defined = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  const defined: Record<string, unknown> = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  // An empty choice of sizes means the standard ones again.
+  if (defined.targets === null || (Array.isArray(defined.targets) && defined.targets.length === 0)) defined.targets = undefined;
   const next = projectSchema.parse({ ...current, ...defined, updatedAt: new Date().toISOString() });
   await writeProject(space, next);
   return next;
@@ -138,7 +141,7 @@ export async function deleteProject(space: Space, id: string): Promise<void> {
   await rm(projectDir(space, id), { recursive: true, force: true });
 }
 
-const SHOT_FILE = /^([a-z0-9][a-z0-9_-]{0,63})\.(iphone|ipad)\.png$/;
+const SHOT_FILE = /^([a-z0-9][a-z0-9_-]{0,63})\.(iphone|duo|ipad)\.png$/;
 
 export async function listShots(space: Space, id: string): Promise<Shot[]> {
   const dir = shotsDir(space, id);
@@ -162,7 +165,7 @@ export async function listShots(space: Space, id: string): Promise<Shot[]> {
   return shots;
 }
 
-/** Stores a raw screenshot as PNG. One name can hold an iPhone and an iPad variant side by side. */
+/** Stores a raw screenshot as PNG. One name can hold an iPhone, an iPhone Duo and an iPad variant side by side. */
 export async function saveShot(space: Space, id: string, name: string, data: Buffer, device?: DeviceKind): Promise<Shot> {
   await getProject(space, id);
   assertSlug(name, "screenshot name");
@@ -194,6 +197,18 @@ export async function saveShot(space: Space, id: string, name: string, data: Buf
 export async function deleteShot(space: Space, id: string, file: string): Promise<void> {
   if (!SHOT_FILE.test(file)) throw new InputError(`Invalid screenshot file "${file}"`);
   await rm(path.join(shotsDir(space, id), file), { force: true });
+}
+
+/** Files a screenshot under another device, for one whose size did not give it away. It replaces what that device had under the name. */
+export async function moveShot(space: Space, id: string, file: string, device: DeviceKind): Promise<Shot> {
+  const match = SHOT_FILE.exec(file);
+  if (!match) throw new InputError(`Invalid screenshot file "${file}"`);
+  const dir = shotsDir(space, id);
+  const moved = `${match[1]}.${device}.png`;
+  if (!(await exists(path.join(dir, file)))) throw new NotFoundError(`No screenshot "${file}"`);
+  if (moved !== file) await rename(path.join(dir, file), path.join(dir, moved));
+  const [info, meta] = await Promise.all([stat(path.join(dir, moved)), sharp(path.join(dir, moved)).metadata()]);
+  return { name: match[1]!, device, file: moved, width: meta.width, height: meta.height, bytes: info.size, version: Math.round(info.mtimeMs) };
 }
 
 /** An uploaded image that is not a screenshot: a logo, a sticker, a character. Slides place it by name. */
@@ -322,9 +337,20 @@ export function safeJoin(root: string, relative: string): string {
   return full;
 }
 
-/** Picks the variant for the target's device, falling back to the other one. */
+/** Which device's screenshot stands in when a name has none for the device asked for: the one closest in shape first. */
+const STAND_INS: Record<DeviceKind, DeviceKind[]> = {
+  iphone: ["iphone", "duo", "ipad"],
+  duo: ["duo", "ipad", "iphone"],
+  ipad: ["ipad", "duo", "iphone"],
+};
+
+/** Picks the variant for the target's device, falling back to another device's. */
 export function findShot(shots: Shot[], name: string | undefined, device: DeviceKind): Shot | undefined {
   if (!name) return undefined;
   const named = shots.filter((shot) => shot.name === name);
-  return named.find((shot) => shot.device === device) ?? named[0];
+  for (const kind of STAND_INS[device]) {
+    const found = named.find((shot) => shot.device === kind);
+    if (found) return found;
+  }
+  return undefined;
 }

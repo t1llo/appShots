@@ -1,13 +1,15 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { CreativeLayoutId } from "../../src/design.ts";
 import type { Project, Text } from "../../src/schema.ts";
-import type { Placement, PlacementId, Target, TargetId } from "../../src/sizes.ts";
+import type { DeviceKind, Placement, PlacementId, Target, TargetId } from "../../src/sizes.ts";
 
 export type { Background, Badge, Creative, DeviceStyle, Feature, IconRow, Logo, PlacedImage, Project, Slide, Text, Theme } from "../../src/schema.ts";
-export type { CreativeLayoutId, Placement, PlacementId, Target, TargetId };
+export type { CreativeLayoutId, DeviceKind, Placement, PlacementId, Target, TargetId };
 
 export interface Meta {
   targets: Record<TargetId, Target>;
+  /** The device families a set is designed for, in the order they are offered. */
+  devices: { id: DeviceKind; label: string }[];
   layouts: Record<string, string>;
   /** How many screenshots each slide layout shows. */
   layoutShots: Record<string, number>;
@@ -45,7 +47,7 @@ export interface ProjectEntry {
 
 export interface Shot {
   name: string;
-  device: "iphone" | "ipad";
+  device: DeviceKind;
   file: string;
   width: number;
   height: number;
@@ -72,8 +74,19 @@ export interface Detail {
   defaultTargets: TargetId[];
 }
 
+/** The size a target is drawn at: itself, or the one it is a scaled copy of. Only those have a preview of their own. */
+export const drawnSize = (meta: Meta, id: TargetId): TargetId => (meta.targets[id].from as TargetId | undefined) ?? id;
+
+/** The sizes a project exports: its own choice, or the standard sizes of every device it has screenshots of. */
+export function exportSizes(meta: Meta, project: Pick<Project, "targets">, shots: Shot[]): TargetId[] {
+  const ids = Object.keys(meta.targets) as TargetId[];
+  if (project.targets?.length) return ids.filter((id) => project.targets!.includes(id));
+  const devices = new Set<DeviceKind>(shots.length ? shots.map((shot) => shot.device) : ["iphone"]);
+  return ids.filter((id) => meta.targets[id].standard && devices.has(meta.targets[id].device));
+}
+
 export interface RenderResponse extends Pick<Detail, "outputs" | "creativeOutputs"> {
-  files: unknown[];
+  files: { target: TargetId }[];
   creatives: unknown[];
   warnings: string[];
 }

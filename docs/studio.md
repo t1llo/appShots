@@ -17,7 +17,7 @@ One project per app. Projects are in the sidebar on the left.
 
 ## Slides
 
-A set has up to ten slides, in store order. The heading of the section switches the previews between iPhone and iPad.
+A set has up to ten slides, in store order. You design it once, and it is exported at every size. The switch in the heading shows the previews for the **iPhone**, the **iPhone Duo** or the **iPad**. Where a device has two shapes, such as the 13-inch and the 11-inch iPad, a menu beside the switch picks which one is shown.
 
 - **+ Add slide** adds one at the end.
 - Click a slide to edit it. The editor opens on the right beside a large preview.
@@ -44,7 +44,7 @@ The **Project** tab holds the look of the whole set: background, font, text and 
 
 ## Screenshots
 
-Drop files anywhere on the page, or use the upload button. Click a screenshot to put it in the selected slide. Uploading a file with the name of an existing one replaces it everywhere. See [Get your screens in](/docs/screens).
+Drop files anywhere on the page, or use the upload button. Click a screenshot to put it in the selected slide. Uploading a file with the name of an existing one replaces it everywhere. A project with screenshots of more than one device shows the device on each thumbnail, and clicking it files the screenshot under another one. See [Get your screens in](/docs/screens).
 
 ## Logos and images
 
@@ -60,7 +60,7 @@ The language picker in the top bar sets which language the previews show and whi
 
 ## Export ZIP
 
-**Export ZIP** renders the whole set and downloads it: every slide for every language and size, plus the header and search results images. See [Render and export](/docs/export).
+**Export ZIP** renders the whole set and downloads it: every slide for every language and every display of App Store Connect, plus the header and search results images. **Project → Export sizes** lists the sizes and lets you add the older ones. See [Render and export](/docs/export).
 
 ## The sidebar
 

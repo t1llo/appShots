@@ -89,7 +89,10 @@ const VALUES: Record<string, string> = {
     .filter(([group]) => group !== "Brands")
     .map(([group, ids]) => `- **${group}:** ${codes(ids)}`)
     .join("\n"),
-  TARGETS: table(["Size", "Pixels", "Id"], Object.entries(TARGETS).map(([id, target]) => [target.label, `${target.width} × ${target.height}`, `\`${id}\``])),
+  TARGETS: table(
+    ["Folder", "Pixels", "Display in App Store Connect", "Exported"],
+    Object.entries(TARGETS).map(([id, target]) => [`\`${id}\``, `${target.width} × ${target.height}`, target.slot, "standard" in target ? "Always" : "When you ask"]),
+  ),
   PLACEMENTS: table(
     ["Asset", "Pixels", "Safe area", "Used for"],
     Object.entries(PLACEMENTS).map(([id, place]) => [`\`${id}\``, `${place.width} × ${place.height} (${place.ratio})`, `${place.safe.width} × ${place.safe.height} at ${place.safe.x}, ${place.safe.y}`, place.note]),

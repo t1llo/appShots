@@ -203,6 +203,7 @@ appshots upload streaks ./screens                 # screenshots you already have
 appshots upload streaks logo.svg mascot.png --image   # a logo and other artwork for the slides, not screenshots
 appshots run                                      # build the app in this folder and launch it in a simulator
 appshots run --ipad --dark --lang de              # on the 13-inch iPad Pro, dark, in German
+appshots run --duo                                # on the iPhone Duo
 appshots launch com.example.streaks --capture stats --to streaks -- -appshots stats
                                                   # start an installed app again with launch arguments,
                                                   # capture the screen and upload it, in one command
@@ -220,7 +221,7 @@ appshots login https://appshots.example.com       # only the token, without the 
 
 The `--name` is what slides refer to (`"screenshot": "home"`). Capturing the same name again replaces the screenshot, and every slide using it updates. An iPhone and an iPad screenshot can share a name; each target size picks the matching one.
 
-`appshots run` finds the workspace or project and its scheme, boots the simulator the store sizes ask for (iPhone Pro Max, or the 13-inch iPad Pro with `--ipad`), and builds in Xcode's own build folder, so a project Xcode has built already starts in seconds. `--fresh` builds in a folder of its own instead. What follows a lone `--` goes to the app as launch arguments.
+`appshots run` finds the workspace or project and its scheme, boots the simulator the store sizes ask for (iPhone Pro Max, the 13-inch iPad Pro with `--ipad`, or the iPhone Duo with `--duo`), and builds in Xcode's own build folder, so a project Xcode has built already starts in seconds. `--fresh` builds in a folder of its own instead. What follows a lone `--` goes to the app as launch arguments.
 
 Simulator capture uses `simctl`. Device capture uses `devicectl device capture screenshot`, which needs Xcode 27 or newer and a device that is unlocked and trusts the Mac. If `xcode-select` points at the Command Line Tools, the CLI switches to `/Applications/Xcode.app` by itself.
 
@@ -258,10 +259,29 @@ A project has a theme and up to ten slides. Every style field can be set on the 
   - Mono: JetBrains Mono, Space Mono
 
   Faces that only work large, such as the handwritten ones, set the headline; the small print beside them is set in a plain face that goes with them
-- **Device:** frame (`auto`, `iphone`, `ipad`, `none`), colour and shadow, and per slide its size (`scale`), place (`offsetX`, `offsetY`), tilt (`rotate`) and turn in 3D (`perspective`)
+- **Device:** frame (`auto`, `iphone`, `duo`, `ipad`, `none`), colour and shadow, and per slide its size (`scale`), place (`offsetX`, `offsetY`), tilt (`rotate`) and turn in 3D (`perspective`)
 - **Text:** `*asterisks*` tint words with the accent colour, a newline forces a break, and any text can be a `{ "en-US": "...", "de-DE": "..." }` map for localized sets
 
-Output sizes, portrait: iPhone 6.9" (1320×2868), iPhone 6.5" (1284×2778), iPad 13" (2064×2752), iPad 12.9" (2048×2732). By default a render produces the 6.9" set, plus the 13" iPad set once the project has iPad screenshots. Files are opaque PNGs laid out as `<locale>/<target>/01.png`.
+### Output sizes
+
+A set is designed once per device (iPhone, iPhone Duo, iPad) and exported at the exact size of every display App Store Connect lists. Sizes of the same shape are one picture drawn at the largest size and scaled, so they look alike everywhere.
+
+| Folder | Pixels | Display in App Store Connect | Exported |
+| --- | --- | --- | --- |
+| `iphone-6.9` | 1320×2868 | iPhone with Dynamic Island (large display) | always |
+| `iphone-6.3` | 1206×2622 | iPhone with Dynamic Island (medium display) | always |
+| `iphone-6.5` | 1284×2778 | iPhone with Face ID (large display) | always |
+| `iphone-6.1` | 1170×2532 | iPhone with Face ID (medium display) | always |
+| `iphone-duo` | 2007×2853 | iPhone Duo | with Duo screenshots |
+| `ipad-13` | 2064×2752 | iPad 13" display | with iPad screenshots |
+| `ipad-11` | 1668×2420 | iPad 11" display | with iPad screenshots |
+| `iphone-5.5`, `iphone-4.7`, `iphone-4`, `iphone-3.5` | 1242×2208, 750×1334, 640×1136, 640×960 | iPhone with Home Button | when chosen |
+| `iphone-duo-cover` | 1398×2034 | iPhone Duo | when chosen |
+| `ipad-12.9`, `ipad-10.5`, `ipad-9.7` | 2048×2732, 1668×2224, 1536×2048 | older iPads | when chosen |
+
+Choose other sizes under **Project → Export sizes** in the Studio or with `targets` on the project. Files are opaque PNGs laid out as `<locale>/<target>/01.png`, and the ZIP has a `README.txt` that says which folder goes onto which display.
+
+A raw screenshot counts as iPhone Duo when it is exactly 2007×2853 or 1398×2034, as iPhone when it is narrow, and as iPad otherwise. `--as iphone|duo|ipad` on upload, or the menu on its thumbnail in the Studio, overrides that.
 
 ## Header and search results assets
 
@@ -291,15 +311,16 @@ Everything the Studio and the CLI do goes through `/api`, with the same bearer t
 
 ```
 GET    /api/projects                       list
-POST   /api/projects                       create {name, locales?, theme?, slides?}
+POST   /api/projects                       create {name, locales?, targets?, theme?, slides?}
 GET    /api/projects/:id                   project, screenshots, images, rendered files
-PUT    /api/projects/:id                   update {name?, locales?, theme?, slides?, creatives?: {header?, search?, universal?}}
+PUT    /api/projects/:id                   update {name?, locales?, targets?, theme?, slides?, creatives?: {header?, search?, universal?}}
 DELETE /api/projects/:id
-PUT    /api/projects/:id/shots/:name       upload a screenshot (raw image body, ?device=iphone|ipad to override detection)
+PUT    /api/projects/:id/shots/:name       upload a screenshot (raw image body, ?device=iphone|duo|ipad to override detection)
+PATCH  /api/projects/:id/shots/:file       {device} files it under another device
 DELETE /api/projects/:id/shots/:file
 PUT    /api/projects/:id/images/:name      upload a logo or other artwork (raw PNG, SVG, JPEG or WebP body)
 DELETE /api/projects/:id/images/:file
-POST   /api/projects/:id/render            {targets?, locales?, slides?, creatives?}
+POST   /api/projects/:id/render            {targets?, locales?, slides?, creatives?}; without targets, every size the project exports
 GET    /api/projects/:id/export.zip        ?render=1 renders first
 ```
 

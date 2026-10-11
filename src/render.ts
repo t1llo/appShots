@@ -4,7 +4,8 @@ import { type Browser, chromium } from "playwright";
 import sharp from "sharp";
 import { config } from "./config.ts";
 import { CREATIVE_CAPACITY } from "./creative.ts";
-import { type DeviceKind, PLACEMENT_IDS, PLACEMENTS, type PlacementId, TARGETS, type TargetId } from "./sizes.ts";
+import { LOCALE } from "./schema.ts";
+import { DEVICE_LABELS, type DeviceKind, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, standardTargets, TARGETS, type TargetId } from "./sizes.ts";
 import { CREATIVE_DIR, findShot, getProject, InputError, listImages, listShots, outDir, type Shot, type Space } from "./store.ts";
 
 export interface RenderRequest {
@@ -30,6 +31,7 @@ export interface RenderedFile {
   bytes: number;
 }
 
+/** A strip of one pass's slides to judge the set by. Sizes that are scaled copies of another have none of their own. */
 export interface RenderedSheet {
   target: TargetId;
   locale: string;
@@ -78,12 +80,17 @@ export async function closeBrowser(): Promise<void> {
   if (current) await current.then((instance) => instance.close()).catch(() => {});
 }
 
-/** iPhone always; iPad only once the project has iPad screenshots to put in it. */
-export function defaultTargets(shots: Shot[]): TargetId[] {
+/** The sizes a project exports: its own choice, or the standard sizes of every device it has screenshots of. iPhone while it has none. */
+export function defaultTargets(shots: Shot[], chosen?: TargetId[]): TargetId[] {
+  if (chosen?.length) return orderTargets(chosen);
   const kinds = new Set<DeviceKind>(shots.map((shot) => shot.device));
-  if (kinds.has("ipad") && !kinds.has("iphone")) return ["ipad-13"];
-  return kinds.has("ipad") ? ["iphone-6.9", "ipad-13"] : ["iphone-6.9"];
+  if (kinds.size === 0) kinds.add("iphone");
+  return standardTargets(kinds);
 }
+
+/** A size of the same proportions is the drawn one scaled, so every size of a device shows the identical design. */
+const scaled = (png: Buffer, size: { width: number; height: number }) =>
+  sharp(png).resize(size.width, size.height, { fit: "fill" }).removeAlpha().png({ compressionLevel: 9 }).toBuffer();
 
 const slideFile = (index: number) => `${String(index + 1).padStart(2, "0")}.png`;
 
@@ -118,7 +125,10 @@ async function renderNow(space: Space, id: string, request: RenderRequest): Prom
     if (!project.creatives[placement]) throw new InputError(`This project has no ${PLACEMENTS[placement].label.toLowerCase()} asset yet. Design it first.`);
   }
 
-  const targets = request.targets?.length ? request.targets : defaultTargets(shots);
+  const targets = orderTargets(request.targets?.length ? request.targets : defaultTargets(shots, project.targets));
+  // Sizes of one shape share a pass of the browser: it draws the first, and the others are that picture scaled.
+  const passes = new Map<TargetId, TargetId[]>();
+  for (const target of targets) passes.set(sourceOf(target), [...(passes.get(sourceOf(target)) ?? []), target]);
   const locales = request.locales?.length ? request.locales : project.locales;
   // Asking for assets alone leaves the slides as they are.
   const indexes = request.slides?.length ? [...new Set(request.slides)].sort((a, b) => a - b) : placements.length && !everything ? [] : project.slides.map((_, i) => i);
@@ -142,11 +152,10 @@ async function renderNow(space: Space, id: string, request: RenderRequest): Prom
     }
     for (const name of [slide.screenshot, slide.screenshot2, slide.screenshot3]) {
       if (!name) continue;
-      for (const target of targets) {
-        const kind = TARGETS[target].device;
+      for (const kind of new Set(targets.map((target) => TARGETS[target].device))) {
         const shot = findShot(shots, name, kind);
         if (!shot) warnings.add(`Slide ${index + 1}: no screenshot named "${name}" has been uploaded, so a placeholder was drawn.`);
-        else if (shot.device !== kind) warnings.add(`Slide ${index + 1}: "${name}" has no ${kind} variant, so the ${shot.device} screenshot was used for ${target}.`);
+        else if (shot.device !== kind) warnings.add(`Slide ${index + 1}: "${name}" has no ${DEVICE_LABELS[kind]} screenshot, so the ${DEVICE_LABELS[shot.device]} one was used for the ${DEVICE_LABELS[kind]} sizes.`);
       }
     }
   }
@@ -196,30 +205,52 @@ async function renderNow(space: Space, id: string, request: RenderRequest): Prom
     }
   };
 
+  const root = outDir(space, id);
+  // A render of everything at the project's own sizes also clears the sizes and languages it no longer has.
+  if (everything && !request.targets?.length && !request.locales?.length) {
+    for (const entry of await readdir(root).catch(() => [])) {
+      if (!locales.includes(entry)) {
+        if (LOCALE.test(entry)) await rm(path.join(root, entry), { recursive: true, force: true });
+        continue;
+      }
+      for (const size of await readdir(path.join(root, entry)).catch(() => [])) {
+        if (isTargetId(size) && !targets.includes(size)) await rm(path.join(root, entry, size), { recursive: true, force: true });
+      }
+    }
+  }
+
   for (const locale of locales) {
     const query = `locale=${encodeURIComponent(locale)}`;
-    for (const target of indexes.length ? targets : []) {
-      const size = TARGETS[target];
-      const relDir = path.join(locale, target);
-      const dir = path.join(outDir(space, id), relDir);
-      if (full) await rm(dir, { recursive: true, force: true });
-      await mkdir(dir, { recursive: true });
+    for (const [source, wanted] of indexes.length ? passes : []) {
+      for (const target of wanted) {
+        const dir = path.join(root, locale, target);
+        if (full) await rm(dir, { recursive: true, force: true });
+        await mkdir(dir, { recursive: true });
+      }
       await capture(
-        size,
-        indexes.map((index) => `http://${local}/render/${id}/${index}?target=${target}&${query}`),
+        TARGETS[source],
+        indexes.map((index) => `http://${local}/render/${id}/${index}?target=${source}&${query}`),
         async (png, i) => {
           const index = indexes[i]!;
           const file = slideFile(index);
-          await writeFile(path.join(dir, file), png);
-          files.push({ slide: index, target, locale, path: path.join(relDir, file), width: size.width, height: size.height, bytes: png.length });
+          const written = await Promise.all(
+            wanted.map(async (target) => {
+              const size = TARGETS[target];
+              const data = target === source ? png : await scaled(png, size);
+              await writeFile(path.join(root, locale, target, file), data);
+              return { slide: index, target, locale, path: path.join(locale, target, file), width: size.width, height: size.height, bytes: data.length };
+            }),
+          );
+          files.push(...written);
         },
       );
-      await buildSheet(dir);
-      sheets.push({ target, locale, path: path.join(relDir, "sheet.jpg") });
+      const shown = wanted[0]!;
+      await buildSheet(path.join(root, locale, shown));
+      sheets.push({ target: shown, locale, path: path.join(locale, shown, "sheet.jpg") });
     }
 
     const relDir = path.join(locale, CREATIVE_DIR);
-    const dir = path.join(outDir(space, id), relDir);
+    const dir = path.join(root, relDir);
     // A render of everything also clears assets that have since been removed from the project.
     if (everything) await rm(dir, { recursive: true, force: true });
     if (placements.length) await mkdir(dir, { recursive: true });

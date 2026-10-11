@@ -21,9 +21,9 @@ Create the token under **Connect an agent** in the Studio. The examples expect i
 | Request | What it does |
 | --- | --- |
 | `GET /api/projects` | Lists your projects |
-| `POST /api/projects` | Creates one. Body: `name`, and optionally `locales`, `theme`, `slides`, `creatives` |
+| `POST /api/projects` | Creates one. Body: `name`, and optionally `locales`, `targets`, `theme`, `slides`, `creatives` |
 | `GET /api/projects/:id` | Returns the project with its screenshots, images and rendered files |
-| `PUT /api/projects/:id` | Changes any of `name`, `locales`, `theme`, `slides`, `creatives`. Each one given is replaced as a whole |
+| `PUT /api/projects/:id` | Changes any of `name`, `locales`, `targets`, `theme`, `slides`, `creatives`. Each one given is replaced as a whole |
 | `DELETE /api/projects/:id` | Deletes it with everything in it |
 
 ```bash
@@ -33,7 +33,7 @@ curl -s {{SERVER}}/api/projects \
   -d '{"name":"Streaks","locales":["en-US","de-DE"]}'
 ```
 
-The answer holds the project's `id`, which every other request uses. The shape of `slides`, `theme` and `creatives` is on [Slides](/docs/slides) and [Header and search results](/docs/store-assets).
+The answer holds the project's `id`, which every other request uses. The shape of `slides`, `theme` and `creatives` is on [Slides](/docs/slides) and [Header and search results](/docs/store-assets). `targets` is the list of sizes the project exports, such as `["iphone-6.9","iphone-5.5"]`. Leave it out, or send `null` or `[]`, for the standard sizes. See [Sizes](/docs/sizes).
 
 ## Screenshots
 
@@ -46,9 +46,10 @@ curl -s -X PUT {{SERVER}}/api/projects/streaks/shots/home \
 | Request | What it does |
 | --- | --- |
 | `PUT /api/projects/:id/shots/:name` | Uploads a raw screenshot under that name. PNG, JPEG or WebP, up to 40 MB. An existing one with that name and device kind is replaced |
+| `PATCH /api/projects/:id/shots/:file` | Files one under another device. Body: `{ "device": "iphone" }`, `"duo"` or `"ipad"`. Replaces what that device had under the name |
 | `DELETE /api/projects/:id/shots/:file` | Deletes one. `:file` is the `file` value from the project's `shots` list |
 
-iPhone or iPad is read from the shape of the image. Add `?device=iphone` or `?device=ipad` to say it yourself.
+iPhone, iPhone Duo or iPad is read from the size of the image. Add `?device=iphone`, `?device=duo` or `?device=ipad` to the upload to say it yourself. See [Sizes](/docs/sizes#iphone-iphone-duo-or-ipad).
 
 ## Logos and images
 
@@ -63,12 +64,12 @@ iPhone or iPad is read from the shape of the image. Add `?device=iphone` or `?de
 curl -s -X POST {{SERVER}}/api/projects/streaks/render \
   -H "Authorization: Bearer $APPSHOTS_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"targets":["iphone-6.9"],"locales":["en-US"]}'
+  -d '{"locales":["en-US"]}'
 ```
 
 | Request | What it does |
 | --- | --- |
-| `POST /api/projects/:id/render` | Renders. Body, all optional: `targets`, `locales`, `slides`, `creatives` |
+| `POST /api/projects/:id/render` | Renders. Body, all optional: `targets`, `locales`, `slides`, `creatives`. Without `targets`, every size the project exports |
 | `GET /api/projects/:id/export.zip` | The files of the last render as a ZIP. `?render=1` renders everything first |
 | `GET /files/:id/out/<language>/<size>/<number>.png` | One rendered file |
 

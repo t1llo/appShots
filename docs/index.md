@@ -27,7 +27,7 @@ The server draws the pictures. It cannot see your Mac, your simulator or your ph
 
 ## What it makes
 
-- Portrait screenshots for iPhone 6.9" and 6.5" and for iPad 13" and 12.9", up to ten per set. See [Output sizes](/docs/sizes).
+- Portrait screenshots for every iPhone, iPhone Duo and iPad display App Store Connect lists, up to ten per set. You design once per device and get every size. See [Output sizes](/docs/sizes).
 - The wide images for the Header and Search Results tab of App Store Connect. See [Header and search results](/docs/store-assets).
 - Any number of languages from one set. See [Languages](/docs/languages).
 

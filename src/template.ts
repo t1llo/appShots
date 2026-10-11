@@ -20,7 +20,7 @@ import {
 import { ICONS } from "./icons.ts";
 import { hasBakedIsland, paletteFor } from "./palette.ts";
 import type { Background, Badge, DeviceStyle, Feature, IconRow, Logo, PlacedImage, Project, Text } from "./schema.ts";
-import { type DeviceKind, TARGETS, type TargetId } from "./sizes.ts";
+import { type DeviceKind, isDeviceKind, TARGETS, type TargetId } from "./sizes.ts";
 import { findShot, listImages, type Shot, shotsDir, type Space, type StoredImage } from "./store.ts";
 
 export interface SlideContext {
@@ -367,16 +367,21 @@ function pointsHtml(features: Feature[], style: PointStyleId, wide: boolean, loc
 
 // ---------------------------------------------------------------- devices
 
-/** Frame geometry as fractions of the device width, measured off the real hardware. */
-const FRAMES: Record<DeviceKind, { outer: number; band: number; bezel: number; inner: number; aspect: [number, number]; bare: number }> = {
-  iphone: { outer: 0.165, band: 0.011, bezel: 0.023, inner: 0.131, aspect: [1320, 2868], bare: 0.085 },
-  ipad: { outer: 0.058, band: 0.006, bezel: 0.034, inner: 0.024, aspect: [2064, 2752], bare: 0.03 },
+/**
+ * Frame geometry as fractions of the device width. The iPhone and the iPad are measured off the real hardware.
+ * The Duo is its unfolded inner display in a plain thin frame, with no camera or hinge drawn.
+ */
+const FRAMES: Record<DeviceKind, { outer: number; band: number; bezel: number; inner: number; aspect: [number, number]; bare: number; fits: [number, number] }> = {
+  iphone: { outer: 0.165, band: 0.011, bezel: 0.023, inner: 0.131, aspect: [1320, 2868], bare: 0.085, fits: [0.44, 0.58] },
+  duo: { outer: 0.082, band: 0.007, bezel: 0.019, inner: 0.058, aspect: [2007, 2853], bare: 0.045, fits: [0.64, 0.76] },
+  ipad: { outer: 0.058, band: 0.006, bezel: 0.034, inner: 0.024, aspect: [2064, 2752], bare: 0.03, fits: [0.66, 0.78] },
 };
 
 /** Device width as a fraction of canvas width, by target device then by the frame drawn on it. */
 const BASE_WIDTH: Record<DeviceKind, Record<DeviceKind, number>> = {
-  iphone: { iphone: 0.86, ipad: 0.92 },
-  ipad: { ipad: 0.84, iphone: 0.5 },
+  iphone: { iphone: 0.86, duo: 0.92, ipad: 0.92 },
+  duo: { duo: 0.82, ipad: 0.82, iphone: 0.5 },
+  ipad: { ipad: 0.84, duo: 0.82, iphone: 0.5 },
 };
 
 const LAYOUT_WIDTH: Record<LayoutId, number> = {
@@ -438,7 +443,7 @@ interface DeviceOptions {
 
 /** Which frame a screenshot gets, and how tall the device comes out per unit of its width. */
 export function deviceShape(shot: Shot | undefined, style: DeviceStyle, fallback: DeviceKind) {
-  const kind: DeviceKind = style.frame === "iphone" || style.frame === "ipad" ? style.frame : (shot?.device ?? fallback);
+  const kind: DeviceKind = isDeviceKind(style.frame) ? style.frame : (shot?.device ?? fallback);
   const frame: FrameKind = style.frame === "none" ? "none" : kind;
   const geometry = FRAMES[kind];
 
@@ -446,7 +451,7 @@ export function deviceShape(shot: Shot | undefined, style: DeviceStyle, fallback
   let [aw, ah] = geometry.aspect;
   if (shot && shot.height > shot.width) {
     const ratio = shot.width / shot.height;
-    const [lo, hi] = kind === "iphone" ? [0.44, 0.58] : [0.66, 0.78];
+    const [lo, hi] = geometry.fits;
     if (ratio >= lo && ratio <= hi) [aw, ah] = [shot.width, shot.height];
   }
   const rim = frame === "none" ? 0 : (geometry.band + geometry.bezel) * 2;
@@ -512,7 +517,7 @@ html,body{background:#000;overflow:hidden}
 .align-left .copy{align-items:flex-start;text-align:left;padding-left:calc(var(--u)*8);padding-right:calc(var(--u)*8)}
 .eyebrow{font-size:calc(var(--u)*3.1*var(--ts));font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:calc(var(--u)*2.6)}
 .eyebrow.muted{color:var(--text);opacity:.7}
-.headline{max-width:100%;font-family:var(--font);font-size:calc(var(--u)*9.6*var(--ts)*var(--fs));font-weight:var(--hw);line-height:1.05;letter-spacing:var(--track);text-wrap:balance}
+.headline{max-width:100%;font-family:var(--font);font-size:calc(var(--u)*10.8*var(--ts)*var(--fs));font-weight:var(--hw);line-height:1.05;letter-spacing:var(--track);text-wrap:balance}
 .headline em{font-style:normal;color:var(--accent)}
 .headline.two-tone{color:color-mix(in srgb,var(--text) 58%,transparent)}
 .headline.two-tone em{color:var(--text)}
@@ -604,7 +609,7 @@ html,body{background:#000;overflow:hidden}
 .side.layout-device-left{flex-direction:row-reverse}
 .side .copy{flex:0 0 56%;width:auto;padding:0 0 0 calc(var(--u)*8)}
 .side.layout-device-left .copy{padding:0 calc(var(--u)*7) 0 calc(var(--u)*1)}
-.side .headline{font-size:calc(var(--u)*8.2*var(--ts)*var(--fs))}
+.side .headline{font-size:calc(var(--u)*9*var(--ts)*var(--fs))}
 .side .stage,.side .stage.fits{flex:1 1 0;width:auto;min-width:0;align-self:stretch;align-items:center;justify-content:flex-start;padding:0 0 0 calc(var(--u)*5)}
 .side.layout-device-left .stage,.side.layout-device-left .stage.fits{justify-content:flex-end;padding:0 calc(var(--u)*5) 0 0}
 .logo{flex:none;max-width:100%;margin-bottom:calc(var(--u)*4.4*var(--ts))}
@@ -815,8 +820,8 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
     const gap = unit * 6.5;
     /** One device of a layout that places several: its centre in device widths from the middle, how far down it starts, and what is in front. */
     const placed = async (s: Shot | undefined, wanted: string | undefined, x: number, top: number, z: number, rotate: number) => {
-      // Phones are drawn small on an iPad canvas; a group of them has the room to be larger.
-      const boost = target.device === "ipad" && deviceShape(s, deviceStyle, target.device).kind === "iphone" ? 1.45 : 1;
+      // Phones are drawn small on a tablet-shaped canvas; a group of them has the room to be larger.
+      const boost = target.device !== "iphone" && deviceShape(s, deviceStyle, target.device).kind === "iphone" ? 1.45 : 1;
       const extraCss = `margin-left:calc(var(--dw)*${round(x - 0.5)});top:${round(gap + top * unit)}px;z-index:${z}`;
       return deviceHtml({ ...common, width: common.width * boost, shot: s, wanted, url: shotUrl(s), island: await needsIsland(s), fit: "width", defaults: { rotate }, extraCss });
     };
@@ -831,8 +836,8 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
       stageHtml =
         (await placed(shot2, slide.screenshot2, -0.5, 11, 1, -7)) + (await placed(shot3, slide.screenshot3, 0.5, 11, 1, 7)) + (await placed(shot, slide.screenshot, 0, 0, 2, 0));
     } else {
-      // A phone beside the copy on an iPad canvas has the room to be larger, like a group of them has.
-      const boost = side && target.device === "ipad" && deviceShape(shot, deviceStyle, target.device).kind === "iphone" ? 1.45 : 1;
+      // A phone beside the copy on a tablet-shaped canvas has the room to be larger, like a group of them has.
+      const boost = side && target.device !== "iphone" && deviceShape(shot, deviceStyle, target.device).kind === "iphone" ? 1.45 : 1;
       stageHtml = deviceHtml({
         ...common,
         width: common.width * boost,

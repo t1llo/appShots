@@ -38,7 +38,11 @@ No. The server draws every slide from your screenshots, text and settings, the s
 
 ### Can it make Google Play screenshots?
 
-Not at Google Play's sizes. It exports App Store sizes for iPhone and iPad. See [Sizes](/docs/sizes).
+Not at Google Play's sizes. It exports App Store sizes for iPhone, iPhone Duo and iPad. See [Sizes](/docs/sizes).
+
+### Do I have to design every iPhone size?
+
+No. You design the set once for the iPhone, and once each for the iPhone Duo and the iPad if your app runs on them. The export holds every size App Store Connect lists. See [Sizes](/docs/sizes).
 
 ### Landscape screenshots, or app preview videos?
 

@@ -5,7 +5,9 @@ import { crc32 } from "node:zlib";
 export interface ZipEntry {
   /** Path inside the archive, with forward slashes. */
   name: string;
-  file: string;
+  /** Where the content is read from, or the content itself. */
+  file?: string;
+  data?: Buffer;
 }
 
 function write(out: Writable, chunk: Buffer): Promise<void> {
@@ -26,7 +28,7 @@ export async function writeZip(out: Writable, entries: ZipEntry[]): Promise<void
   let offset = 0;
 
   for (const entry of entries) {
-    const data = await readFile(entry.file);
+    const data = entry.data ?? (await readFile(entry.file!));
     const name = Buffer.from(entry.name, "utf8");
     const crc = crc32(data);
 

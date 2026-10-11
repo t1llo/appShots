@@ -36,7 +36,7 @@ Or just ask for App Store screenshots. An agent that has the skill installed pic
 
 | Question | Your choices |
 | --- | --- |
-| Devices | iPhone only, iPhone and iPad, or iPad only |
+| Devices | iPhone only, or the iPad or the iPhone Duo as well. Never about sizes: one design covers every size of a device |
 | The screens | You have screenshots. You open each screen and it captures. Or it does everything itself |
 | Where the app runs | A simulator, or the plugged-in iPhone or iPad |
 | The look | Light or dark, and which languages |

@@ -10,7 +10,7 @@ A slide shows a raw screenshot of your app inside a device frame. Raw means the 
 Every screenshot has a short name, such as `home`, `stats` or `detail`. Slides refer to screenshots by name.
 
 - Uploading under a name that exists **replaces** that screenshot, and every slide that uses it updates.
-- iPhone and iPad are told apart by the shape of the image. **One name can hold one of each**, and each output size picks the matching one.
+- iPhone, iPhone Duo and iPad are told apart by the size of the image. **One name can hold one of each**, and each output size picks the matching one. See [Sizes](/docs/sizes#iphone-iphone-duo-or-ipad).
 - Names are lowercase letters, digits, `-` and `_`.
 
 ## In the browser
@@ -53,7 +53,7 @@ appshots run
 appshots launch com.example.streaks --capture stats --to streaks -- -appshots stats
 ```
 
-`run` finds the Xcode project and scheme, boots the simulator the store sizes ask for (an iPhone Pro Max, or the 13-inch iPad Pro with `--ipad`), and reuses the build Xcode already made. `launch` starts the installed app again with launch arguments, waits two seconds, captures with a clean status bar and uploads.
+`run` finds the Xcode project and scheme, boots the simulator the store sizes ask for (an iPhone Pro Max, the 13-inch iPad Pro with `--ipad`, or the iPhone Duo with `--duo`), and reuses the build Xcode already made. `launch` starts the installed app again with launch arguments, waits two seconds, captures with a clean status bar and uploads.
 
 To land on a screen, the agent uses what your app has already: launch arguments, a demo mode or deep links. If there are none and you agree, it adds a launch argument that only exists in debug builds. Otherwise it asks you to open the screen.
 

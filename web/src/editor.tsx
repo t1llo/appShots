@@ -8,6 +8,7 @@ import {
   type CreativeLayoutId,
   type DeviceStyle,
   errorText,
+  exportSizes,
   type Feature,
   type IconRow,
   label,
@@ -190,7 +191,7 @@ function StyleFields({ owner, change, inherits, asset = false, placed = false }:
         </Field>
         <Field label="Frame">
           <Select
-            options={[["", base], ["auto", "Match screenshot"], ["iphone", "iPhone"], ["ipad", "iPad"], ["none", "No frame"]]}
+            options={[["", base], ["auto", "Match screenshot"], ["iphone", "iPhone"], ["duo", "iPhone Duo"], ["ipad", "iPad"], ["none", "No frame"]]}
             value={device.frame ?? ""}
             onChange={(value) => setDevice("frame", value)}
           />
@@ -1179,6 +1180,14 @@ export function CreativeEditor({ project, placement, change, remove }: { project
 // ---------------------------------------------------------------- project
 
 export function ProjectEditor({ project, change, rename, remove }: { project: Project; change: Change<Project>; rename: (name: string) => void; remove: () => void }) {
+  const { meta, shots } = useScope();
+  const sizes = exportSizes(meta, project, shots);
+  // Nothing picked is the standard sizes again, which follow the screenshots.
+  const pickSizes = (next: TargetId[]) =>
+    change((item) => {
+      if (next.length) item.targets = (Object.keys(meta.targets) as TargetId[]).filter((key) => next.includes(key));
+      else delete item.targets;
+    });
   const [name, setName] = useState<string | null>(null);
   const joined = project.locales.join(", ");
   const [locales, setLocales] = useState(joined);
@@ -1212,6 +1221,37 @@ export function ProjectEditor({ project, change, rename, remove }: { project: Pr
       <Field label="Languages" hint="The first is the fallback. Pick a language in the top bar, then type its translations into the slide fields.">
         <input type="text" spellCheck={false} value={locales} onChange={(event) => setLocales(event.target.value)} onBlur={commit} onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()} />
       </Field>
+      <div className="group-head">
+        <span className="label">Export sizes</span>
+        <span className="hint">
+{project.targets?.length ? "Your own choice." : "The standard sizes for your screenshots."} One folder each in the ZIP.
+        </span>
+      </div>
+      <div className="sizes">
+        {meta.devices.map((device) => (
+          <fieldset key={device.id}>
+            <legend>{device.label}</legend>
+            {(Object.keys(meta.targets) as TargetId[])
+              .filter((key) => meta.targets[key].device === device.id)
+              .map((key) => (
+                <label key={key} title={`For "${meta.targets[key].slot}" in App Store Connect`}>
+                  <input type="checkbox" checked={sizes.includes(key)} onChange={(event) => pickSizes(event.target.checked ? [...sizes, key] : sizes.filter((other) => other !== key))} />
+                  <span>{meta.targets[key].label}</span>
+                  <span className="dim">
+                    {meta.targets[key].width}×{meta.targets[key].height}
+                  </span>
+                </label>
+              ))}
+          </fieldset>
+        ))}
+      </div>
+      {project.targets?.length ? (
+        <div>
+          <button className="btn small quiet" type="button" onClick={() => pickSizes([])}>
+            Back to the standard sizes
+          </button>
+        </div>
+      ) : null}
       <div className="group-head">
         <span className="label">Theme</span>
         <span className="hint">Used by every slide and asset that does not override it.</span>

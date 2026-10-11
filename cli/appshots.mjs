@@ -31,7 +31,7 @@ const AGENTS = {
 };
 // Build logs go here, and with --fresh the builds themselves, one folder per project.
 const BUILD_CACHE = path.join(homedir(), "Library", "Caches", "appshots", "build");
-const BOOLEAN_FLAGS = new Set(["clean", "render", "help", "ipad", "dark", "light", "fresh", "image"]);
+const BOOLEAN_FLAGS = new Set(["clean", "render", "help", "ipad", "duo", "dark", "light", "fresh", "image"]);
 
 const HELP = `appshots: run an app in a simulator, capture its screens and sync them with an appShots server
 
@@ -50,6 +50,7 @@ const HELP = `appshots: run an app in a simulator, capture its screens and sync 
       --project <path>                     Workspace or project to build (only when there are several)
       --fresh                              Build in a folder of its own instead of reusing Xcode's build
       --ipad                               On the 13-inch iPad Pro instead of the iPhone Pro Max
+      --duo                                On the iPhone Duo instead
       --sim <name|udid>                    On this simulator instead; it is booted if need be
       --dark, --light                      Set the simulator's appearance before launching
       --lang <code>                        Launch in this language, such as de or pt-BR
@@ -71,6 +72,8 @@ const HELP = `appshots: run an app in a simulator, capture its screens and sync 
       --device [name|udid]                 From a connected, unlocked iPhone or iPad (Xcode 27+)
       --clean                              Simulator only: show 9:41, full battery and signal
       --project <id>                       Upload it to this project straight away (--to works too)
+      --as <iphone|duo|ipad>               File it under this device. Only needed when the server
+                                           cannot tell from the size; upload, run and launch take it too
       --out <dir>                          Where to save the PNG (default: ./raw-shots)
   appshots shoot <project> <names...>    For a person at the Terminal: names each screen in turn, waits
                                          for Return while you open it, then captures and uploads it.
@@ -564,13 +567,20 @@ function availableSimulators() {
     );
 }
 
+const SIM_KINDS = {
+  iphone: { label: "iPhone", flag: "", family: "iPhone", store: "iPhone Pro Max", wanted: [/Pro Max/, /Plus/] },
+  duo: { label: "iPhone Duo", flag: " --duo", family: "iPhone", store: "iPhone Duo", wanted: [/Duo/] },
+  ipad: { label: "iPad", flag: " --ipad", family: "iPad", store: "13-inch iPad Pro", wanted: [/^iPad Pro 13-inch/, /13-inch|12\.9-inch/, /^iPad Pro/] },
+};
+const simKind = (flags) => (flags.duo ? "duo" : flags.ipad ? "ipad" : "iphone");
+
 /**
  * The simulator 'appshots run' uses when none is named: the Pro Max, which is the 6.9-inch size the store
- * asks for, or the 13-inch iPad Pro, on the newest iOS and of the newest model. Null when there is no
- * simulator of that family at all; `fallback` says that another model had to do.
+ * asks for, the iPhone Duo, or the 13-inch iPad Pro, on the newest iOS and of the newest model. Null when
+ * there is no simulator of that kind at all; `fallback` says that another model had to do.
  */
-function recommendedSimulator(simulators, ipad) {
-  const wanted = ipad ? [/^iPad Pro 13-inch/, /13-inch|12\.9-inch/, /^iPad Pro/] : [/Pro Max/, /Plus/];
+function recommendedSimulator(simulators, kind) {
+  const { wanted, family } = SIM_KINDS[kind];
   const rank = (sim) => {
     const at = wanted.findIndex((pattern) => pattern.test(sim.model));
     return at === -1 ? wanted.length : at;
@@ -578,7 +588,8 @@ function recommendedSimulator(simulators, ipad) {
   // The 18 in "iPhone 18 Pro Max", the 5 in "iPad Pro 13-inch (M5)".
   const number = (sim) => Number(sim.model.replace(/[\d.]+-inch/, "").match(/\d+/)?.[0] ?? 0);
   const [best] = simulators
-    .filter((sim) => sim.family === (ipad ? "iPad" : "iPhone"))
+    // The Duo is an iPhone by family but never stands in for one, and nothing stands in for it.
+    .filter((sim) => sim.family === family && /Duo/.test(sim.model) === (kind === "duo"))
     .sort(
       (a, b) =>
         rank(a) - rank(b) ||
@@ -593,13 +604,13 @@ function recommendedSimulator(simulators, ipad) {
 }
 
 const simulatorLabel = (sim) => `${sim.name}${sim.name === sim.model ? "" : `, an ${sim.model}`}, iOS ${sim.os}`;
-const storeModel = (ipad) => (ipad ? "13-inch iPad Pro" : "iPhone Pro Max");
 
 function runSimulator(flags) {
   const simulators = availableSimulators();
   if (typeof flags.sim === "string") return choose(simulators, flags.sim, "simulator", "--sim");
-  const simulator = recommendedSimulator(simulators, Boolean(flags.ipad));
-  if (!simulator) fail(`No ${flags.ipad ? "iPad" : "iPhone"} simulator is installed. Add an iOS simulator in Xcode under Settings > Components.`);
+  if (flags.duo && flags.ipad) fail("Use --duo or --ipad, not both.");
+  const simulator = recommendedSimulator(simulators, simKind(flags));
+  if (!simulator) fail(`No ${SIM_KINDS[simKind(flags)].label} simulator is installed. Add an iOS simulator in Xcode under Settings > Components.`);
   return simulator;
 }
 
@@ -745,6 +756,7 @@ function launchPlan(flags, launchArguments) {
     wait,
     out: flags.out,
     to: flags.to,
+    device: shotDevice(flags),
     // Read now, so a missing setup is said before the build and not after it.
     config: flags.to ? loadConfig() : null,
   };
@@ -767,7 +779,7 @@ async function startApp(simulator, bundleId, plan) {
   // The launch animation, the first data arriving: the screen has to come to rest first.
   spawnSync("sleep", [String(plan.wait)]);
   const shot = capture({ name: plan.capture, out: plan.out, sim: simulator.udid, clean: true });
-  if (plan.config) await upload(plan.config, plan.to, shot.file, shot.name);
+  if (plan.config) await upload(plan.config, plan.to, shot.file, shot.name, plan.device);
   console.log(`Next: appshots launch ${bundleId} --capture <name> --to ${plan.to ?? "<project>"}${which} -- <launch arguments>`);
 }
 
@@ -776,7 +788,7 @@ async function run(flags, launchArguments) {
   const project = findXcodeProject(flags.project);
   const scheme = pickScheme(project, flags.scheme);
   const simulator = runSimulator(flags);
-  const note = simulator.fallback ? `. No ${storeModel(flags.ipad)} is installed, which is the size the store asks for` : "";
+  const note = simulator.fallback ? `. No ${SIM_KINDS[simKind(flags)].store} is installed, which is the size the store asks for` : "";
   console.log(`Building ${scheme} from ${fromHere(project)} for ${simulatorLabel(simulator)}${note}`);
   boot(simulator);
   const app = build(project, scheme, simulator, Boolean(flags.fresh));
@@ -807,8 +819,15 @@ function installedApps(udid) {
 
 // ---------------------------------------------------------------- commands
 
-async function upload(config, project, file, name) {
-  const response = await request(config, "PUT", `/api/projects/${project}/shots/${name}`, {
+/** The device a screenshot is filed under when --as or --duo says so. Left out, the server tells from the size. */
+function shotDevice(flags) {
+  const device = typeof flags.as === "string" ? flags.as.toLowerCase() : flags.as === undefined ? (flags.duo ? "duo" : undefined) : "";
+  if (device !== undefined && !["iphone", "duo", "ipad"].includes(device)) fail("--as needs iphone, duo or ipad.");
+  return device;
+}
+
+async function upload(config, project, file, name, device) {
+  const response = await request(config, "PUT", `/api/projects/${project}/shots/${name}${device ? `?device=${device}` : ""}`, {
     body: readFileSync(file),
     headers: { "content-type": "application/octet-stream" },
   });
@@ -850,10 +869,11 @@ async function uploadAll(config, project, sources, flags) {
     console.log(`${names.size} ${names.size === 1 ? "image" : "images"} uploaded to ${project}. Slides place them by name, as "logo" or in "images".`);
     return;
   }
-  // The server tells an iPhone from an iPad screenshot, so one name can stand for one of each.
+  // The server tells an iPhone, an iPhone Duo and an iPad screenshot apart, so one name can stand for one of each.
+  const device = shotDevice(flags);
   const sent = new Map();
   for (const file of files) {
-    const shot = await upload(config, project, file, slugify(typeof flags.name === "string" ? flags.name : path.parse(file).name));
+    const shot = await upload(config, project, file, slugify(typeof flags.name === "string" ? flags.name : path.parse(file).name), device);
     const earlier = sent.get(`${shot.name} ${shot.device}`);
     if (earlier) console.log(`  ! ${path.basename(file)} replaced ${path.basename(earlier)}: both come out as "${shot.name}". Rename one and upload it again.`);
     sent.set(`${shot.name} ${shot.device}`, file);
@@ -868,6 +888,7 @@ async function uploadAll(config, project, sources, flags) {
 async function shoot(project, names, flags) {
   if (!process.stdin.isTTY) fail("'appshots shoot' is for a person at the Terminal: it waits for a key before each screenshot. An agent takes them with 'appshots capture'.");
   const config = loadConfig();
+  const device = shotDevice(flags);
   await request(config, "GET", `/api/projects/${project}`);
   // Settled once and up front, so a missing or unclear source is said before the first screen, not after it.
   const source = flags.device ? { device: choose(connectedDevices(), flags.device, "device", "--device").udid } : { sim: choose(bootedSimulators(), flags.sim, "simulator", "--sim").udid };
@@ -891,7 +912,7 @@ async function shoot(project, names, flags) {
     }
     if (key !== "\r" && key !== "\n") break;
     const shot = capture({ ...flags, ...source, name: names[at] });
-    await upload(config, project, shot.file, shot.name);
+    await upload(config, project, shot.file, shot.name, device);
     taken.push(shot.name);
   }
   process.stdin.setRawMode(false);
@@ -1017,17 +1038,18 @@ async function check() {
   } else {
     console.log("Simulators:");
     const recommended = new Set();
-    for (const ipad of [false, true]) {
-      const simulator = recommendedSimulator(simulators.value, ipad);
-      const command = `'appshots run${ipad ? " --ipad" : ""}'`;
+    for (const [kind, { label, flag, store }] of Object.entries(SIM_KINDS)) {
+      const simulator = recommendedSimulator(simulators.value, kind);
+      const command = `'appshots run${flag}'`;
       if (!simulator) {
-        console.log(`  ${ipad ? "iPad" : "iPhone"}: none. Add an iOS simulator in Xcode under Settings > Components.`);
+        // Few apps need the Duo, so its absence is not worth a line.
+        if (kind !== "duo") console.log(`  ${label}: none. Add an iOS simulator in Xcode under Settings > Components.`);
         continue;
       }
       recommended.add(simulator.udid);
       const state = simulator.booted ? "booted" : `not booted, ${command} boots it`;
-      const note = simulator.fallback ? `. No ${storeModel(ipad)} is installed, which is the size the store asks for` : "";
-      console.log(`  ${ipad ? "iPad" : "iPhone"}: ${simulatorLabel(simulator)}, ${state}  (${simulator.udid})${note}`);
+      const note = simulator.fallback ? `. No ${store} is installed, which is the size the store asks for` : "";
+      console.log(`  ${label}: ${simulatorLabel(simulator)}, ${state}  (${simulator.udid})${note}`);
     }
     for (const simulator of simulators.value.filter((sim) => sim.booted && !recommended.has(sim.udid))) {
       console.log(`  Also booted: ${simulatorLabel(simulator)}  (${simulator.udid})`);
@@ -1098,8 +1120,9 @@ async function main() {
       // run and launch call it --to, so that is taken here as well.
       const project = typeof flags.to === "string" ? flags.to : flags.project;
       const config = typeof project === "string" ? loadConfig() : null;
+      const device = shotDevice(flags);
       const shot = capture(flags);
-      if (config) await upload(config, project, shot.file, shot.name);
+      if (config) await upload(config, project, shot.file, shot.name, device);
       return;
     }
     case "shoot": {

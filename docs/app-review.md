@@ -37,7 +37,7 @@ appShots has no way to check these, so it is up to you. The [skill](/docs/skill)
 
 ## Apple's own things
 
-- Device frames must show the right kind of device: iPhone screens in an iPhone, iPad screens in an iPad. appShots picks the frame from the shape of the screenshot.
+- Device frames must show the right kind of device: iPhone screens in an iPhone, iPad screens in an iPad. appShots picks the frame from the device the screenshot is from.
 - Do not put the Apple logo, the App Store badge or other Apple artwork on a slide.
 - Do not write Apple's product names into a headline as if Apple endorsed the app.
 

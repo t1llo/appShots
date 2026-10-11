@@ -2,7 +2,7 @@ import path from "node:path";
 import { type BackgroundDef, bodyFont, type CreativeLayoutId, FONT_CSS_URL, type FontId, FONTS } from "./design.ts";
 import { hasBakedIsland } from "./palette.ts";
 import type { DeviceStyle, Project } from "./schema.ts";
-import { PLACEMENTS, type PlacementId } from "./sizes.ts";
+import { isDeviceKind, PLACEMENTS, type PlacementId } from "./sizes.ts";
 import { findShot, listImages, type Shot, shotsDir, type Space } from "./store.ts";
 import { backgroundCss, backgroundLuminance, badgeHtml, CSS, DEFS, deviceHtml, deviceShape, esc, FIT_SCRIPT, logoHtml, pick, resolveBackground, rich, round } from "./template.ts";
 
@@ -147,14 +147,14 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
   const theme = project.theme;
   const layout: CreativeLayoutId = creative.layout ?? "fan";
 
-  // These assets are not tied to one device, so a name with both variants shows the iPhone one unless an iPad frame is asked for.
+  // These assets are not tied to one device, so a name with several variants shows the iPhone one unless another frame is asked for.
   const deviceStyle: DeviceStyle = {
     frame: creative.device?.frame ?? theme.device?.frame,
     color: creative.device?.color ?? theme.device?.color,
     shadow: creative.device?.shadow ?? theme.device?.shadow,
   };
   const scale = creative.device?.scale ?? 1;
-  const prefer = deviceStyle.frame === "ipad" ? "ipad" : "iphone";
+  const prefer = isDeviceKind(deviceStyle.frame) ? deviceStyle.frame : "iphone";
   const names = (creative.screenshots ?? []).slice(0, CREATIVE_CAPACITY[layout]);
   const placed = names.map((name) => ({ name, shot: findShot(shots, name, prefer) }));
   const shotUrl = (shot: Shot) => `/files/${project.id}/shots/${shot.file}?v=${shot.version}`;

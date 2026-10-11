@@ -24,6 +24,7 @@ See [Connect an agent](/docs/connect) and [Update](/docs/update).
 ```bash
 appshots run
 appshots run --ipad --dark --lang de
+appshots run --duo
 appshots run --capture home --to streaks
 ```
 
@@ -35,6 +36,7 @@ appshots run --capture home --to streaks
 | `--project <path>` | The workspace or project to build, when there are several |
 | `--fresh` | Builds in a folder of its own instead of reusing Xcode's build |
 | `--ipad` | On the 13-inch iPad Pro instead of the iPhone Pro Max |
+| `--duo` | On the iPhone Duo instead. Needs an Xcode that has its simulator |
 | `--sim <name or udid>` | On this simulator instead. It is booted if need be |
 | `--dark`, `--light` | Sets the simulator's appearance first |
 | `--lang <code>` | Starts the app in this language, such as `de` or `pt-BR` |
@@ -47,7 +49,7 @@ appshots run --capture home --to streaks
 appshots launch com.example.streaks --capture stats --to streaks -- -appshots stats
 ```
 
-`launch <bundle id>` starts an installed app again without building, to switch screen or language. It takes `--sim`, `--dark`, `--light`, `--lang`, `--capture`, `--to` and `--wait`.
+`launch <bundle id>` starts an installed app again without building, to switch screen or language. It takes `--sim`, `--dark`, `--light`, `--lang`, `--capture`, `--to`, `--as` and `--wait`.
 
 `appshots simctl <arguments>` runs `xcrun simctl` with the right Xcode, for `openurl`, `ui`, `privacy` and `push`.
 
@@ -68,6 +70,7 @@ Options of `capture`, which `shoot` takes too:
 | `--device [name or udid]` | From a connected, unlocked iPhone or iPad. Needs Xcode 27 or newer |
 | `--clean` | Simulator only: shows 9:41, full battery and full signal |
 | `--project <id>` | Uploads it to this project straight away. `--to` works too |
+| `--as <iphone, duo or ipad>` | Files it under this device. Only needed when the server cannot tell from the size. `upload`, `run` and `launch` take it too |
 | `--out <dir>` | Where the PNG is saved. Default `./raw-shots` |
 
 ## Upload and download
@@ -81,8 +84,8 @@ appshots pull streaks --render
 | Command | What it does |
 | --- | --- |
 | `appshots projects` | Lists your projects |
-| `appshots upload <project> <files or folders…>` | Uploads screenshots. The name is the file name, or `--name` for a single file. `--image` uploads logos and artwork instead |
-| `appshots pull <project> [--out <dir>]` | Downloads the rendered set into `./store-screenshots/<project>`. `--render` renders first |
+| `appshots upload <project> <files or folders…>` | Uploads screenshots. The name is the file name, or `--name` for a single file. `--as duo` files them under the iPhone Duo. `--image` uploads logos and artwork instead |
+| `appshots pull <project> [--out <dir>]` | Downloads the rendered set into `./store-screenshots/<project>`, one folder per display of App Store Connect. `--render` renders first |
 | `appshots open [project]` | Opens the Studio in the browser |
 
 ## Call the server's tools

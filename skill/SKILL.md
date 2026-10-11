@@ -18,7 +18,7 @@ A set takes about ten minutes when the user supplies or opens the screens, and a
 - **Two tries per screen.** If a screen does not come up after two attempts, ask the user to open it and capture it then.
 - **Read little.** The README, the root view with its tabs or navigation, and the accent colour. Ten files at most.
 - **Render the whole set once,** then fix single slides. Two rounds of fixes at most.
-- **Only what was asked for.** An iPad set, more languages, and header and search results assets each cost time; make them when the user said yes to them.
+- **Only what was asked for.** An iPad or iPhone Duo set, more languages, and header and search results assets each cost time; make them when the user said yes to them.
 - If you pass the time above, stop, say what is holding things up, and ask how to go on.
 
 ## 1. Check the setup
@@ -61,7 +61,7 @@ Then call `get_design_guide` and read it. It is the current reference for layout
 
 Ask these together, in one message, before doing anything else. Use this agent's tool for asking the user questions if it has one. Leave out whatever the request or `appshots check` has already answered, and do not add questions of your own.
 
-1. **Devices:** iPhone only, iPhone and iPad, or iPad only?
+1. **Devices:** iPhone only, or the iPad or the iPhone Duo as well? One design per device covers every size of it, so never ask about sizes.
 2. **The screens:** how do we get them?
    - *I have screenshots.* They give you the folder.
    - *I open each screen, you capture it.* The quickest way to real content, and the one to recommend.
@@ -104,14 +104,14 @@ appshots upload <project> home.png stats.png
 appshots upload <project> IMG_0412.png --name home
 ```
 
-Then `get_project` lists what is there. Open the files to see what each one shows, and use those names in the slides. iPhone and iPad are told apart by their shape, and one name can hold one of each.
+Then `get_project` lists what is there. Open the files to see what each one shows, and use those names in the slides. iPhone, iPhone Duo and iPad are told apart by the size of the image, and one name can hold one of each. `get_project` says which device each one counts as; if that is wrong, upload it again with `--as iphone`, `--as duo` or `--as ipad`.
 
 ### B. The user opens each screen
 
 First the app has to be running where it will be captured:
 
 - **Simulator, app installed** (it is under `Apps:` in `appshots check`): `appshots launch <bundle id>`, with `--dark` or `--light` and `--lang <code>` as asked.
-- **Simulator, app not installed:** `appshots run`, with the same options, and `--ipad` for the iPad.
+- **Simulator, app not installed:** `appshots run`, with the same options, and `--ipad` for the iPad or `--duo` for the iPhone Duo.
 - **Plugged-in iPhone or iPad:** the user opens the app on it and keeps it unlocked.
 
 Then give the user this one command to paste into Terminal, with the names from the plan in order, and tell them which screen each name means:
@@ -136,6 +136,7 @@ appshots capture --name home --project <project> --device          # the plugged
    ```bash
    appshots run                    # iPhone Pro Max, the size the store asks for
    appshots run --ipad             # the 13-inch iPad Pro, when an iPad set was asked for
+   appshots run --duo              # the iPhone Duo, when a Duo set was asked for
    ```
 
    It finds the project and scheme, boots the simulator, builds in Xcode's own build folder, installs and launches, and prints the bundle id. A first build can take several minutes, so give the command a long timeout and do not start a second one. If it says Xcode is building right now, wait and run it again. React Native, Expo and Flutter apps: use the project's own run command for this one step.
@@ -170,7 +171,7 @@ appshots capture --name home --project <project> --device          # the plugged
       Put it where the root view sets its first tab or route, fill in sample content there if the app would be empty, run `appshots run` once more, and from then on every screen is `appshots launch <bundle id> --capture <name> --to <project> -- -appshots <name>`. Tell the user which file you changed.
    4. Otherwise ask the user to open that screen, and capture it as in B.
 
-For the iPad set, capture the same names on the iPad simulator. One name holds both.
+For the iPad or the Duo set, capture the same names on that simulator. One name holds one screenshot of each device, and every slide picks the one of the device it is drawn for.
 
 The PNGs are also saved in `./raw-shots`. Open each one and look at it before moving on; capture again under the same name to replace it. Do not commit `raw-shots/`.
 
@@ -199,7 +200,7 @@ appshots upload <project> <the 1024 px icon in the asset catalogue> --image --na
 ## 8. Build and render
 
 1. `set_slides` with the whole set and the theme. Take the theme from the app: its accent colour, a muted background in the same family or `auto`, one font for the set. Vary the layouts so it does not read as one template repeated: one device, a close-up, the device beside a column of feature points, two or three devices on one slide, a feature slide.
-2. `render` with `"creatives": []`. Look at the contact sheet it returns as a customer would: is each headline readable at thumbnail size, does the device crop hide the point of the screen, does the set hold together?
+2. `render` with `"creatives": []`. It writes every size of every device the project has screenshots of, from the one design: sizes of the same shape are the same picture scaled, so there is nothing to design per size and no `targets` to pass. Look at the contact sheet it returns for each device as a customer would: is each headline readable at thumbnail size, does the device crop hide the point of the screen, does the set hold together?
 3. Fix what is off with `update_slide` and render only those slides, as in `"slides": [2, 5], "creatives": []`. Two rounds at most. Stop when it is good, not when it is perfect. When the device hides the point of its screen or crowds the copy, move or resize it on that slide with `device`: `scale`, `offsetX` and `offsetY`, in small steps. A placed image that covers something moves with its `x`, `y` and `size`; with an iPad set, look at both, because the same numbers land elsewhere on the wider canvas.
 4. Only if the user asked for them: `set_creative_assets` for the product page header and the search results image, then `render` with `"creatives": ["header", "search"]`. Keep their copy to one short phrase. The preview marks the safe area with a dashed frame so you can check that the copy is inside it; that frame is not in the file. Apple reviews these more strictly than screenshots.
 
@@ -210,8 +211,8 @@ appShots makes still images. If the user asks for an app preview video, say that
 Tell the user:
 
 - The Studio link, {{SERVER}}/#/<project>, where every slide can still be edited by hand.
-- How to get the files: **Export ZIP** in the Studio, or `appshots pull <project>` for `./store-screenshots/<project>`.
+- How to get the files: **Export ZIP** in the Studio, or `appshots pull <project>` for `./store-screenshots/<project>`. There is one folder per display of App Store Connect, and `README.txt` says which folder goes onto which display. A display only takes the files of its own folder.
 - The slides with their headlines, in order.
-- What you assumed or left out: no iPad set, no badges, a screen you could not reach, a file you changed for the debug launch argument.
+- What you assumed or left out: no iPad or Duo set, no badges, a screen you could not reach, a file you changed for the debug launch argument.
 - That header and search results assets, if made, should be checked in App Store Connect's preview before submitting.
 - If the `appshots` MCP server answered 401 and you used the command instead: running the setup command again, from this folder, repairs the connection.

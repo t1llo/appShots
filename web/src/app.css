@@ -706,6 +706,19 @@ input.title:focus-visible {
   font-size: 10px;
   font-weight: 600;
 }
+/* The same tag as a menu, to file a screenshot under another device. */
+.shot select.tag {
+  width: auto;
+  min-height: 0;
+  height: 18px;
+  padding: 0 4px;
+  border: 0;
+  appearance: none;
+  cursor: pointer;
+}
+.shot select.tag:hover {
+  background: rgb(15 15 15 / 0.85);
+}
 .shot .remove {
   position: absolute;
   right: 5px;
@@ -1232,6 +1245,72 @@ input.title:focus-visible {
   min-height: 28px;
   color: var(--text);
   font-size: 13px;
+}
+.dim {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+/* A row of choices of which one is on. */
+.segmented {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--hover);
+}
+.segmented button {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.segmented button:hover {
+  color: var(--text);
+}
+.segmented button.on {
+  background: var(--bg);
+  box-shadow: var(--shadow-card);
+  color: var(--text);
+}
+/* The sizes a project exports, one column of boxes per device. */
+.sizes {
+  display: grid;
+  gap: 12px;
+}
+.sizes fieldset {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.sizes legend {
+  padding: 0 0 4px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.sizes label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.sizes label .dim {
+  margin-left: auto;
+  font-size: 12px;
 }
 .check {
   display: flex;

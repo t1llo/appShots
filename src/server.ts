@@ -39,10 +39,12 @@ import { BACKGROUNDS, BADGE_TONES, BADGE_TYPES, CREATIVE_LAYOUTS, DEVICE_COLOR_I
 import { ICONS } from "./icons.ts";
 import { createMcpServer } from "./mcp.ts";
 import { closeBrowser, defaultTargets, renderProject } from "./render.ts";
-import { creativesSchema, localeSchema, slideSchema, themeSchema } from "./schema.ts";
+import { creativesSchema, localeSchema, slideSchema, targetsSchema, themeSchema } from "./schema.ts";
 import { homePage, siteRoutes } from "./site.ts";
-import { isPlacementId, isTargetId, PLACEMENT_IDS, PLACEMENTS, TARGET_IDS, TARGETS } from "./sizes.ts";
+import { DEVICE_KINDS, DEVICE_LABELS, isDeviceKind, isPlacementId, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, sourceOf, TARGET_IDS, type TargetId, TARGETS } from "./sizes.ts";
 import {
+  CREATIVE_DIR,
+  type CreativeOutput,
   countProjects,
   createProject,
   deleteImage,
@@ -56,7 +58,9 @@ import {
   listOutputs,
   listProjects,
   listShots,
+  moveShot,
   NotFoundError,
+  type OutputSet,
   outDir,
   safeJoin,
   saveImage,
@@ -364,6 +368,7 @@ api.use(express.json({ limit: "2mb" }));
 const projectPatch = z.object({
   name: z.string().min(1).max(80).optional(),
   locales: z.array(localeSchema).min(1).max(40).optional(),
+  targets: targetsSchema.nullable().optional(),
   theme: themeSchema.optional(),
   slides: z.array(slideSchema).max(10).optional(),
   creatives: creativesSchema.optional(),
@@ -383,13 +388,14 @@ async function creativeOutputs(space: Space, id: string) {
 
 async function projectDetail(space: Space, id: string) {
   const [project, shots, images, outputs, creatives] = await Promise.all([getProject(space, id), listShots(space, id), listImages(space, id), listOutputs(space, id), creativeOutputs(space, id)]);
-  return { project, shots, images, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots) };
+  return { project, shots, images, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots, project.targets) };
 }
 
 api.get("/meta", (_req, res) => {
   const { user } = identityOf(res);
   res.json({
     targets: TARGETS,
+    devices: DEVICE_KINDS.map((id) => ({ id, label: DEVICE_LABELS[id] })),
     layouts: LAYOUTS,
     layoutShots: LAYOUT_SHOTS,
     placements: PLACEMENTS,
@@ -437,8 +443,13 @@ api.delete("/projects/:id", async (req, res) => {
 
 api.put("/projects/:id/shots/:name", express.raw({ type: () => true, limit: "40mb" }), async (req, res) => {
   if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new InputError("Send the image file as the request body.");
-  const device = req.query.device === "iphone" || req.query.device === "ipad" ? req.query.device : undefined;
+  const device = isDeviceKind(req.query.device) ? req.query.device : undefined;
   res.status(201).json(await saveShot(spaceOf(res), req.params.id, req.params.name, req.body, device));
+});
+api.patch("/projects/:id/shots/:file", async (req, res) => {
+  await getProject(spaceOf(res), req.params.id);
+  const { device } = z.object({ device: z.enum(DEVICE_KINDS) }).parse(req.body);
+  res.json(await moveShot(spaceOf(res), req.params.id, req.params.file, device));
 });
 api.delete("/projects/:id/shots/:file", async (req, res) => {
   await getProject(spaceOf(res), req.params.id);
@@ -461,14 +472,41 @@ api.post("/projects/:id/render", async (req, res) => {
   res.json({ ...result, outputs: await listOutputs(spaceOf(res), req.params.id), creativeOutputs: await creativeOutputs(spaceOf(res), req.params.id) });
 });
 
+/** The note at the top of the ZIP: which folder goes onto which screenshot slot of App Store Connect. */
+function exportNotes(name: string, outputs: OutputSet[], creatives: CreativeOutput[]): string {
+  const lines = [
+    `${name}: App Store screenshots`,
+    "",
+    "Where each folder goes in App Store Connect",
+    "Open your app, then the version, then Previews and Screenshots. Pick the language at the top right,",
+    "open the display named below, and drag all files of that folder onto it. The numbers keep them in order.",
+    "A display you leave empty shows the screenshots of a larger one, scaled down by Apple.",
+  ];
+  for (const locale of [...new Set([...outputs.map((set) => set.locale), ...creatives.map((output) => output.locale)])]) {
+    lines.push("", `${locale}/`);
+    const sets = outputs.filter((set) => set.locale === locale && isTargetId(set.target));
+    const rows = [
+      ...orderTargets(sets.map((set) => set.target as TargetId)).map((id) => [`${id}/`, `${TARGETS[id].width} x ${TARGETS[id].height}`, TARGETS[id].slot]),
+      ...creatives
+        .filter((output) => output.locale === locale)
+        .map((output) => [`${CREATIVE_DIR}/${output.placement}.png`, `${PLACEMENTS[output.placement].width} x ${PLACEMENTS[output.placement].height}`, `Header and Search Results tab: ${PLACEMENTS[output.placement].label}`]),
+    ];
+    const pad = [0, 1].map((column) => Math.max(...rows.map((row) => row[column]!.length)));
+    for (const row of rows) lines.push(`  ${row[0]!.padEnd(pad[0]!)}  ${row[1]!.padEnd(pad[1]!)}  ${row[2]}`);
+  }
+  lines.push("", "Every file is a PNG without transparency at the exact pixel size of its display.", "");
+  return lines.join("\n");
+}
+
 api.get("/projects/:id/export.zip", async (req, res) => {
   const space = spaceOf(res);
   const { id } = req.params;
-  await getProject(space, id);
+  const project = await getProject(space, id);
   if (req.query.render === "1") await renderProject(space, id);
   const [outputs, creatives] = await Promise.all([listOutputs(space, id), creativeOutputs(space, id)]);
   if (outputs.length === 0 && creatives.length === 0) throw new InputError("Nothing has been rendered yet. Render the project first, or add ?render=1.");
   const entries = [
+    { name: "README.txt", data: Buffer.from(exportNotes(project.name, outputs, creatives)) },
     ...outputs.flatMap((set) => set.files.map((file) => ({ name: `${set.locale}/${set.target}/${file}`, file: path.join(outDir(space, id), set.locale, set.target, file) }))),
     ...creatives.map((output) => ({ name: output.path.split(path.sep).join("/"), file: path.join(outDir(space, id), output.path) })),
   ];
@@ -580,7 +618,7 @@ app.get("/render/:id/:index", async (req, res) => {
   const index = Number(req.params.index);
   if (!Number.isInteger(index) || index < 0 || index >= project.slides.length) throw new NotFoundError(`Slide ${req.params.index} does not exist`);
   const wanted = String(req.query.target ?? "");
-  const target = isTargetId(wanted) ? wanted : defaultTargets(shots)[0]!;
+  const target = isTargetId(wanted) ? wanted : sourceOf(defaultTargets(shots, project.targets)[0]!);
   const locale = localeSchema.safeParse(req.query.locale).data ?? project.locales[0]!;
   res.set("Cache-Control", "no-store").type("html").send(await slideHtml({ space, project, shots, index, target, locale }));
 });

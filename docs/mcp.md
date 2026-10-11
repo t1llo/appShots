@@ -49,11 +49,11 @@ Returns the project's id and how to upload screenshots into it.
 
 ### get_project
 
-`project` is the id. Returns the theme, the slides, the header and search results images, and the screenshots and images uploaded so far.
+`project` is the id. Returns the theme, the slides, the header and search results images, the screenshots and images uploaded so far, and `exportSizes`, the sizes a render writes.
 
 ### update_project
 
-Changes `name`, `locales` or `theme` of `project`. The theme is replaced as a whole, so send all of it.
+Changes `name`, `locales`, `targets` or `theme` of `project`. The theme is replaced as a whole, so send all of it. `targets` is the list of sizes the project exports, and `[]` goes back to the standard ones. See [Sizes](/docs/sizes).
 
 ### set_slides
 
@@ -89,10 +89,10 @@ Sets `header`, `search` or `universal` of `project`. Each one given replaces tha
 | `project` | The id |
 | `slides` | Slide numbers to render, starting at 1. Left out: all |
 | `creatives` | Header and search results images to render. Left out: all of them, along with the slides. Given alone: the slides are left as they are. `[]` skips them |
-| `targets` | Sizes. Default `iphone-6.9`, plus `ipad-13` when iPad screenshots exist. See [Sizes](/docs/sizes) |
+| `targets` | Sizes for this render only. Left out: every size the project exports, which is the standard sizes of each device it has screenshots of. See [Sizes](/docs/sizes) |
 | `locales` | Languages. Default: all of the project's |
 
-Returns a contact sheet per size as a picture, a preview of each wide image with its safe area marked, a link to every PNG, a link to the ZIP, and warnings such as a missing screenshot.
+Returns a contact sheet per device as a picture, a preview of each wide image with its safe area marked, a link to every PNG, a link to the ZIP, and warnings such as a missing screenshot.
 
 ## Try it without an agent
 

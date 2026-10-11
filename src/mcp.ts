@@ -24,8 +24,8 @@ import {
   LOGO_SIZE_IDS,
 } from "./design.ts";
 import { defaultTargets, renderProject } from "./render.ts";
-import { creativeSchema, localeSchema, type Project, slideSchema, slugSchema, themeSchema } from "./schema.ts";
-import { PLACEMENT_IDS, PLACEMENTS, type PlacementId, TARGET_IDS, TARGETS } from "./sizes.ts";
+import { creativeSchema, localeSchema, type Project, slideSchema, slugSchema, targetsSchema, themeSchema } from "./schema.ts";
+import { PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, type Target, TARGET_IDS, TARGETS } from "./sizes.ts";
 import { createProject, getProject, listImages, listProjects, listShots, outDir, type Shot, type Space, type StoredImage, updateProject } from "./store.ts";
 
 function uploadHelp(base: string, id: string): string {
@@ -33,7 +33,7 @@ function uploadHelp(base: string, id: string): string {
     "This server cannot see the user's devices, so raw screenshots are captured on their Mac and uploaded:",
     `- With the bundled CLI: \`appshots upload ${id} <files or folders>\` sends screenshots that exist already. \`appshots capture --name home --project ${id} --clean\` grabs the booted simulator; add \`--device\` for a connected iPhone or iPad. \`appshots launch <bundle id> --capture home --to ${id} -- <launch arguments>\` starts an installed app on one screen and captures it in one go. \`appshots check\` reports what there is to work with.`,
     `- With curl: \`curl -fsS -X PUT -H "Authorization: Bearer $APPSHOTS_TOKEN" -H "Content-Type: image/png" --data-binary @home.png "${base}/api/projects/${id}/shots/home"\` (the token is the one this MCP connection uses)`,
-    "The last path segment is the screenshot name slides refer to. iPhone or iPad is detected from the aspect ratio, and one name can hold both variants.",
+    "The last path segment is the screenshot name slides refer to. iPhone, iPhone Duo or iPad is told from the size of the picture, and one name can hold a variant for each. `get_project` lists what each one was filed under; when that is wrong, upload it again with `--as iphone`, `--as duo` or `--as ipad` (`?device=` with curl).",
     `A logo or other artwork for the slides (see Logo and images) goes up the same way: \`appshots upload ${id} logo.png --image\`, or with curl to \`${base}/api/projects/${id}/images/<name>\`. PNG, SVG, JPEG and WebP are taken, and transparency is kept.`,
   ].join("\n");
 }
@@ -57,10 +57,11 @@ function designGuide(base: string): string {
 ${uploadHelp(base, "<project>")}
 
 ## Output sizes
-${Object.entries(TARGETS)
-  .map(([id, target]) => `- \`${id}\`: ${target.width}×${target.height} (${target.label})`)
+A set is designed once per device: iPhone, iPhone Duo and iPad. One slide set serves all three; each device shows its own variant of a screenshot name. App Store Connect has one screenshot slot per display, and each takes its own pixel size, so a render writes one folder per size:
+${Object.entries(TARGETS as Record<string, Target>)
+  .map(([id, target]) => `- \`${id}\`: ${target.width}×${target.height}, for "${target.slot}"${target.standard ? ", standard" : ""}${target.from ? `, the ${target.from} picture scaled` : ""}`)
   .join("\n")}
-Default is \`iphone-6.9\`, plus \`ipad-13\` once the project has iPad screenshots. Portrait only. Up to 10 slides per set.
+Left to itself, \`render\` writes the standard sizes of every device the project has screenshots of (iPhone while it has none). The others are for older displays and for the Duo's cover display: add them with \`update_project\` \`targets\` only when the user asks. Sizes marked as scaled are the same picture as the size they name, so judge the design on one contact sheet per device. Portrait only. Up to 10 slides per set.
 
 ## Layouts
 ${list(LAYOUTS)}
@@ -102,7 +103,7 @@ ${FONT_GROUPS.map(
   .join("\n")}
 
 ## Device
-\`frame\`: auto, iphone, ipad or none (bare rounded screenshot). \`color\`: ${DEVICE_COLOR_IDS.join(", ")}. \`shadow\`: none, soft or strong.
+\`frame\`: auto, iphone, duo, ipad or none (bare rounded screenshot). \`duo\` is the unfolded iPhone Duo, drawn as a plain thin frame. \`color\`: ${DEVICE_COLOR_IDS.join(", ")}. \`shadow\`: none, soft or strong.
 Where the device stands and how large it is can be set per slide, in the slide's own \`device\`, on top of what the layout does:
 - \`scale\`: 0.4 to 1.6, default 1. Smaller leaves the copy more room; larger turns the screen into a detail shot.
 - \`offsetX\`, \`offsetY\`: a shift in percent of the canvas width and height, -60 to 60. Positive is right and down. \`"offsetY":8\` lets a device bleed further off the bottom; \`"offsetX":-12\` moves it left to make room on the right.
@@ -150,7 +151,7 @@ ${Object.entries(ICON_GROUPS)
 The Brands group holds the logos of other companies, as simplified marks that an icon row can show in each company's own colours. They are trademarks, so use one only where the app really works with that service ("Works with Instagram", "Blocks Shorts on YouTube"), and never to suggest a partnership or an endorsement: App Review turns down screenshots that lean on another company's brand, and so can the company. Header and search results assets take no icon rows at all, because Apple allows no other company's logo there. A logo that is not in the list cannot be added; say so and leave it out, or name the service in the copy.
 
 ## Copy
-- Headline: two to five words, one benefit per slide, verb first where it fits. Wrap a word in *asterisks* to tint it with \`accentColor\` (with no accent set, the rest of the headline dims instead). \`\\n\` forces a line break.
+- Headline: two to five words, one benefit per slide, verb first where it fits. It is set large so it still reads at the small size the store shows screenshots in search results; a longer one shrinks to fit, so shorten the words before reaching for \`textScale\`. Wrap a word in *asterisks* to tint it with \`accentColor\` (with no accent set, the rest of the headline dims instead). \`\\n\` forces a line break.
 - Subheadline: one short sentence, or leave it out.
 - Any text field also accepts \`{"en":"…","de":"…"}\`; list the locales on the project and every one is rendered.
 - Slide 1 does the selling: lead with the main benefit, or use the \`hero\` layout with real social proof. Vary layouts across the set so it does not read as one template repeated.
@@ -184,7 +185,7 @@ function describe(project: Project, shots: Shot[], images: StoredImage[], base: 
     creativeAssets: project.creatives,
     screenshots: shots.map((shot) => ({ name: shot.name, device: shot.device, size: `${shot.width}×${shot.height}` })),
     images: images.map((image) => ({ name: image.name, size: `${image.width}×${image.height}` })),
-    defaultTargets: defaultTargets(shots),
+    exportSizes: defaultTargets(shots, project.targets),
     studio: `${base}/#/${project.id}`,
   };
 }
@@ -314,12 +315,13 @@ export function createMcpServer(base: string, space: Space): McpServer {
     "update_project",
     {
       title: "Update project",
-      description: "Changes a project's name, locales or theme. The theme is replaced as a whole.",
+      description: "Changes a project's name, locales, theme or export sizes. The theme is replaced as a whole.",
       inputSchema: {
         project,
         name: z.string().min(1).max(80).optional(),
         locales: z.array(localeSchema).min(1).max(40).optional(),
         theme: themeSchema.optional(),
+        targets: targetsSchema.optional().describe("Sizes every render and the ZIP hold from now on. [] goes back to the standard sizes of the devices the project has screenshots of"),
       },
     },
     ({ project: id, ...patch }) => guard(async () => json(describe(await updateProject(space, id, patch), await listShots(space, id), await listImages(space, id), base))),
@@ -418,7 +420,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
           .array(z.enum(PLACEMENT_IDS))
           .optional()
           .describe("Header and search results assets to render. Left out, all of them are rendered along with the slides; given alone, the slides are left as they are; [] skips the assets."),
-        targets: z.array(z.enum(TARGET_IDS)).optional().describe("Slide sizes; defaults to iphone-6.9 plus ipad-13 when iPad screenshots exist"),
+        targets: z.array(z.enum(TARGET_IDS)).optional().describe("Sizes for this render only; defaults to the project's export sizes. While iterating, one size per device is enough, such as [\"iphone-6.9\"]"),
         locales: z.array(localeSchema).optional().describe("Defaults to every project locale"),
       },
     },
@@ -427,12 +429,16 @@ export function createMcpServer(base: string, space: Space): McpServer {
         const result = await renderProject(space, id, { targets, locales, creatives, slides: slides?.map((n) => n - 1) });
         const count = result.files.length + result.creatives.length;
         const lines = [`Rendered ${count} PNG${count === 1 ? "" : "s"}.`];
-        for (const sheet of result.sheets) {
-          const size = TARGETS[sheet.target];
-          lines.push("", `${sheet.target} (${size.width}×${size.height}), ${sheet.locale}:`);
-          for (const file of result.files.filter((f) => f.target === sheet.target && f.locale === sheet.locale)) {
-            lines.push(`  ${String(file.slide + 1).padStart(2, "0")}  ${base}/files/${id}/out/${file.path}`);
-          }
+        const sets = new Map<string, typeof result.files>();
+        for (const file of result.files) sets.set(`${file.target} ${file.locale}`, [...(sets.get(`${file.target} ${file.locale}`) ?? []), file]);
+        for (const [first, ...rest] of [...sets.values()].map((set) => set.sort((a, b) => a.slide - b.slide))) {
+          const size = TARGETS[first!.target];
+          const source = sourceOf(first!.target);
+          const copy = source === first!.target ? "" : `, the ${source} picture scaled`;
+          lines.push("", `${first!.target} (${size.width}×${size.height}, for "${size.slot}"${copy}), ${first!.locale}:`);
+          // A scaled size shows nothing its source does not, so its files are named by their folder.
+          if (copy && sets.has(`${source} ${first!.locale}`)) lines.push(`  ${rest.length ? `${rest.length + 1} files` : "1 file"} under ${base}/files/${id}/out/${path.dirname(first!.path)}/`);
+          else for (const file of [first!, ...rest]) lines.push(`  ${String(file.slide + 1).padStart(2, "0")}  ${base}/files/${id}/out/${file.path}`);
         }
         if (result.creatives.length) {
           lines.push("", "Header and search results assets (the dashed frame in the previews marks the safe area and is not in the PNG):");
@@ -442,8 +448,8 @@ export function createMcpServer(base: string, space: Space): McpServer {
         if (result.warnings.length) lines.push("", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`));
 
         const content: CallToolResult["content"] = [{ type: "text", text: lines.join("\n") }];
-        // One sheet per size is enough to judge the design; other locales differ only in copy.
-        const shown = result.sheets.filter((sheet) => sheet.locale === result.sheets[0]!.locale).slice(0, 3);
+        // One sheet per shape is enough to judge the design; other locales differ only in copy.
+        const shown = result.sheets.filter((sheet) => sheet.locale === result.sheets[0]!.locale).slice(0, 4);
         for (const sheet of shown) {
           const data = await readFile(path.join(outDir(space, id), sheet.path));
           content.push({ type: "image", data: data.toString("base64"), mimeType: "image/jpeg" });

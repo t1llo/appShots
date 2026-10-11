@@ -55,7 +55,11 @@ export PATH="$HOME/.local/bin:$PATH"
 
 **A device is empty.** The slide names a screenshot that is not uploaded. The render lists the missing names. Upload it under exactly that name.
 
-**An iPad slide shows a phone screen.** The project has no iPad screenshot under that name. Upload one with the same name. See [Sizes](/docs/sizes#iphone-or-ipad).
+**An iPad slide shows a phone screen.** The project has no iPad screenshot under that name. Upload one with the same name. See [Sizes](/docs/sizes#iphone-iphone-duo-or-ipad).
+
+**App Store Connect says the dimensions are wrong.** Each display only takes its own sizes. Drag the files of the folder named after that display, as listed in the `README.txt` of the ZIP. See [Render and export](/docs/export#upload-to-app-store-connect).
+
+**A screenshot is filed under the wrong device.** Change it with the small menu on its thumbnail in the Studio, or upload it again with `--as iphone`, `--as duo` or `--as ipad`.
 
 **The headline is tiny.** Text shrinks to fit. Shorten the headline, force a line break, or lower the device with the position control.
 

@@ -74,7 +74,7 @@ These fields can be set once in the project's **theme** and again on any slide. 
 
 | Field | Values | Default |
 | --- | --- | --- |
-| `frame` | `auto`, `iphone`, `ipad`, `none`. `auto` matches the screenshot, and `none` shows the bare rounded screen | `auto` |
+| `frame` | `auto`, `iphone`, `duo`, `ipad`, `none`. `auto` matches the screenshot, `duo` is the unfolded iPhone Duo, and `none` shows the bare rounded screen | `auto` |
 | `color` | {{DEVICE_COLORS}} | `black` |
 | `scale` | 0.4 to 1.6 | 1 |
 | `rotate` | -45 to 45 degrees | 0 |

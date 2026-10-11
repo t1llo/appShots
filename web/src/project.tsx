@@ -8,7 +8,10 @@ import {
   type Creative,
   type Detail,
   detailQuery,
+  type DeviceKind,
+  drawnSize,
   errorText,
+  exportSizes,
   label,
   type Meta,
   type PlacedImage,
@@ -37,9 +40,10 @@ const FOCUS_FROM = 1360;
 type Selection = { kind: "slide"; index: number } | { kind: "creative"; placement: PlacementId } | null;
 
 /** The part of a project the Studio edits and sends back. */
-type Saved = Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives">;
+type Saved = Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives"> & { targets: TargetId[] | null };
 
-const snapshot = (project: Project) => JSON.stringify({ name: project.name, locales: project.locales, theme: project.theme, slides: project.slides, creatives: project.creatives } satisfies Saved);
+const snapshot = (project: Project) =>
+  JSON.stringify({ name: project.name, locales: project.locales, targets: project.targets ?? null, theme: project.theme, slides: project.slides, creatives: project.creatives } satisfies Saved);
 const shotsKey = (shots: (Shot | StoredImage)[]) => shots.map((shot) => `${shot.file}:${shot.version}`).join(",");
 
 /** The file drop anywhere in the window goes to whichever project is open, as screenshots or as logos and images. */
@@ -170,7 +174,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   const [dirty, setDirty] = useState(false);
   const [selection, setSelection] = useState<Selection>(initial.project.slides.length ? { kind: "slide", index: 0 } : null);
   const [tab, setTab] = useState<"item" | "project">("item");
-  const [target, setTarget] = useState<TargetId>(initial.defaultTargets[0]!);
+  const [target, setTarget] = useState<TargetId>(() => drawnSize(meta, initial.defaultTargets[0]!));
   const [chosenLocale, setLocale] = useState(initial.project.locales[0]!);
   const [status, setStatusState] = useState({ text: "", error: false });
   const [title, setTitle] = useState<string | null>(null);
@@ -290,7 +294,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   useEffect(() => {
     if (hadShots.current || shots.length === 0) return;
     hadShots.current = true;
-    setTarget(detail.defaultTargets[0]!);
+    setTarget(drawnSize(meta, detail.defaultTargets[0]!));
   }, [shots.length]);
 
   useEffect(() => {
@@ -327,6 +331,18 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
       const creative = project.creatives[placement]!;
       creative.screenshots = [...(creative.screenshots ?? []), shot.name];
     }, true);
+  };
+
+  /** Files a screenshot under another device, for one whose size did not give it away. */
+  const moveShot = async (shot: Shot, device: DeviceKind) => {
+    const label = meta.devices.find((entry) => entry.id === device)!.label;
+    if (shots.some((other) => other.name === shot.name && other.device === device) && !confirm(`"${shot.name}" already has a screenshot for the ${label}. Replace it?`)) return;
+    try {
+      await api("PATCH", `/projects/${id}/shots/${shot.file}`, { device });
+      await reload();
+    } catch (error) {
+      toast(errorText(error), "error");
+    }
   };
 
   const removeShot = async (shot: Shot) => {
@@ -490,13 +506,13 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     setExporting(true);
     try {
       await save();
-      // The standard sizes, and the one picked for the previews when it is another.
-      const targets = [...new Set([...detail.defaultTargets, target])];
-      const result = await api<RenderResponse>("POST", `/projects/${id}/render`, { targets });
+      // Every size of the project: one design per device, and each display of App Store Connect gets its own folder.
+      const result = await api<RenderResponse>("POST", `/projects/${id}/render`, {});
       queryClient.setQueryData(detailQuery(id).queryKey, (current) => current && { ...current, outputs: result.outputs, creativeOutputs: result.creativeOutputs });
       if (result.warnings.length) toast(result.warnings.join("\n"), "warn", 9000);
       const assets = result.creatives.length ? ` and ${plural(result.creatives.length, "header and search results asset")}` : "";
-      toast(`Rendered ${plural(result.files.length, "screenshot")}${assets}. The download starts now.`);
+      const sizes = new Set(result.files.map((file) => file.target)).size;
+      toast(`Rendered ${plural(result.files.length, "screenshot")}${sizes > 1 ? ` in ${sizes} sizes` : ""}${assets}. The download starts now.`);
       const link = document.createElement("a");
       link.href = `/api/projects/${id}/export.zip`;
       link.download = "";
@@ -513,6 +529,17 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   // ---------------------------------------------------------------- render
 
   const size = meta.targets[target];
+  const device = size.device;
+  const sizes = exportSizes(meta, draft, shots);
+  /** The shapes of one device the export holds. Each is drawn on its own, so each has a preview; the other sizes are these scaled. */
+  const shapesOf = (kind: DeviceKind) => {
+    const drawn = [...new Set(sizes.filter((key) => meta.targets[key].device === kind).map((key) => drawnSize(meta, key)))];
+    return drawn.length ? drawn : [(Object.keys(meta.targets) as TargetId[]).find((key) => meta.targets[key].device === kind)!];
+  };
+  const shapes = shapesOf(device).includes(target) ? shapesOf(device) : [target, ...shapesOf(device)];
+  const deviceOrder = meta.devices.map((entry) => entry.id);
+  const orderedShots = [...shots].sort((a, b) => deviceOrder.indexOf(a.device) - deviceOrder.indexOf(b.device));
+  const mixed = new Set(shots.map((shot) => shot.device)).size > 1;
   const slideScale = SLIDE_HEIGHT / size.height;
   const used = new Set([...draft.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]), ...placements.flatMap((where) => draft.creatives[where]?.screenshots ?? [])]);
   const usedImages = new Set([
@@ -612,7 +639,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
               </label>
             </div>
             <div className="shots">
-              {shots.map((shot) => (
+              {orderedShots.map((shot) => (
                 <div
                   key={shot.file}
                   className={`shot${used.has(shot.name) ? " used" : ""}`}
@@ -623,7 +650,23 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
                   onKeyDown={(event) => event.key === "Enter" && event.target === event.currentTarget && assignShot(shot)}
                 >
                   <img src={`/files/${id}/shots/${shot.file}?v=${shot.version}`} alt="" loading="lazy" />
-                  {shot.device === "ipad" ? <span className="tag">iPad</span> : null}
+                  {mixed || shot.device !== "iphone" ? (
+                    <select
+                      className="tag"
+                      aria-label={`Device of ${shot.name}`}
+                      title="The device this screenshot is from. Change it when it was told wrong."
+                      value={shot.device}
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                      onChange={(event) => void moveShot(shot, event.target.value as DeviceKind)}
+                    >
+                      {meta.devices.map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.label.replace("iPhone ", "")}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
                   <button
                     className="remove"
                     type="button"
@@ -712,17 +755,37 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
           <section className="block">
             <div className="section-head wrap">
               <h2>Slides</h2>
-              <span className="hint">Live previews at the exact export size. Up to 10 per set.</span>
-              <label className="device-pick" title="The device the slides are shown for. Export ZIP holds this size along with the standard ones.">
-                Device
-                <select value={target} onChange={(event) => setTarget(event.target.value as TargetId)}>
-                  {(Object.keys(meta.targets) as TargetId[]).map((key) => (
-                    <option key={key} value={key}>
-                      {meta.targets[key].label} · {meta.targets[key].width}×{meta.targets[key].height}
-                    </option>
+              <span className="hint">One design per device, exported at every size.</span>
+              <div className="device-pick">
+                <div className="segmented" role="radiogroup" aria-label="Device the slides are shown for">
+                  {meta.devices.map((entry) => (
+                    <button
+                      key={entry.id}
+                      className={device === entry.id ? "on" : ""}
+                      type="button"
+                      role="radio"
+                      aria-checked={device === entry.id}
+                      title={shots.some((shot) => shot.device === entry.id) ? `Show the slides for the ${entry.label}` : `Show the slides for the ${entry.label}. It has no screenshots of its own yet, so another device's stand in.`}
+                      onClick={() => setTarget(shapesOf(entry.id)[0]!)}
+                    >
+                      {entry.label}
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+                {shapes.length > 1 ? (
+                  <select aria-label="Size shown" title="These sizes have a shape of their own, so each is drawn separately." value={target} onChange={(event) => setTarget(event.target.value as TargetId)}>
+                    {shapes.map((key) => (
+                      <option key={key} value={key}>
+                        {meta.targets[key].label} · {meta.targets[key].width}×{meta.targets[key].height}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="dim">
+                    {size.width}×{size.height}
+                  </span>
+                )}
+              </div>
             </div>
             <div className="slides">
               {draft.slides.map((slide, index) => {
