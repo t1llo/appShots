@@ -2,6 +2,7 @@
 // The previews are iframes of the very pages the renderer screenshots, so what is on screen is what gets exported.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
@@ -47,7 +48,7 @@ type Saved = Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives"
 
 const snapshot = (project: Project) =>
   JSON.stringify({ name: project.name, locales: project.locales, targets: project.targets ?? null, theme: project.theme, slides: project.slides, creatives: project.creatives } satisfies Saved);
-const shotsKey = (shots: (Shot | StoredImage)[]) => shots.map((shot) => `${shot.file}:${shot.version}`).join(",");
+export const shotsKey = (shots: (Shot | StoredImage)[]) => shots.map((shot) => `${shot.file}:${shot.version}`).join(",");
 
 /** The file drop anywhere in the window goes to whichever project is open, as screenshots or as logos and images. */
 export const dropTarget: { upload: ((files: File[], kind: "shot" | "image") => void) | null } = { upload: null };
@@ -55,7 +56,7 @@ export const dropTarget: { upload: ((files: File[], kind: "shot" | "image") => v
 // ---------------------------------------------------------------- previews
 
 /** Loads the new preview underneath and swaps once it has laid itself out, so edits never flash blank. */
-function Stage({ src, frameKey, width, height, scale }: { src: string | null; frameKey: string; width: number; height: number; scale: number }) {
+export function Stage({ src, frameKey, width, height, scale }: { src: string | null; frameKey: string; width: number; height: number; scale: number }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const stage = ref.current!;
@@ -150,6 +151,20 @@ function PlacedHandles(props: { placed: PlacedImage[]; shown: PlacedImage[]; ima
         );
       })}
     </div>
+  );
+}
+
+/** What a project makes of its screenshots: the set for the App Store, or the devices alone. */
+export function ViewSwitch({ id, view }: { id: string; view: "store" | "mockups" }) {
+  return (
+    <nav className="segmented" aria-label="What this project makes">
+      <Link className={view === "store" ? "on" : ""} to="/$projectId" params={{ projectId: id }} aria-current={view === "store" ? "page" : undefined} title="The screenshots for the App Store">
+        App Store
+      </Link>
+      <Link className={view === "mockups" ? "on" : ""} to="/$projectId/mockups" params={{ projectId: id }} aria-current={view === "mockups" ? "page" : undefined} title="The devices alone, on a transparent background">
+        Mockups
+      </Link>
+    </nav>
   );
 }
 
@@ -583,6 +598,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     <div className="main">
       <header className="bar">
         <span className="crumb">{draft.name}</span>
+        <ViewSwitch id={id} view="store" />
         <span className="spacer" />
         <span className={`status${status.error ? " error" : ""}`} role="status">
           {status.text}

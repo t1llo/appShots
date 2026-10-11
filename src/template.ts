@@ -418,11 +418,27 @@ const COPY_MAX: Record<LayoutId, number> = {
   hero: 0.48,
 };
 
+/** A device's shadow as layers: how far down each falls and how far it blurs, both in device widths, and how dark it is. */
+export const SHADOW_LAYERS = {
+  none: [],
+  soft: [
+    { down: 0.045, blur: 0.1, opacity: 0.28 },
+    { down: 0.012, blur: 0.026, opacity: 0.2 },
+  ],
+  strong: [
+    { down: 0.07, blur: 0.14, opacity: 0.5 },
+    { down: 0.02, blur: 0.04, opacity: 0.32 },
+  ],
+};
+
+const boxShadow = (layers: (typeof SHADOW_LAYERS)["soft"]) =>
+  layers.map((layer) => `0 calc(var(--dw)*${layer.down}) calc(var(--dw)*${layer.blur}) rgba(0,0,0,${layer.opacity})`).join(",");
+
 const SHADOWS = {
   // Not "none": the value stands in lists beside other shadows.
   none: "0 0 0 transparent",
-  soft: "0 calc(var(--dw)*.045) calc(var(--dw)*.1) rgba(0,0,0,.28),0 calc(var(--dw)*.012) calc(var(--dw)*.026) rgba(0,0,0,.2)",
-  strong: "0 calc(var(--dw)*.07) calc(var(--dw)*.14) rgba(0,0,0,.5),0 calc(var(--dw)*.02) calc(var(--dw)*.04) rgba(0,0,0,.32)",
+  soft: boxShadow(SHADOW_LAYERS.soft),
+  strong: boxShadow(SHADOW_LAYERS.strong),
 };
 
 interface DeviceOptions {

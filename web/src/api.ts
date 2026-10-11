@@ -1,9 +1,9 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { CreativeLayoutId } from "../../src/design.ts";
-import type { Project, Text } from "../../src/schema.ts";
+import type { Mockups, Project, Text } from "../../src/schema.ts";
 import type { DeviceKind, Placement, PlacementId, Target, TargetId } from "../../src/sizes.ts";
 
-export type { Background, Badge, Creative, DeviceStyle, Feature, IconRow, Logo, PlacedImage, Project, Slide, Text, Theme } from "../../src/schema.ts";
+export type { Background, Badge, Creative, DeviceStyle, Feature, IconRow, Logo, Mockups, PlacedImage, Project, Slide, Text, Theme } from "../../src/schema.ts";
 export type { CreativeLayoutId, DeviceKind, Placement, PlacementId, Target, TargetId };
 
 export interface Meta {
@@ -83,6 +83,26 @@ export interface Detail {
   defaultTargets: TargetId[];
 }
 
+/** One screenshot as a mockup: the page that previews it, and the PNG it is saved as. */
+export interface MockupItem {
+  file: string;
+  name: string;
+  device: DeviceKind;
+  locale?: string;
+  version: number;
+  saveAs: string;
+  /** The size of the preview page. The PNG is cut down to the device and its shadow, so it is smaller. */
+  stage: { width: number; height: number };
+  page: string;
+  png: string;
+}
+
+export interface MockupList {
+  settings: Mockups;
+  locale: string;
+  items: MockupItem[];
+}
+
 /** The size a target is drawn at: itself, or the one it is a scaled copy of. Only those have a preview of their own. */
 export const drawnSize = (meta: Meta, id: TargetId): TargetId => (meta.targets[id].from as TargetId | undefined) ?? id;
 
@@ -130,7 +150,12 @@ export async function api<T = unknown>(method: string, route: string, body?: unk
     payload = JSON.stringify(body);
     headers["content-type"] = "application/json";
   }
-  const response = await fetch(`/api${route}`, { ...init, method, headers, body: payload });
+  const response = await answered(await fetch(`/api${route}`, { ...init, method, headers, body: payload }));
+  return (response.status === 204 ? null : await response.json()) as T;
+}
+
+/** A response that went well. Any other is thrown as the error the server gave for it. */
+async function answered(response: Response): Promise<Response> {
   if (response.status === 401) {
     location.href = "/login";
     throw new Error("Signed out");
@@ -142,13 +167,29 @@ export async function api<T = unknown>(method: string, route: string, body?: unk
     } catch {}
     throw new Error(message);
   }
-  return (response.status === 204 ? null : await response.json()) as T;
+  return response;
+}
+
+/** A file the server makes on request, such as a mockup, by the address the server gave for it. */
+export const fetchFile = async (url: string): Promise<Blob> => (await answered(await fetch(url))).blob();
+
+/** Hands a file to the browser to save under a name. */
+export function saveFile(file: Blob, name: string): void {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(file);
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
 }
 
 export const metaQuery = queryOptions({ queryKey: ["meta"], queryFn: () => api<Meta>("GET", "/meta"), staleTime: Infinity });
 export const projectsQuery = queryOptions({ queryKey: ["projects"], queryFn: () => api<ProjectEntry[]>("GET", "/projects") });
 // Fresh for a moment, so the page that opens right after the route has loaded a project does not fetch it twice.
 export const detailQuery = (id: string) => queryOptions({ queryKey: ["project", id], queryFn: () => api<Detail>("GET", `/projects/${id}`), staleTime: 2000 });
+
+/** The mockups of a project in one language. `drawn` names what they were drawn from, so a change there fetches them again. */
+export const mockupsQuery = (id: string, locale: string, drawn: string) =>
+  queryOptions({ queryKey: ["project", id, "mockups", locale, drawn], queryFn: () => api<MockupList>("GET", `/projects/${id}/mockups?locale=${encodeURIComponent(locale)}`) });
 
 // ---------------------------------------------------------------- small helpers
 

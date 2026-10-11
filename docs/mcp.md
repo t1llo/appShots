@@ -1,6 +1,6 @@
 ---
 title: MCP tools
-description: Reference for the appShots MCP server. The endpoint, how to authenticate, and the nine tools an agent uses to create a project, build slides and render App Store screenshots.
+description: Reference for the appShots MCP server. The endpoint, how to authenticate, and the ten tools an agent uses to create a project, build slides, render App Store screenshots and draw device mockups.
 ---
 
 appShots is a remote MCP server. An agent connects to it once and can then build and render sets by itself.
@@ -95,6 +95,24 @@ Sets `header`, `search` or `universal` of `project`. Each one given replaces tha
 | `locales` | Languages. Default: all of the project's |
 
 Returns a contact sheet per device as a picture, a preview of each wide image with its safe area marked, a link to every PNG, a link to the ZIP, warnings such as a missing screenshot, and how many renders the account has left.
+
+### render_mockups
+
+Draws each raw screenshot in its device with nothing behind it: one transparent PNG per screenshot, for a website, a README or a deck. It needs no slides and uses no render.
+
+| Argument | What it is |
+| --- | --- |
+| `project` | The id |
+| `screenshots` | Names of the screenshots to draw. Left out: all of them |
+| `locale` | The language whose screenshots to draw. Default: the first |
+| `device` | How every mockup is drawn: `frame`, `style`, `color`, `shadow`, `rotate`, `perspective`, `statusBar`, `statusBarTime`, `statusBarColor`. Given, it is laid over what the project had |
+| `width` | The width of each PNG in pixels. Left out: the screenshot pixel for pixel. `null` goes back to that |
+
+```json
+{ "project": "streaks", "device": { "style": "clay", "shadow": "soft", "rotate": -8 }, "width": 1200 }
+```
+
+What is given is saved with the project, so the Studio's Mockups page shows the same. Returns a link to every PNG, a link to the ZIP and a picture of the mockups to check. See [Mockups](/docs/mockups).
 
 ## Try it without an agent
 

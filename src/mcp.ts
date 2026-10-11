@@ -26,10 +26,11 @@ import {
   STATUS_BARS,
 } from "./design.ts";
 import { rendersLeft } from "./accounts.ts";
-import { defaultTargets, renderProject } from "./render.ts";
-import { creativeSchema, localeSchema, type Project, slideSchema, slugSchema, targetsSchema, themeSchema } from "./schema.ts";
+import { mockupName, mockupShots } from "./mockup.ts";
+import { defaultTargets, type Mockup, mockupSheet, renderMockup, renderProject } from "./render.ts";
+import { creativeSchema, localeSchema, mockupsSchema, type Project, slideSchema, slugSchema, targetsSchema, themeSchema } from "./schema.ts";
 import { PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, type Target, TARGET_IDS, TARGETS } from "./sizes.ts";
-import { createProject, getProject, listImages, listProjects, listShots, outDir, type Shot, type Space, type StoredImage, updateProject } from "./store.ts";
+import { createProject, getProject, InputError, listImages, listProjects, listShots, outDir, type Shot, shotLocale, type Space, type StoredImage, updateProject } from "./store.ts";
 
 function uploadHelp(base: string, id: string): string {
   return [
@@ -63,6 +64,7 @@ function designGuide(base: string, space: Space): string {
 4. \`render\`. It returns a contact sheet image: look at it, fix what is off with \`update_slide\`, render again.
 5. Optionally \`set_creative_assets\` for the product page header and the search results asset (see below), and \`render\` again.
 6. The user downloads the PNGs from ${base}/#/<project> or with \`appshots pull <project>\`.${renderBudget(space)}
+When what is wanted is not store screenshots but the devices alone, for a website or a README, see Mockups at the end: that needs only steps 1 and 2.
 
 ## Uploading
 ${uploadHelp(base, "<project>")}
@@ -193,7 +195,14 @@ Apple reviews these assets and is stricter than with screenshots:
 - No prices, discounts, web addresses or copyright symbols, and no logos of or references to other platforms.
 - No claims or awards that cannot be verified, and no Apple accolades at all (Editors' Choice, App of the Day, Game of the Day, Apple Design Award).
 - Translate the text for every language the asset is uploaded for, or leave it out. The content has to suit a 4+ age rating.
-\`render\` returns a preview of each asset with the safe area drawn as a dashed frame, which is not part of the PNG. Check that nothing important falls outside it.`;
+\`render\` returns a preview of each asset with the safe area drawn as a dashed frame, which is not part of the PNG. Check that nothing important falls outside it.
+
+## Mockups
+For a website, a README, a press kit or a slide deck, \`render_mockups\` draws each raw screenshot inside its device with nothing behind it: one transparent PNG per screenshot, cut to the device. There is no slide, no copy and no background, so nothing has to be designed first, and it uses no render. These are not for App Store Connect, which takes no transparency.
+- \`device\` sets how every mockup is drawn, with the fields of Device above that make sense for a device on its own: \`frame\`, \`style\`, \`color\`, \`shadow\`, \`rotate\`, \`perspective\`, \`statusBar\`, \`statusBarTime\`, \`statusBarColor\`. It is separate from the theme. A mockup casts no shadow unless \`shadow\` asks for one, so it sits on a page of any colour; a shadow is part of the PNG and is made for a light page.
+- \`width\` is the width of each PNG in pixels. Left out, the screenshot is shown pixel for pixel, which is the sharpest and suits a page that scales the picture itself. A turned device makes a wider picture than an upright one.
+- \`screenshots\` picks some by name; left out, every screenshot of the project is drawn, each device variant as its own file named \`<name>-<device>.png\`.
+What is given is saved with the project, so ${base}/#/<project>/mockups shows the same, and the user can change it there. They download the PNGs from that page, from the links the tool returns, or with \`appshots mockups <project>\`, which puts them in \`./mockups/<project>/\`: the place to send them when the pictures are to go into a repository. A line drawing (\`outline\`, \`sketch\`) is drawn in near-black unless a \`color\` is set; on a dark page give it \`"color":"silver"\`.`;
 }
 
 function describe(project: Project, shots: Shot[], images: StoredImage[], base: string) {
@@ -204,6 +213,7 @@ function describe(project: Project, shots: Shot[], images: StoredImage[], base: 
     theme: project.theme,
     slides: project.slides.map((slide, i) => ({ slide: i + 1, ...slide })),
     creativeAssets: project.creatives,
+    mockups: project.mockups,
     screenshots: shots.map((shot) => ({ name: shot.name, device: shot.device, ...(shot.locale ? { locale: shot.locale } : {}), size: `${shot.width}×${shot.height}` })),
     images: images.map((image) => ({ name: image.name, size: `${image.width}×${image.height}` })),
     exportSizes: defaultTargets(shots, project.targets),
@@ -481,6 +491,58 @@ export function createMcpServer(base: string, space: Space): McpServer {
           content.push({ type: "image", data: await creativePreview(path.join(outDir(space, id), file.path), file.placement), mimeType: "image/jpeg" });
         }
         return { content };
+      }),
+  );
+
+  server.registerTool(
+    "render_mockups",
+    {
+      title: "Render device mockups",
+      description:
+        "Draws the project's raw screenshots inside their devices with nothing behind them: one transparent PNG per screenshot, for a website, a README or a press kit. Needs no slides and uses no render. Not for App Store Connect, which takes no transparency. Returns a preview and download links.",
+      inputSchema: {
+        project,
+        screenshots: z.array(slugSchema).optional().describe("Screenshot names to draw; every screenshot when omitted"),
+        locale: localeSchema.optional().describe("The language whose screenshots are drawn. Defaults to the project's first"),
+        device: mockupsSchema.shape.device.describe("How every mockup is drawn. Saved with the project and replaces what was set before; left out, the saved one is used"),
+        width: mockupsSchema.shape.width.unwrap().nullable().optional().describe("Width of each PNG in pixels, saved with the project. null goes back to showing the screenshot pixel for pixel"),
+      },
+    },
+    ({ project: id, screenshots, locale, device, width }) =>
+      guard(async () => {
+        let current = await getProject(space, id);
+        if (device !== undefined || width !== undefined) {
+          const mockups = { ...current.mockups, ...(device ? { device } : {}) };
+          if (width === null) delete mockups.width;
+          else if (width !== undefined) mockups.width = width;
+          current = await updateProject(space, id, { mockups });
+        }
+        const shots = await listShots(space, id);
+        if (shots.length === 0) throw new InputError(`This project has no screenshots yet, so there is nothing to make mockups of.\n\n${uploadHelp(base, id)}`);
+        const language = locale ? (shotLocale(current, locale) ?? current.locales[0]!) : current.locales[0]!;
+        const unknown = (screenshots ?? []).filter((name) => !shots.some((shot) => shot.name === name));
+        if (unknown.length) throw new InputError(`No screenshot is uploaded under ${unknown.map((name) => `"${name}"`).join(", ")}. The project has: ${[...new Set(shots.map((shot) => shot.name))].join(", ")}.`);
+        const wanted = mockupShots(current, shots, language).filter((shot) => !screenshots?.length || screenshots.includes(shot.name));
+
+        const drawn: Mockup[] = [];
+        const lines = [`Drew ${wanted.length} mockup${wanted.length === 1 ? "" : "s"}, each a PNG with nothing behind the device.`, ""];
+        const pad = Math.max(...wanted.map((shot) => mockupName(shot).length));
+        for (const shot of wanted) {
+          const mockup = await renderMockup(space, current, shot);
+          drawn.push(mockup);
+          lines.push(`  ${mockupName(shot).padEnd(pad)}  ${mockup.width}×${mockup.height}  ${base}/api/projects/${id}/mockups/${encodeURIComponent(shot.file)}`);
+        }
+        const query = language === current.locales[0] ? "" : `?locale=${encodeURIComponent(language)}`;
+        lines.push(
+          "",
+          `ZIP of them all: ${base}/api/projects/${id}/mockups.zip${query} (or \`appshots mockups ${id}${query ? ` --lang ${language}` : ""}\`, which unpacks it into ./mockups/${id}/)`,
+          `Studio: ${base}/#/${id}/mockups`,
+          "",
+          "The preview below shows them on grey. The PNGs themselves are transparent around the device.",
+        );
+        // Eight are enough to judge the look; the rest differ only in the screenshot.
+        const sheet = await mockupSheet(drawn.slice(0, 8));
+        return { content: [{ type: "text", text: lines.join("\n") }, { type: "image", data: sheet.toString("base64"), mimeType: "image/jpeg" }] };
       }),
   );
 

@@ -1,6 +1,6 @@
 ---
 title: HTTP API
-description: Reference for the appShots HTTP API. Upload raw screenshots and images, read and change projects, render, and download the finished set as a ZIP, with a bearer token.
+description: Reference for the appShots HTTP API. Upload raw screenshots and images, read and change projects, render, download the finished set as a ZIP, and fetch device mockups, with a bearer token.
 ---
 
 Everything the Studio does goes through a small JSON API. Use it from a script or from CI. For an agent, [MCP](/docs/mcp) is the better fit.
@@ -23,7 +23,7 @@ Create the token under **Connect an agent** in the Studio. The examples expect i
 | `GET /api/projects` | Lists your projects |
 | `POST /api/projects` | Creates one. Body: `name`, and optionally `locales`, `targets`, `theme`, `slides`, `creatives` |
 | `GET /api/projects/:id` | Returns the project with its screenshots, images and rendered files |
-| `PUT /api/projects/:id` | Changes any of `name`, `locales`, `targets`, `theme`, `slides`, `creatives`. Each one given is replaced as a whole |
+| `PUT /api/projects/:id` | Changes any of `name`, `locales`, `targets`, `theme`, `slides`, `creatives`, `mockups`. Each one given is replaced as a whole |
 | `DELETE /api/projects/:id` | Deletes it with everything in it |
 
 ```bash
@@ -109,6 +109,29 @@ Ask `GET /api/renders/<id>` until `state` is no longer `queued` or `running`. It
 ### Counted renders
 
 Every answer to a render carries `rendersLeft`: how many the account has left, or `null` where they are not counted. Each render uses one, and one that fails or is cancelled uses none. At zero a render is refused with status 400. See [Render and export](/docs/export#how-many-renders).
+
+## Mockups
+
+Each screenshot in its device on a transparent background. They are drawn when they are asked for and use no render. See [Mockups](/docs/mockups).
+
+```bash
+curl -s -o home-iphone.png "{{SERVER}}/api/projects/streaks/mockups/home.iphone.png?width=1200" \
+  -H "Authorization: Bearer $APPSHOTS_TOKEN"
+```
+
+| Request | What it does |
+| --- | --- |
+| `GET /api/projects/:id/mockups` | Lists them: `settings`, and per mockup its `name`, `device`, the `png` address and the name to save it as. `?locale=de-DE` for another language |
+| `GET /api/projects/:id/mockups/:file` | One as a PNG. `:file` is the `file` value of a screenshot. `?width=1200` sets the width for this request, and `?download=1` sends it as a download |
+| `GET /api/projects/:id/mockups.zip` | All of them as a ZIP. `?locale=de-DE` for one language only |
+
+How the device is drawn is the project's `mockups` value, set with `PUT /api/projects/:id`:
+
+```json
+{ "mockups": { "device": { "style": "clay", "color": "silver", "shadow": "soft", "rotate": -8 }, "width": 1200 } }
+```
+
+`device` takes `frame`, `style`, `color`, `shadow`, `rotate`, `perspective`, `statusBar`, `statusBarTime` and `statusBarColor`, as on [Slides](/docs/slides#device). Without `width`, the screenshot is shown pixel for pixel. To try settings without saving them, add them to a request as `?settings=<the same JSON, URL-encoded>`.
 
 ## What a token cannot do
 

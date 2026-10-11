@@ -1,7 +1,7 @@
 ---
 title: The appshots command
 nav: Command line
-description: Reference for the appshots command line tool on the Mac. Setup, update, check, run an app in the iOS Simulator, capture and upload screens, pull the finished set, and call the server's tools.
+description: Reference for the appshots command line tool on the Mac. Setup, update, check, run an app in the iOS Simulator, capture and upload screens, pull the finished set, download mockups, and call the server's tools.
 ---
 
 `appshots` is one small Node.js file with no dependencies. It runs your app in a simulator, captures screens, moves files between your Mac and the server, and can call every tool the server has. The [setup command](/docs/connect) installs it as `~/.local/bin/appshots`.
@@ -88,7 +88,33 @@ appshots pull streaks --render
 | `appshots projects` | Lists your projects |
 | `appshots upload <project> <files or folders…>` | Uploads screenshots. The name is the file name, or `--name` for a single file. `--as duo` files them under the iPhone Duo. `--lang de-DE` files them under that language. `--image` uploads logos and artwork instead |
 | `appshots pull <project> [--out <dir>]` | Downloads the rendered set into `./store-screenshots/<project>`, one folder per display of App Store Connect. `--render` renders first |
+| `appshots mockups <project>` | Downloads every screenshot in its device on a transparent background. See [Mockups](#mockups) |
 | `appshots open [project]` | Opens the Studio in the browser |
+
+## Mockups
+
+```bash
+appshots mockups streaks
+appshots mockups streaks --style clay --color silver --shadow soft --rotate -8
+appshots mockups streaks --width 1200 --out ./website/img
+```
+
+`mockups` saves one transparent PNG per screenshot into `./mockups/<project>`, named `<screenshot>-<device>.png`. It needs no slides and uses no render. What the options set is saved with the project, so the Studio's Mockups page shows the same, and the next call without options draws them the same way.
+
+| Option | What it does |
+| --- | --- |
+| `--out <dir>` | Where the files go. Default `./mockups/<project>` |
+| `--lang <code>` | Only this language's. Left out: the first language's, and a folder per other language for the screenshots it has of its own |
+| `--style <look>` | `real`, `clay`, `outline` or `sketch` |
+| `--color <colour>` | `black`, `silver`, `natural`, `gold`, `blue` or `orange` |
+| `--shadow <kind>` | `none`, `soft` or `strong` |
+| `--rotate <degrees>` | The tilt, such as `-8` |
+| `--perspective <side>` | A 3D turn: `none`, `left` or `right` |
+| `--status-bar <kind>`, `--time <9:41>` | A clean status bar (`none`, `cover` or `overlay`) and the time it shows |
+| `--frame <frame>` | `none` for the bare screenshot with rounded corners |
+| `--width <pixels>` | The width of each PNG. `auto`, the default, shows the screenshot pixel for pixel |
+
+See [Mockups](/docs/mockups).
 
 ## Call the server's tools
 

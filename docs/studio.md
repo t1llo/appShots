@@ -1,6 +1,6 @@
 ---
 title: The Studio
-description: A tour of the appShots Studio, the editor in the browser. Projects, slides, the theme, screenshots, logos and images, languages, header and search results images, and Export ZIP.
+description: A tour of the appShots Studio, the editor in the browser. Projects, slides, the theme, screenshots, logos and images, languages, header and search results images, Export ZIP, and mockups.
 ---
 
 The Studio is the editor at [{{SERVER}}](/studio). It shows every slide as a live preview at the exact export size. Whatever an agent builds through MCP appears here within a few seconds, and everything it builds can be changed by hand.
@@ -71,6 +71,10 @@ The render runs on the server, in the background. You can keep editing, open ano
 - **Notify me when it is done** asks your browser for permission to show a notification, for when the tab is in the background.
 - A render an agent starts shows up in the same list.
 - The number beside **Renders** is how many your account has left. See [Accounts, tokens and limits](/docs/accounts#renders).
+
+## Mockups
+
+The switch at the top of a project goes from **App Store** to **Mockups**: every screenshot in its device with nothing behind it, to download as a transparent PNG for a website or a README. The device's look, colour, shadow and tilt are set on the right and apply to all of them. See [Mockups](/docs/mockups).
 
 ## The sidebar
 

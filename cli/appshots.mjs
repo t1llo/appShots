@@ -91,6 +91,20 @@ const HELP = `appshots: run an app in a simulator, capture its screens and sync 
                                            slides: PNG, SVG, JPEG or WebP, transparency kept
   appshots pull <project> [--out <dir>]  Download the rendered screenshots and header and search
                                          results assets (--render renders first)
+  appshots mockups <project> [options]   Download every screenshot inside its device with nothing behind
+                                         it: one transparent PNG each, for a website or a README. Needs
+                                         no slides and uses no render
+      --out <dir>                          Where to put them (default: ./mockups/<project>)
+      --lang <code>                        Only this language's. Left out: the first language's, and a
+                                           folder per other language for the screenshots it has of its own
+      --style <real|clay|outline|sketch>   How the device is drawn. This and the next ones are saved
+      --color <colour>                     with the project, so the Studio's Mockups page shows the same:
+      --shadow <none|soft|strong>          black, silver, natural, gold, blue or orange; a shadow under
+      --rotate <degrees>                   the device; its tilt, such as -8; a 3D turn to the left or
+      --perspective <none|left|right>      right; a clean status bar (none, cover or overlay) and the
+      --status-bar <kind>, --time <9:41>   time it shows; and --frame none for the bare screenshot
+      --width <pixels>                     Width of each PNG. auto, the default, shows the screenshot
+                                           pixel for pixel
   appshots open [project]                Open the Studio in the browser
   appshots tools [tool]                  List the server's tools, or one tool's arguments
   appshots call <tool> [arguments]       Call one. Arguments are JSON: inline, @file.json, or - for stdin
@@ -964,6 +978,43 @@ async function pull(config, project, flags) {
   console.log(`Screenshots are in ${outDir}`);
 }
 
+/** The flags of `mockups` that say how the device is drawn, and the setting each one is on the server. */
+const MOCKUP_FLAGS = { frame: "frame", style: "style", color: "color", shadow: "shadow", rotate: "rotate", perspective: "perspective", "status-bar": "statusBar", time: "statusBarTime" };
+
+async function mockups(config, project, flags) {
+  const device = {};
+  for (const [flag, field] of Object.entries(MOCKUP_FLAGS)) {
+    if (flags[flag] === true) fail(`--${flag} needs a value.`);
+    if (flags[flag] !== undefined) device[field] = field === "rotate" ? Number(flags[flag]) : flags[flag];
+  }
+  if (flags.width === true) fail("--width needs a number of pixels, or auto.");
+  // What is set here is saved with the project, laid over what it had. The server says what it does not take.
+  if (Object.keys(device).length || flags.width !== undefined) {
+    const { project: current } = await (await request(config, "GET", `/api/projects/${project}`)).json();
+    const next = { ...current.mockups, device: { ...current.mockups?.device, ...device } };
+    if (flags.width === "auto") delete next.width;
+    else if (flags.width !== undefined) next.width = Number(flags.width);
+    await request(config, "PUT", `/api/projects/${project}`, { body: JSON.stringify({ mockups: next }), headers: { "content-type": "application/json" } });
+  }
+
+  const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join("mockups", project));
+  const language = shotLanguage(flags);
+  const response = await request(config, "GET", `/api/projects/${project}/mockups.zip${language ? `?locale=${encodeURIComponent(language)}` : ""}`);
+  const dir = mkdtempSync(path.join(tmpdir(), "appshots-"));
+  const zip = path.join(dir, "mockups.zip");
+  try {
+    writeFileSync(zip, Buffer.from(await response.arrayBuffer()));
+    mkdirSync(outDir, { recursive: true });
+    const result = spawnSync("unzip", ["-o", "-q", zip, "-d", outDir], { encoding: "utf8" });
+    if (result.status !== 0) fail(`Could not unpack the download: ${(result.stderr || result.error?.message || "").trim()}`);
+    const listed = spawnSync("unzip", ["-Z1", zip], { encoding: "utf8" });
+    const count = listed.status === 0 ? listed.stdout.split("\n").filter((name) => name.endsWith(".png")).length : 0;
+    console.log(`${count ? `${count} mockup${count === 1 ? " is" : "s are"}` : "The mockups are"} in ${outDir}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 /** One call to the server's MCP endpoint, which answers each request by itself and in plain JSON. */
 async function rpc(config, method, params) {
   const response = await request(config, "POST", "/mcp", {
@@ -1166,6 +1217,9 @@ async function main() {
     case "pull":
       if (!positional[0]) fail("Usage: appshots pull <project> [--out <dir>] [--render]");
       return pull(loadConfig(), positional[0], flags);
+    case "mockups":
+      if (!positional[0]) fail("Usage: appshots mockups <project> [--out <dir>] [--lang <code>] [--style clay] [--color silver] [--shadow soft] [--rotate -8] [--width 1200]");
+      return mockups(loadConfig(), positional[0], flags);
     case "projects": {
       const projects = await (await request(loadConfig(), "GET", "/api/projects")).json();
       console.log(projects.map((p) => `${p.id}  ${p.name}  (${p.slides} slides)`).join("\n") || "No projects yet.");

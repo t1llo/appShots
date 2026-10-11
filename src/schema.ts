@@ -164,6 +164,18 @@ export const creativesSchema = z.object({
   universal: creativeSchema.optional().describe("One 16:9 file, 5244×2950, that App Store Connect crops for both places"),
 });
 
+/**
+ * How the project's screenshots are drawn as mockups: each one in its device on a transparent background, for a
+ * website or a README. Kept apart from the theme, because a mockup has no slide around it.
+ */
+export const mockupsSchema = z.object({
+  device: deviceSchema
+    .pick({ frame: true, style: true, color: true, shadow: true, rotate: true, perspective: true, statusBar: true, statusBarTime: true, statusBarColor: true })
+    .optional()
+    .describe("The device every mockup is drawn in. Without a shadow unless `shadow` asks for one"),
+  width: z.number().int().min(200).max(4000).optional().describe("Width of each PNG in pixels. Left out, the screenshot is shown pixel for pixel"),
+});
+
 /** The sizes a project exports. Left out, it is the standard sizes of each device the project has screenshots of. */
 export const targetsSchema = z
   .array(z.enum(TARGET_IDS))
@@ -180,6 +192,7 @@ export const projectSchema = z.object({
   theme: themeSchema,
   slides: z.array(slideSchema).max(10),
   creatives: creativesSchema.default({}),
+  mockups: mockupsSchema.default({}),
 });
 
 export type Text = z.infer<typeof text>;
@@ -194,6 +207,7 @@ export type Theme = z.infer<typeof themeSchema>;
 export type Slide = z.infer<typeof slideSchema>;
 export type Creative = z.infer<typeof creativeSchema>;
 export type Creatives = z.infer<typeof creativesSchema>;
+export type Mockups = z.infer<typeof mockupsSchema>;
 export type Project = z.infer<typeof projectSchema>;
 
 export const localeSchema = locale;

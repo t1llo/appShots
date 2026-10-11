@@ -127,7 +127,7 @@ export async function createProject(
 export async function updateProject(
   space: Space,
   id: string,
-  patch: Partial<Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives">> & { targets?: Project["targets"] | null },
+  patch: Partial<Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives" | "mockups">> & { targets?: Project["targets"] | null },
 ): Promise<Project> {
   const current = await getProject(space, id);
   const defined: Record<string, unknown> = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));

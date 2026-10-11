@@ -8,6 +8,7 @@ import { type ReactNode, StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { detailQuery, errorText, metaQuery, projectsQuery } from "./api.ts";
 import { DialogHost, type DialogKind, OpenDialog, useOpenDialog } from "./dialogs.tsx";
+import { MockupsPage } from "./mockups.tsx";
 import { dropTarget, ProjectPage } from "./project.tsx";
 import { RenderList, useRenderNotes, useRenders } from "./renders.tsx";
 import { type Appearance, readAppearance, setAppearance } from "./theme.ts";
@@ -251,12 +252,18 @@ function Home() {
   );
 }
 
-function ProjectRoute() {
-  const { projectId } = projectRoute.useParams();
+/** A project's page: the App Store set, or its mockups. */
+function ProjectRoute({ projectId, mockups = false }: { projectId: string; mockups?: boolean }) {
   const meta = useQuery(metaQuery).data!;
   const detail = useQuery(detailQuery(projectId));
   const open = useOpenDialog();
-  if (detail.data) return <ProjectPage key={projectId} meta={meta} initial={detail.data} openConnect={() => open("connect")} />;
+  if (detail.data) {
+    return mockups ? (
+      <MockupsPage key={projectId} meta={meta} initial={detail.data} />
+    ) : (
+      <ProjectPage key={projectId} meta={meta} initial={detail.data} openConnect={() => open("connect")} />
+    );
+  }
   if (!detail.error) return <Blank />;
   return (
     <Message title="This project could not be opened" text={errorText(detail.error)}>
@@ -269,9 +276,10 @@ function ProjectRoute() {
 
 const rootRoute = createRootRoute({ component: Shell });
 const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Home });
-const projectRoute = createRoute({ getParentRoute: () => rootRoute, path: "$projectId", component: ProjectRoute });
+const projectRoute = createRoute({ getParentRoute: () => rootRoute, path: "$projectId", component: () => <ProjectRoute projectId={projectRoute.useParams().projectId} /> });
+const mockupsRoute = createRoute({ getParentRoute: () => rootRoute, path: "$projectId/mockups", component: () => <ProjectRoute projectId={mockupsRoute.useParams().projectId} mockups /> });
 
-const router = createRouter({ routeTree: rootRoute.addChildren([homeRoute, projectRoute]), history: createHashHistory() });
+const router = createRouter({ routeTree: rootRoute.addChildren([homeRoute, projectRoute, mockupsRoute]), history: createHashHistory() });
 
 declare module "@tanstack/react-router" {
   interface Register {

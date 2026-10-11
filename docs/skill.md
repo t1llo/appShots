@@ -20,6 +20,8 @@ Open the agent in your app's repository, in a new session, then:
 
 Or just ask for App Store screenshots. An agent that has the skill installed picks it up. Not installed yet? See [Connect an agent](/docs/connect).
 
+The same skill makes [mockups](/docs/mockups): ask for "iPhone mockups of the app for the website" or "a transparent picture of the home screen for the README", and the agent gets the screens, draws each one in its device on a transparent background and puts the files where you want them. It asks no questions for that and writes no headlines.
+
 ## What the agent does
 
 1. **Checks the setup** with `appshots check`: the server, the token, Xcode, the project, simulators and devices. If the server has a newer skill, it updates itself first.

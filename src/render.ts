@@ -6,9 +6,11 @@ import sharp from "sharp";
 import { holdRender } from "./accounts.ts";
 import { config } from "./config.ts";
 import { CREATIVE_CAPACITY } from "./creative.ts";
-import { LOCALE, type Project } from "./schema.ts";
+import { mockupStage } from "./mockup.ts";
+import { LOCALE, type Mockups, type Project } from "./schema.ts";
 import { DEVICE_LABELS, type DeviceKind, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, standardTargets, TARGETS, type TargetId } from "./sizes.ts";
 import { CREATIVE_DIR, findShot, getProject, InputError, listImages, listShots, NotFoundError, outDir, type Shot, type Space } from "./store.ts";
+import { SHADOW_LAYERS } from "./template.ts";
 
 export interface RenderRequest {
   targets?: TargetId[];
@@ -257,6 +259,168 @@ export async function renderProject(space: Space, id: string, request: RenderReq
   return startRender(space, id, request).finished;
 }
 
+const local = `127.0.0.1:${config.port}`;
+
+/** A browser window of an exact size that reaches this server as the account, and nothing else. */
+async function openContext(space: Space, size: { width: number; height: number }) {
+  const instance = await getBrowser();
+  const context = await instance.newContext({
+    viewport: { width: size.width, height: size.height },
+    deviceScaleFactor: 1,
+    extraHTTPHeaders: { "x-appshots-internal": config.internalSecret, "x-appshots-space": space.id },
+  });
+  // The pages only ever need this server; nothing they contain may make the browser call out, least of all with those headers.
+  await context.route("**/*", (route) => {
+    const url = new URL(route.request().url());
+    return url.protocol === "data:" || url.host === local ? route.continue() : route.abort();
+  });
+  return context;
+}
+
+export interface Mockup {
+  png: Buffer;
+  width: number;
+  height: number;
+}
+
+// Drawn mockups are kept a while: the Studio, a ZIP and an agent ask for the same ones again and again.
+const mockups = new Map<string, Mockup>();
+const MOCKUPS_KEPT_BYTES = 96 * 1024 * 1024;
+const drawing = new Map<string, number>();
+/** Mockups one account may have waiting to be drawn. They cost no render, so this is what keeps the queue free. */
+const MAX_DRAWING = 4;
+
+/**
+ * Draws one screenshot in its device on a transparent background and cuts the picture down to what is drawn.
+ * It waits its turn behind the renders, and counts as none.
+ */
+export async function renderMockup(space: Space, project: Project, shot: Shot, settings: Mockups = project.mockups): Promise<Mockup> {
+  const key = `${space.id}/${project.id}/${shot.file}@${shot.version}:${JSON.stringify(settings)}`;
+  const kept = mockups.get(key);
+  if (kept) {
+    // Asked for again, so it is the last to be dropped.
+    mockups.delete(key);
+    mockups.set(key, kept);
+    return kept;
+  }
+  const count = drawing.get(space.id) ?? 0;
+  if (count >= MAX_DRAWING) throw new InputError("Mockups are already being drawn for this account. Try again in a moment.");
+  drawing.set(space.id, count + 1);
+
+  const stage = mockupStage(shot, settings);
+  const drawn = queue.then(async () => {
+    const context = await openContext(space, stage);
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://${local}/render/${project.id}/mockup/${encodeURIComponent(shot.file)}?bare=1&settings=${encodeURIComponent(JSON.stringify(settings))}`, { waitUntil: "load" });
+      await page.waitForFunction(() => document.body.dataset.ready === "1", undefined, { timeout: 20_000 });
+      return await page.screenshot({ type: "png", omitBackground: true, clip: { x: 0, y: 0, width: stage.width, height: stage.height } });
+    } finally {
+      await context.close();
+    }
+  });
+  queue = drawn.catch(() => {});
+  try {
+    const device = await cut(await drawn);
+    const whole = await withShadow(device, SHADOW_LAYERS[settings.device?.shadow ?? "none"], stage.device);
+    // The page is drawn close to the width asked for; the last few pixels are a matter of scaling.
+    const { data, info } = await sharp(whole.data, { raw: whole.info })
+      .resize(settings.width ? { width: settings.width } : {})
+      .png({ compressionLevel: 9 })
+      .toBuffer({ resolveWithObject: true });
+    const mockup = { png: data, width: info.width, height: info.height };
+    mockups.set(key, mockup);
+    let bytes = 0;
+    for (const each of mockups.values()) bytes += each.png.length;
+    for (const [oldest, each] of mockups) {
+      if (bytes <= MOCKUPS_KEPT_BYTES) break;
+      mockups.delete(oldest);
+      bytes -= each.png.length;
+    }
+    return mockup;
+  } finally {
+    const left = (drawing.get(space.id) ?? 1) - 1;
+    if (left > 0) drawing.set(space.id, left);
+    else drawing.delete(space.id);
+  }
+}
+
+interface Pixels {
+  data: Buffer;
+  info: { width: number; height: number; channels: 1 | 2 | 3 | 4 };
+}
+
+/** A picture cut down to what is drawn on it. */
+async function cut(picture: Buffer | Pixels): Promise<Pixels> {
+  const source = Buffer.isBuffer(picture) ? sharp(picture) : sharp(picture.data, { raw: picture.info });
+  const { data, info } = await source.trim({ background: { r: 0, g: 0, b: 0, alpha: 0 }, threshold: 1 }).raw().toBuffer({ resolveWithObject: true });
+  return { data, info: { width: info.width, height: info.height, channels: info.channels } };
+}
+
+/**
+ * Lays a device's shadow under it. The browser draws a blur of this size in visible blocks, so the shadow is made
+ * here from the device's outline: blurred small, where it is cheap, and scaled up, which a blur does not show.
+ */
+async function withShadow(device: Pixels, layers: (typeof SHADOW_LAYERS)["soft"], deviceWidth: number): Promise<Pixels> {
+  if (layers.length === 0) return device;
+  const { width, height } = device.info;
+  const outline = await sharp(device.data, { raw: device.info }).extractChannel(3).raw().toBuffer();
+  const reach = (layer: (typeof layers)[number]) => Math.ceil(layer.blur * 1.5 * deviceWidth);
+  const room = Math.max(...layers.map((layer) => reach(layer) + Math.ceil(layer.down * deviceWidth)));
+  const shadows = await Promise.all(
+    layers.map(async (layer) => {
+      const sigma = (layer.blur / 2) * deviceWidth;
+      const shrink = Math.max(1, sigma / 6);
+      const edge = Math.ceil(reach(layer) / shrink);
+      // Each step says how many channels it returned: sharp is free to widen a grey picture on the way.
+      const small = await sharp(outline, { raw: { width, height, channels: 1 } })
+        .resize(Math.max(1, Math.round(width / shrink)), Math.max(1, Math.round(height / shrink)), { fit: "fill" })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const blurred = await sharp(small.data, { raw: small.info })
+        .extend({ top: edge, bottom: edge, left: edge, right: edge, background: "#000" })
+        .blur(Math.max(0.3, sigma / shrink))
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const full = { width: Math.round((blurred.info.width * width) / small.info.width), height: Math.round((blurred.info.height * height) / small.info.height) };
+      const alpha = await sharp(blurred.data, { raw: blurred.info })
+        .resize(full.width, full.height, { fit: "fill", kernel: "cubic" })
+        .linear(layer.opacity, 0)
+        .extractChannel(0)
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const input = await sharp({ create: { ...full, channels: 3, background: "#000" } })
+        .joinChannel(alpha.data, { raw: alpha.info })
+        .png({ compressionLevel: 1 })
+        .toBuffer();
+      return { input, left: room - Math.round((full.width - width) / 2), top: room - Math.round((full.height - height) / 2) + Math.round(layer.down * deviceWidth) };
+    }),
+  );
+  const { data, info } = await sharp({ create: { width: width + room * 2, height: height + room * 2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    // The widest shadow lies lowest.
+    .composite([...shadows, { input: device.data, raw: device.info, left: room, top: room }])
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  return cut({ data, info: { width: info.width, height: info.height, channels: info.channels } });
+}
+
+/** Mockups side by side on a neutral grey, so a light frame shows as well as a dark one. */
+export async function mockupSheet(drawn: Mockup[]): Promise<Buffer> {
+  const gap = 36;
+  const height = 620;
+  const tiles: { input: Buffer; left: number; top: number }[] = [];
+  let left = gap;
+  for (const mockup of drawn) {
+    const { data, info } = await sharp(mockup.png).resize({ height, width: 900, fit: "inside" }).toBuffer({ resolveWithObject: true });
+    tiles.push({ input: data, left, top: gap + Math.round((height - info.height) / 2) });
+    left += info.width + gap;
+  }
+  return sharp({ create: { width: left, height: height + gap * 2, channels: 3, background: "#A2A2AA" } })
+    .composite(tiles)
+    .jpeg({ quality: 84 })
+    .toBuffer();
+}
+
 async function renderNow(run: Run, space: Space, request: RenderRequest): Promise<RenderResult> {
   const { project, shots } = run.frozen!;
   const { id } = project;
@@ -316,24 +480,13 @@ async function renderNow(run: Run, space: Space, request: RenderRequest): Promis
     if (extra > 0) warnings.add(`${label}: the ${creative.layout ?? "fan"} layout shows ${room} screenshots, so the last ${extra === 1 ? "one was" : `${extra} were`} left out.`);
   }
 
-  const local = `127.0.0.1:${config.port}`;
   const files: RenderedFile[] = [];
   const sheets: RenderedSheet[] = [];
   const creatives: RenderedCreative[] = [];
 
-  /** Loads one page of this server at an exact size and returns it as the opaque PNG App Store Connect wants. */
+  /** Loads pages of this server at an exact size and returns each as the opaque PNG App Store Connect wants. */
   const capture = async (size: { width: number; height: number }, urls: string[], each: (png: Buffer, i: number) => Promise<void>) => {
-    const instance = await getBrowser();
-    const context = await instance.newContext({
-      viewport: { width: size.width, height: size.height },
-      deviceScaleFactor: 1,
-      extraHTTPHeaders: { "x-appshots-internal": config.internalSecret, "x-appshots-space": space.id },
-    });
-    // The pages only ever need this server; nothing they contain may make the browser call out, least of all with those headers.
-    await context.route("**/*", (route) => {
-      const url = new URL(route.request().url());
-      return url.protocol === "data:" || url.host === local ? route.continue() : route.abort();
-    });
+    const context = await openContext(space, size);
     try {
       const page = await context.newPage();
       for (const [i, url] of urls.entries()) {

@@ -1,6 +1,6 @@
 ---
 name: appshots
-description: Make the App Store screenshots for the app in this repository from start to finish. Asks a few questions, takes the screens from screenshots the user already has, from the iOS Simulator or from a plugged-in iPhone or iPad, writes the headlines, and builds and renders the set on the appShots server. Use when asked for App Store screenshots, store screenshots, a screenshot set, or the header and search results assets of an app.
+description: Make the App Store screenshots for the app in this repository from start to finish. Asks a few questions, takes the screens from screenshots the user already has, from the iOS Simulator or from a plugged-in iPhone or iPad, writes the headlines, and builds and renders the set on the appShots server. Also makes device mockups: the app's screens inside an iPhone or iPad on a transparent background, for a website or a README. Use when asked for App Store screenshots, store screenshots, a screenshot set, the header and search results assets of an app, or device mockups of its screens.
 ---
 
 # appShots
@@ -8,6 +8,8 @@ description: Make the App Store screenshots for the app in this repository from 
 Turn the app in this repository into a finished set of App Store screenshots: get its screens, write the copy, and build the set on the appShots server at {{SERVER}}.
 
 Follow the steps in order, the same way every time. Say in a line or two what you decided at each step and carry on.
+
+If what the user wants is not store screenshots but the devices alone, such as "iPhone mockups for the website" or "a transparent PNG of the app for the README", go to [Mockups](#mockups-for-a-website-or-a-readme) at the end. That needs no questions, no copy and no slides.
 
 ## Keep it quick
 
@@ -225,3 +227,15 @@ Tell the user:
 - What you assumed or left out: no iPad or Duo set, no badges, a screen you could not reach, a file you changed for the debug launch argument.
 - That header and search results assets, if made, should be checked in App Store Connect's preview before submitting.
 - If the `appshots` MCP server answered 401 and you used the command instead: running the setup command again, from this folder, repairs the connection.
+
+## Mockups for a website or a README
+
+A mockup is one raw screenshot inside its device with nothing behind it: a transparent PNG, cut to the device. Make them when the user asks for the devices alone, or offers a place for them: a landing page, a README, a press kit, a deck. They are not for App Store Connect, which takes no transparency.
+
+1. Do step 1, then get the screens as in steps 5 and 6: a project, and the raw screenshots in it. An existing project already has them. Skip the questions, the plan and the copy.
+2. Draw them. With the MCP tool, `render_mockups` with the project, and look at the picture it returns. Then `appshots mockups <project> --out <folder>` puts the PNGs where they are needed, such as `docs/` for a README or the site's image folder. Without `--out` they go to `./mockups/<project>/`. Each file is named `<screenshot>-<device>.png`.
+3. Set the device only when asked or when the page calls for it, with `device` on the tool or the command's options: `--style clay` (or `outline`, `sketch`), `--color silver`, `--shadow soft`, `--rotate -8`, `--perspective left`, `--status-bar cover` for a clean 9:41, and `--width 1200` for a certain size. Left alone, a mockup is the plain device, upright, without a shadow, with the screenshot pixel for pixel, which suits a page that scales the picture itself. On a dark page a line drawing needs `--color silver`. What you set is saved with the project.
+4. Put them on the page if that was the request, scaled by the page: `<img src="docs/home-iphone.png" alt="…" width="320">`. Write a real `alt` text.
+5. Tell the user where the files are, and that {{SERVER}}/#/<project>/mockups shows them and lets them change the device and download again.
+
+Mockups use none of the account's renders.

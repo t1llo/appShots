@@ -53,7 +53,7 @@ export interface EditorScope {
 export const Scope = createContext<EditorScope>(null as never);
 const useScope = () => useContext(Scope);
 
-const ids = (list: readonly string[]): Option[] => list.map((id) => [id, label(id)]);
+export const ids = (list: readonly string[]): Option[] => list.map((id) => [id, label(id)]);
 
 // ---------------------------------------------------------------- fields
 
@@ -260,11 +260,11 @@ function StyleFields({ owner, change, inherits, asset = false, placed = false }:
   );
 }
 
-const DEVICE_LOOKS: Record<string, string> = { real: "Realistic", clay: "Clay", outline: "Outline", sketch: "Sketch" };
-const STATUS_BARS: Record<string, string> = { none: "As in the screenshot", cover: "Clean, over the old one", overlay: "Clean, drawn on top" };
+export const DEVICE_LOOKS: Record<string, string> = { real: "Realistic", clay: "Clay", outline: "Outline", sketch: "Sketch" };
+export const STATUS_BARS: Record<string, string> = { none: "As in the screenshot", cover: "Clean, over the old one", overlay: "Clean, drawn on top" };
 
 /** The time of a drawn status bar. What is typed counts once it reads as a time; until then the last good one stays. */
-function TimeInput({ value, onChange }: { value: string | undefined; onChange: (value: string | undefined) => void }) {
+export function TimeInput({ value, onChange }: { value: string | undefined; onChange: (value: string | undefined) => void }) {
   const [text, setText] = useState(value ?? "");
   const focused = useRef(false);
   useEffect(() => {
@@ -571,7 +571,7 @@ function FeaturesEditor({ slide, change, points }: { slide: Slide; change: Chang
 const LAYOUT_DEVICE: Record<string, { rotate?: number; offsetX?: number }> = { tilted: { rotate: -8, offsetX: 5 } };
 
 /** One device setting as a slider. `base` is where it stands when the slide does not set it; a double click goes back there. */
-function Slider(props: { label: string; value: number | undefined; base: number; min: number; max: number; step: number; show: (value: number) => string; onChange: (value: number | null) => void }) {
+export function Slider(props: { label: string; value: number | undefined; base: number; min: number; max: number; step: number; show: (value: number) => string; onChange: (value: number | null) => void }) {
   const { value, base, onChange } = props;
   return (
     <label className={`slider${value == null ? "" : " set"}`} title="Double-click to reset">

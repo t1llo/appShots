@@ -1,6 +1,6 @@
 # appShots
 
-Self-hosted App Store screenshot generator for iPhone and iPad. Describe the slides to your coding agent (copy, look, badges such as "10K+ downloads", a five-star rating or an award wreath), feed it screenshots straight from the simulator or a plugged-in iPhone, and get back PNGs at the exact sizes App Store Connect accepts. It also makes the wide images for App Store Connect's Header and Search Results tab.
+Self-hosted App Store screenshot generator for iPhone and iPad. Describe the slides to your coding agent (copy, look, badges such as "10K+ downloads", a five-star rating or an award wreath), feed it screenshots straight from the simulator or a plugged-in iPhone, and get back PNGs at the exact sizes App Store Connect accepts. It also makes the wide images for App Store Connect's Header and Search Results tab, and device mockups with a transparent background for a website or a README.
 
 ![An example set: five slides rendered for the 6.9-inch iPhone](docs/example.jpg)
 
@@ -176,7 +176,7 @@ Then ask in plain words, for example:
 
 > Make App Store screenshots for my habit tracker in project "streaks". Six slides, dark purple look, open with a hero slide with a laurel badge "4.8 · App Store rating" and one for "50K+ downloads", then one slide per feature using the screenshots home, stats and widgets.
 
-The agent answers with a contact sheet of the rendered set, a link to the Studio and a ZIP link. Tools: `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets`, `render`. Every tool works inside the space the token belongs to.
+The agent answers with a contact sheet of the rendered set, a link to the Studio and a ZIP link. Tools: `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets`, `render`, `render_mockups`. Every tool works inside the space the token belongs to.
 
 The endpoint is Streamable HTTP and authenticates with a bearer header, so it works with any client that can send one. It does not implement OAuth.
 
@@ -243,6 +243,7 @@ Open the server in a browser and sign in to see every slide as a live preview at
 - **Screenshots.** Drop files anywhere on the page, or use the upload button.
 - **Logos and images.** Everything else a slide can show: your logo or app icon, a mascot, stickers, shapes. Upload PNG, SVG, JPEG or WebP files there, or drop them on that section. Click one to place it on the selected slide, then drag it in the large preview; size, turn, opacity, shadow, mirroring and whether it lies over or under the device are in the slide's editor, with ready arrangements for several images at once. A slide's logo is picked under **Your logo**.
 - **Header and search results.** Adds, previews and edits the three store assets. **Show safe area** draws the part every device shows as a dashed frame; it is off until you tick it and never in the exported file.
+- **Mockups.** The switch at the top of a project goes from **App Store** to **Mockups**: every screenshot in its device with nothing behind it. Set the device's look, colour, shadow, tilt and width on the right, then download one as a transparent PNG, copy it, or take all of them as a ZIP. See [Mockups](#mockups).
 - **Light and dark.** The switch at the bottom of the sidebar picks **Light**, **Dark** or **Auto**, which follows the device. The home page has the same choice as a button in its header, and the browser remembers it.
 
 ## Slides
@@ -315,6 +316,19 @@ Apple reviews these images and asks for more restraint than in screenshots: one 
 
 Apple publishes the safe areas as a design template, not as numbers. The values above are measured from that template, so check each asset in App Store Connect's preview before submitting. The video variants of these assets are not generated.
 
+## Mockups
+
+For a website, a README or a deck: each raw screenshot inside its device on a transparent background, one PNG per screenshot and device, cut to the device and named `<screenshot>-<device>.png`. A project needs no slides for them, and they use no render.
+
+```bash
+appshots mockups streaks                                  # into ./mockups/streaks
+appshots mockups streaks --style clay --shadow soft --rotate -8 --width 1200
+```
+
+- The device is set once for all mockups of a project, as `mockups: {device, width}`, separate from the theme: `frame`, `style`, `color`, `shadow`, `rotate`, `perspective`, `statusBar`, `statusBarTime`, `statusBarColor`. Without `width` the screenshot is shown pixel for pixel. The Studio's Mockups page, the command's options and the `render_mockups` tool all change the same setting.
+- A mockup casts no shadow unless asked. The shadow is part of the PNG and falls straight down however the device is turned.
+- They are drawn when they are asked for and kept in memory for a while, not written to the data volume. An account can have four waiting at a time.
+
 ## REST API
 
 Everything the Studio and the CLI do goes through `/api`, with the same bearer token. A token only ever reaches the projects of the space it belongs to.
@@ -323,7 +337,8 @@ Everything the Studio and the CLI do goes through `/api`, with the same bearer t
 GET    /api/projects                       list
 POST   /api/projects                       create {name, locales?, targets?, theme?, slides?}
 GET    /api/projects/:id                   project, screenshots, images, rendered files
-PUT    /api/projects/:id                   update {name?, locales?, targets?, theme?, slides?, creatives?: {header?, search?, universal?}}
+PUT    /api/projects/:id                   update {name?, locales?, targets?, theme?, slides?, creatives?: {header?, search?, universal?},
+                                           mockups?: {device?, width?}}
 DELETE /api/projects/:id
 PUT    /api/projects/:id/shots/:name       upload a screenshot (raw image body, ?device=iphone|duo|ipad to override detection,
                                            ?locale=de-DE for one language only)
@@ -337,6 +352,9 @@ GET    /api/renders                        the account's renders of the last hou
 GET    /api/renders/:job                   one of them: state, done, total
 DELETE /api/renders/:job                   cancels one that is waiting or running
 GET    /api/projects/:id/export.zip        ?render=1 renders first
+GET    /api/projects/:id/mockups           the mockups: settings, and per screenshot its name, device and PNG address (?locale=)
+GET    /api/projects/:id/mockups/:file     one as a transparent PNG (?width=1200, ?download=1, ?settings=<json> to try without saving)
+GET    /api/projects/:id/mockups.zip       all of them (?locale= for one language)
 ```
 
 A render without `slides` and `creatives` produces everything. `slides` (zero-based indexes) or `creatives` (`header`, `search`, `universal`) narrow it to those, and `"creatives": []` renders the slides alone.

@@ -44,6 +44,10 @@ Not at Google Play's sizes. It exports App Store sizes for iPhone, iPhone Duo an
 
 No. You design the set once for the iPhone, and once each for the iPhone Duo and the iPad if your app runs on them. The export holds every size App Store Connect lists. See [Sizes](/docs/sizes).
 
+### Can I get the device alone, for my website?
+
+Yes. The **Mockups** page of a project shows every screenshot in its device with nothing behind it, to download as a transparent PNG. An agent and the `appshots mockups` command do the same. See [Mockups](/docs/mockups).
+
 ### Landscape screenshots, or app preview videos?
 
 No. Portrait still images only.
