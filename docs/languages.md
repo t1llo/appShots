@@ -48,7 +48,7 @@ Your app looks different in German than in English, so each language can have it
 2. Start the app in the next language and take the same screens again.
 3. Upload them for that language, under the same names.
 
-**In the Studio.** Pick the language, then drop the files on **Screenshots**. A dimmed screenshot is the first language's, shown because this language has none of its own there yet. The arrow on it uploads this language's version under that name, whatever the file is called.
+**In the Studio.** Pick the language, open **Assets** and drop the files there. A dimmed screenshot is the first language's, shown because this language has none of its own there yet. The arrow on it uploads this language's version under that name, whatever the file is called.
 
 **From the Mac.** `--lang` says which language a screenshot is for:
 

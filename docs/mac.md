@@ -43,7 +43,7 @@ appshots upload ledger ~/Desktop/overview.png --as mac
 | Has see-through round corners, as a captured window has | Mac, whatever its shape |
 | Has the exact size of an iPhone or iPad screenshot turned on its side | That iPhone or iPad |
 
-When one lands under the wrong device, change it with the small menu on its thumbnail in the Studio, or upload it again with `--as mac`.
+When one lands under the wrong device, change it with the small menu on its thumbnail under **Assets** in the Studio, or upload it again with `--as mac`.
 
 ## A window or a MacBook
 
@@ -79,9 +79,14 @@ Every [layout](/docs/slides#layouts) works for the Mac. The canvas is wide and s
 
 ## Mac and iPhone together
 
-A slide refers to a screenshot by name, and each device shows its own picture of that name. So for an app on both, capture the same screen under the same name on each device, and one slide set serves them all: the Mac sizes show the Mac's `overview`, the iPhone sizes the iPhone's.
+A slide refers to a screenshot by name, and each device shows its own picture of that name. So for an app on both, capture the same screen under the same name on each device. The shared slide set then serves them all: the Mac sizes show the Mac's `overview`, the iPhone sizes the iPhone's.
 
-When the Mac app shows other screens, or wants its slides in another order, make it a project of its own.
+That is the quick way, and the Mac's pictures come out as the iPhone's design on a wide canvas. A Mac set reads better when it is composed for that canvas: the copy beside the window, other screens, another order, fewer slides. Give the Mac a set of its own for that, in the same project:
+
+- In the Studio, pick **Mac** above the slides, then **Give the Mac its own slides**.
+- An agent calls `set_slides` with `"device": "mac"`.
+
+The iPhone and the iPad keep the shared set, or get their own the same way. The theme and the languages stay shared, so the sets match. See [A set for each device](/docs/slides#a-set-for-each-device).
 
 **One slide with both.** A name that only has an iPhone screenshot is drawn as an iPhone, also on the Mac canvas. Put a Mac screenshot and an iPhone one into a layout that takes several, and the laptop or window stands in the middle with the phone in front of a lower corner:
 
@@ -98,4 +103,4 @@ When the Mac app shows other screens, or wants its slides in another order, make
 
 ## With an agent
 
-[The skill](/docs/skill) reads the project, sees that it is a Mac app and takes this route by itself. It builds and opens the app, captures its window on each screen, and renders the Mac set. For the capture it needs the Screen Recording permission above. Without it, it asks you to take the windows yourself.
+[The skill](/docs/skill) reads the project, sees that it is a Mac app and takes this route by itself. It builds and opens the app, captures its window on each screen, and renders the Mac set. For an app that is on the iPhone as well, it designs the Mac's slides as a set of their own. For the capture it needs the Screen Recording permission above. Without it, it asks you to take the windows yourself.

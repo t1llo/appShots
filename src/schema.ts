@@ -3,9 +3,12 @@ import {
   BACKGROUNDS,
   BADGE_TONE_IDS,
   BADGE_TYPE_IDS,
+  CARD_ICON_IDS,
+  CARD_LOOK_IDS,
   CREATIVE_LAYOUT_IDS,
   DEVICE_COLOR_IDS,
   DEVICE_STYLE_IDS,
+  EMPHASIS_IDS,
   FEATURE_STYLE_IDS,
   FONT_IDS,
   ICON_IDS,
@@ -17,7 +20,7 @@ import {
   LOGO_SIZE_IDS,
   STATUS_BAR_IDS,
 } from "./design.ts";
-import { TARGET_IDS } from "./sizes.ts";
+import { type DeviceKind, TARGET_IDS } from "./sizes.ts";
 
 /** Ids and screenshot names end up in file paths and URLs, so they stay strictly slug-shaped. */
 export const SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -42,9 +45,18 @@ export const badgeSchema = z.object({
 
 export const featureSchema = z.object({
   icon: z.enum(ICON_IDS).optional(),
-  value: text.optional().describe('A big figure or word shown in place of the icon, e.g. "0", "24h" or "100%"'),
+  value: text.optional().describe('A big figure or word shown in place of the icon, e.g. "0", "24h" or "100%". On the stat layout it is the figure itself; on the steps layout it replaces the step\'s number'),
   title: text.describe("The feature in two to four words"),
   text: text.optional().describe("One short supporting line. The small tiles of a full slide leave it out."),
+  color: hex.optional().describe("This card's own colour, for its icon, its figure and its wash. Left out, the accent colour"),
+  image: slug.optional().describe("Name of an uploaded image shown in place of the icon, such as a small illustration"),
+  screenshot: slug.optional().describe("Name of an uploaded screenshot shown small: on a feature card it stands under the title and runs off the card's lower edge, on a step it stands beside the text"),
+});
+
+export const featureCardsSchema = z.object({
+  look: z.enum(CARD_LOOK_IDS).optional().describe("What the cards are made of. Default glass"),
+  icons: z.enum(CARD_ICON_IDS).optional().describe("How the icons are drawn. Default gradient"),
+  columns: z.number().int().min(1).max(4).optional().describe("Cards across, for the grid, cards and list styles. Left out, the canvas decides. The bento arranges itself"),
 });
 
 export const iconRowSchema = z.object({
@@ -117,6 +129,7 @@ const styleFields = {
   font: z.enum(FONT_IDS).optional(),
   align: z.enum(["center", "left"]).optional(),
   textScale: z.number().min(0.5).max(1.5).optional().describe("Headline size multiplier; text still shrinks to fit"),
+  emphasis: z.enum(EMPHASIS_IDS).optional().describe("How a headline marks its *emphasised* words: tint (default), marker or underline"),
   device: deviceSchema.optional(),
 };
 
@@ -130,10 +143,15 @@ export const slideSchema = z.object({
   screenshot: slug.optional().describe("Name of an uploaded raw screenshot"),
   screenshot2: slug.optional().describe("Second screenshot, for the layouts with two or three devices"),
   screenshot3: slug.optional().describe("Third screenshot, for the trio layout"),
-  badges: z.array(badgeSchema).max(4).optional(),
+  badges: z.array(badgeSchema).max(10).optional().describe("A slide draws the first four with its copy. The reviews layout also takes up to six review badges for its wall"),
   badgePosition: z.enum(["top", "bottom"]).optional().describe("Above the headline or below the subheadline"),
-  features: z.array(featureSchema).max(8).optional().describe("Most important first. The cards of the features layout; on every other layout a short list of feature points with the copy"),
+  features: z
+    .array(featureSchema)
+    .max(8)
+    .optional()
+    .describe("Most important first. The cards of the features layout, the figures of the stat layout, the steps of the steps layout; on every other layout a short list of feature points with the copy"),
   featureStyle: z.enum(FEATURE_STYLE_IDS).optional().describe("bento, grid, cards or list on the features layout (default bento); list, cards, grid or chips for feature points (default list)"),
+  featureCards: featureCardsSchema.optional().describe("How the cards of the features layout look"),
   iconRow: iconRowSchema.optional().describe("A row of icons or brand logos with the copy, such as the services the app works with"),
   logo: logoSchema.optional().describe("An uploaded image at the top of the copy, above the eyebrow and headline: the app's logo or icon"),
   images: z.array(placedImageSchema).max(10).optional().describe("Uploaded images placed freely on the slide: stickers, characters, shapes. Later ones lie over earlier ones"),
@@ -158,6 +176,7 @@ export const creativeSchema = z.object({
   accentColor: styleFields.accentColor,
   font: styleFields.font,
   textScale: styleFields.textScale,
+  emphasis: styleFields.emphasis,
   device: deviceSchema.pick({ frame: true, style: true, color: true, scale: true, shadow: true, statusBar: true }).optional(),
 });
 
@@ -189,6 +208,17 @@ export const targetsSchema = z
   .max(TARGET_IDS.length)
   .describe("Sizes to export. Left out or empty: the standard sizes of every device the project has screenshots of");
 
+/**
+ * Slide sets a device has of its own. A device named here draws these in place of the project's `slides`, so an
+ * iPad or a Mac can be composed for its own canvas instead of repeating the iPhone's design at another size.
+ */
+export const deviceSlidesSchema = z.object({
+  iphone: z.array(slideSchema).min(1).max(10).optional(),
+  duo: z.array(slideSchema).min(1).max(10).optional(),
+  ipad: z.array(slideSchema).min(1).max(10).optional(),
+  mac: z.array(slideSchema).min(1).max(10).optional(),
+});
+
 export const projectSchema = z.object({
   id: slug,
   name: z.string().min(1).max(80),
@@ -198,6 +228,7 @@ export const projectSchema = z.object({
   targets: targetsSchema.optional(),
   theme: themeSchema,
   slides: z.array(slideSchema).max(10),
+  deviceSlides: deviceSlidesSchema.default({}),
   creatives: creativesSchema.default({}),
   mockups: mockupsSchema.default({}),
 });
@@ -205,6 +236,7 @@ export const projectSchema = z.object({
 export type Text = z.infer<typeof text>;
 export type Badge = z.infer<typeof badgeSchema>;
 export type Feature = z.infer<typeof featureSchema>;
+export type FeatureCards = z.infer<typeof featureCardsSchema>;
 export type IconRow = z.infer<typeof iconRowSchema>;
 export type Logo = z.infer<typeof logoSchema>;
 export type PlacedImage = z.infer<typeof placedImageSchema>;
@@ -215,7 +247,14 @@ export type Slide = z.infer<typeof slideSchema>;
 export type Creative = z.infer<typeof creativeSchema>;
 export type Creatives = z.infer<typeof creativesSchema>;
 export type Mockups = z.infer<typeof mockupsSchema>;
+export type DeviceSlides = z.infer<typeof deviceSlidesSchema>;
 export type Project = z.infer<typeof projectSchema>;
+
+/** Every slide of a project: the shared set and each device's own. */
+export const allSlides = (project: Pick<Project, "slides" | "deviceSlides">): Slide[] => [...project.slides, ...Object.values(project.deviceSlides ?? {}).flatMap((set) => set ?? [])];
+
+/** The slides a device shows: its own set where it has one, the project's otherwise. */
+export const slidesFor = (project: Pick<Project, "slides" | "deviceSlides">, device: DeviceKind): Slide[] => project.deviceSlides?.[device] ?? project.slides;
 
 export const localeSchema = locale;
 export const slugSchema = slug;

@@ -102,11 +102,11 @@ It reports whether the server answers and accepts your token, whether the skill 
 An agent cannot sign in with Google, so it uses a token of yours. A token reaches your projects and nothing else: it cannot create more tokens, change your account or see anybody else's work.
 
 - A token is shown once, when it is created. Lost it? Create a new one and run the command again.
-- **Account** in the Studio's sidebar lists your tokens with the day each was last used, and revokes them.
+- **Settings** in the Studio's sidebar lists your tokens with the day each was last used, and revokes them.
 - After revoking or replacing a token, run the one command again with the new one.
 
 ## Disconnect
 
-1. Revoke the token under **Account**. Nothing on your Mac can reach your projects after that.
+1. Revoke the token under **Settings**. Nothing on your Mac can reach your projects after that.
 2. Remove the agent's entry: `claude mcp remove appshots --scope user`, `codex mcp remove appshots`, or the `appshots` entry in your agent's MCP settings.
 3. Delete the skill folder from the table above, the link named `appshots` on your `PATH`, and the folder `~/.config/appshots`.

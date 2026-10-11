@@ -17,7 +17,7 @@ It needs Node.js 18 or newer. Running and capturing need Xcode.
 | `appshots update` | Brings the installed skill and this command up to date with the server's. Needs no token |
 | `appshots check` | Reports the server, whether the skill is current, Xcode, the project in this folder, simulators, installed apps and devices. Every line says what to do next |
 
-See [Connect an agent](/docs/connect) and [Update](/docs/update).
+When the server has a newer skill or command than this Mac, every other command says so in one line when it is done. See [Connect an agent](/docs/connect) and [Update](/docs/update).
 
 ## Run the app
 

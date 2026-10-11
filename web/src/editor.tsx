@@ -10,6 +10,7 @@ import {
   errorText,
   exportSizes,
   type Feature,
+  type FeatureCards,
   type IconRow,
   label,
   type Logo,
@@ -46,7 +47,7 @@ export interface EditorScope {
   primary: string;
   /** Whether asset previews draw the safe area. */
   guides: boolean;
-  /** Whether the large preview is on screen, where placed images can be dragged. */
+  /** Whether a slide is selected whose preview is on screen, where placed images can be dragged. */
   dragging: boolean;
 }
 
@@ -210,6 +211,9 @@ function StyleFields({ owner, change, inherits, asset = false, placed = false }:
         <ColorField label="Accent colour" value={owner.accentColor} onChange={(value) => set("accentColor", value)} />
         <ColorField label="Text colour" value={owner.textColor} onChange={(value) => set("textColor", value)} />
       </div>
+      <Field label="Words between *asterisks*" hint={meta.emphasis[owner.emphasis ?? "tint"]}>
+        <Select options={[["", base], ...Object.keys(meta.emphasis).map((id): Option => [id, EMPHASIS[id] ?? label(id)])]} value={owner.emphasis ?? ""} onChange={(value) => set("emphasis", value)} />
+      </Field>
       <div className="cols">
         <Field label="Device colour">
           <Select options={[["", base], ...ids(meta.deviceColors)]} value={device.color ?? ""} onChange={(value) => setDevice("color", value)} />
@@ -260,6 +264,7 @@ function StyleFields({ owner, change, inherits, asset = false, placed = false }:
   );
 }
 
+const EMPHASIS: Record<string, string> = { tint: "Tinted", marker: "Marker behind them", underline: "Underlined" };
 export const DEVICE_LOOKS: Record<string, string> = { real: "Realistic", clay: "Clay", outline: "Outline", sketch: "Sketch" };
 export const STATUS_BARS: Record<string, string> = { none: "As in the screenshot", cover: "Clean, over the old one", overlay: "Clean, drawn on top" };
 
@@ -367,21 +372,39 @@ function IconPicker({ label: text, value, onChange }: { label: string; value: st
   );
 }
 
-/** Which sections are open survives switching between slides and assets. */
+/** Which sections were opened or closed by hand. That survives switching between slides and assets. */
 const openSections: Record<string, boolean> = {};
 
-function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
-  const [open, setOpen] = useState(openSections[id] ?? false);
+/**
+ * One part of the panel under a heading that folds it away. A part that holds something starts open, an empty one
+ * closed, and one that was opened or closed by hand stays that way.
+ */
+function Section(props: { id: string; title: string; hint?: ReactNode; count?: number; open?: boolean; actions?: ReactNode; children: ReactNode }) {
+  const { id, title, hint, count, actions, children } = props;
+  const [open, setOpen] = useState(openSections[id] ?? props.open ?? false);
   return (
-    <details
-      open={open}
-      onToggle={(event) => {
-        openSections[id] = event.currentTarget.open;
-        setOpen(event.currentTarget.open);
-      }}
-    >
-      <summary>{title}</summary>
-      <div className="stack">{children}</div>
+    <details className="section" open={open}>
+      <summary
+        onClick={(event) => {
+          event.preventDefault();
+          openSections[id] = !open;
+          setOpen(!open);
+        }}
+      >
+        <span className="section-title">{title}</span>
+        {count ? <span className="count">{count}</span> : null}
+      </summary>
+      {open ? (
+        <div className="stack">
+          {hint || actions ? (
+            <div className="section-note">
+              <span className="hint">{hint}</span>
+              {actions}
+            </div>
+          ) : null}
+          {children}
+        </div>
+      ) : null}
     </details>
   );
 }
@@ -408,8 +431,7 @@ function JsonSection({ value, onApply, hint }: { value: object; onApply: (parsed
     }
   };
   return (
-    <Section id="json" title="JSON">
-      <span className="hint">{hint}</span>
+    <Section id="json" title="JSON" hint={hint}>
       <textarea className="code" rows={14} spellCheck={false} ref={area} value={text} onChange={(event) => setText(event.target.value)} />
       {error ? <div className="inline-error">{error}</div> : null}
       <div className="actions">
@@ -433,15 +455,11 @@ const BADGE_PLACEHOLDERS: Record<string, [big: string, small: string]> = {
   review: ["What they wrote, in a few words", "Who wrote it, e.g. Maya, App Store review"],
 };
 
-function BadgesEditor({ owner, change, max, hint, byDefault }: { owner: Badged; change: Change<Badged>; max: number; hint: string; byDefault: string }) {
+function BadgesEditor({ owner, change, max, hint, byDefault, reviews = false }: { owner: Badged; change: Change<Badged>; max: number; hint: ReactNode; byDefault: string; reviews?: boolean }) {
   const { meta } = useScope();
   const badges = owner.badges ?? [];
   return (
-    <>
-      <div className="group-head">
-        <span className="label">Badges</span>
-        <span className="hint">{hint}</span>
-      </div>
+    <Section id="badges" title={reviews ? "Reviews and badges" : "Badges"} hint={hint} count={badges.length} open={reviews || badges.length > 0}>
       {badges.map((badge, index) => {
         const edit: Change<Badge> = (recipe) => change((item) => recipe(item.badges![index]!));
         const type = badge.type ?? "laurel";
@@ -482,8 +500,8 @@ function BadgesEditor({ owner, change, max, hint, byDefault }: { owner: Badged; 
       })}
       <div className="row">
         {badges.length < max ? (
-          <button className="btn small" type="button" onClick={() => change((item) => void (item.badges = [...(item.badges ?? []), { type: "laurel" }]))}>
-            Add badge
+          <button className="btn small" type="button" onClick={() => change((item) => void (item.badges = [...(item.badges ?? []), { type: reviews ? "review" : "laurel" }]))}>
+            {reviews ? "Add review" : "Add badge"}
           </button>
         ) : null}
         {badges.length > 0 ? (
@@ -495,52 +513,101 @@ function BadgesEditor({ owner, change, max, hint, byDefault }: { owner: Badged; 
           />
         ) : null}
       </div>
-    </>
+    </Section>
   );
 }
 
 // ---------------------------------------------------------------- slide
 
-function FeaturesEditor({ slide, change, points }: { slide: Slide; change: Change<Slide>; points: boolean }) {
-  const { meta } = useScope();
+/** What a slide's features are, by the layout that draws them. */
+const FEATURE_MODES = {
+  cards: { title: "Features", one: "feature", hint: "Most important first. Each gets an icon, a figure such as 24h, or a small picture.", value: "or 24h", name: "The feature, e.g. Daily limits", text: "One short line under it, or nothing" },
+  figures: { title: "Figures", one: "figure", hint: "The first is the large one, the next stand in a row under it. Real numbers only.", value: "2M", name: "What it counts, e.g. budgets made", text: "One short line under it, or nothing" },
+  steps: { title: "Steps", one: "step", hint: "In order. Each is numbered by itself, and can show a small screenshot.", value: "1", name: "The step, e.g. Add your accounts", text: "One short line under it, or nothing" },
+  points: { title: "Feature points", one: "feature point", hint: "A short list with the copy, each with an icon. Two to four read best.", value: "or 24h", name: "The feature, e.g. Daily limits", text: "One short line under it, or nothing" },
+} as const;
+
+const CARD_LOOKS: Record<string, string> = { glass: "Glass", tint: "Tinted", solid: "Solid colour", outline: "Outline" };
+const CARD_ICONS: Record<string, string> = { gradient: "Shaded", badge: "On a square", plain: "Plain" };
+
+function FeaturesEditor({ slide, change }: { slide: Slide; change: Change<Slide> }) {
+  const { meta, shots, images } = useScope();
+  const layout = slide.layout ?? "device-bottom";
+  const mode = layout === "features" ? "cards" : layout === "stat" ? "figures" : layout === "steps" ? "steps" : "points";
+  const words = FEATURE_MODES[mode];
   const features = slide.features ?? [];
   // One field holds either kind of style; each kind reads the other's own ones as its plainest.
-  const styles = points ? meta.pointStyles : meta.featureStyles;
-  const style = slide.featureStyle && styles[slide.featureStyle] ? slide.featureStyle : points ? "list" : slide.featureStyle === "chips" ? "list" : "bento";
+  const styles = mode === "cards" ? meta.featureStyles : mode === "points" ? meta.pointStyles : null;
+  const style = styles ? (slide.featureStyle && styles[slide.featureStyle] ? slide.featureStyle : mode === "points" ? "list" : slide.featureStyle === "chips" ? "list" : "bento") : "";
+  const cards = slide.featureCards ?? {};
+  const setCards = (key: keyof FeatureCards, value: unknown) =>
+    change((item) => {
+      const next = { ...item.featureCards };
+      put(next, key, value);
+      if (Object.keys(next).length) item.featureCards = next;
+      else delete item.featureCards;
+    });
   const swap = (from: number, to: number) =>
     change((item) => {
       const list = item.features!;
       [list[from], list[to]] = [list[to]!, list[from]!];
     });
+  const shotNames: Option[] = [["", "No screenshot"], ...[...new Set(shots.map((shot) => shot.name))].map((name): Option => [name, name])];
+  const imageNames: Option[] = [["", "No image"], ...images.map((image): Option => [image.name, image.name])];
   return (
-    <>
-      <div className="group-head">
-        <span className="label">{points ? "Feature points" : "Features"}</span>
-        <span className="hint">{points ? "A short list with the copy, each with an icon. Two to four read best." : "Most important first. Each gets an icon, or a figure such as 24h in its place."}</span>
-      </div>
-      {points && features.length === 0 ? null : (
-        <Field label={points ? "Point style" : "Card style"} hint={styles[style]}>
+    <Section id="features" title={words.title} hint={words.hint} count={features.length} open={mode !== "points" || features.length > 0}>
+      {styles && (mode === "cards" || features.length > 0) ? (
+        <Field label={mode === "points" ? "Point style" : "Card style"} hint={styles[style]}>
           <Select options={ids(Object.keys(styles))} value={style} onChange={(value) => change((item) => put(item, "featureStyle", value))} />
         </Field>
-      )}
+      ) : null}
+      {mode === "cards" ? (
+        <div className="trio">
+          <Field label="Cards">
+            <select value={cards.look ?? "glass"} title={meta.cardLooks[cards.look ?? "glass"]} onChange={(event) => setCards("look", event.target.value === "glass" ? undefined : event.target.value)}>
+              {Object.entries(meta.cardLooks).map(([id, note]) => (
+                <option key={id} value={id} title={note}>
+                  {CARD_LOOKS[id] ?? label(id)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Icons">
+            <select value={cards.icons ?? "gradient"} title={meta.cardIcons[cards.icons ?? "gradient"]} onChange={(event) => setCards("icons", event.target.value === "gradient" ? undefined : event.target.value)}>
+              {Object.entries(meta.cardIcons).map(([id, note]) => (
+                <option key={id} value={id} title={note}>
+                  {CARD_ICONS[id] ?? label(id)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Across">
+            <Select
+              options={[["", "Auto"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]]}
+              value={style === "bento" ? "" : String(cards.columns ?? "")}
+              onChange={(value) => setCards("columns", value ? Number(value) : undefined)}
+            />
+          </Field>
+        </div>
+      ) : null}
       {features.map((feature, index) => {
         const edit: Change<Feature> = (recipe) => change((item) => recipe(item.features![index]!));
         return (
           <div className="badge-edit" key={index}>
-            <div className="top feature">
-              <IconPicker label="Feature icon" value={feature.icon} onChange={(value) => edit((item) => put(item, "icon", value))} />
-              <TextInput value={feature.value} onChange={(value) => edit((item) => put(item, "value", value))} placeholder="or 24h" />
-              <button className="icon-btn plain" type="button" disabled={index === 0} title="Move up" aria-label="Move feature up" onClick={() => swap(index, index - 1)}>
+            <div className={`top feature${mode === "steps" ? " plain" : ""}`}>
+              {mode === "steps" ? <span className="step-no">{index + 1}</span> : <IconPicker label={`Icon of this ${words.one}`} value={feature.icon} onChange={(value) => edit((item) => put(item, "icon", value))} />}
+              <TextInput value={feature.value} onChange={(value) => edit((item) => put(item, "value", value))} placeholder={mode === "steps" ? "Its number" : words.value} />
+              <button className="icon-btn plain" type="button" disabled={index === 0} title="Move up" aria-label={`Move ${words.one} up`} onClick={() => swap(index, index - 1)}>
                 ↑
               </button>
-              <button className="icon-btn plain" type="button" disabled={index === features.length - 1} title="Move down" aria-label="Move feature down" onClick={() => swap(index, index + 1)}>
+              <button className="icon-btn plain" type="button" disabled={index === features.length - 1} title="Move down" aria-label={`Move ${words.one} down`} onClick={() => swap(index, index + 1)}>
                 ↓
               </button>
               <button
                 className="icon-btn"
                 type="button"
-                title="Remove feature"
-                aria-label="Remove feature"
+                title={`Remove ${words.one}`}
+                aria-label={`Remove ${words.one}`}
                 onClick={() =>
                   change((item) => {
                     item.features!.splice(index, 1);
@@ -551,19 +618,39 @@ function FeaturesEditor({ slide, change, points }: { slide: Slide; change: Chang
                 ×
               </button>
             </div>
-            <TextInput value={feature.title} onChange={(value) => edit((item) => void (item.title = value ?? ""))} placeholder="The feature, e.g. Daily limits" />
-            <TextInput value={feature.text} onChange={(value) => edit((item) => put(item, "text", value))} placeholder="One short line under it, or nothing" />
+            <TextInput value={feature.title} onChange={(value) => edit((item) => void (item.title = value ?? ""))} placeholder={words.name} />
+            <TextInput value={feature.text} onChange={(value) => edit((item) => put(item, "text", value))} placeholder={words.text} />
+            {mode === "points" ? null : (
+              <div className="feature-extra">
+                <label className="tone" title={`A colour of its own for this ${words.one}. Without one, the accent colour.`}>
+                  <input type="color" aria-label={`Colour of this ${words.one}`} value={feature.color?.length === 7 ? feature.color.toLowerCase() : "#888888"} onChange={(event) => edit((item) => void (item.color = event.target.value.toUpperCase()))} />
+                  {feature.color ? (
+                    <button className="link" type="button" onClick={() => edit((item) => void delete item.color)}>
+                      Accent
+                    </button>
+                  ) : (
+                    <span className="dim">Accent</span>
+                  )}
+                </label>
+                {mode === "cards" && images.length ? <Select label="Image in place of the icon" options={imageNames} value={feature.image ?? ""} onChange={(value) => edit((item) => put(item, "image", value))} /> : null}
+                {mode !== "figures" && shots.length ? <Select label="Small screenshot" options={shotNames} value={feature.screenshot ?? ""} onChange={(value) => edit((item) => put(item, "screenshot", value))} /> : null}
+              </div>
+            )}
           </div>
         );
       })}
       {features.length < 8 ? (
         <div className="row">
-          <button className="btn small" type="button" onClick={() => change((item) => void (item.features = [...(item.features ?? []), { icon: "sparkle", title: "" }]))}>
-            {points ? "Add feature point" : "Add feature"}
+          <button
+            className="btn small"
+            type="button"
+            onClick={() => change((item) => void (item.features = [...(item.features ?? []), mode === "figures" || mode === "steps" ? { title: "" } : { icon: "sparkle", title: "" }]))}
+          >
+            Add {words.one}
           </button>
         </div>
       ) : null}
-    </>
+    </Section>
   );
 }
 
@@ -606,18 +693,21 @@ function DeviceEditor({ slide, theme, change, single }: { slide: Slide; theme: T
     });
   const set = (key: keyof DeviceStyle) => (value: unknown) => setDevice((next) => put(next, key, value));
   const signed = (value: number) => `${value > 0 ? "+" : ""}${value}%`;
+  const moved = keys.some((key) => device[key] != null);
   return (
-    <>
-      <div className="group-head">
-        <span className="label">Device</span>
-        <span className="hint">{single ? "Its size and place on this slide." : "Their size and place on this slide, and how they stand to each other."}</span>
-        <span className="spacer" />
-        {keys.some((key) => device[key] != null) ? (
+    <Section
+      id="device"
+      title={single ? "Device" : "Devices"}
+      hint={single ? "Its size and place on this slide." : "Their size and place on this slide, and how they stand to each other."}
+      open={moved}
+      actions={
+        moved ? (
           <button className="btn small quiet" type="button" onClick={() => setDevice((next) => keys.forEach((key) => delete next[key]))}>
             Reset
           </button>
-        ) : null}
-      </div>
+        ) : null
+      }
+    >
       <div className="sliders">
         <Slider label="Size" value={device.scale} base={base.scale} min={0.4} max={1.6} step={0.02} show={(value) => `${Math.round(value * 100)}%`} onChange={set("scale")} />
         <Slider label="Left · right" value={device.offsetX} base={base.offsetX} min={-60} max={60} step={1} show={signed} onChange={set("offsetX")} />
@@ -635,7 +725,7 @@ function DeviceEditor({ slide, theme, change, single }: { slide: Slide; theme: T
           <Select options={[["", "By layout"], ["none", "None"], ["left", "To the left"], ["right", "To the right"]]} value={device.perspective ?? ""} onChange={set("perspective")} />
         </Field>
       ) : null}
-    </>
+    </Section>
   );
 }
 
@@ -663,11 +753,7 @@ function IconRowEditor({ slide, change }: { slide: Slide; change: Change<Slide> 
   const edit: Change<IconRow> = (recipe) => change((item) => recipe(item.iconRow!));
   const style = row?.style ?? "tiles";
   return (
-    <>
-      <div className="group-head">
-        <span className="label">Icons and logos</span>
-        <span className="hint">A row with the copy, such as the services the app works with.</span>
-      </div>
+    <Section id="icons" title="Icons and logos" hint="A row with the copy, such as the services the app works with." count={icons.length} open={icons.length > 0}>
       <div className="row-icons">
         {icons.map((id, index) => (
           <button key={`${id}-${index}`} className="row-icon" type="button" title={`Remove ${iconName(id)}`} aria-label={`Remove ${iconName(id)}`} onClick={() => setIcons(icons.filter((_, at) => at !== index))}>
@@ -736,7 +822,7 @@ function IconRowEditor({ slide, change }: { slide: Slide; change: Change<Slide> 
           </span>
         </div>
       ) : null}
-    </>
+    </Section>
   );
 }
 
@@ -747,7 +833,7 @@ function Art({ image }: { image: StoredImage }) {
   return <img src={`/files/${projectId}/images/${image.file}?v=${image.version}`} alt="" loading="lazy" draggable={false} />;
 }
 
-const NO_IMAGES = 'Upload your logo, app icon or other artwork under "Logos and images" first, next to the screenshots.';
+const NO_IMAGES = "Upload your logo, app icon or other artwork first: open Assets at the top of the project, or drop the file there.";
 
 /** The uploaded image a slide or an asset shows over its headline. */
 function LogoEditor({ owner, change, hint }: { owner: { logo?: Logo }; change: Change<{ logo?: Logo }>; hint: string }) {
@@ -756,11 +842,7 @@ function LogoEditor({ owner, change, hint }: { owner: { logo?: Logo }; change: C
   const shape = logo?.shape ?? "plain";
   const edit = (key: keyof Logo, value: unknown) => change((item) => put(item.logo!, key, value));
   return (
-    <>
-      <div className="group-head">
-        <span className="label">Your logo</span>
-        <span className="hint">{hint}</span>
-      </div>
+    <Section id="logo" title="Your logo" hint={hint} open={logo != null}>
       {images.length === 0 && !logo ? (
         <span className="hint">{NO_IMAGES}</span>
       ) : (
@@ -794,7 +876,7 @@ function LogoEditor({ owner, change, hint }: { owner: { logo?: Logo }; change: C
           </Field>
         </div>
       ) : null}
-    </>
+    </Section>
   );
 }
 
@@ -828,17 +910,20 @@ function ImagesEditor({ slide, change }: { slide: Slide; change: Change<Slide> }
     });
   const percent = (value: number) => `${value}%`;
   return (
-    <>
-      <div className="group-head">
-        <span className="label">Images</span>
-        <span className="hint">Stickers, characters and shapes, placed freely.</span>
-        <span className="spacer" />
-        {placed.length ? (
+    <Section
+      id="images"
+      title="Images"
+      hint="Stickers, characters and shapes, placed freely."
+      count={placed.length}
+      open={placed.length > 0}
+      actions={
+        placed.length ? (
           <button className="btn small quiet" type="button" onClick={() => change((item) => void delete item.images)}>
             Remove all
           </button>
-        ) : null}
-      </div>
+        ) : null
+      }
+    >
       {images.length === 0 && placed.length === 0 ? <span className="hint">{NO_IMAGES}</span> : null}
       {placed.map((entry, index) => {
         const image = images.find((candidate) => candidate.name === entry.image);
@@ -912,14 +997,14 @@ function ImagesEditor({ slide, change }: { slide: Slide; change: Change<Slide> }
           <div className="row">
             <span className="hint">
               {full ? "Ten is the most a slide holds." : "Click one to add it."}
-              {placed.length && dragging ? " Drag it in the large preview to move it." : ""}
+              {placed.length && dragging ? " Drag it on the slide to move it." : ""}
             </span>
             <span className="spacer" />
             {placed.length > 1 ? <Select label="Arrange the images" options={ARRANGEMENTS} value="" onChange={(value) => value && arrange(value)} /> : null}
           </div>
         </>
       ) : null}
-    </>
+    </Section>
   );
 }
 
@@ -1033,13 +1118,50 @@ const LAYOUT_ART: Record<string, ReactNode> = {
       {tile(16, 27, 10, 10)}
     </>
   ),
+  statement: (
+    <>
+      <rect className="t" x={4} y={13} width={22} height={3.8} rx={1.9} />
+      <rect className="t" x={4} y={19.5} width={18} height={3.8} rx={1.9} />
+      <rect className="t" x={4} y={26} width={12} height={3.8} rx={1.9} />
+    </>
+  ),
+  stat: (
+    <>
+      {copy()}
+      <rect className="t" x={6} y={16} width={18} height={9} rx={2.4} />
+      {line(27.5, 10)}
+      {tile(3.5, 34, 6.5, 5)}
+      {tile(11.75, 34, 6.5, 5)}
+      {tile(20, 34, 6.5, 5)}
+    </>
+  ),
+  steps: (
+    <>
+      {copy()}
+      {[17, 25, 33].map((y) => (
+        <Fragment key={y}>
+          <circle className="d" cx={6.5} cy={y + 2} r={2.6} />
+          <rect className="t" x={11.5} y={y + 0.2} width={14} height={1.8} rx={0.9} />
+          <rect className="t" x={11.5} y={y + 3} width={9} height={1.4} rx={0.7} />
+        </Fragment>
+      ))}
+    </>
+  ),
+  reviews: (
+    <>
+      {copy()}
+      {tile(3.5, 15, 10.5, 8)}
+      {tile(16, 15, 10.5, 11)}
+      {tile(3.5, 25, 10.5, 11)}
+      {tile(16, 28, 10.5, 8)}
+    </>
+  ),
 };
 
 function LayoutPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
   const { meta } = useScope();
   return (
     <div className="field">
-      <span className="label">Layout</span>
       <div className="layout-grid" role="radiogroup" aria-label="Layout">
         {Object.keys(meta.layouts).map((id) => (
           <button key={id} className={`layout-cell${id === value ? " on" : ""}`} type="button" role="radio" aria-checked={id === value} aria-label={label(id)} title={label(id)} onClick={() => onChange(id)}>
@@ -1071,9 +1193,8 @@ function ShotGrid({ chosen, capacity, max, hint, onChange }: { chosen: string[];
   };
   return (
     <div className="field">
-      <span className="label">{max === 1 ? "Screenshot" : "Screenshots"}</span>
       {names.length ? (
-        <div className="shot-grid">
+        <div className={`shot-grid${device === "mac" ? " wide" : ""}`}>
           {names.map((name) => {
             const shot = fileOf(name);
             const at = chosen.indexOf(name);
@@ -1095,7 +1216,7 @@ function ShotGrid({ chosen, capacity, max, hint, onChange }: { chosen: string[];
           })}
         </div>
       ) : null}
-      <span className="hint">{names.length ? hint : "Upload screenshots first, or drop them anywhere in the window."}</span>
+      <span className="hint">{names.length ? hint : "No screenshots yet. Drop them anywhere in the window."}</span>
     </div>
   );
 }
@@ -1113,27 +1234,29 @@ export interface SlideActions {
   remove: () => void;
 }
 
-export function SlideEditor({ project, index, change, actions }: { project: Project; index: number; change: Change<Slide>; actions: SlideActions }) {
+/** `slides` is the set the slide is in: the shared one, or the own one of the device shown. */
+export function SlideEditor({ project, slides, index, change, actions }: { project: Project; slides: Slide[]; index: number; change: Change<Slide>; actions: SlideActions }) {
   const { meta, target, locale } = useScope();
-  const slide = project.slides[index]!;
+  const slide = slides[index]!;
   const layout = slide.layout ?? "device-bottom";
   const places = meta.layoutShots[layout] ?? 1;
   const chosen = [slide.screenshot, slide.screenshot2, slide.screenshot3].slice(0, places).filter((name): name is string => Boolean(name));
   const query = new URLSearchParams({ target, locale });
+  const reviews = layout === "reviews";
 
   return (
     <div className="form">
       <div className="actions">
-        <button className="btn small" type="button" disabled={index === 0} title="Move earlier" aria-label="Move earlier" onClick={() => actions.move(-1)}>
+        <button className="icon-btn plain" type="button" disabled={index === 0} title="Move earlier" aria-label="Move earlier" onClick={() => actions.move(-1)}>
           ←
         </button>
-        <button className="btn small" type="button" disabled={index === project.slides.length - 1} title="Move later" aria-label="Move later" onClick={() => actions.move(1)}>
+        <button className="icon-btn plain" type="button" disabled={index === slides.length - 1} title="Move later" aria-label="Move later" onClick={() => actions.move(1)}>
           →
         </button>
-        <button className="btn small" type="button" disabled={project.slides.length >= 10} onClick={actions.duplicate}>
+        <button className="btn small" type="button" disabled={slides.length >= 10} onClick={actions.duplicate}>
           Duplicate
         </button>
-        <button className="btn small danger" type="button" onClick={actions.remove}>
+        <button className="btn small quiet danger" type="button" onClick={actions.remove}>
           Delete
         </button>
         <span className="spacer" />
@@ -1141,38 +1264,55 @@ export function SlideEditor({ project, index, change, actions }: { project: Proj
           Full size ↗
         </a>
       </div>
-      <LayoutPicker value={layout} onChange={(value) => change((item) => put(item, "layout", value))} />
+      <Section id="layout" title="Layout" open>
+        <LayoutPicker value={layout} onChange={(value) => change((item) => put(item, "layout", value))} />
+      </Section>
       {places === 0 ? null : (
-        <ShotGrid
-          chosen={chosen}
-          capacity={places}
-          max={places}
-          hint={SHOT_HINTS[layout] ?? "Click a screenshot to show it on this slide."}
-          onChange={(next) =>
-            change((item) => {
-              put(item, "screenshot", next[0]);
-              if (places > 1) put(item, "screenshot2", next[1]);
-              if (places > 2) put(item, "screenshot3", next[2]);
-            })
-          }
-        />
+        <Section id="shots" title={places === 1 ? "Screenshot" : "Screenshots"} open>
+          <ShotGrid
+            chosen={chosen}
+            capacity={places}
+            max={places}
+            hint={SHOT_HINTS[layout] ?? "Click a screenshot to show it on this slide."}
+            onChange={(next) =>
+              change((item) => {
+                put(item, "screenshot", next[0]);
+                if (places > 1) put(item, "screenshot2", next[1]);
+                if (places > 2) put(item, "screenshot3", next[2]);
+              })
+            }
+          />
+        </Section>
       )}
-      <Field label="Eyebrow">
-        <TextInput value={slide.eyebrow} onChange={(value) => change((item) => put(item, "eyebrow", value))} placeholder="Small line above the headline" />
-      </Field>
-      <Field label="Headline" hint="Wrap words in *asterisks* to tint them. Enter starts a new line.">
-        <TextInput value={slide.headline} onChange={(value) => change((item) => put(item, "headline", value))} rows={2} />
-      </Field>
-      <Field label="Subheadline">
-        <TextInput value={slide.subheadline} onChange={(value) => change((item) => put(item, "subheadline", value))} rows={2} />
-      </Field>
+      <Section id="text" title="Text" open>
+        <Field label="Eyebrow">
+          <TextInput value={slide.eyebrow} onChange={(value) => change((item) => put(item, "eyebrow", value))} placeholder="Small line above the headline" />
+        </Field>
+        <Field label="Headline" hint="Wrap words in *asterisks* to mark them. Enter starts a new line.">
+          <TextInput value={slide.headline} onChange={(value) => change((item) => put(item, "headline", value))} rows={2} />
+        </Field>
+        <Field label="Subheadline">
+          <TextInput value={slide.subheadline} onChange={(value) => change((item) => put(item, "subheadline", value))} rows={2} />
+        </Field>
+      </Section>
       {chosen.length ? <DeviceEditor slide={slide} theme={project.theme} change={change} single={places === 1} /> : null}
-      <FeaturesEditor slide={slide} change={change} points={layout !== "features"} />
-      <BadgesEditor owner={slide} change={change} max={4} hint="Real figures and reviews only; App Review rejects invented ones." byDefault="by layout" />
+      {layout === "statement" || reviews ? null : <FeaturesEditor slide={slide} change={change} />}
+      <BadgesEditor
+        owner={slide}
+        change={change}
+        max={reviews ? 10 : meta.badgesShown}
+        reviews={reviews}
+        hint={
+          reviews
+            ? `Badges of the style Review make the wall, up to ${meta.reviewsShown} of them. The other badges stand with the copy. Real reviews only: App Review rejects invented ones.`
+            : "Real figures and reviews only: App Review rejects invented ones."
+        }
+        byDefault="by layout"
+      />
       <IconRowEditor slide={slide} change={change} />
       <LogoEditor owner={slide} change={change} hint="Over the headline. The first slide is the place for it." />
       <ImagesEditor slide={slide} change={change} />
-      <Section id="style" title="Style for this slide">
+      <Section id="style" title="Style for this slide" hint="Whatever is left alone here follows the project's theme.">
         <StyleFields owner={slide} change={change} inherits placed />
       </Section>
       <JsonSection
@@ -1219,32 +1359,38 @@ export function CreativeEditor({ project, placement, change, remove }: { project
         {spec.width}×{spec.height} ({spec.ratio}). {spec.note}{" "}
         {banner ? "It is shown whole wherever it goes, so nothing of it is cropped." : "The store crops it differently on each device, so the copy is kept inside the safe area, the part every device shows."}
       </span>
-      <Field label="Layout" hint={meta.creativeLayouts[layout].note}>
-        <Select options={ids(layouts)} value={layout} onChange={(value) => change((item) => put(item, "layout", value))} />
-      </Field>
-      <ShotGrid
-        chosen={picked}
-        capacity={capacity}
-        max={6}
-        hint={
-          picked.length > capacity
-            ? `The ${layout} layout shows ${capacity}; the dimmed ones are left out.`
-            : `The ${layout} layout shows up to ${capacity}, in the order of the numbers; 1 gets the most prominent spot. Without any, the asset is copy on the background.`
-        }
-        onChange={(next) => change((item) => put(item, "screenshots", next.length ? next : undefined))}
-      />
-      <Field label="Eyebrow">
-        <TextInput value={creative.eyebrow} onChange={(value) => change((item) => put(item, "eyebrow", value))} placeholder="Small line above the headline" />
-      </Field>
-      <Field label="Headline" hint={banner ? "A short phrase, or nothing at all. *Asterisks* tint words." : "A short phrase, or nothing at all. No prices, web addresses or claims you cannot back up. *Asterisks* tint words."}>
-        <TextInput value={creative.headline} onChange={(value) => change((item) => put(item, "headline", value))} rows={2} />
-      </Field>
-      <Field label="Subheadline">
-        <TextInput value={creative.subheadline} onChange={(value) => change((item) => put(item, "subheadline", value))} rows={2} />
-      </Field>
+      <Section id="layout" title="Layout" open>
+        <Field label="Layout" hint={meta.creativeLayouts[layout].note}>
+          <Select options={ids(layouts)} value={layout} onChange={(value) => change((item) => put(item, "layout", value))} />
+        </Field>
+      </Section>
+      <Section id="shots" title="Screenshots" count={picked.length} open>
+        <ShotGrid
+          chosen={picked}
+          capacity={capacity}
+          max={6}
+          hint={
+            picked.length > capacity
+              ? `The ${layout} layout shows ${capacity}; the dimmed ones are left out.`
+              : `The ${layout} layout shows up to ${capacity}, in the order of the numbers; 1 gets the most prominent spot. Without any, the asset is copy on the background.`
+          }
+          onChange={(next) => change((item) => put(item, "screenshots", next.length ? next : undefined))}
+        />
+      </Section>
+      <Section id="text" title="Text" open>
+        <Field label="Eyebrow">
+          <TextInput value={creative.eyebrow} onChange={(value) => change((item) => put(item, "eyebrow", value))} placeholder="Small line above the headline" />
+        </Field>
+        <Field label="Headline" hint={banner ? "A short phrase, or nothing at all. *Asterisks* mark words." : "A short phrase, or nothing at all. No prices, web addresses or claims you cannot back up. *Asterisks* mark words."}>
+          <TextInput value={creative.headline} onChange={(value) => change((item) => put(item, "headline", value))} rows={2} />
+        </Field>
+        <Field label="Subheadline">
+          <TextInput value={creative.subheadline} onChange={(value) => change((item) => put(item, "subheadline", value))} rows={2} />
+        </Field>
+      </Section>
       <BadgesEditor owner={creative} change={change} max={3} hint={banner ? "Real figures only." : "Real figures only, and no Apple accolades such as App of the Day."} byDefault="below the copy" />
       <LogoEditor owner={creative} change={change} hint="Over the headline. Your app's own only: Apple allows no other company's here." />
-      <Section id="style" title="Style for this asset">
+      <Section id="style" title={banner ? "Style for this banner" : "Style for this asset"} hint="Whatever is left alone here follows the project's theme.">
         <StyleFields owner={creative} change={change} inherits asset />
       </Section>
       <JsonSection
@@ -1289,60 +1435,50 @@ export function ProjectEditor({ project, change, rename, remove }: { project: Pr
           onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
         />
       </Field>
-      <div className="group-head">
-        <span className="label">Languages</span>
-        <span className="hint">The set is exported once for each.</span>
-      </div>
-      <LanguageList locales={project.locales} onChange={(next) => change((item) => void (item.locales = next))} />
-      <span className="hint">
-        A language shows the first one's texts and screenshots until it has its own. Switch language beside the slides, then type its texts and upload its screenshots. A language you remove keeps what it had and
-        has it again when you add it back.
-      </span>
-      <div className="group-head">
-        <span className="label">Export sizes</span>
+      <Section id="languages" title="Languages" hint="The set is exported once for each." count={project.locales.length} open>
+        <LanguageList locales={project.locales} onChange={(next) => change((item) => void (item.locales = next))} />
         <span className="hint">
-{project.targets?.length ? "Your own choice." : "The standard sizes for your screenshots."} One folder each in the ZIP.
+          A language shows the first one's texts and screenshots until it has its own. Switch language above the slides, then type its texts and upload its screenshots. A language you remove keeps what it had and
+          has it again when you add it back.
         </span>
-      </div>
-      <div className="sizes">
-        {meta.devices.map((device) => (
-          <fieldset key={device.id}>
-            <legend>{device.label}</legend>
-            {(Object.keys(meta.targets) as TargetId[])
-              .filter((key) => meta.targets[key].device === device.id)
-              .map((key) => (
-                <label key={key} title={`For "${meta.targets[key].slot}" in App Store Connect`}>
-                  <input type="checkbox" checked={sizes.includes(key)} onChange={(event) => pickSizes(event.target.checked ? [...sizes, key] : sizes.filter((other) => other !== key))} />
-                  <span>{meta.targets[key].label}</span>
-                  <span className="dim">
-                    {meta.targets[key].width}×{meta.targets[key].height}
-                  </span>
-                </label>
-              ))}
-          </fieldset>
-        ))}
-      </div>
-      {project.targets?.length ? (
+      </Section>
+      <Section id="sizes" title="Export sizes" hint={`${project.targets?.length ? "Your own choice." : "The standard sizes for your screenshots."} One folder each in the ZIP.`} open>
+        <div className="sizes">
+          {meta.devices.map((device) => (
+            <fieldset key={device.id}>
+              <legend>{device.label}</legend>
+              {(Object.keys(meta.targets) as TargetId[])
+                .filter((key) => meta.targets[key].device === device.id)
+                .map((key) => (
+                  <label key={key} title={`For "${meta.targets[key].slot}" in App Store Connect`}>
+                    <input type="checkbox" checked={sizes.includes(key)} onChange={(event) => pickSizes(event.target.checked ? [...sizes, key] : sizes.filter((other) => other !== key))} />
+                    <span>{meta.targets[key].label}</span>
+                    <span className="dim">
+                      {meta.targets[key].width}×{meta.targets[key].height}
+                    </span>
+                  </label>
+                ))}
+            </fieldset>
+          ))}
+        </div>
+        {project.targets?.length ? (
+          <div>
+            <button className="btn small quiet" type="button" onClick={() => pickSizes([])}>
+              Back to the standard sizes
+            </button>
+          </div>
+        ) : null}
+      </Section>
+      <Section id="theme" title="Theme" hint="Used by every slide, asset and banner that does not override it." open>
+        <StyleFields owner={project.theme} change={(recipe) => change((item) => recipe(item.theme))} inherits={false} />
+      </Section>
+      <Section id="delete" title="Delete" hint="Removes the project with its screenshots, images and renders.">
         <div>
-          <button className="btn small quiet" type="button" onClick={() => pickSizes([])}>
-            Back to the standard sizes
+          <button className="btn small danger" type="button" onClick={remove}>
+            Delete this project…
           </button>
         </div>
-      ) : null}
-      <div className="group-head">
-        <span className="label">Theme</span>
-        <span className="hint">Used by every slide and asset that does not override it.</span>
-      </div>
-      <StyleFields owner={project.theme} change={(recipe) => change((item) => recipe(item.theme))} inherits={false} />
-      <div className="group-head">
-        <span className="label">Delete</span>
-        <span className="hint">Removes the project with its screenshots, images and renders.</span>
-      </div>
-      <div>
-        <button className="btn small danger" type="button" onClick={remove}>
-          Delete this project…
-        </button>
-      </div>
+      </Section>
     </div>
   );
 }

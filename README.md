@@ -72,15 +72,17 @@ Everybody signs in with Google. There are no passwords.
 - **The admin** is the Google address in `ADMIN_EMAIL`. The admin is always let in, works in the server's own space without limits, and decides who else gets in. To hand the server to someone else, change the variable and redeploy.
 - **Everyone else** gets a private space on their first sign-in: their own projects, screenshots, renders and API tokens. Nobody sees anybody else's work, the admin included.
 
-Visitors who are not signed in see the public home page. Its **Open Studio** button (`/studio`) signs them in with Google and drops them in the Studio. Who that works for is set under **People** in the sidebar (admin only):
+Visitors who are not signed in see the public home page. Its **Open Studio** button (`/studio`) signs them in with Google and drops them in the Studio. Who that works for is set on the **Admin** page, which only the admin has in the sidebar:
 
 - **Anyone with a Google account** is the default: whoever finds the address can sign in and gets a space of their own. [What open sign-in costs](#what-open-sign-in-costs) says what that means for the machine.
 - **Only the people listed here** closes it. Add the Google address of each person you want to let in; anyone else is turned away after choosing their Google account.
 - **Remove** deletes a person's account with all of its projects, and takes them off the list. Their sessions and tokens stop working at once.
 
-People manage their own tokens, or delete their account, under **Account**. Accounts other than the admin are capped at 20 projects and 40 screenshots per project and language (`USER_MAX_PROJECTS`, `USER_MAX_SHOTS`), and one account renders one set at a time.
+People manage their own tokens, or delete their account, under **Settings**. Accounts other than the admin are capped at 20 projects and 40 screenshots per project and language (`USER_MAX_PROJECTS`, `USER_MAX_SHOTS`), and one account renders one set at a time.
 
-**Renders are counted.** Every account other than the admin's gets 10 renders (`USER_RENDER_CREDITS`). One render is one export, whatever it draws; previews in the Studio are free, and a render that fails or is cancelled uses none. Each person sees how many are left in the sidebar. Under **People**, the button with that number sets a new one for an account. Deleting an account does not reset the count: the number of renders used is kept beside a hash of the Google account id, so signing up again gives the same count back.
+**Renders are counted.** Every account other than the admin's gets 10 renders (`USER_RENDER_CREDITS`). One render is one export, whatever it draws; previews in the Studio are free, and a render that fails or is cancelled uses none. Each person sees how many are left in the sidebar. On the **Admin** page, a click on that number sets a new one for an account. Deleting an account does not reset the count: the number of renders used is kept beside a hash of the Google account id, so signing up again gives the same count back.
+
+**The Admin page** also shows the server in numbers: accounts, projects, screenshots, renders made and storage used, and for each person their projects, their storage and their renders. It shows how much everybody keeps and never what it is.
 
 ### Sign in with Google
 
@@ -99,16 +101,16 @@ The server makes no paid calls. The agent runs on each person's own subscription
 
 - **CPU and memory.** A render drives a headless Chromium: about a second per slide on a recent Mac, more on a small server, and a few hundred megabytes of memory while it runs. Renders are queued one at a time for the whole server, so many people at once means waiting, not a bigger bill.
 - **Disk.** This is what grows. An account can hold 20 projects of 40 screenshots per language, each up to 40 MB when uploaded, plus the rendered sets. A handful of people is nothing; a few hundred accounts filled to the cap would not fit on a small disk. Lower `USER_MAX_PROJECTS` and `USER_MAX_SHOTS` if the disk is small, and keep an eye on the volume.
-- **Abuse.** Anyone can sign in, so somebody may script uploads or renders. The caps, the counted renders and the render queue bound the damage, and **Remove** under People deletes an account with everything in it.
+- **Abuse.** Anyone can sign in, so somebody may script uploads or renders. The caps, the counted renders and the render queue bound the damage, and **Remove** on the Admin page deletes an account with everything in it.
 
-If that is more than you want to carry, switch to **Only the people listed here** under People.
+If that is more than you want to carry, switch to **Only the people listed here** on the Admin page.
 
 ### Upgrading from a version with `APPSHOTS_TOKEN`
 
 - `APPSHOTS_TOKEN` is no longer read. The projects it reached are the server's own space, which now belongs to the admin.
 - Agents and the CLI need a personal token instead: sign in, open **Connect an agent**, create one, and run the command it shows.
 - Accounts made with an email and a password, or through an invite link, are kept: the account and its projects come back on the first Google sign-in with the same address. Their old passwords and tokens are discarded.
-- Sign-in is open to anyone with a Google account unless you picked the list under People or put somebody on it. A server that was invite-only is open after the upgrade; choose **Only the people listed here** to close it again.
+- Sign-in is open to anyone with a Google account unless you picked the list on the Admin page or put somebody on it. A server that was invite-only is open after the upgrade; choose **Only the people listed here** to close it again.
 
 ## Connect an agent
 
@@ -151,7 +153,7 @@ The server hands out the skill and the CLI it was deployed with, so a deploy cha
 appshots update
 ```
 
-`appshots check` says when the server has a newer skill, and the skill tells the agent to run the update and read itself again. Installs from before `update` existed need the setup command once more.
+`appshots check` says when the server has a newer skill, and the skill tells the agent to run the update and read itself again. Every other command also says so in one line when the copies on the Mac are behind: it compares them with the hashes at `/skill.json`, at most twice a day. Installs from before `update` existed need the setup command once more.
 
 Then open the agent in an app's repository, start a new session and start the skill, or just ask for App Store screenshots. The agent works the same way every time: it checks the setup, asks a handful of questions first (iPhone or iPad, where the screens come from, where the app runs, the look, any real ratings or logos to show), reads a little of the code to learn what the app does, gets the screens, writes the headlines, builds the set, looks at the render and fixes what is off. The skill's source is [skill/SKILL.md](skill/SKILL.md).
 
@@ -239,25 +241,28 @@ A Mac app runs on the Mac itself, so `run` and `launch` are not for it. `capture
 
 Open the server in a browser and sign in to see every slide as a live preview at export size, and download the set as a ZIP. Changes an agent makes through MCP show up in an open Studio within a few seconds.
 
-- **Projects** sit in the sidebar. **Rename** and **Delete** are beside the project's title, which can also be clicked and typed over, and under the three dots next to every project in the sidebar. Renaming keeps the project's address, so links to it go on working.
-
+- **Projects** sit in the sidebar, and **All projects** lists them in a table. The title in the bar at the top can be clicked and typed over, and **Rename** and **Delete** are under the three dots next to every project. Renaming keeps the project's address, so links to it go on working. A project has three parts, in the bar at the top: **Slides**, **Assets** and **Mockups**.
 - **Languages.** A new project asks for its languages. The switch beside the slides picks the one the page shows, which is also the one you type and upload for, and **+ Language** adds another. A language shows the first one's texts and screenshots until it has its own; **Project → Languages** removes one or makes another the first.
-- **Slides.** The heading of the section switches between iPhone, iPhone Duo, iPad and Mac. Click a slide to edit it: the editor opens beside a large preview of that slide, with the layouts as small sketches, the screenshots as thumbnails to pick from (two or three for the layouts that take several), sliders for the device's size, position and tilt, and editors for feature cards or points, badges, and the row of icons or logos.
-- **Screenshots.** Drop files anywhere on the page, or use the upload button.
-- **Logos and images.** Everything else a slide can show: your logo or app icon, a mascot, stickers, shapes. Upload PNG, SVG, JPEG or WebP files there, or drop them on that section. Click one to place it on the selected slide, then drag it in the large preview; size, turn, opacity, shadow, mirroring and whether it lies over or under the device are in the slide's editor, with ready arrangements for several images at once. A slide's logo is picked under **Your logo**.
+- **Slides.** The line above the previews switches between iPhone, iPhone Duo, iPad and Mac, and sets the language and the size of the previews. Click a slide to edit it: its fields open on the right, with the layouts as small sketches, the screenshots as thumbnails to pick from (two or three for the layouts that take several), sliders for the device's size, position and tilt, and editors for feature cards or points, badges, and the row of icons or logos.
+- **A set for each device.** **Give the iPad its own slides** under the device switch starts a set for that device as a copy of the shared one; from then on the two are changed separately. A dot on the switch marks such a device, and **Use the shared slides again** removes its set.
+- **Assets.** The screenshots, grouped by device, and under them **Logos and images**: your logo or app icon, a mascot, stickers, shapes. Drop files anywhere in the window, or use **Upload**. The menu on a screenshot files it under another device. A slide places images under **Images** in its fields, where size, turn, opacity, shadow, mirroring and the layer are set, and a placed image can be dragged in the slide's preview. A slide's logo is picked under **Your logo**.
 - **Header and search results.** Adds, previews and edits the three store assets. **Show safe area** draws the part every device shows as a dashed frame; it is off until you tick it and never in the exported file.
 - **Banners.** Adds, previews and edits the wide pictures for outside the store. See [Banners](#banners).
-- **Mockups.** The switch at the top of a project goes from **App Store** to **Mockups**: every screenshot in its device with nothing behind it. Set the device's look, colour, shadow, tilt and width on the right, then download one as a transparent PNG, copy it, or take all of them as a ZIP. See [Mockups](#mockups).
-- **Light and dark.** The switch at the bottom of the sidebar picks **Light**, **Dark** or **Auto**, which follows the device. The home page has the same choice as a button in its header, and the browser remembers it.
+- **Mockups.** Every screenshot in its device with nothing behind it. Set the device's look, colour, shadow, tilt and width on the right, then download one as a transparent PNG, copy it, or take all of them as a ZIP. See [Mockups](#mockups).
+- **Settings.** Your account and **Sign out**, how much you keep on the server, the API tokens, and the appearance: **Light**, **Dark** or **Auto**, which follows the device. The home page has the same choice as a button in its header, and the browser remembers it.
+- **Admin.** For the admin only: the server in numbers, who can sign in, and the people with their projects, storage and renders.
 
 ## Slides
 
 A project has a theme and up to ten slides. Every style field can be set on the theme and overridden per slide.
 
-- **Layouts:** one device (`device-bottom`, `device-top`, `device-center`, `tilted`, `closeup`, `floating`, `hero` with badges above the headline), the device beside a column of copy (`device-right`, `device-left`), several devices (`duo` and `side-by-side` take `screenshot` and `screenshot2`, `trio` takes `screenshot3` as well), and `features`, which has no device at all
-- **Feature slides:** the `features` layout lists up to six things the app does as cards with an icon or a figure, a title and a line of text, in the styles `bento`, `grid`, `cards` or `list`
+`slides` is the set every device shares, drawn again for each canvas. A device can have a set of its own in `deviceSlides`, by `iphone`, `duo`, `ipad` and `mac`, which it then draws in place of the shared one: `set_slides` takes a `device` for that, `update_slide` takes `of`, and the Studio has **Give the iPad its own slides**. The design guide tells an agent to compose a set for each device an app has screenshots of, with the same story on each canvas.
+
+- **Layouts:** one device (`device-bottom`, `device-top`, `device-center`, `tilted`, `closeup`, `floating`, `hero` with badges above the headline), the device beside a column of copy (`device-right`, `device-left`), several devices (`duo` and `side-by-side` take `screenshot` and `screenshot2`, `trio` takes `screenshot3` as well), and five with no device at all: `features` (cards), `statement` (the headline as the picture), `stat` (one giant figure and a row of smaller ones), `steps` (numbered steps joined by a line) and `reviews` (a wall of quote cards)
+- **Feature slides:** the `features` layout lists up to six things the app does as cards with an icon or a figure, a title and a line of text, in the styles `bento`, `grid`, `cards` or `list`. A card can have a colour of its own and a small picture or screenshot in place of the icon, and `featureCards` sets the look of all of them (`glass`, `tint`, `solid`, `outline`), how the icons are drawn (`gradient`, `badge`, `plain`) and the number of columns. `stat` and `steps` read the same `features` list, and `reviews` reads the slide's `review` badges
 - **Feature points:** on every other layout, `features` is a short list next to the headline, as `list`, `cards`, `grid` or `chips`. It goes best with `device-right` and `device-left`, which give the copy a column of its own
-- **Badges** (up to four per slide): `laurel` (wreath), `stars`, `rating` (the figure with five stars), `review` (a quote with its author), `icon`, `pill`; plain or in `gold`
+- **Marked words:** `*asterisks*` in a headline mark a word, and `emphasis` sets how: `tint`, `marker` or `underline`
+- **Badges** (a slide draws four with its copy, and a `reviews` slide up to six more on its wall): `laurel` (wreath), `stars`, `rating` (the figure with five stars), `review` (a quote with its author), `icon`, `pill`; plain or in `gold`
 - **Icon and logo rows:** `iconRow` puts up to eight icons or logos under the copy with an optional label such as "Works with", as `tiles`, `circles` or `plain`, in the brands' own colours, the accent or the text colour
 - **Logo:** `logo` puts an uploaded image over the headline, `small`, `medium` or `large`, as it is (`plain`), as an iOS app icon with rounded corners (`app-icon`) or as a `circle`
 - **Images:** `images` places up to ten uploaded images anywhere on a slide, each with its position and width in percent of the canvas, and optionally a turn, a shadow that follows its outline, an opacity, mirroring, and whether it lies in front of the device and the copy or behind them
@@ -307,7 +312,8 @@ The Mac is a fourth device. Its set is landscape, 2880×1800, the largest of the
 - **Screens** come from the app's own window: `appshots capture --mac <app> --name overview --project <id>`, or a window taken by hand (Shift-Command-4, Space, click) and uploaded with `--as mac`.
 - **A captured window** has see-through round corners and macOS's shadow around it. On upload the shadow is cut away, the corner radius is measured and kept as `corner`, and the picture is filed as Mac whatever its shape.
 - **Window or MacBook.** A captured window is drawn as that window with its own corners. An opaque picture between 1.45 and 1.85 times as wide as tall, such as an app in full screen, is drawn inside a MacBook. `"frame": "mac"` and `"frame": "none"` on `device` decide it by hand. The MacBook is silver by default and has no status bar.
-- **Layouts** are the same thirteen. On the wide canvas the side layouts give the device the wider part, laptops in `duo`, `side-by-side` and `trio` stand level, and a `features` slide lays its cards across.
+- **Layouts** are the same seventeen. On the wide canvas the side layouts give the device the wider part, laptops in `duo`, `side-by-side` and `trio` stand level, and a `features` slide lays its cards across.
+- **Its own slides.** An app on iPhone and Mac can share one set, and reads better with a Mac set of its own, composed for the wide canvas: `set_slides` with `"device": "mac"`, or **Give the Mac its own slides** in the Studio.
 - **Mixed devices.** A name without a Mac screenshot is drawn as the device it has. A group that mixes a laptop or window with phones or tablets puts the laptop in the middle and the others in front of its lower corners.
 - **Mockups** of Mac screenshots come out as MacBooks or windows the same way.
 
@@ -367,11 +373,12 @@ Everything the Studio and the CLI do goes through `/api`, with the same bearer t
 
 ```
 GET    /api/projects                       list
-POST   /api/projects                       create {name, locales?, targets?, theme?, slides?}
+POST   /api/projects                       create {name, locales?, targets?, theme?, slides?, deviceSlides?}
 GET    /api/projects/:id                   project, screenshots, images, rendered files
-PUT    /api/projects/:id                   update {name?, locales?, targets?, theme?, slides?, creatives?: {header?, search?, universal?, readme?, social?, link?, post?},
-                                           mockups?: {device?, width?}}
+PUT    /api/projects/:id                   update {name?, locales?, targets?, theme?, slides?, deviceSlides?: {iphone?, duo?, ipad?, mac?},
+                                           creatives?: {header?, search?, universal?, readme?, social?, link?, post?}, mockups?: {device?, width?}}
 DELETE /api/projects/:id
+GET    /api/usage                          what the account keeps: projects, slides, shots, images, bytes
 PUT    /api/projects/:id/shots/:name       upload a screenshot (raw image body, ?device=iphone|duo|ipad|mac to override detection,
                                            ?locale=de-DE for one language only)
 PATCH  /api/projects/:id/shots/:file       {device?, locale?} files it under another device or language (locale null: the first)
@@ -393,13 +400,13 @@ A render without `slides` and `creatives` produces everything. `slides` (zero-ba
 
 The Studio renders in the background: **Export ZIP** starts a job, the sidebar shows its progress, and the ZIP downloads when it is done, so the page stays free meanwhile. A job draws the project as it was when it was asked for. Jobs live in memory, so one that is cut off by a restart has to be started again; it is not counted.
 
-Account settings and the People page need a browser sign-in; an API token cannot create more tokens or manage people.
+Account settings and the Admin page need a browser sign-in; an API token cannot create more tokens or manage people.
 
 ## Good to know
 
 - iPhone and iPad sets are portrait only and a Mac set is landscape; there is no Apple Watch or Apple TV output.
 - `appshots capture --mac` needs the Screen Recording permission for the terminal it runs in. The MacBook, like the other frames, is drawn in CSS.
-- Put only real figures, reviews and awards in badges. App Review rejects screenshots with invented download counts, ratings or rankings.
+- Put only real figures, reviews and awards in badges, on a `stat` slide and on a `reviews` slide. App Review rejects screenshots with invented download counts, ratings or rankings.
 - Logos are other companies' trademarks. Show them only for services the app really works with, and none in the header and search results assets, where Apple does not allow them. The same goes for images you upload: your own logo and artwork, not somebody else's.
 - Uploaded images are kept as PNGs of at most 2048 pixels a side; an SVG is drawn once when it is uploaded.
 - The device frames are drawn in CSS, not Apple's product images.

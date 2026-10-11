@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp, { type Sharp } from "sharp";
-import { type Creatives, type Project, projectSchema, SLUG, type Slide, type Theme } from "./schema.ts";
+import { allSlides, type Creatives, type Project, projectSchema, SLUG, type Slide, type Theme } from "./schema.ts";
 import { type DeviceKind, deviceKindOf, PLACEMENT_IDS, PLACEMENTS, type PlacementId } from "./sizes.ts";
 
 export class NotFoundError extends Error {}
@@ -73,6 +73,58 @@ export async function countProjects(space: Space): Promise<number> {
   return entries.filter((entry) => entry.isDirectory() && SLUG.test(entry.name)).length;
 }
 
+/** How many files a folder holds with everything below it, and their bytes. */
+async function weigh(dir: string): Promise<{ files: number; bytes: number }> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  const total = { files: 0, bytes: 0 };
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const below = await weigh(full);
+      total.files += below.files;
+      total.bytes += below.bytes;
+    } else if (entry.isFile()) {
+      total.files++;
+      total.bytes += await stat(full).then(
+        (info) => info.size,
+        () => 0,
+      );
+    }
+  }
+  return total;
+}
+
+export interface Usage {
+  projects: number;
+  slides: number;
+  shots: number;
+  images: number;
+  /** Everything the projects keep on disk, rendered files included. */
+  bytes: number;
+}
+
+/** What one account keeps, as numbers only. The admin's overview adds these up without opening anybody's work. */
+export async function usageOf(space: Space): Promise<Usage> {
+  const usage: Usage = { projects: 0, slides: 0, shots: 0, images: 0, bytes: 0 };
+  const entries = await readdir(projectsDir(space), { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !SLUG.test(entry.name)) continue;
+    const dir = path.join(projectsDir(space), entry.name);
+    const [project, shots, images, all] = await Promise.all([
+      getProject(space, entry.name).catch(() => null),
+      readdir(path.join(dir, "shots")).catch(() => []),
+      readdir(path.join(dir, "images")).catch(() => []),
+      weigh(dir),
+    ]);
+    usage.projects++;
+    usage.slides += project ? allSlides(project).length : 0;
+    usage.shots += shots.filter((file) => SHOT_FILE.test(file)).length;
+    usage.images += images.filter((file) => IMAGE_FILE.test(file)).length;
+    usage.bytes += all.bytes;
+  }
+  return usage;
+}
+
 export async function listProjects(space: Space): Promise<Project[]> {
   const entries = await readdir(projectsDir(space), { withFileTypes: true }).catch(() => []);
   const projects: Project[] = [];
@@ -100,16 +152,19 @@ async function writeProject(space: Space, project: Project): Promise<void> {
   await rename(tmp, path.join(dir, "project.json"));
 }
 
+/** Pages of the Studio that stand where a project's id would: a project named so gets a number behind its id. */
+const RESERVED_IDS = new Set(["settings", "admin"]);
+
 export async function createProject(
   space: Space,
-  input: { name: string; locales?: string[]; targets?: Project["targets"] | null; theme?: Theme; slides?: Slide[]; creatives?: Creatives },
+  input: { name: string; locales?: string[]; targets?: Project["targets"] | null; theme?: Theme; slides?: Slide[]; deviceSlides?: Project["deviceSlides"]; creatives?: Creatives },
 ): Promise<Project> {
   if (space.limits && (await countProjects(space)) >= space.limits.projects) {
     throw new InputError(`This account is limited to ${space.limits.projects} projects. Delete one to make room.`);
   }
   const base = slugify(input.name);
   let id = base;
-  for (let n = 2; await exists(projectDir(space, id)); n++) id = `${base}-${n}`;
+  for (let n = 2; RESERVED_IDS.has(id) || (await exists(projectDir(space, id))); n++) id = `${base}-${n}`;
   const now = new Date().toISOString();
   const project = projectSchema.parse({
     id,
@@ -120,6 +175,7 @@ export async function createProject(
     ...(input.targets?.length ? { targets: input.targets } : {}),
     theme: input.theme ?? {},
     slides: input.slides ?? [],
+    deviceSlides: input.deviceSlides ?? {},
     creatives: input.creatives ?? {},
   });
   await writeProject(space, project);
@@ -129,7 +185,7 @@ export async function createProject(
 export async function updateProject(
   space: Space,
   id: string,
-  patch: Partial<Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives" | "mockups">> & { targets?: Project["targets"] | null },
+  patch: Partial<Pick<Project, "name" | "locales" | "theme" | "slides" | "deviceSlides" | "creatives" | "mockups">> & { targets?: Project["targets"] | null },
 ): Promise<Project> {
   const current = await getProject(space, id);
   const defined: Record<string, unknown> = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));

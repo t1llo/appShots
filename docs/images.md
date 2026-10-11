@@ -7,7 +7,7 @@ Besides screenshots, a project holds images: your logo or app icon, a mascot, st
 
 ## Upload
 
-In the Studio, drop the files on **Logos and images**. From the Mac:
+In the Studio, open **Assets** and drop the files on **Logos and images**. From the Mac:
 
 ```bash
 appshots upload streaks logo.svg mascot.png --image
@@ -42,7 +42,7 @@ The logo belongs on the first slide, not on every one.
 
 ## Artwork anywhere on a slide
 
-In the Studio, select a slide, click an image to place it, and drag it in the large preview. Size, turn, opacity, shadow, mirroring and the layer are in the slide's editor, with ready arrangements for several images at once.
+In the Studio, select a slide and open **Images** in its fields. Click an image there to place it, then drag it in the slide's preview. Size, turn, opacity, shadow, mirroring and the layer are in the same group, with ready arrangements for several images at once.
 
 As data, each entry of `images` is:
 

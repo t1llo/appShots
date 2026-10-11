@@ -1,9 +1,10 @@
-// One project: its screenshots, slides and store assets as live previews, with the editor beside them.
-// The previews are iframes of the very pages the renderer screenshots, so what is on screen is what gets exported.
+// One project: its slides, store assets and banners as live previews with the editor beside them, and its screenshots
+// and images on a page of their own. The previews are iframes of the very pages the renderer screenshots, so what is
+// on screen is what gets exported.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   type Creative,
@@ -22,38 +23,64 @@ import {
   projectsQuery,
   type Shot,
   shotIn,
+  type Slide,
   slugify,
   type StoredImage,
   type TargetId,
 } from "./api.ts";
 import { openProject, useOpenDialog } from "./dialogs.tsx";
-import { type Change, CreativeEditor, PLACED_SPOTS, ProjectEditor, Scope, SlideEditor } from "./editor.tsx";
+import { type Change, CreativeEditor, ProjectEditor, Scope, SlideEditor } from "./editor.tsx";
 import { languageName, LanguageSwitch } from "./languages.tsx";
 import { rendersQuery, startRender, working } from "./renders.tsx";
-import { Icon, toast } from "./ui.tsx";
+import { Icon, Menu, toast } from "./ui.tsx";
 
-const PENCIL = "M10.6 2.6l2.8 2.8M2.5 13.5l.6-3.1 7.9-7.9 2.5 2.5-7.9 7.9z";
-const TRASH = "M2.8 4.2h10.4M6.3 4.2V2.6h3.4v1.6M4.1 4.2l.6 9.2h6.6l.6-9.2M6.7 6.8v4.2M9.3 6.8v4.2";
-const UPLOAD = "M8 10.6V2.8M4.9 5.7L8 2.6l3.1 3.1M2.8 10.4v2.8h10.4v-2.8";
+export const UPLOAD = "M8 10.6V2.8M4.9 5.7L8 2.6l3.1 3.1M2.8 10.4v2.8h10.4v-2.8";
 
-const SLIDE_HEIGHT = 440;
-/** A landscape slide or a wide image is as wide as this at most, so that it fits beside the panel on a narrow window. */
-const SLIDE_WIDTH = 420;
-const ASSET_HEIGHT = 190;
-/** From this window width on, the selected slide is also shown large beside its fields. */
-const FOCUS_FROM = 1360;
+/** How large the previews are drawn: the height of a slide, the width a landscape one may take at most, and the height of an asset. */
+const ZOOMS = {
+  s: { name: "Small", slide: 320, wide: 380, asset: 150 },
+  m: { name: "Medium", slide: 440, wide: 520, asset: 200 },
+  l: { name: "Large", slide: 620, wide: 760, asset: 280 },
+} as const;
+type Zoom = keyof typeof ZOOMS;
 
 type Selection = { kind: "slide"; index: number } | { kind: "creative"; placement: PlacementId } | null;
 
 /** The part of a project the Studio edits and sends back. */
-type Saved = Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives"> & { targets: TargetId[] | null };
+type Saved = Pick<Project, "name" | "locales" | "theme" | "slides" | "deviceSlides" | "creatives"> & { targets: TargetId[] | null };
 
 const snapshot = (project: Project) =>
-  JSON.stringify({ name: project.name, locales: project.locales, targets: project.targets ?? null, theme: project.theme, slides: project.slides, creatives: project.creatives } satisfies Saved);
+  JSON.stringify({
+    name: project.name,
+    locales: project.locales,
+    targets: project.targets ?? null,
+    theme: project.theme,
+    slides: project.slides,
+    deviceSlides: project.deviceSlides ?? {},
+    creatives: project.creatives,
+  } satisfies Saved);
 export const shotsKey = (shots: (Shot | StoredImage)[]) => shots.map((shot) => `${shot.file}:${shot.version}`).join(",");
+
+type Sets = Pick<Project, "slides" | "deviceSlides">;
+/** The slides a device shows: its own set, or the one the devices share. */
+const setOf = (project: Sets, device: DeviceKind): Slide[] => project.deviceSlides?.[device] ?? project.slides;
+const everySlide = (project: Sets): Slide[] => [...project.slides, ...Object.values(project.deviceSlides ?? {}).flatMap((set) => set ?? [])];
 
 /** The file drop anywhere in the window goes to whichever project is open, as screenshots or as logos and images. */
 export const dropTarget: { upload: ((files: File[], kind: "shot" | "image") => void) | null } = { upload: null };
+
+const remembered = (key: string) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+const remember = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+};
 
 // ---------------------------------------------------------------- previews
 
@@ -93,8 +120,8 @@ export function Stage({ src, frameKey, width, height, scale }: { src: string | n
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 /**
- * Lies over the large preview with one handle per placed image, so an image is moved by dragging it. The preview
- * itself only changes once the move is saved, so a handle shows its image for as long as the two differ.
+ * Lies over the preview of the selected slide with one handle per placed image, so an image is moved by dragging it.
+ * The preview itself only changes once the move is saved, so a handle shows its image for as long as the two differ.
  */
 function PlacedHandles(props: { placed: PlacedImage[]; shown: PlacedImage[]; images: StoredImage[]; projectId: string; onMove: (index: number, x: number, y: number) => void }) {
   const { placed, shown, images, projectId, onMove } = props;
@@ -156,33 +183,67 @@ function PlacedHandles(props: { placed: PlacedImage[]; shown: PlacedImage[]; ima
   );
 }
 
-/** What a project makes of its screenshots: the set for the App Store, or the devices alone. */
-export function ViewSwitch({ id, view }: { id: string; view: "store" | "mockups" }) {
+export type ProjectView = "slides" | "assets" | "mockups";
+
+/** The parts of a project: what it makes for the store, what it is made of, and the devices alone. */
+export function ViewSwitch({ id, view }: { id: string; view: ProjectView }) {
+  const params = { projectId: id };
+  const current = (name: ProjectView) => ({ className: view === name ? "on" : "", "aria-current": view === name ? ("page" as const) : undefined });
   return (
-    <nav className="segmented" aria-label="What this project makes">
-      <Link className={view === "store" ? "on" : ""} to="/$projectId" params={{ projectId: id }} aria-current={view === "store" ? "page" : undefined} title="The screenshots for the App Store">
-        App Store
+    <nav className="view-tabs" aria-label="Parts of this project">
+      <Link {...current("slides")} to="/$projectId" params={params} search={{}} title="The slides, the store's header images and the banners">
+        Slides
       </Link>
-      <Link className={view === "mockups" ? "on" : ""} to="/$projectId/mockups" params={{ projectId: id }} aria-current={view === "mockups" ? "page" : undefined} title="The devices alone, on a transparent background">
+      <Link {...current("assets")} to="/$projectId" params={params} search={{ view: "assets" }} title="The screenshots, logos and images the project is made of">
+        Assets
+      </Link>
+      <Link {...current("mockups")} to="/$projectId/mockups" params={params} title="The devices alone, on a transparent background">
         Mockups
       </Link>
     </nav>
   );
 }
 
-function useViewport() {
-  const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
-  useEffect(() => {
-    const read = () => setSize({ width: window.innerWidth, height: window.innerHeight });
-    window.addEventListener("resize", read);
-    return () => window.removeEventListener("resize", read);
-  }, []);
-  return size;
+/** The bar over every page of a project: its name, its parts, and on the right what the page puts there. */
+export function ProjectBar(props: { id: string; name: string; view: ProjectView; onRename?: (name: string) => void; field?: RefObject<HTMLInputElement | null>; children?: ReactNode }) {
+  const { id, name, view, onRename, field, children } = props;
+  const [typed, setTyped] = useState<string | null>(null);
+  const shown = typed ?? name;
+  return (
+    <header className="bar">
+      {onRename ? (
+        <input
+          className="bar-title"
+          ref={field}
+          type="text"
+          maxLength={80}
+          placeholder="Untitled"
+          aria-label="Project name"
+          title="Click to rename"
+          spellCheck={false}
+          style={{ width: `${Math.min(30, Math.max(5, shown.length + 2))}ch` }}
+          value={shown}
+          onChange={(event) => {
+            setTyped(event.target.value);
+            const next = event.target.value.trim();
+            if (next) onRename(next);
+          }}
+          onKeyDown={(event) => (event.key === "Enter" || event.key === "Escape") && event.currentTarget.blur()}
+          onBlur={() => setTyped(null)}
+        />
+      ) : (
+        <span className="bar-title still">{name}</span>
+      )}
+      <ViewSwitch id={id} view={view} />
+      <span className="spacer" />
+      {children}
+    </header>
+  );
 }
 
 // ---------------------------------------------------------------- page
 
-export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initial: Detail; openConnect: () => void }) {
+export function ProjectPage({ meta, initial, view, openConnect }: { meta: Meta; initial: Detail; view: "slides" | "assets"; openConnect: () => void }) {
   const id = initial.project.id;
   const queryClient = useQueryClient();
   const openDialog = useOpenDialog();
@@ -192,26 +253,24 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   /** What the server last accepted. The previews show this, not the draft. */
   const [saved, setSaved] = useState<Saved>(() => JSON.parse(snapshot(initial.project)));
   const [dirty, setDirty] = useState(false);
-  const [selection, setSelection] = useState<Selection>(initial.project.slides.length ? { kind: "slide", index: 0 } : null);
-  const [tab, setTab] = useState<"item" | "project">("item");
   const [target, setTarget] = useState<TargetId>(() => drawnSize(meta, initial.defaultTargets[0]!));
+  const [selection, setSelection] = useState<Selection>(() => (setOf(initial.project, meta.targets[drawnSize(meta, initial.defaultTargets[0]!)].device).length ? { kind: "slide", index: 0 } : null));
+  const [tab, setTab] = useState<"item" | "project">("item");
   const [chosenLocale, setLocale] = useState(initial.project.locales[0]!);
   const [status, setStatusState] = useState({ text: "", error: false });
-  const [title, setTitle] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const viewport = useViewport();
-  const [guides, setGuidesState] = useState(() => {
-    try {
-      return localStorage.getItem("appshots.guides") === "1";
-    } catch {
-      return false;
-    }
-  });
+  const [guides, setGuidesState] = useState(() => remembered("appshots.guides") === "1");
   const setGuides = (on: boolean) => {
     setGuidesState(on);
-    try {
-      localStorage.setItem("appshots.guides", on ? "1" : "0");
-    } catch {}
+    remember("appshots.guides", on ? "1" : "0");
+  };
+  const [zoom, setZoomState] = useState<Zoom>(() => {
+    const kept = remembered("appshots.zoom");
+    return kept === "s" || kept === "l" ? kept : "m";
+  });
+  const setZoom = (next: Zoom) => {
+    setZoomState(next);
+    remember("appshots.zoom", next);
   };
 
   // Timers and requests outlive renders, so they read the draft from here.
@@ -246,7 +305,9 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
           latest.current = { ...latest.current, updatedAt: fresh.project.updatedAt };
           setDraft(latest.current);
           queryClient.setQueryData(detailQuery(id).queryKey, fresh);
-          queryClient.setQueryData(projectsQuery.queryKey, (list) => list?.map((entry) => (entry.id === id ? { ...entry, name: fresh.project.name } : entry)));
+          queryClient.setQueryData(projectsQuery.queryKey, (list) =>
+            list?.map((entry) => (entry.id === id ? { ...entry, name: fresh.project.name, slides: fresh.project.slides.length, locales: fresh.project.locales, updatedAt: fresh.project.updatedAt } : entry)),
+          );
           setStatus("Saved");
         } catch (error) {
           setStatus(`Not saved: ${errorText(error)}`, true);
@@ -291,6 +352,16 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     };
   }, [save]);
 
+  // The device whose slides are shown. Each device has the shared set, or one of its own.
+  const size = meta.targets[target];
+  const device = size.device;
+  const deviceLabel = meta.devices.find((entry) => entry.id === device)!.label;
+  const shownDevice = useRef(device);
+  shownDevice.current = device;
+  const slides = setOf(draft, device);
+  const savedSlides = setOf(saved, device);
+  const ownSet = draft.deviceSlides?.[device] != null;
+
   // Picks up changes made elsewhere while the Studio is open: an agent editing through MCP, or the CLI uploading a capture.
   const live = useQuery({ ...detailQuery(id), refetchInterval: dirty ? false : 3000 });
   const detail = live.data ?? initial;
@@ -304,8 +375,9 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     setSaved(JSON.parse(savedText.current));
     setSelection((current) => {
       if (current?.kind === "creative" && fresh.creatives[current.placement]) return current;
-      if (fresh.slides.length === 0) return null;
-      return { kind: "slide", index: current?.kind === "slide" ? Math.min(current.index, fresh.slides.length - 1) : 0 };
+      const count = setOf(fresh, shownDevice.current).length;
+      if (count === 0) return null;
+      return { kind: "slide", index: current?.kind === "slide" ? Math.min(current.index, count - 1) : 0 };
     });
   }, [live.dataUpdatedAt]);
 
@@ -332,7 +404,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   };
   /** Whether a screenshot was made for the language shown. Those without a language are the first language's. */
   const own = (shot: Shot) => (shot.locale ?? first).toLowerCase() === locale.toLowerCase();
-  const slideIndex = selection?.kind === "slide" && selection.index < draft.slides.length ? selection.index : null;
+  const slideIndex = selection?.kind === "slide" && selection.index < slides.length ? selection.index : null;
   const placement = selection?.kind === "creative" && draft.creatives[selection.placement] ? selection.placement : null;
   const placements = Object.keys(meta.placements) as PlacementId[];
   const shotNames = [...new Set(shots.map((shot) => shot.name))];
@@ -344,30 +416,12 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     await queryClient.invalidateQueries({ queryKey: detailQuery(id).queryKey });
   };
 
-  const assignShot = (shot: Shot) => {
-    if (slideIndex != null) {
-      return update((project) => {
-        const slide = project.slides[slideIndex]!;
-        // A layout with several devices takes the screenshot in its first free place.
-        const keys = (["screenshot", "screenshot2", "screenshot3"] as const).slice(0, Math.max(1, meta.layoutShots[slide.layout ?? "device-bottom"] ?? 1));
-        if (keys.some((key) => slide[key] === shot.name)) return;
-        slide[keys.find((key) => !slide[key]) ?? keys[0]!] = shot.name;
-      }, true);
-    }
-    if (placement == null) return toast("Select a slide or an asset first, then click a screenshot to use it there.");
-    if ((draft.creatives[placement]!.screenshots?.length ?? 0) >= 6) return toast("An asset takes up to six screenshots.");
-    update((project) => {
-      const creative = project.creatives[placement]!;
-      creative.screenshots = [...(creative.screenshots ?? []), shot.name];
-    }, true);
-  };
-
   /** Files a screenshot under another device, for one whose size did not give it away. */
-  const moveShot = async (shot: Shot, device: DeviceKind) => {
-    const label = meta.devices.find((entry) => entry.id === device)!.label;
-    if (shots.some((other) => other.name === shot.name && other.device === device && other.locale === shot.locale) && !confirm(`"${shot.name}" already has a screenshot for the ${label}. Replace it?`)) return;
+  const moveShot = async (shot: Shot, to: DeviceKind) => {
+    const name = meta.devices.find((entry) => entry.id === to)!.label;
+    if (shots.some((other) => other.name === shot.name && other.device === to && other.locale === shot.locale) && !confirm(`"${shot.name}" already has a screenshot for the ${name}. Replace it?`)) return;
     try {
-      await api("PATCH", `/projects/${id}/shots/${shot.file}`, { device });
+      await api("PATCH", `/projects/${id}/shots/${shot.file}`, { device: to });
       await reload();
     } catch (error) {
       toast(errorText(error), "error");
@@ -424,36 +478,21 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
         );
       }
       // Fresh uploads fill slides that are still waiting for a screenshot, so a new project comes alive on the first drop.
-      const { slides } = latest.current;
-      const used = new Set(slides.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]));
-      const waiting = slides.flatMap((slide, index) => (slide.screenshot ? [] : [index]));
-      const fills = uploaded.filter((shot) => !used.has(shot.name) && used.add(shot.name)).slice(0, waiting.length);
+      const { slides: shared } = latest.current;
+      const taken = new Set(shared.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]));
+      const waiting = shared.flatMap((slide, index) => (slide.screenshot || meta.layoutShots[slide.layout ?? "device-bottom"] === 0 ? [] : [index]));
+      const fills = uploaded.filter((shot) => !taken.has(shot.name) && taken.add(shot.name)).slice(0, waiting.length);
       if (fills.length) update((project) => fills.forEach((shot, at) => void (project.slides[waiting[at]!]!.screenshot = shot.name)), true);
       setStatus("");
       await save();
       await queryClient.invalidateQueries({ queryKey: detailQuery(id).queryKey });
     },
-    [id, queryClient, save, setStatus, update, shots, locale, first],
+    [id, queryClient, save, setStatus, update, shots, locale, first, meta],
   );
   useEffect(() => {
     dropTarget.upload = (files, kind) => void upload(files, kind);
     return () => void (dropTarget.upload = null);
   }, [upload]);
-
-  // ---------------------------------------------------------------- logos and images
-
-  /** A click puts an image on the selected slide, each new one in another spot, or makes it the logo of the selected asset. */
-  const placeImage = (image: StoredImage) => {
-    if (placement != null) return update((project) => void (project.creatives[placement]!.logo = { ...project.creatives[placement]!.logo, image: image.name }), true);
-    if (slideIndex == null) return toast("Select a slide first, then click an image to place it there.");
-    const count = draft.slides[slideIndex]!.images?.length ?? 0;
-    if (count >= 10) return toast("A slide takes up to ten images.");
-    const [x, y, rotate] = PLACED_SPOTS.scattered![count % PLACED_SPOTS.scattered!.length]!;
-    update((project) => {
-      const slide = project.slides[slideIndex]!;
-      slide.images = [...(slide.images ?? []), { image: image.name, x, y, size: 24, rotate }];
-    }, true);
-  };
 
   const removeImage = async (image: StoredImage) => {
     if (!confirm(`Delete the image "${image.name}"? Slides that show it will leave it out.`)) return;
@@ -472,36 +511,77 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     setTab("item");
   };
 
-  // Moving through the set with the arrows keeps the selected card in view.
+  // Moving a slide with the arrows keeps its card in view.
   const opened = useRef(false);
   useEffect(() => {
     if (opened.current) document.querySelector(".workspace .card.selected")?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
     opened.current = true;
   }, [slideIndex, placement]);
 
+  const sizes = exportSizes(meta, draft, shots);
+  /** The shapes of one device the export holds. Each is drawn on its own, so each has a preview; the other sizes are these scaled. */
+  const shapesOf = (kind: DeviceKind) => {
+    const drawn = [...new Set(sizes.filter((key) => meta.targets[key].device === kind).map((key) => drawnSize(meta, key)))];
+    return drawn.length ? drawn : [(Object.keys(meta.targets) as TargetId[]).find((key) => meta.targets[key].device === kind)!];
+  };
+  const shapes = shapesOf(device).includes(target) ? shapesOf(device) : [target, ...shapesOf(device)];
+
+  const showDevice = (kind: DeviceKind) => {
+    setTarget(shapesOf(kind)[0]!);
+    const count = setOf(draft, kind).length;
+    setSelection((current) => (current?.kind !== "slide" ? current : count ? { kind: "slide", index: Math.min(current.index, count - 1) } : null));
+  };
+
+  /** Changes the set shown: the device's own, or the one the devices share. */
+  const editSlides = (recipe: (set: Slide[]) => void, now = false) => update((project) => recipe(setOf(project, device)), now);
+
+  /** From here on the device has slides of its own. They start as a copy of the shared ones. */
+  const splitSet = () => {
+    update((project) => {
+      const start: Slide[] = project.slides.length ? structuredClone(project.slides) : [{ layout: "device-bottom", headline: "Your headline" }];
+      project.deviceSlides = { ...project.deviceSlides, [device]: start };
+    }, true);
+    if (slideIndex == null) setSelection({ kind: "slide", index: 0 });
+    toast(`The ${deviceLabel} has its own slides now. What you change here no longer reaches the other devices.`, "", 7000);
+  };
+
+  const joinSet = () => {
+    if (!confirm(`Delete the ${deviceLabel}'s own ${slides.length === 1 ? "slide" : `${slides.length} slides`}? The ${deviceLabel} then shows the shared slides again.`)) return;
+    update((project) => {
+      const sets = { ...project.deviceSlides };
+      delete sets[device];
+      project.deviceSlides = sets;
+    }, true);
+    setSelection((current) => (current?.kind !== "slide" ? current : draft.slides.length ? { kind: "slide", index: Math.min(current.index, draft.slides.length - 1) } : null));
+  };
+
   const addSlide = () => {
-    const used = new Set(draft.slides.map((slide) => slide.screenshot));
-    const unused = shotNames.find((name) => !used.has(name));
-    const at = slideIndex == null ? draft.slides.length : slideIndex + 1;
-    update((project) => void project.slides.splice(at, 0, { layout: "device-bottom", headline: "Your headline", ...(unused ? { screenshot: unused } : {}) }), true);
+    const taken = new Set(slides.map((slide) => slide.screenshot));
+    // The device's own screenshots first: a name it has no picture of would show another device's.
+    const names = [...new Set([...shots.filter((shot) => shot.device === device).map((shot) => shot.name), ...shotNames])];
+    const unused = names.find((name) => !taken.has(name));
+    const at = slideIndex == null ? slides.length : slideIndex + 1;
+    editSlides((set) => void set.splice(at, 0, { layout: "device-bottom", headline: "Your headline", ...(unused ? { screenshot: unused } : {}) }), true);
     select({ kind: "slide", index: at });
   };
 
   const slideActions = (index: number) => ({
     move: (delta: number) => {
       const to = index + delta;
-      if (to < 0 || to >= draft.slides.length) return;
-      update(({ slides }) => void ([slides[index], slides[to]] = [slides[to]!, slides[index]!]), true);
+      if (to < 0 || to >= slides.length) return;
+      editSlides((set) => void ([set[index], set[to]] = [set[to]!, set[index]!]), true);
       setSelection({ kind: "slide", index: to });
     },
     duplicate: () => {
-      update(({ slides }) => void slides.splice(index + 1, 0, structuredClone(slides[index]!)), true);
+      editSlides((set) => void set.splice(index + 1, 0, structuredClone(set[index]!)), true);
       setSelection({ kind: "slide", index: index + 1 });
     },
     remove: () => {
+      // A device's own set holds at least one slide, so its last one takes the set with it.
+      if (ownSet && slides.length === 1) return joinSet();
       if (!confirm(`Delete slide ${index + 1}?`)) return;
-      update(({ slides }) => void slides.splice(index, 1), true);
-      setSelection(draft.slides.length > 1 ? { kind: "slide", index: Math.min(index, draft.slides.length - 2) } : null);
+      editSlides((set) => void set.splice(index, 1), true);
+      setSelection(slides.length > 1 ? { kind: "slide", index: Math.min(index, slides.length - 2) } : null);
     },
   });
 
@@ -509,9 +589,9 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   const addCreative = (where: PlacementId) => {
     const banner = meta.placements[where].kind === "banner";
     const existing = placements.filter((other) => meta.placements[other].kind === meta.placements[where].kind).map((other) => draft.creatives[other]).find(Boolean);
-    const fromSlides = draft.slides.map((slide) => slide.screenshot).filter((name): name is string => name != null && shotNames.includes(name));
+    const fromSlides = slides.map((slide) => slide.screenshot).filter((name): name is string => name != null && shotNames.includes(name));
     const screenshots = [...new Set([...fromSlides, ...shotNames])].slice(0, 3);
-    const headline = draft.slides.find((slide) => slide.headline)?.headline ?? draft.name;
+    const headline = slides.find((slide) => slide.headline)?.headline ?? draft.name;
     // A banner is left to its own layout, the one with the copy on the left.
     const seed: Creative = existing ? structuredClone(existing) : { ...(banner ? {} : { layout: "fan" as const }), headline, ...(screenshots.length ? { screenshots } : {}) };
     update((project) => void (project.creatives[where] = seed), true);
@@ -521,7 +601,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   const removeCreative = (where: PlacementId) => {
     if (!confirm(`Remove the ${meta.placements[where].label.toLowerCase()}${meta.placements[where].kind === "store" ? " asset" : ""}?`)) return;
     update((project) => void delete project.creatives[where], true);
-    setSelection(draft.slides.length ? { kind: "slide", index: 0 } : null);
+    setSelection(slides.length ? { kind: "slide", index: 0 } : null);
   };
 
   // ---------------------------------------------------------------- project
@@ -551,8 +631,8 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   const rendering = useQuery(rendersQuery).data?.jobs.find((job) => job.project === id && working(job));
 
   /**
-   * Renders every size of the project on the server: one design per device, and each display of App Store Connect
-   * gets its own folder. The run works in the background, the sidebar follows it, and the ZIP downloads when it is done.
+   * Renders every size of the project on the server: each device from its own slides, and each display of App Store
+   * Connect gets its own folder. The run works in the background, the sidebar follows it, and the ZIP downloads when it is done.
    */
   const exportZip = async () => {
     setExporting(true);
@@ -569,430 +649,412 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
 
   // ---------------------------------------------------------------- render
 
-  const size = meta.targets[target];
-  const device = size.device;
-  const sizes = exportSizes(meta, draft, shots);
-  /** The shapes of one device the export holds. Each is drawn on its own, so each has a preview; the other sizes are these scaled. */
-  const shapesOf = (kind: DeviceKind) => {
-    const drawn = [...new Set(sizes.filter((key) => meta.targets[key].device === kind).map((key) => drawnSize(meta, key)))];
-    return drawn.length ? drawn : [(Object.keys(meta.targets) as TargetId[]).find((key) => meta.targets[key].device === kind)!];
-  };
-  const shapes = shapesOf(device).includes(target) ? shapesOf(device) : [target, ...shapesOf(device)];
   const deviceOrder = meta.devices.map((entry) => entry.id);
   // One tile per name and device: what the language shown has there, which is the first language's until it gets its own.
   const shownShots = deviceOrder.flatMap((kind) => shotNames.flatMap((name) => shotIn(shots.filter((shot) => shot.device === kind && shot.name === name), locale) ?? []));
-  const mixed = new Set(shots.map((shot) => shot.device)).size > 1;
-  const slideScale = Math.min(SLIDE_HEIGHT / size.height, SLIDE_WIDTH / size.width);
-  const used = new Set([...draft.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]), ...placements.flatMap((where) => draft.creatives[where]?.screenshots ?? [])]);
+  const scales = ZOOMS[zoom];
+  const slideScale = Math.min(scales.slide / size.height, scales.wide / size.width);
+  const all = everySlide(draft);
+  const used = new Set([
+    ...all.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3, ...(slide.features ?? []).map((feature) => feature.screenshot)]),
+    ...placements.flatMap((where) => draft.creatives[where]?.screenshots ?? []),
+  ]);
   const usedImages = new Set([
-    ...draft.slides.flatMap((slide) => [slide.logo?.image, ...(slide.images ?? []).map((placed) => placed.image)]),
+    ...all.flatMap((slide) => [slide.logo?.image, ...(slide.images ?? []).map((placed) => placed.image), ...(slide.features ?? []).map((feature) => feature.image)]),
     ...placements.map((where) => draft.creatives[where]?.logo?.image),
   ]);
   const look = [saved.theme, saved.locales[0], locale, shotsKey(shots), shotsKey(images)];
-  const changeSlide: Change<Project["slides"][number]> = (recipe) => update((project) => recipe(project.slides[slideIndex!]!));
+  const changeSlide: Change<Slide> = (recipe) => editSlides((set) => recipe(set[slideIndex!]!));
   const changeCreative: Change<Creative> = (recipe) => update((project) => recipe(project.creatives[placement!]!));
-
-  // The large preview of the selected slide: as tall as the panel allows, within a column that leaves the gallery two cards.
-  const focused = slideIndex != null && slideIndex < saved.slides.length && viewport.width >= FOCUS_FROM;
-  const focusScale = Math.min(Math.min(380, Math.max(260, viewport.width * 0.2)) / size.width, (viewport.height - 150) / size.height);
-
   const itemTab = placement ? meta.placements[placement].label : slideIndex != null ? `Slide ${slideIndex + 1}` : "Slide";
+  const splitDevices = meta.devices.filter((entry) => draft.deviceSlides?.[entry.id] != null);
 
-  return (
-    <div className="main">
-      <header className="bar">
-        <span className="crumb">{draft.name}</span>
-        <ViewSwitch id={id} view="store" />
-        <span className="spacer" />
-        <span className={`status${status.error ? " error" : ""}`} role="status">
-          {status.text}
-        </span>
-        <button className="btn primary export" type="button" disabled={exporting || rendering != null} onClick={() => void exportZip()}>
-          {rendering ? (rendering.state === "running" && rendering.total ? `Rendering ${rendering.done} of ${rendering.total}` : "Rendering…") : exporting ? "Starting…" : "Export ZIP"}
-        </button>
-      </header>
+  const picker = (kind: "shot" | "image", text: string) => (
+    <label className="btn small">
+      <Icon path={UPLOAD} />
+      {text}
+      <input
+        type="file"
+        multiple
+        accept={kind === "shot" ? "image/png,image/jpeg,image/webp" : "image/png,image/svg+xml,image/jpeg,image/webp"}
+        hidden
+        onChange={(event) => {
+          void upload([...(event.target.files ?? [])], kind);
+          event.target.value = "";
+        }}
+      />
+    </label>
+  );
 
-      <div className="content">
-        <div className="workspace">
-          <div className="page-head">
-            <div className="title-row">
-              <input
-                className="title"
-                ref={titleField}
-                type="text"
-                maxLength={80}
-                placeholder="Untitled"
-                aria-label="Project name"
-                title="Click to rename"
-                spellCheck={false}
-                value={title ?? draft.name}
-                onChange={(event) => {
-                  setTitle(event.target.value);
-                  const name = event.target.value.trim();
-                  if (name) rename(name);
-                }}
-                onKeyDown={(event) => (event.key === "Enter" || event.key === "Escape") && event.currentTarget.blur()}
-                onBlur={() => setTitle(null)}
-              />
-              <button
-                className="btn small quiet"
-                type="button"
-                onClick={() => {
-                  titleField.current?.focus();
-                  titleField.current?.select();
-                }}
-              >
-                <Icon path={PENCIL} />
-                Rename
-              </button>
-              <button className="btn small quiet danger" type="button" onClick={deleteProject}>
-                <Icon path={TRASH} />
-                Delete
-              </button>
-            </div>
-            <div className="page-meta">{[plural(draft.slides.length, "slide"), plural(shots.length, "screenshot"), draft.locales.join(", ")].join(" · ")}</div>
+  const canvas = (
+    <div className="workspace">
+      {shots.length === 0 ? (
+        <div className="callout">
+          <div className="callout-text">
+            <b>Start with your app's screens.</b>
+            <span>Drop screenshots anywhere in this window, or capture one from your Mac:</span>
+            <code>appshots capture --name home --project {id}</code>
           </div>
+          <div className="callout-actions">
+            {picker("shot", "Upload screenshots")}
+            <button className="btn small quiet" type="button" onClick={openConnect}>
+              How to set that up
+            </button>
+          </div>
+        </div>
+      ) : null}
 
-          <section>
-            <div className="section-head wrap">
-              <h2>Screenshots</h2>
-              <span className="hint">
-                {!shots.length
-                  ? ""
-                  : locale === first
-                    ? "Click one to put it in the selected slide or asset."
-                    : `The dimmed ones are ${languageName(first)}. Upload the ${languageName(locale)} ones under the same names.`}
-              </span>
-              <div className="head-actions">
-                {draft.locales.length > 1 ? <LanguageSwitch locales={draft.locales} value={locale} onChange={setLocale} /> : null}
-                <label className="btn small">
-                  Upload
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/png,image/jpeg,image/webp"
-                    hidden
-                    onChange={(event) => {
-                      void upload([...(event.target.files ?? [])]);
-                      event.target.value = "";
-                    }}
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="shots">
-              {shownShots.map((shot) => (
-                <div
-                  key={shot.file}
-                  className={`shot${used.has(shot.name) ? " used" : ""}${own(shot) ? "" : " borrowed"}`}
-                  role="button"
-                  tabIndex={0}
-                  title={`${shot.name} · ${shot.width}×${shot.height}${own(shot) ? "" : ` · the ${languageName(shot.locale ?? first)} one, until ${languageName(locale)} has its own`}`}
-                  onClick={() => assignShot(shot)}
-                  onKeyDown={(event) => event.key === "Enter" && event.target === event.currentTarget && assignShot(shot)}
-                >
-                  <img src={`/files/${id}/shots/${shot.file}?v=${shot.version}`} alt="" loading="lazy" />
-                  {mixed || shot.device !== "iphone" ? (
-                    <select
-                      className="tag"
-                      aria-label={`Device of ${shot.name}`}
-                      title="The device this screenshot is from. Change it when it was told wrong."
-                      value={shot.device}
-                      onClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => event.stopPropagation()}
-                      onChange={(event) => void moveShot(shot, event.target.value as DeviceKind)}
-                    >
-                      {meta.devices.map((entry) => (
-                        <option key={entry.id} value={entry.id}>
-                          {entry.label.replace("iPhone ", "")}
-                        </option>
-                      ))}
-                    </select>
-                  ) : null}
-                  {own(shot) ? (
-                    <button
-                      className="remove"
-                      type="button"
-                      title="Delete screenshot"
-                      aria-label={`Delete ${shot.name}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void removeShot(shot);
-                      }}
-                    >
-                      ×
-                    </button>
-                  ) : (
-                    <>
-                      <span className="tag from">{shot.locale ?? first}</span>
-                      <label className="remove add" title={`Upload the ${languageName(locale)} screenshot of "${shot.name}"`} onClick={(event) => event.stopPropagation()}>
-                        <Icon path={UPLOAD} />
-                        <input
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          hidden
-                          aria-label={`Upload the ${languageName(locale)} screenshot of ${shot.name}`}
-                          onChange={(event) => {
-                            void upload([...(event.target.files ?? [])].slice(0, 1), "shot", shot.name);
-                            event.target.value = "";
-                          }}
-                        />
-                      </label>
-                    </>
-                  )}
-                  <span className="name">{shot.name}</span>
-                </div>
-              ))}
-              <div className="dropzone">
-                {shots.length ? (
-                  <div>{locale === first ? "Drop more screenshots here" : `Drop the ${languageName(locale)} screenshots here`}</div>
-                ) : (
-                  <div>
-                    Drop screenshots here, or capture one from your Mac:
-                    <br />
-                    <code>appshots capture --name home --project {id}</code>
-                    <br />
-                    <button className="btn small quiet" type="button" onClick={openConnect}>
-                      How to set that up
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-
-          <section className="block">
-            <div className="section-head">
-              <h2>Logos and images</h2>
-              <span className="hint">{images.length ? "Click one to place it on the selected slide. A slide's logo is picked in its settings." : ""}</span>
-              <span className="spacer" />
-              <label className="btn small">
-                Upload
-                <input
-                  type="file"
-                  multiple
-                  accept="image/png,image/svg+xml,image/jpeg,image/webp"
-                  hidden
-                  onChange={(event) => {
-                    void upload([...(event.target.files ?? [])], "image");
-                    event.target.value = "";
-                  }}
-                />
-              </label>
-            </div>
-            <div className="shots art" data-drop="images">
-              {images.map((image) => (
-                <div
-                  key={image.file}
-                  className={`shot${usedImages.has(image.name) ? " used" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  title={`${image.name} · ${image.width}×${image.height}`}
-                  onClick={() => placeImage(image)}
-                  onKeyDown={(event) => event.key === "Enter" && event.target === event.currentTarget && placeImage(image)}
-                >
-                  <img src={`/files/${id}/images/${image.file}?v=${image.version}`} alt="" loading="lazy" />
-                  <button
-                    className="remove"
-                    type="button"
-                    title="Delete image"
-                    aria-label={`Delete ${image.name}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void removeImage(image);
-                    }}
-                  >
-                    ×
-                  </button>
-                  <span className="name">{image.name}</span>
-                </div>
-              ))}
-              <div className="dropzone">
-                <div>{images.length ? "Drop more here" : "Drop your logo, app icon, stickers or characters here. A PNG or SVG with a transparent background works best."}</div>
-              </div>
-            </div>
-          </section>
-
-          <section className="block">
-            <div className="section-head wrap">
-              <h2>Slides</h2>
-              <span className="hint">{draft.locales.length > 1 ? "One design per device, exported at every size and in every language." : "One design per device, exported at every size."}</span>
-              <LanguageSwitch locales={draft.locales} value={locale} onChange={setLocale} onAdd={addLanguage} />
-              <div className="device-pick">
-                <div className="segmented" role="radiogroup" aria-label="Device the slides are shown for">
-                  {meta.devices.map((entry) => (
-                    <button
-                      key={entry.id}
-                      className={device === entry.id ? "on" : ""}
-                      type="button"
-                      role="radio"
-                      aria-checked={device === entry.id}
-                      title={shots.some((shot) => shot.device === entry.id) ? `Show the slides for the ${entry.label}` : `Show the slides for the ${entry.label}. It has no screenshots of its own yet, so another device's stand in.`}
-                      onClick={() => setTarget(shapesOf(entry.id)[0]!)}
-                    >
-                      {entry.label}
-                    </button>
-                  ))}
-                </div>
-                {shapes.length > 1 ? (
-                  <select aria-label="Size shown" title="These sizes have a shape of their own, so each is drawn separately." value={target} onChange={(event) => setTarget(event.target.value as TargetId)}>
-                    {shapes.map((key) => (
-                      <option key={key} value={key}>
-                        {meta.targets[key].label} · {meta.targets[key].width}×{meta.targets[key].height}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="dim">
-                    {size.width}×{size.height}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="slides">
-              {draft.slides.map((slide, index) => {
-                const on = slideIndex === index;
-                const layout = label(slide.layout ?? "device-bottom");
-                return (
-                  <button key={index} className={`card${on ? " selected" : ""}`} type="button" aria-pressed={on} aria-label={`Slide ${index + 1}, ${layout}`} onClick={() => select({ kind: "slide", index })}>
-                    <Stage
-                      // A slide added a moment ago has no page on the server until the save lands.
-                      src={index < saved.slides.length ? `/render/${id}/${index}?${new URLSearchParams({ target, locale })}` : null}
-                      frameKey={JSON.stringify([saved.slides[index], target, ...look])}
-                      width={size.width}
-                      height={size.height}
-                      scale={slideScale}
-                    />
-                    <div className="caption">
-                      <span>{String(index + 1).padStart(2, "0")}</span>
-                      <span>{layout}</span>
-                    </div>
-                  </button>
-                );
-              })}
-              {draft.slides.length < 10 ? (
-                <button className="card add" type="button" onClick={addSlide}>
-                  <div className="stage" style={{ width: Math.round(size.width * slideScale), height: Math.round(size.height * slideScale) }}>
-                    + Add slide
-                  </div>
-                  <div className="caption">&nbsp;</div>
-                </button>
-              ) : null}
-            </div>
-          </section>
-
-          {(["store", "banner"] as const).map((kind) => {
-            const group = placements.filter((where) => meta.placements[where].kind === kind);
-            const store = kind === "store";
+      <div className="toolbar">
+        <div className="segmented" role="radiogroup" aria-label="Device the slides are shown for">
+          {meta.devices.map((entry) => {
+            const split = draft.deviceSlides?.[entry.id] != null;
+            const has = shots.some((shot) => shot.device === entry.id);
             return (
-              <section className="block" key={kind}>
-                <div className="section-head wrap">
-                  <h2>{store ? "Header and search results" : "Banners"}</h2>
-                  <span className="hint">
-                    {store ? "Optional images for the Header and Search Results tab in App Store Connect." : "Wide pictures for outside the store: the top of a README, the preview of a link, a post."}
-                  </span>
-                  {store && group.some((where) => draft.creatives[where]) ? (
-                    <label className="check" title="Draws the part every device shows as a dashed frame. It is a guide in this preview only and never part of the exported image.">
-                      <input type="checkbox" checked={guides} onChange={(event) => setGuides(event.target.checked)} />
-                      Show safe area
-                    </label>
-                  ) : null}
-                </div>
-                <div className="slides">
-                  {group.map((where) => {
-                    const spec = meta.placements[where];
-                    const scale = Math.min(ASSET_HEIGHT / spec.height, SLIDE_WIDTH / spec.width);
-                    const marked = store && guides;
-                    const caption = (
-                      <div className="caption">
-                        <span>{spec.label}</span>
-                        <span>
-                          {spec.ratio} · {spec.width}×{spec.height}
-                        </span>
-                      </div>
-                    );
-                    if (!draft.creatives[where]) {
-                      return (
-                        <button key={where} className="card add" type="button" aria-label={`Add the ${spec.label.toLowerCase()}${store ? " asset" : ""}`} onClick={() => addCreative(where)}>
-                          <div className="stage" style={{ width: Math.round(spec.width * scale), height: Math.round(spec.height * scale) }}>
-                            + Add
-                          </div>
-                          {caption}
-                        </button>
-                      );
-                    }
-                    const on = placement === where;
-                    return (
-                      <button key={where} className={`card${on ? " selected" : ""}`} type="button" aria-pressed={on} aria-label={store ? `${spec.label} asset` : spec.label} onClick={() => select({ kind: "creative", placement: where })}>
-                        <Stage
-                          src={saved.creatives[where] ? `/render/${id}/creative/${where}?${new URLSearchParams(marked ? { locale, guides: "1" } : { locale })}` : null}
-                          frameKey={JSON.stringify([saved.creatives[where], marked, ...look])}
-                          width={spec.width}
-                          height={spec.height}
-                          scale={scale}
-                        />
-                        {caption}
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
+              <button
+                key={entry.id}
+                className={device === entry.id ? "on" : ""}
+                type="button"
+                role="radio"
+                aria-checked={device === entry.id}
+                title={`${split ? `The ${entry.label} has slides of its own.` : `The ${entry.label} shows the shared slides.`}${has ? "" : " It has no screenshots of its own yet, so another device's stand in."}`}
+                onClick={() => showDevice(entry.id)}
+              >
+                {entry.label}
+                {split ? <span className="dot" /> : null}
+              </button>
             );
           })}
         </div>
+        {shapes.length > 1 ? (
+          <select className="ghost" aria-label="Size shown" title="These sizes have a shape of their own, so each is drawn separately." value={target} onChange={(event) => setTarget(event.target.value as TargetId)}>
+            {shapes.map((key) => (
+              <option key={key} value={key}>
+                {meta.targets[key].label} · {meta.targets[key].width}×{meta.targets[key].height}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="dim">
+            {size.width}×{size.height}
+          </span>
+        )}
+        <span className="spacer" />
+        <LanguageSwitch locales={draft.locales} value={locale} onChange={setLocale} onAdd={addLanguage} />
+        <div className="segmented" role="radiogroup" aria-label="Preview size">
+          {(Object.keys(ZOOMS) as Zoom[]).map((key) => (
+            <button key={key} className={zoom === key ? "on" : ""} type="button" role="radio" aria-checked={zoom === key} title={`${ZOOMS[key].name} previews`} aria-label={`${ZOOMS[key].name} previews`} onClick={() => setZoom(key)}>
+              {key.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        <aside className={`panel${focused ? " with-focus" : ""}`}>
-          <div className="tabs">
-            <button className={`tab${tab === "item" ? " on" : ""}`} type="button" onClick={() => setTab("item")}>
-              {itemTab}
-            </button>
-            <button className={`tab${tab === "project" ? " on" : ""}`} type="button" onClick={() => setTab("project")}>
-              Project
-            </button>
-          </div>
-          <div className="panel-body">
-            {focused ? (
-              <div className="focus">
-                <div className="focus-stage">
-                  <Stage
-                    src={`/render/${id}/${slideIndex}?${new URLSearchParams({ target, locale })}`}
-                    frameKey={JSON.stringify([slideIndex, saved.slides[slideIndex], target, focusScale.toFixed(3), ...look])}
-                    width={size.width}
-                    height={size.height}
-                    scale={focusScale}
+      <div className="set-line">
+        <span>
+          <b>{plural(slides.length, "slide")}</b>
+          {ownSet ? ` for the ${deviceLabel} alone` : splitDevices.length ? `, shared by every device but the ${splitDevices.map((entry) => entry.label).join(" and the ")}` : ", shared by every device"}
+        </span>
+        {ownSet ? (
+          <button className="link" type="button" onClick={joinSet}>
+            Use the shared slides again
+          </button>
+        ) : (
+          <button className="link" type="button" title="They start as a copy of these. From then on the two sets are changed separately." onClick={splitSet}>
+            Give the {deviceLabel} its own slides
+          </button>
+        )}
+      </div>
+
+      <div className="slides">
+        {slides.map((slide, index) => {
+          const on = slideIndex === index;
+          const layout = label(slide.layout ?? "device-bottom");
+          return (
+            <div
+              key={index}
+              className={`card${on ? " selected" : ""}`}
+              role="button"
+              tabIndex={0}
+              aria-pressed={on}
+              aria-label={`Slide ${index + 1}, ${layout}`}
+              onClick={() => select({ kind: "slide", index })}
+              onKeyDown={(event) => {
+                if ((event.key !== "Enter" && event.key !== " ") || event.target !== event.currentTarget) return;
+                event.preventDefault();
+                select({ kind: "slide", index });
+              }}
+            >
+              <div className="stage-box">
+                <Stage
+                  // A slide added a moment ago has no page on the server until the save lands.
+                  src={index < savedSlides.length ? `/render/${id}/${index}?${new URLSearchParams({ target, locale })}` : null}
+                  frameKey={JSON.stringify([savedSlides[index], target, ...look])}
+                  width={size.width}
+                  height={size.height}
+                  scale={slideScale}
+                />
+                {on && tab === "item" && slide.images?.length ? (
+                  <PlacedHandles
+                    placed={slide.images}
+                    shown={savedSlides[index]?.images ?? []}
+                    images={images}
+                    projectId={id}
+                    onMove={(at, x, y) =>
+                      changeSlide((item) => {
+                        const placed = item.images?.[at];
+                        if (placed) Object.assign(placed, { x, y });
+                      })
+                    }
                   />
-                  {tab === "item" && draft.slides[slideIndex]?.images?.length ? (
-                    <PlacedHandles
-                      placed={draft.slides[slideIndex]!.images!}
-                      shown={saved.slides[slideIndex]?.images ?? []}
-                      images={images}
-                      projectId={id}
-                      onMove={(at, x, y) =>
-                        changeSlide((slide) => {
-                          const placed = slide.images?.[at];
-                          if (placed) Object.assign(placed, { x, y });
-                        })
-                      }
-                    />
-                  ) : null}
-                </div>
+                ) : null}
               </div>
-            ) : null}
-            <div className="panel-fields">
-              <Scope.Provider value={{ meta, projectId: id, shots, images, target, locale, primary: draft.locales[0]!, guides, dragging: focused }}>
+              <div className="caption">
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <span>{layout}</span>
+              </div>
+            </div>
+          );
+        })}
+        {slides.length < 10 ? (
+          <button className="card add" type="button" onClick={addSlide}>
+            <div className="stage" style={{ width: Math.round(size.width * slideScale), height: Math.round(size.height * slideScale) }}>
+              + Add slide
+            </div>
+            <div className="caption">&nbsp;</div>
+          </button>
+        ) : null}
+      </div>
+
+      {(["store", "banner"] as const).map((kind) => {
+        const group = placements.filter((where) => meta.placements[where].kind === kind);
+        const store = kind === "store";
+        return (
+          <section className="block" key={kind}>
+            <div className="section-head">
+              <h2>{store ? "Header and search results" : "Banners"}</h2>
+              <span className="hint">{store ? "Optional images for the Header and Search Results tab in App Store Connect." : "Wide pictures for outside the store: the top of a README, the preview of a link, a post."}</span>
+              <span className="spacer" />
+              {store && group.some((where) => draft.creatives[where]) ? (
+                <label className="check" title="Draws the part every device shows as a dashed frame. It is a guide in this preview only and never part of the exported image.">
+                  <input type="checkbox" checked={guides} onChange={(event) => setGuides(event.target.checked)} />
+                  Show safe area
+                </label>
+              ) : null}
+            </div>
+            <div className="slides">
+              {group.map((where) => {
+                const spec = meta.placements[where];
+                const scale = Math.min(scales.asset / spec.height, scales.wide / spec.width);
+                const marked = store && guides;
+                const caption = (
+                  <div className="caption">
+                    <span>{spec.label}</span>
+                    <span>
+                      {spec.ratio} · {spec.width}×{spec.height}
+                    </span>
+                  </div>
+                );
+                if (!draft.creatives[where]) {
+                  return (
+                    <button key={where} className="card add" type="button" aria-label={`Add the ${spec.label.toLowerCase()}${store ? " asset" : ""}`} onClick={() => addCreative(where)}>
+                      <div className="stage" style={{ width: Math.round(spec.width * scale), height: Math.round(spec.height * scale) }}>
+                        + Add
+                      </div>
+                      {caption}
+                    </button>
+                  );
+                }
+                const on = placement === where;
+                return (
+                  <button key={where} className={`card${on ? " selected" : ""}`} type="button" aria-pressed={on} aria-label={store ? `${spec.label} asset` : spec.label} onClick={() => select({ kind: "creative", placement: where })}>
+                    <Stage
+                      src={saved.creatives[where] ? `/render/${id}/creative/${where}?${new URLSearchParams(marked ? { locale, guides: "1" } : { locale })}` : null}
+                      frameKey={JSON.stringify([saved.creatives[where], marked, scale.toFixed(4), ...look])}
+                      width={spec.width}
+                      height={spec.height}
+                      scale={scale}
+                    />
+                    {caption}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+
+  const assets = (
+    <div className="workspace wide">
+      <section>
+        <div className="section-head">
+          <h2>Screenshots</h2>
+          <span className="count">{shownShots.length}</span>
+          <span className="hint">
+            {!shots.length
+              ? "The raw screens of your app. The slides put them into devices."
+              : locale === first
+                ? "A slide names a screenshot, and each device shows its own picture of that name."
+                : `The dimmed ones are ${languageName(first)}. Upload the ${languageName(locale)} ones under the same names.`}
+          </span>
+          <span className="spacer" />
+          {draft.locales.length > 1 ? <LanguageSwitch locales={draft.locales} value={locale} onChange={setLocale} /> : null}
+          {picker("shot", "Upload")}
+        </div>
+        {deviceOrder
+          .filter((kind) => shownShots.some((shot) => shot.device === kind))
+          .map((kind) => (
+            <div className="asset-group" key={kind}>
+              <h3>
+                {meta.devices.find((entry) => entry.id === kind)!.label}
+                <span className="count">{shownShots.filter((shot) => shot.device === kind).length}</span>
+              </h3>
+              <div className="shots">
+                {shownShots
+                  .filter((shot) => shot.device === kind)
+                  .map((shot) => (
+                    <div
+                      key={shot.file}
+                      className={`shot${used.has(shot.name) ? " used" : ""}${own(shot) ? "" : " borrowed"}`}
+                      title={`${shot.name} · ${shot.width}×${shot.height}${used.has(shot.name) ? "" : " · not on any slide yet"}${own(shot) ? "" : ` · the ${languageName(shot.locale ?? first)} one, until ${languageName(locale)} has its own`}`}
+                    >
+                      <img src={`/files/${id}/shots/${shot.file}?v=${shot.version}`} alt="" loading="lazy" />
+                      <select
+                        className="tag"
+                        aria-label={`Device of ${shot.name}`}
+                        title="The device this screenshot is from. Change it when it was told wrong."
+                        value={shot.device}
+                        onChange={(event) => void moveShot(shot, event.target.value as DeviceKind)}
+                      >
+                        {meta.devices.map((entry) => (
+                          <option key={entry.id} value={entry.id}>
+                            {entry.label.replace("iPhone ", "")}
+                          </option>
+                        ))}
+                      </select>
+                      {own(shot) ? (
+                        <button className="remove" type="button" title="Delete screenshot" aria-label={`Delete ${shot.name}`} onClick={() => void removeShot(shot)}>
+                          ×
+                        </button>
+                      ) : (
+                        <>
+                          <span className="tag from">{shot.locale ?? first}</span>
+                          <label className="remove add" title={`Upload the ${languageName(locale)} screenshot of "${shot.name}"`}>
+                            <Icon path={UPLOAD} />
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp"
+                              hidden
+                              aria-label={`Upload the ${languageName(locale)} screenshot of ${shot.name}`}
+                              onChange={(event) => {
+                                void upload([...(event.target.files ?? [])].slice(0, 1), "shot", shot.name);
+                                event.target.value = "";
+                              }}
+                            />
+                          </label>
+                        </>
+                      )}
+                      <span className="name">{shot.name}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          ))}
+        <div className={`dropzone${shots.length ? "" : " empty"}`}>
+          {shots.length ? (
+            <div>{locale === first ? "Drop more screenshots anywhere in this window" : `Drop the ${languageName(locale)} screenshots anywhere in this window`}</div>
+          ) : (
+            <div>
+              Drop screenshots here, or capture one from your Mac:
+              <br />
+              <code>appshots capture --name home --project {id}</code>
+              <br />
+              <button className="btn small quiet" type="button" onClick={openConnect}>
+                How to set that up
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="block">
+        <div className="section-head">
+          <h2>Logos and images</h2>
+          <span className="count">{images.length}</span>
+          <span className="hint">Your logo, app icon, stickers and characters. A slide picks them under Your logo and Images.</span>
+          <span className="spacer" />
+          {picker("image", "Upload")}
+        </div>
+        <div className="shots art" data-drop="images">
+          {images.map((image) => (
+            <div key={image.file} className={`shot${usedImages.has(image.name) ? " used" : ""}`} title={`${image.name} · ${image.width}×${image.height}${usedImages.has(image.name) ? "" : " · not on any slide yet"}`}>
+              <img src={`/files/${id}/images/${image.file}?v=${image.version}`} alt="" loading="lazy" />
+              <button className="remove" type="button" title="Delete image" aria-label={`Delete ${image.name}`} onClick={() => void removeImage(image)}>
+                ×
+              </button>
+              <span className="name">{image.name}</span>
+            </div>
+          ))}
+          <div className="dropzone">
+            <div>{images.length ? "Drop more here" : "Drop your logo, app icon, stickers or characters here. A PNG or SVG with a transparent background works best."}</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+
+  return (
+    <div className="main">
+      <ProjectBar id={id} name={draft.name} view={view} onRename={rename} field={titleField}>
+        <span className={`status${status.error ? " error" : ""}`} role="status">
+          {status.text}
+        </span>
+        <Menu
+          label={`Actions for ${draft.name}`}
+          items={[
+            {
+              text: "Rename",
+              run: () => {
+                titleField.current?.focus();
+                titleField.current?.select();
+              },
+            },
+            { text: "Delete project…", danger: true, run: deleteProject },
+          ]}
+        />
+        <button className="btn primary" type="button" disabled={exporting || rendering != null} onClick={() => void exportZip()}>
+          {rendering ? (rendering.state === "running" && rendering.total ? `Rendering ${rendering.done} of ${rendering.total}` : "Rendering…") : exporting ? "Starting…" : "Export ZIP"}
+        </button>
+      </ProjectBar>
+
+      <div className="content">
+        {view === "assets" ? assets : canvas}
+        {view === "assets" ? null : (
+          <aside className="panel">
+            <div className="tabs">
+              <button className={`tab${tab === "item" ? " on" : ""}`} type="button" onClick={() => setTab("item")}>
+                {itemTab}
+              </button>
+              <button className={`tab${tab === "project" ? " on" : ""}`} type="button" onClick={() => setTab("project")}>
+                Project
+              </button>
+            </div>
+            <div className="panel-body">
+              <Scope.Provider value={{ meta, projectId: id, shots, images, target, locale, primary: draft.locales[0]!, guides, dragging: slideIndex != null }}>
                 {tab === "project" ? (
                   <ProjectEditor project={draft} change={update} rename={rename} remove={deleteProject} />
                 ) : placement ? (
                   <CreativeEditor key={placement} project={draft} placement={placement} change={changeCreative} remove={() => removeCreative(placement)} />
                 ) : slideIndex != null ? (
-                  <SlideEditor key={slideIndex} project={draft} index={slideIndex} change={changeSlide} actions={slideActions(slideIndex)} />
+                  <SlideEditor key={`${device}:${slideIndex}`} project={draft} slides={slides} index={slideIndex} change={changeSlide} actions={slideActions(slideIndex)} />
                 ) : (
                   <p className="muted pad">Select a slide to edit it, or add one.</p>
                 )}
               </Scope.Provider>
             </div>
-          </div>
-        </aside>
+          </aside>
+        )}
       </div>
     </div>
   );

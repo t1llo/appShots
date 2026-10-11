@@ -67,7 +67,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 **App Store Connect says the dimensions are wrong.** Each display only takes its own sizes. Drag the files of the folder named after that display, as listed in the `README.txt` of the ZIP. See [Render and export](/docs/export#upload-to-app-store-connect).
 
-**A screenshot is filed under the wrong device.** Change it with the small menu on its thumbnail in the Studio, or upload it again with `--as iphone`, `--as duo`, `--as ipad` or `--as mac`.
+**A screenshot is filed under the wrong device.** Change it with the small menu on its thumbnail under **Assets** in the Studio, or upload it again with `--as iphone`, `--as duo`, `--as ipad` or `--as mac`.
 
 **The headline is tiny.** Text shrinks to fit. Shorten the headline, force a line break, or lower the device with the position control.
 

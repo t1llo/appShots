@@ -1,16 +1,14 @@
-// The dialogs behind the sidebar: new project, renaming or deleting one, connecting an agent, the account, and
-// (for the admin) people.
+// The dialogs: new project, renaming or deleting one, and connecting an agent.
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { createContext, type FormEvent, type ReactNode, useContext, useState } from "react";
-import { api, day, detailQuery, errorText, type Meta, plural, type Project, projectsQuery } from "./api.ts";
+import { createContext, type FormEvent, useContext, useState } from "react";
+import { api, detailQuery, errorText, type Meta, type Project, projectsQuery } from "./api.ts";
 import { LanguageList } from "./languages.tsx";
-import { rendersQuery } from "./renders.tsx";
-import { CopyBlock, Dialog, Field, Select, toast } from "./ui.tsx";
+import { CopyBlock, Dialog, Field, toast } from "./ui.tsx";
 
 type Named = { id: string; name: string };
-export type DialogKind = "new" | "connect" | "account" | "people" | { rename: Named } | { remove: Named };
+export type DialogKind = "new" | "connect" | { rename: Named } | { remove: Named };
 
 /**
  * The project that is open in the Studio, which holds edits the server has not seen yet. Renaming it goes through
@@ -37,19 +35,15 @@ export function DialogHost({ kind, meta, close }: { kind: DialogKind | null; met
         )
       ) : kind === "new" ? (
         <NewProject close={close} />
-      ) : kind === "connect" ? (
-        <Connect meta={meta} close={close} />
-      ) : kind === "account" ? (
-        <Account meta={meta} close={close} />
       ) : (
-        <People close={close} />
+        <Connect meta={meta} close={close} />
       )}
     </Dialog>
   );
 }
 
-/** Runs a dialog action and reports a failure instead of leaving the click without an answer. */
-const attempt = (work: () => Promise<unknown>) => () =>
+/** Runs an action and reports a failure instead of leaving the click without an answer. */
+export const attempt = (work: () => Promise<unknown>) => () =>
   void work().catch((error: unknown) => {
     toast(errorText(error), "error");
   });
@@ -63,22 +57,6 @@ function Done({ close }: { close: () => void }) {
       </button>
     </div>
   );
-}
-
-function Row({ title, sub, children }: { title: string; sub: string; children?: ReactNode }) {
-  return (
-    <div className="list-row">
-      <div className="list-main">
-        <span className="list-title">{title}</span>
-        <span className="list-sub">{sub}</span>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Loading({ error }: { error: unknown }) {
-  return error ? <p className="inline-error">{errorText(error)}</p> : <p className="muted">Loading…</p>;
 }
 
 // ---------------------------------------------------------------- new project
@@ -218,7 +196,7 @@ function DeleteProject({ project, close }: { project: Named; close: () => void }
 
 // ---------------------------------------------------------------- connect
 
-interface TokenEntry {
+export interface TokenEntry {
   id: string;
   name: string;
   hint: string;
@@ -226,9 +204,9 @@ interface TokenEntry {
   lastUsedAt?: string;
 }
 /** A token as it comes back from creating it: the only time its value is known. */
-type FreshToken = TokenEntry & { token: string };
+export type FreshToken = TokenEntry & { token: string };
 
-const tokensKey = ["account", "tokens"];
+export const tokensKey = ["account", "tokens"];
 
 /**
  * The agents Connect knows how to set up. `connect` is how an agent gets the server's MCP tools when that is
@@ -337,7 +315,7 @@ function Connect({ meta, close }: { meta: Meta; close: () => void }) {
     <li>
       <h3>Create your token</h3>
       {token ? (
-        <p>Done. It is in the next step, and shown this once. You can revoke it under Account.</p>
+        <p>Done. It is in the next step, and shown this once. You can revoke it in Settings.</p>
       ) : (
         <>
           <p>An agent cannot sign in with Google, so it uses a token of yours. It reaches your projects only.</p>
@@ -373,7 +351,7 @@ function Connect({ meta, close }: { meta: Meta; close: () => void }) {
         </li>
         <li>
           <h3>Add your screenshots</h3>
-          <p>Drag them from Finder onto Screenshots at the bottom of the project. In the simulator, ⌘S saves one to the desktop.</p>
+          <p>Drag them from Finder into the project's window. In the simulator, ⌘S saves one to the desktop.</p>
         </li>
         <li>
           <h3>Write the headlines and export</h3>
@@ -467,238 +445,6 @@ function Connect({ meta, close }: { meta: Meta; close: () => void }) {
         <button className="btn primary" type="button" data-autofocus={ready ? true : undefined} onClick={close}>
           Done
         </button>
-      </div>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------- account
-
-function Account({ meta, close }: { meta: Meta; close: () => void }) {
-  const account = meta.account!;
-  const queryClient = useQueryClient();
-  const tokens = useQuery({ queryKey: tokensKey, queryFn: () => api<TokenEntry[]>("GET", "/account/tokens") });
-  const rendersLeft = useQuery(rendersQuery).data?.rendersLeft ?? meta.rendersLeft;
-  const [fresh, setFresh] = useState<FreshToken | null>(null);
-  const [tokenName, setTokenName] = useState("");
-  const [proof, setProof] = useState("");
-  const refresh = () => queryClient.invalidateQueries({ queryKey: tokensKey });
-
-  const createToken = attempt(async () => {
-    setFresh(await api<FreshToken>("POST", "/account/tokens", { name: tokenName }));
-    setTokenName("");
-    await refresh();
-  });
-  const revoke = (token: TokenEntry) =>
-    attempt(async () => {
-      if (!confirm(`Revoke "${token.name}"? Whatever uses it stops working.`)) return;
-      await api("DELETE", `/account/tokens/${token.id}`);
-      if (fresh?.id === token.id) setFresh(null);
-      await refresh();
-    });
-  const deleteAccount = attempt(async () => {
-    await api("DELETE", "/account", { confirm: proof });
-    location.href = "/";
-  });
-  const submit = (action: () => void) => (event: FormEvent) => {
-    event.preventDefault();
-    action();
-  };
-
-  return (
-    <>
-      <h1>Account</h1>
-      <div className="steps">
-        <div>
-          <div className="list">
-            <Row title={account.name} sub={`${account.email} · signs in with Google${account.admin ? " · admin of this server" : ""}${rendersLeft == null ? "" : ` · ${plural(rendersLeft, "render")} left`}`} />
-          </div>
-        </div>
-        <div>
-          <h3>API tokens</h3>
-          <p>Agents and the CLI use a token instead of your Google sign-in. Each one reaches your projects only.</p>
-          {fresh ? (
-            <>
-              <p>Copy "{fresh.name}" now: it is shown this once.</p>
-              <CopyBlock text={fresh.token} />
-            </>
-          ) : null}
-          {!tokens.data ? (
-            <Loading error={tokens.error} />
-          ) : tokens.data.length > 0 ? (
-            <div className="list">
-              {tokens.data.map((token) => (
-                <Row key={token.id} title={token.name} sub={`appshots_…${token.hint} · created ${day(token.createdAt)} · ${token.lastUsedAt ? `last used ${day(token.lastUsedAt)}` : "never used"}`}>
-                  <button className="btn small danger" type="button" onClick={revoke(token)}>
-                    Revoke
-                  </button>
-                </Row>
-              ))}
-            </div>
-          ) : null}
-          <form className="row" onSubmit={submit(createToken)}>
-            <input type="text" maxLength={60} placeholder="Name it, e.g. MacBook" aria-label="Token name" value={tokenName} onChange={(event) => setTokenName(event.target.value)} />
-            <button className="btn" type="submit">
-              Create token
-            </button>
-          </form>
-        </div>
-        {/* The admin is whoever ADMIN_EMAIL names, and their projects are the server's own. */}
-        {account.admin ? null : (
-          <details>
-            <summary>Delete account</summary>
-            <div className="stack">
-              <form onSubmit={submit(deleteAccount)}>
-                <p>This removes every project, screenshot and render of yours for good. Type your email address to confirm.</p>
-                <div className="row">
-                  <input type="text" required placeholder={account.email} aria-label="Your email address" value={proof} onChange={(event) => setProof(event.target.value)} />
-                  <button className="btn danger" type="submit">
-                    Delete account
-                  </button>
-                </div>
-              </form>
-            </div>
-          </details>
-        )}
-        <Done close={close} />
-      </div>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------- people
-
-interface Person {
-  email: string;
-  admin: boolean;
-  /** False for an account whose address is not on the list while sign-in is by list. */
-  access: boolean;
-  /** These are there once the person has signed in. */
-  name?: string;
-  joinedAt?: string;
-  projects?: number;
-  /** How many renders the account has made and has left. `left` is null for the admin, whose renders are not counted. */
-  renders?: { made: number; left: number | null };
-}
-
-interface PeopleData {
-  signup: "list" | "open";
-  people: Person[];
-}
-
-const peopleKey = ["admin", "people"];
-
-/** Admin only. */
-function People({ close }: { close: () => void }) {
-  const people = useQuery({ queryKey: peopleKey, queryFn: () => api<PeopleData>("GET", "/admin/people") });
-  return (
-    <>
-      <h1>People</h1>
-      <div className="steps">
-        {people.data ? <PeopleLists data={people.data} /> : <Loading error={people.error} />}
-        <Done close={close} />
-      </div>
-    </>
-  );
-}
-
-function describePerson(person: Person): string {
-  const parts = [person.name ? person.email : "", person.admin ? "admin" : ""];
-  if (person.joinedAt) parts.push(plural(person.projects ?? 0, "project"), `joined ${day(person.joinedAt)}`);
-  else parts.push("has not signed in yet");
-  if (!person.access) parts.push("not on the list, so cannot sign in");
-  return parts.filter(Boolean).join(" · ");
-}
-
-function PeopleLists({ data }: { data: PeopleData }) {
-  const queryClient = useQueryClient();
-  const [email, setEmail] = useState("");
-  const refresh = () => queryClient.invalidateQueries({ queryKey: peopleKey });
-  const byList = data.signup === "list";
-
-  const setMode = (mode: string) =>
-    attempt(async () => {
-      await api("PUT", "/admin/signup", { mode });
-      await refresh();
-    })();
-  const add = (address: string) =>
-    attempt(async () => {
-      await api("POST", "/admin/people", { email: address });
-      setEmail("");
-      await refresh();
-    });
-  const setRenders = (person: Person) =>
-    attempt(async () => {
-      const typed = prompt(`How many renders should ${person.name ?? person.email} have left?`, String(person.renders?.left ?? 0))?.trim();
-      if (!typed) return;
-      const left = Number(typed);
-      if (!Number.isInteger(left) || left < 0) return toast("Type a whole number, 0 or more.", "error");
-      await api("PUT", "/admin/renders", { email: person.email, left });
-      await refresh();
-    });
-  const remove = (person: Person) =>
-    attempt(async () => {
-      if (person.joinedAt && !confirm(`Remove ${person.email} with all of their projects? This cannot be undone.`)) return;
-      await api("DELETE", "/admin/people", { email: person.email });
-      await refresh();
-    });
-
-  return (
-    <>
-      <div>
-        <h3>Who can sign in</h3>
-        <p>
-          Everybody signs in with Google and gets a private space: their own projects, screenshots and tokens. Nobody sees anybody else's work. Each account gets a number of renders, and every export uses one. Yours are
-          not counted.
-        </p>
-        <Field label="Sign-in is open to" hint={byList ? "Add the Google address of everyone you want to let in." : "Anybody who finds this address can sign in, make projects and render on your server."}>
-          <Select
-            options={[
-              ["open", "Anyone with a Google account"],
-              ["list", "Only the people listed here"],
-            ]}
-            value={data.signup}
-            onChange={setMode}
-          />
-        </Field>
-      </div>
-      <div>
-        <h3>{plural(data.people.length, "person", "people")}</h3>
-        {byList ? (
-          <form
-            className="row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              add(email)();
-            }}
-          >
-            <input type="email" required maxLength={254} placeholder="name@gmail.com" aria-label="Google address to let in" value={email} onChange={(event) => setEmail(event.target.value)} />
-            <button className="btn primary" type="submit">
-              Add
-            </button>
-          </form>
-        ) : null}
-        <div className="list">
-          {data.people.map((person) => (
-            <Row key={person.email} title={person.name ?? person.email} sub={describePerson(person)}>
-              {person.access ? null : (
-                <button className="btn small" type="button" onClick={add(person.email)}>
-                  Allow
-                </button>
-              )}
-              {person.renders?.left != null ? (
-                <button className="btn small" type="button" title={`${plural(person.renders.made, "render")} made so far. Change how many this account has left.`} onClick={setRenders(person)}>
-                  {plural(person.renders.left, "render")} left
-                </button>
-              ) : null}
-              {person.admin ? null : (
-                <button className="btn small danger" type="button" onClick={remove(person)}>
-                  Remove
-                </button>
-              )}
-            </Row>
-          ))}
-        </div>
       </div>
     </>
   );

@@ -1,9 +1,11 @@
 ---
 title: Slides
-description: Reference for an appShots slide. Every layout, the copy fields, device options, backgrounds, fonts, badges, feature cards, icon rows and icons, with the exact values an agent or the API accepts.
+description: Reference for an appShots slide. Every layout, the copy fields, device options, backgrounds, fonts, badges, feature cards, figures, steps, reviews, icon rows and icons, with the exact values an agent or the API accepts.
 ---
 
 A set is a list of up to ten slides. A slide is one screenshot image for the store: a layout, some copy, and a screenshot inside a device. This page lists every field. The Studio's editor sets the same fields, so it reads as a map of the editor too.
+
+A project has one set that every device shares, and any device can have a set of its own. See [A set for each device](#a-set-for-each-device).
 
 ```json
 {
@@ -26,6 +28,8 @@ Every field is optional.
 
 Layouts with two or three devices read `screenshot2` and `screenshot3` as well.
 
+The last five have no device. See [Slides without a device](#slides-without-a-device).
+
 ## Copy
 
 | Field | What it is |
@@ -34,7 +38,7 @@ Layouts with two or three devices read `screenshot2` and `screenshot3` as well.
 | `headline` | The main line. Two to five words read best |
 | `subheadline` | One supporting line under it |
 
-- `*Asterisks*` around a word tint it with the accent colour.
+- `*Asterisks*` around a word mark it. By default it takes the accent colour, and `emphasis` picks another way. See [Marked words](#marked-words).
 - `\n` forces a line break.
 - Text shrinks to fit its space, so nothing is cut off.
 - Each text is a string, or one string per language. See [Languages](/docs/languages).
@@ -55,7 +59,12 @@ These fields can be set once in the project's **theme** and again on any slide. 
 | `font` | A font id. See below | |
 | `align` | `center` or `left` | `center` |
 | `textScale` | 0.5 to 1.5. A multiplier for the headline size | 1 |
+| `emphasis` | `tint`, `marker`, `underline`. How a headline shows its `*marked*` words | `tint` |
 | `device` | The device options. See below | |
+
+### Marked words
+
+{{EMPHASIS}}
 
 ## Backgrounds
 
@@ -115,7 +124,7 @@ A screenshot from a real device shows whatever the device showed: an odd time, a
 
 ## Badges
 
-Up to four per slide, in `badges`. `badgePosition` puts them at the `top`, above the headline, or at the `bottom`, below the subheadline.
+A slide draws up to {{BADGES_SHOWN}} with its copy, from `badges`. `badgePosition` puts them at the `top`, above the headline, or at the `bottom`, below the subheadline. The list itself holds up to ten, because the `reviews` layout also reads its review badges. See [Reviews](#reviews).
 
 {{BADGE_TYPES}}
 
@@ -133,14 +142,17 @@ Badges are claims. Use real figures only. See [What App Review accepts](/docs/ap
 
 ## Features
 
-`features` holds up to eight entries, most important first. On the `features` layout they are the cards that fill the slide. On every other layout they are short points beside the headline.
+`features` holds up to eight entries, most important first. On the `features` layout they are the cards that fill the slide, on `stat` the figures, and on `steps` the steps. On every other layout they are short points beside the headline.
 
 | Field | What it is |
 | --- | --- |
 | `title` | The feature, in two to four words. Required |
 | `text` | One short supporting line |
 | `icon` | An icon id |
-| `value` | A big figure or word in place of the icon, such as "0", "24h" or "100%" |
+| `value` | A big figure or word in place of the icon, such as "0", "24h" or "100%". On `stat` it is the figure, and on `steps` it replaces the step's number |
+| `color` | A hex colour for this entry alone: its icon, its figure and its card. Left out, the accent colour |
+| `image` | The name of an uploaded image shown in place of the icon, such as a small illustration. See [Logos and artwork](/docs/images) |
+| `screenshot` | The name of an uploaded screenshot shown small. On a card it stands under the title and runs off the card's lower edge, and on a step it stands beside the text |
 
 `featureStyle` on the `features` layout:
 
@@ -149,6 +161,77 @@ Badges are claims. Use real figures only. See [What App Review accepts](/docs/ap
 `featureStyle` for points on the other layouts:
 
 {{POINT_STYLES}}
+
+### The cards
+
+`featureCards` sets what the cards of the `features` layout are made of.
+
+```json
+{ "layout": "features", "featureStyle": "grid", "featureCards": { "look": "solid", "icons": "badge", "columns": 2 } }
+```
+
+| Field | Values | Default |
+| --- | --- | --- |
+| `look` | See below | `glass` |
+| `icons` | See below | `gradient` |
+| `columns` | 1 to 4 cards across, for `grid`, `cards` and `list`. A bento arranges itself | The canvas decides |
+
+{{CARD_LOOKS}}
+
+{{CARD_ICONS}}
+
+## Slides without a device
+
+Five layouts show no device. They carry what a screenshot cannot: a claim, a number, a way of working, what people say. One or two in a set of ten is plenty, and the first slides should still show the app.
+
+| Layout | What it reads | Good for |
+| --- | --- | --- |
+| `features` | `features`, as cards | What the app does, at a glance |
+| `statement` | The headline alone, set very large | A claim, a promise or a question |
+| `stat` | `features`: the first is the giant figure, the next ones a row of smaller figures | One number that carries the pitch |
+| `steps` | `features`, as numbered steps | How it works, in three or four steps |
+| `reviews` | The `review` badges, as a wall of quote cards | What users and the press say |
+
+```json
+{
+  "layout": "stat",
+  "headline": "Loved by *runners*",
+  "features": [
+    { "value": "2M+", "title": "Runs logged" },
+    { "value": "4.8", "title": "App Store rating" },
+    { "value": "120", "title": "Countries" }
+  ]
+}
+```
+
+```json
+{
+  "layout": "steps",
+  "headline": "Up and running in *a minute*",
+  "features": [
+    { "title": "Pick a goal", "text": "Distance, time or pace.", "screenshot": "goal" },
+    { "title": "Run", "text": "The watch does the counting." },
+    { "title": "See the week", "text": "Every run on one page." }
+  ]
+}
+```
+
+### Reviews
+
+The `reviews` layout draws up to {{REVIEWS_SHOWN}} badges of the type `review` as its wall. `title` is the quote, `subtitle` is who said it, and `stars` adds the row of stars. A publication works the same way, with its name as the `subtitle`. Badges of other types stay with the copy as on any slide.
+
+```json
+{
+  "layout": "reviews",
+  "headline": "People *stay*",
+  "badges": [
+    { "type": "review", "title": "The only tracker I kept past January.", "subtitle": "Maya, App Store review", "stars": 5 },
+    { "type": "review", "title": "Quietly excellent.", "subtitle": "The Sweet Setup" }
+  ]
+}
+```
+
+Figures and quotes are claims. Use real ones only, and a quote only with the right to use it. See [What App Review accepts](/docs/app-review#only-real-numbers).
 
 ## Icon row
 
@@ -174,6 +257,28 @@ A row of up to eight icons or brand logos with the copy, for the services your a
 ## Logo and images
 
 `logo` shows an uploaded image over the headline, and `images` places up to ten anywhere on the slide. See [Logos and artwork](/docs/images).
+
+## A set for each device
+
+`slides` is the set every device shares. It is drawn again for each canvas, so one design gives an iPhone, an iPad and a Mac set. That is the quickest way to a full export, and the results look alike.
+
+A device can have its own set instead, in `deviceSlides`. The iPad's or the Mac's canvas has another shape and another reader, so a set composed for it usually reads better: another layout, more text beside the device, other screenshots, a different number of slides.
+
+```json
+{
+  "slides": [{ "headline": "Build *habits* that stick", "screenshot": "home" }],
+  "deviceSlides": {
+    "ipad": [{ "layout": "device-right", "headline": "Room for the *whole week*", "screenshot": "week" }],
+    "mac": [{ "layout": "device-left", "headline": "Plan at *your desk*", "screenshot": "overview" }]
+  }
+}
+```
+
+- The devices are `iphone`, `duo`, `ipad` and `mac`. Each takes one to ten slides.
+- A device with its own set draws that set and nothing from `slides`. The other devices keep the shared one.
+- The theme, the languages and the screenshots belong to the project, so the sets match in colour and font without repeating them.
+- In the Studio, **Give the iPad its own slides** under the device switch starts a set as a copy of the shared one. **Use the shared slides again** removes it.
+- An agent passes `device` to `set_slides`, and `of` to `update_slide`. See [MCP tools](/docs/mcp).
 
 ## Fonts
 

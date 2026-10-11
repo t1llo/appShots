@@ -15,7 +15,7 @@ Every screenshot has a short name, such as `home`, `stats` or `detail`. Slides r
 
 ## In the browser
 
-Drag the files from Finder onto the project page in the Studio, or use the upload button under **Screenshots**. The name is the file name. In the iOS Simulator, ⌘S saves the current screen to the desktop.
+Drag the files from Finder onto the project page in the Studio, or use **Upload** under **Assets**. The name is the file name. In the iOS Simulator, ⌘S saves the current screen to the desktop.
 
 ## From files you have
 

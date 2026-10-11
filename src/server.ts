@@ -39,12 +39,12 @@ import {
 } from "./accounts.ts";
 import { config } from "./config.ts";
 import { CREATIVE_CAPACITY, creativeHtml } from "./creative.ts";
-import { BACKGROUNDS, BADGE_TONES, BADGE_TYPES, CREATIVE_LAYOUTS, DEVICE_COLOR_IDS, DEVICE_STYLES, FEATURE_STYLES, LAYOUT_SPREAD, STATUS_BARS, POINT_STYLES, ICON_ROW_SIZE_IDS, ICON_ROW_STYLES, ICON_ROW_TONES, FONT_IDS, FONTS, ICON_GROUPS, ICON_IDS, LAYOUT_SHOTS, LAYOUTS, LOGO_SHAPES, LOGO_SIZE_IDS } from "./design.ts";
+import { BACKGROUNDS, BADGE_TONES, BADGE_TYPES, BADGES_SHOWN, CARD_ICONS, CARD_LOOKS, CREATIVE_LAYOUTS, EMPHASIS, FEATURE_LAYOUTS, REVIEWS_SHOWN, DEVICE_COLOR_IDS, DEVICE_STYLES, FEATURE_STYLES, LAYOUT_SPREAD, STATUS_BARS, POINT_STYLES, ICON_ROW_SIZE_IDS, ICON_ROW_STYLES, ICON_ROW_TONES, FONT_IDS, FONTS, ICON_GROUPS, ICON_IDS, LAYOUT_SHOTS, LAYOUTS, LOGO_SHAPES, LOGO_SIZE_IDS } from "./design.ts";
 import { ICONS } from "./icons.ts";
 import { createMcpServer } from "./mcp.ts";
 import { mockupHtml, mockupName, mockupShots, mockupStage } from "./mockup.ts";
 import { cancelRender, closeBrowser, defaultTargets, frozenFor, getRender, listRenders, renderMockup, renderProject, startRender } from "./render.ts";
-import { creativesSchema, localeSchema, type Mockups, mockupsSchema, type Project, slideSchema, targetsSchema, themeSchema } from "./schema.ts";
+import { creativesSchema, deviceSlidesSchema, localeSchema, type Mockups, mockupsSchema, type Project, slideSchema, slidesFor, targetsSchema, themeSchema } from "./schema.ts";
 import { homePage, siteRoutes } from "./site.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, isDeviceKind, isPlacementId, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, sourceOf, TARGET_IDS, type TargetId, TARGETS } from "./sizes.ts";
 import {
@@ -74,6 +74,7 @@ import {
   shotsDir,
   type Space,
   updateProject,
+  usageOf,
 } from "./store.ts";
 import { slideHtml } from "./template.ts";
 import { writeZip } from "./zip.ts";
@@ -212,6 +213,12 @@ app.get("/install.sh", (req, res) => {
 });
 app.get("/cli/appshots.mjs", (_req, res) => {
   res.set("Content-Disposition", 'attachment; filename="appshots.mjs"').sendFile(path.join(root, "cli", "appshots.mjs"));
+});
+// The two files as short hashes: how a Mac learns that its copies are behind without fetching them.
+const stamp = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
+app.get("/skill.json", async (req, res) => {
+  const cli = await readFile(path.join(root, "cli", "appshots.mjs"), "utf8");
+  res.set("Cache-Control", "no-cache").json({ skill: stamp(skill.replaceAll("{{SERVER}}", baseUrl(req))), cli: stamp(cli) });
 });
 
 const fontCss = await buildFontCss();
@@ -388,6 +395,7 @@ const projectPatch = z.object({
   targets: targetsSchema.nullable().optional(),
   theme: themeSchema.optional(),
   slides: z.array(slideSchema).max(10).optional(),
+  deviceSlides: deviceSlidesSchema.optional(),
   creatives: creativesSchema.optional(),
   mockups: mockupsSchema.optional(),
 });
@@ -431,6 +439,12 @@ api.get("/meta", (_req, res) => {
     badgeTones: BADGE_TONES,
     featureStyles: FEATURE_STYLES,
     pointStyles: POINT_STYLES,
+    featureLayouts: FEATURE_LAYOUTS,
+    cardLooks: CARD_LOOKS,
+    cardIcons: CARD_ICONS,
+    emphasis: EMPHASIS,
+    badgesShown: BADGES_SHOWN,
+    reviewsShown: REVIEWS_SHOWN,
     logoShapes: LOGO_SHAPES,
     logoSizes: LOGO_SIZE_IDS,
     iconRowStyles: ICON_ROW_STYLES,
@@ -448,7 +462,11 @@ api.get("/meta", (_req, res) => {
 
 api.get("/projects", async (_req, res) => {
   const projects = await listProjects(spaceOf(res));
-  res.json(projects.map((p) => ({ id: p.id, name: p.name, slides: p.slides.length, locales: p.locales, updatedAt: p.updatedAt })));
+  res.json(projects.map((p) => ({ id: p.id, name: p.name, slides: p.slides.length, ownSets: Object.keys(p.deviceSlides), locales: p.locales, updatedAt: p.updatedAt })));
+});
+/** How much the caller keeps here: what the settings page shows. */
+api.get("/usage", async (_req, res) => {
+  res.json(await usageOf(spaceOf(res)));
 });
 api.post("/projects", async (req, res) => {
   const body = projectPatch.extend({ name: z.string().min(1).max(80) }).parse(req.body);
@@ -701,6 +719,7 @@ admin.get("/people", async (_req, res) => {
       admin: isAdmin(user),
       joinedAt: user.createdAt,
       projects: await countProjects(spaceOfUser(user)),
+      bytes: (await usageOf(spaceOfUser(user))).bytes,
       access: hasAccess(user),
       renders: rendersOf(user),
     })),
@@ -708,6 +727,28 @@ admin.get("/people", async (_req, res) => {
   const known = new Set(users.map((user) => user.email));
   const waiting = [config.adminEmail, ...listed].filter((email) => !known.has(email)).map((email) => ({ email, admin: email === config.adminEmail, access: true }));
   res.json({ signup: signupMode(), people: [...accounts, ...waiting].sort((a, b) => Number(b.admin) - Number(a.admin) || a.email.localeCompare(b.email)) });
+});
+
+/**
+ * The server in numbers, for the admin's overview. Counts and bytes only: the admin sees how much everybody keeps,
+ * never what it is.
+ */
+admin.get("/overview", async (_req, res) => {
+  const users = listUsers();
+  const spaces = [mainSpace, ...users.filter((user) => !isAdmin(user)).map(spaceOfUser)];
+  const usages = await Promise.all(spaces.map(usageOf));
+  const total = { projects: 0, slides: 0, shots: 0, images: 0, bytes: 0 };
+  for (const usage of usages) for (const key of Object.keys(total) as (keyof typeof total)[]) total[key] += usage[key];
+  const known = new Set(users.map((user) => user.email));
+  res.json({
+    ...total,
+    accounts: users.length,
+    waiting: [config.adminEmail, ...listAllowed()].filter((email) => !known.has(email)).length,
+    locked: users.filter((user) => !hasAccess(user)).length,
+    renders: users.reduce((sum, user) => sum + (user.renders ?? 0), 0),
+    signup: signupMode(),
+    renderAllowance: config.limits.renders,
+  });
 });
 admin.put("/signup", async (req, res) => {
   await setSignupMode(z.enum(["list", "open"]).parse(req.body?.mode));
@@ -776,9 +817,9 @@ app.get("/render/:id/:index", async (req, res) => {
   const space = spaceOf(res);
   const { project, shots } = await drawn(space, req);
   const index = Number(req.params.index);
-  if (!Number.isInteger(index) || index < 0 || index >= project.slides.length) throw new NotFoundError(`Slide ${req.params.index} does not exist`);
   const wanted = String(req.query.target ?? "");
   const target = isTargetId(wanted) ? wanted : sourceOf(defaultTargets(shots, project.targets)[0]!);
+  if (!Number.isInteger(index) || index < 0 || index >= slidesFor(project, TARGETS[target].device).length) throw new NotFoundError(`Slide ${req.params.index} does not exist`);
   const locale = localeSchema.safeParse(req.query.locale).data ?? project.locales[0]!;
   res.set("Cache-Control", "no-store").type("html").send(await slideHtml({ space, project, shots, index, target, locale }));
 });

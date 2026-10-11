@@ -2,8 +2,11 @@ import path from "node:path";
 import {
   BACKGROUNDS,
   type BackgroundDef,
+  BADGES_SHOWN,
   BRAND_COLORS,
   DEVICE_COLORS,
+  type EmphasisId,
+  FEATURE_LAYOUTS,
   type FeatureStyleId,
   FONT_CSS_URL,
   type FontId,
@@ -16,11 +19,12 @@ import {
   LAYOUT_SPREAD,
   type LayoutId,
   type PointStyleId,
+  REVIEWS_SHOWN,
   SIDE_LAYOUTS,
 } from "./design.ts";
 import { ICONS } from "./icons.ts";
 import { hasBakedIsland, paletteFor, type StatusBarLook, statusBarLook } from "./palette.ts";
-import type { Background, Badge, DeviceStyle, Feature, IconRow, Logo, PlacedImage, Project, Text } from "./schema.ts";
+import { type Background, type Badge, type DeviceStyle, type Feature, type FeatureCards, type IconRow, type Logo, type PlacedImage, type Project, slidesFor, type Text } from "./schema.ts";
 import { type DeviceKind, isDeviceKind, TARGETS, type TargetId } from "./sizes.ts";
 import { findShot, listImages, type Shot, shotsDir, type Space, type StoredImage } from "./store.ts";
 
@@ -62,6 +66,9 @@ function luminance(hex: string): number {
   });
   return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
 }
+
+/** Black or white, whichever reads on the colour. */
+export const inkOn = (hex: string) => (luminance(hex) > 0.4 ? "#0B0B0F" : "#FFFFFF");
 
 export function backgroundLuminance(def: BackgroundDef): number {
   const values = def.colors.map(luminance);
@@ -153,8 +160,20 @@ function starsHtml(value: number): string {
 
 const iconSvg = (id: IconId, className = "icon") => `<svg class="${className}" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true">${ICONS[id]}</svg>`;
 
-/** Gradients the badges and feature cards fill their artwork with. They sit inside the canvas so they see its colours. */
-export const DEFS = `<svg class="defs" aria-hidden="true"><defs><linearGradient id="b-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFE7A0"/><stop offset=".45" stop-color="#EDBD54"/><stop offset="1" stop-color="#BB862C"/></linearGradient><linearGradient id="f-tint" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:color-mix(in srgb,var(--accent) 60%,var(--text))"/><stop offset="1" style="stop-color:var(--accent)"/></linearGradient></defs></svg>`;
+/** The gradient gold badges fill their artwork with. */
+export const DEFS = `<svg class="defs" aria-hidden="true"><defs><linearGradient id="b-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFE7A0"/><stop offset=".45" stop-color="#EDBD54"/><stop offset="1" stop-color="#BB862C"/></linearGradient></defs></svg>`;
+
+let tints = 0;
+
+/** An icon shaded from the text colour to the colour of what it stands on. It carries its own gradient, so every card can have its own colour. */
+function tintedIcon(id: IconId, className: string): string {
+  const key = `tint-${++tints}`;
+  const gradient = `<linearGradient id="${key}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:color-mix(in srgb,var(--c) 60%,var(--text))"/><stop offset="1" style="stop-color:var(--c)"/></linearGradient>`;
+  return `<svg class="${className}" viewBox="0 0 256 256" style="--g:url(#${key})" aria-hidden="true">${gradient}${ICONS[id]}</svg>`;
+}
+
+/** A feature's own colour, as the variables its card, its icon and its figure are drawn in. */
+const colorVars = (feature: Feature) => (feature.color ? `--c:${feature.color};--ci:${inkOn(feature.color)}` : "");
 
 /** A slide's row of icons and brand logos. It stays on one line: the icons shrink until all of them fit between the margins. */
 function iconRowHtml(row: IconRow, canvas: { width: number }, unit: number, dark: boolean, locale: string, fallback: string): string {
@@ -278,8 +297,50 @@ function gridCells(count: number, columns: number): { cells: Cell[]; rows: numbe
   return { cells, rows: Math.ceil(count / columns) };
 }
 
+/** On a tablet's canvas: the hero two thirds wide beside two stacked cards, then rows of three. A shorter last row widens to close it. */
+function tabletBentoCells(count: number): { cells: Cell[]; rows: number[] } {
+  if (count === 1) return { cells: [cell(1, 6, 1, 1, "hero")], rows: [1.2] };
+  const cells = [cell(1, 4, 1, 2, "hero")];
+  const rows = [BENTO.row, BENTO.row];
+  if (count === 2) cells.push(cell(5, 2, 1, 2, "tall"));
+  else cells.push(cell(5, 2, 1), cell(5, 2, 2));
+  let left = count - 3;
+  while (left > 0) {
+    const row = rows.length + 1;
+    // Four make two rows of two; a row of three would leave one card alone.
+    const across = left === 4 ? 2 : Math.min(left, 3);
+    for (let i = 0; i < across; i++) cells.push(cell((i * 6) / across + 1, 6 / across, row, 1, across === 1 ? "wide" : undefined));
+    rows.push(across === 1 ? BENTO.wide : BENTO.row);
+    left -= across;
+  }
+  return { cells, rows };
+}
+
+/** What the layouts that draw a slide's features need to know about the slide they are on. */
+interface Scene {
+  canvas: { width: number; height: number };
+  unit: number;
+  locale: string;
+  fallback: string;
+  projectId: string;
+  /** Where the screenshots and images a feature names are looked up. */
+  shots: Shot[];
+  images: StoredImage[];
+  device: DeviceKind;
+}
+
+/** The screenshot a feature shows small, for the device the slide is made for. */
+function featureShot(feature: Feature, scene: Scene) {
+  const shot = feature.screenshot ? findShot(scene.shots, feature.screenshot, scene.device, scene.locale) : undefined;
+  if (!shot) return undefined;
+  // A captured window keeps the corners it was captured with; any other screenshot gets its device's.
+  const corner = shot.corner ? shot.corner / shot.width : FRAMES[shot.device].bare;
+  return { url: `/files/${scene.projectId}/shots/${shot.file}?v=${shot.version}`, wide: shot.width > shot.height, aspect: `${shot.width}/${shot.height}`, corner };
+}
+
 /** The cards of a features slide, and the height they would like to have. They give some of it up when the copy needs the room. */
-function featuresHtml(features: Feature[], style: FeatureStyleId, canvas: { width: number; height: number }, unit: number, locale: string, fallback: string, alone: boolean) {
+function featuresHtml(features: Feature[], style: FeatureStyleId, cards: FeatureCards, scene: Scene, alone: boolean) {
+  const { canvas, unit, locale, fallback } = scene;
   const count = features.length;
   const inner = canvas.width - unit * 14;
   let gap = unit * 2.4;
@@ -291,7 +352,7 @@ function featuresHtml(features: Feature[], style: FeatureStyleId, canvas: { widt
   const tablet = canvas.width / canvas.height > 0.6;
   // A landscape canvas lays the cards out side by side, where a portrait one stacks them.
   const wide = canvas.width > canvas.height;
-  // Rows of an icon beside its text, one or two across.
+  // Rows of an icon beside its text, one or more across.
   let across = 0;
   // Type is sized for a card as wide as half a phone canvas, and follows the card from there.
   let column = unit * 41.8;
@@ -302,6 +363,13 @@ function featuresHtml(features: Feature[], style: FeatureStyleId, canvas: { widt
     cells = bento.cells;
     rows = Array.from({ length: bento.rows }, () => column * 0.66);
     stretch = 1.4;
+  } else if (style === "bento" && tablet) {
+    const bento = tabletBentoCells(count);
+    column = (inner - gap * 2) / 3;
+    cells = bento.cells;
+    rows = bento.rows.map((factor) => factor * column);
+    tracks = 6;
+    stretch = 1.4;
   } else if (style === "bento") {
     const bento = bentoCells(count);
     column = (inner - gap) / 2;
@@ -310,17 +378,21 @@ function featuresHtml(features: Feature[], style: FeatureStyleId, canvas: { widt
     tracks = 2;
     stretch = 1.4;
   } else if (style === "grid") {
-    const columns = wide ? (count <= 4 ? count : Math.ceil(count / 2)) : tablet ? 3 : 2;
+    // Rows come out even where they can: four make two rows of two on a tablet, not three and one.
+    const fitting = wide ? (count <= 4 ? count : Math.ceil(count / 2)) : tablet && (count === 3 || count > 4) ? 3 : 2;
+    const columns = Math.max(1, Math.min(count, cards.columns ?? fitting));
     const grid = gridCells(count, columns);
     column = (inner - gap * (columns - 1)) / columns;
     cells = grid.cells;
-    rows = Array.from({ length: grid.rows }, () => column * (wide ? 0.66 : 0.8));
+    // Cards that show a screenshot are tall enough for it to be read.
+    const pictured = features.some((feature) => feature.screenshot);
+    rows = Array.from({ length: grid.rows }, () => (pictured ? Math.min(column * (wide ? 0.92 : 1.42), unit * 76) : Math.min(column * (wide ? 0.66 : 0.8), unit * 52)));
     tracks = columns * 6;
   } else {
     if (style === "list") gap = unit * 1.2;
     const size = tablet ? 1.15 : 1;
     column *= size * size;
-    across = wide && count > 3 ? 2 : 1;
+    across = Math.min(count, cards.columns ?? (wide && count > 3 ? 2 : 1), 3);
     cells = features.map((_, i) => cell((i % across) + 1, 1, Math.floor(i / across) + 1));
     rows = Array.from({ length: Math.ceil(count / across) }, () => unit * (style === "cards" ? 19 : 15.5) * size);
     tracks = across;
@@ -332,20 +404,105 @@ function featuresHtml(features: Feature[], style: FeatureStyleId, canvas: { widt
   const grow = Math.min(stretch, Math.max(1, (canvas.height * (alone ? 0.7 : 0.56) - gaps) / natural));
   const height = natural * grow + gaps + (alone ? 0 : unit * 6.5);
   const scale = Math.min(1.7, Math.sqrt(column / (unit * 41.8)) * Math.min(1.3, grow));
+  const icons = cards.icons ?? "gradient";
 
   const tiles = features.map((feature, i) => {
     const { column, row, kind } = cells[i]!;
     const title = pick(feature.title, locale, fallback);
     const detail = pick(feature.text, locale, fallback);
     const value = pick(feature.value, locale, fallback);
-    const lead = value ? `<div class="f-lead"><span class="f-value">${esc(value)}</span></div>` : feature.icon ? `<div class="f-lead">${iconSvg(feature.icon, "f-icon")}</div>` : "";
+    const shot = featureShot(feature, scene);
+    const image = feature.image ? scene.images.find((entry) => entry.name === feature.image) : undefined;
+    // A picture takes the icon's place: in a row it stands where the icon would, on a tile it stands under the text.
+    let lead = "";
+    if (shot) lead = across ? `<div class="f-lead thumb"><img src="${esc(shot.url)}" alt=""></div>` : "";
+    else if (value) lead = `<div class="f-lead"><span class="f-value">${esc(value)}</span></div>`;
+    else if (image) lead = `<div class="f-lead art"><img class="f-img" src="${esc(imageUrl(scene.projectId, image))}" alt=""></div>`;
+    else if (feature.icon) lead = `<div class="f-lead${icons === "badge" ? " badge" : ""}">${tintedIcon(feature.icon, "f-icon")}</div>`;
+    const picture =
+      shot && !across ? `<div class="f-shot${shot.wide ? " land" : ""}"><div class="f-shot-in" style="--sr:${round(shot.corner * 100)}cqw"><img src="${esc(shot.url)}" alt=""></div></div>` : "";
     const text = `<div class="f-text"><div class="f-title">${rich(title)}</div>${detail ? `<div class="f-detail">${rich(detail)}</div>` : ""}</div>`;
-    return `<div class="f-tile${kind ? ` ${kind}` : ""}${across ? " row" : ""}" style="grid-column:${column};grid-row:${row}">${lead}${text}</div>`;
+    // The first card of a bento, and a card with a colour of its own, is washed in that colour.
+    const classes = ["f-tile", kind, across ? "row" : "", picture ? "pic" : "", kind === "hero" || feature.color ? "wash" : ""].filter(Boolean).join(" ");
+    const vars = [`grid-column:${column}`, `grid-row:${row}`, colorVars(feature)].filter(Boolean).join(";");
+    return `<div class="${classes}" style="${vars}">${lead}${text}${picture}</div>`;
   });
   const grid = [`--fz:${round(scale)}`, `gap:${round(gap)}px`, `grid-template-columns:repeat(${tracks},minmax(0,1fr))`, `grid-template-rows:${rows.map((row) => `minmax(0,${round(row)}fr)`).join(" ")}`];
-  // Two rows across need twice the width a single column of them is held to.
-  if (across > 1) grid.push(`max-width:${round(unit * 98 * across + gap * 3)}px`, `column-gap:${round(gap * 3)}px`);
-  return `<div class="features fs-${style}${alone ? " alone" : ""}" style="flex-basis:${round(height)}px"><div class="f-grid" style="${grid.join(";")}">${tiles.join("")}</div></div>`;
+  // Rows side by side need that many times the width a single column of them is held to.
+  if (across > 1) grid.push(`max-width:${round(unit * 98 * across + gap * 3)}px`, `column-gap:${round(gap * (style === "list" ? 3 : 1))}px`);
+  const classes = ["features", `fs-${style}`, `fl-${cards.look ?? "glass"}`, `fi-${icons}`, alone ? "alone" : ""].filter(Boolean).join(" ");
+  return `<div class="${classes}" style="flex-basis:${round(height)}px"><div class="f-grid" style="${grid.join(";")}">${tiles.join("")}</div></div>`;
+}
+
+/** The figure of a stat slide starts at a size its length allows, in canvas units. The page then fits it to the room there is. */
+const STAT_SIZE = { most: 54, least: 18, perGlyph: 0.6 };
+
+/** A canvas wider than a phone's has room for larger type on a slide that is all type. */
+const shapeOf = (canvas: { width: number; height: number }) => (canvas.width > canvas.height ? "wide" : canvas.width / canvas.height > 0.6 ? "tablet" : "phone");
+
+/** A stat slide: the first feature as one giant figure, the others as a row of smaller figures under it. */
+function statHtml(features: Feature[], scene: Scene): string {
+  const { locale, fallback } = scene;
+  const figure = (feature: Feature, name: string) => {
+    const value = pick(feature.value, locale, fallback);
+    const detail = pick(feature.text, locale, fallback);
+    const lead = value ? `<div class="st-value">${esc(value)}</div>` : feature.icon ? tintedIcon(feature.icon, "st-icon") : "";
+    const tone = colorVars(feature);
+    return `<div class="${name}"${tone ? ` style="${tone}"` : ""}>${lead}<div class="st-title">${rich(pick(feature.title, locale, fallback))}</div>${detail ? `<div class="st-detail">${rich(detail)}</div>` : ""}</div>`;
+  };
+  const [main, ...rest] = features;
+  if (!main) return "";
+  const glyphs = [...pick(main.value, locale, fallback)].length || 2;
+  const shape = shapeOf(scene.canvas);
+  const room = scene.canvas.width / scene.unit - 14;
+  const size = Math.max(STAT_SIZE.least, Math.min(STAT_SIZE.most * (shape === "tablet" ? 1.4 : 1), room / (glyphs * STAT_SIZE.perGlyph)));
+  const row = rest.length ? `<div class="st-row" style="--sc:${Math.min(rest.length, rest.length === 4 ? 2 : 3)}">${rest.map((feature) => figure(feature, "st-item")).join("")}</div>` : "";
+  return `<div class="stat" data-size="--sz" data-grow="${shape === "phone" ? 1.4 : 1.85}" style="--sz:1;--sv:${round(size)}">${figure(main, "st-main")}${row}</div>`;
+}
+
+/** The number of a step, written the way the language writes numbers. */
+function stepNumber(step: number, locale: string): string {
+  try {
+    return new Intl.NumberFormat(locale).format(step);
+  } catch {
+    return String(step);
+  }
+}
+
+/** A steps slide: the features as numbered steps joined by a line, down a portrait canvas and across a wide one. */
+function stepsHtml(features: Feature[], scene: Scene): string {
+  const { locale, fallback } = scene;
+  if (!features.length) return "";
+  const steps = features.map((feature, i) => {
+    const detail = pick(feature.text, locale, fallback);
+    const shot = featureShot(feature, scene);
+    const picture = shot ? `<div class="sp-pic${shot.wide ? " land" : ""}" style="--ar:${shot.aspect}"><img src="${esc(shot.url)}" alt=""></div>` : "";
+    const text = `<div class="sp-text"><div class="sp-title">${rich(pick(feature.title, locale, fallback))}</div>${detail ? `<div class="sp-detail">${rich(detail)}</div>` : ""}</div>`;
+    const tone = colorVars(feature);
+    return `<div class="sp-step"${tone ? ` style="${tone}"` : ""}><div class="sp-rail"><span class="sp-num">${esc(pick(feature.value, locale, fallback) || stepNumber(i + 1, locale))}</span></div>${text}${picture}</div>`;
+  });
+  const shape = shapeOf(scene.canvas);
+  return `<div class="steps${shape === "tablet" ? " roomy" : ""}" data-size="--pz" data-grow="${shape === "phone" ? 1.5 : 2}" style="--pz:1"><div class="sp-list" style="--pn:${steps.length}">${steps.join("")}</div></div>`;
+}
+
+/** A reviews slide: the slide's review badges as a wall of quote cards. */
+function reviewsHtml(reviews: Badge[], scene: Scene): string {
+  const { canvas, locale, fallback } = scene;
+  const count = reviews.length;
+  if (!count) return "";
+  const shape = shapeOf(canvas);
+  // One column of large cards on a portrait canvas, until there are too many to read at that size. A wide one sets them side by side.
+  const columns = shape === "wide" ? Math.min(count, 3) : count > 3 ? 2 : 1;
+  const size = shape === "phone" ? (columns === 1 ? 1.25 : 0.84) : shape === "tablet" ? (columns === 1 ? 1.5 : 1.2) : 1.1;
+  // How wide the wall may be, in canvas units.
+  const width = shape === "phone" ? 86 : shape === "tablet" ? (columns === 1 ? 108 : 134) : [96, 150, 204][columns - 1]!;
+  const cards = reviews.map((review) => {
+    const said = pick(review.title, locale, fallback);
+    const by = pick(review.subtitle, locale, fallback);
+    const quote = said && !/^["'“”„«»‹‘]/.test(said) ? `“${said}”` : said;
+    return `<div class="rv-card${review.tone === "gold" ? " gold" : ""}">${starsHtml(review.stars ?? 5)}${quote ? `<div class="rv-quote">${esc(quote)}</div>` : ""}${by ? `<div class="rv-by">${esc(by)}</div>` : ""}</div>`;
+  });
+  return `<div class="reviews" data-size="--rz" data-grow="${round(size * (shape === "wide" ? 1.6 : 1.3))}" style="--rz:${size}"><div class="rv-wall" style="--rc:${columns};--rw:${width}">${cards.join("")}</div></div>`;
 }
 
 const imageUrl = (projectId: string, image: StoredImage) => `/files/${projectId}/images/${image.file}?v=${image.version}`;
@@ -449,11 +606,20 @@ const LAYOUT_WIDTH: Record<LayoutId, number> = {
   "device-left": 0.7,
   hero: 0.9,
   features: 1,
+  statement: 1,
+  stat: 1,
+  steps: 1,
+  reviews: 1,
 };
 
 /** Share of the canvas height the copy block may take before the text starts shrinking. */
 const COPY_MAX: Record<LayoutId, number> = {
   features: 0.3,
+  // The headline of a statement is the slide, so it may take nearly all of it.
+  statement: 0.84,
+  stat: 0.28,
+  steps: 0.28,
+  reviews: 0.3,
   "device-bottom": 0.34,
   "device-top": 0.34,
   "device-center": 0.36,
@@ -660,8 +826,8 @@ html,body{background:#000;overflow:hidden}
 .defs{position:absolute;width:0;height:0}
 .dark{--card:color-mix(in srgb,#fff 9%,transparent);--card-line:rgba(255,255,255,.13);--card-shadow:0 0 0 transparent}
 .light{--card:rgba(255,255,255,.66);--card-line:rgba(255,255,255,.7);--card-shadow:0 calc(var(--u)*.9) calc(var(--u)*3.2) rgba(20,20,40,.08)}
-.layout-features{justify-content:center;padding:calc(var(--u)*11) 0}
-.layout-features .copy{padding-top:0}
+.board{justify-content:center;padding:calc(var(--u)*11) 0}
+.board .copy{padding-top:0}
 .features{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;display:flex;justify-content:center;padding:calc(var(--u)*6.5) calc(var(--u)*7) 0}
 .features.alone{padding-top:0}
 .align-left .features{padding-left:calc(var(--u)*8);padding-right:calc(var(--u)*8)}
@@ -670,26 +836,31 @@ html,body{background:#000;overflow:hidden}
 .fs-list .f-grid{flex:0 1 auto}
 .align-left .features{justify-content:flex-start}
 .f-tile{position:relative;overflow:hidden;min-width:0;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:calc(var(--f)*2.3);padding:calc(var(--f)*3.2);border-radius:calc(var(--u)*4.4);background:var(--card);box-shadow:inset 0 0 0 calc(var(--u)*.14) var(--card-line),var(--card-shadow)}
-.f-tile.hero{gap:calc(var(--f)*3);background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 30%,transparent),color-mix(in srgb,var(--accent) 7%,transparent) 72%),var(--card)}
+.f-tile.wash{background:linear-gradient(145deg,color-mix(in srgb,var(--c) 30%,transparent),color-mix(in srgb,var(--c) 7%,transparent) 72%),var(--card)}
+.f-tile.hero{gap:calc(var(--f)*3)}
 .align-left .f-tile{align-items:flex-start;justify-content:space-between;text-align:left}
 .f-tile.row{flex-direction:row;align-items:center;justify-content:center;text-align:left;gap:calc(var(--f)*3.2)}
 .align-left .f-tile.row,.fs-cards .f-tile,.fs-list .f-tile{justify-content:flex-start}
 .f-lead{flex:none;display:flex;align-items:center;justify-content:center;line-height:0}
-.f-icon{display:block;height:calc(var(--f)*10.4);width:auto;fill:url(#f-tint)}
-.f-value{font-family:var(--font);font-size:calc(var(--f)*10.6*var(--fs));font-weight:var(--hw);line-height:.95;letter-spacing:-.04em;white-space:nowrap;color:transparent;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 60%,var(--text)),var(--accent));-webkit-background-clip:text;background-clip:text}
+.f-icon{display:block;height:calc(var(--f)*11);width:auto;fill:var(--g)}
+.f-img{display:block;height:calc(var(--f)*13);width:auto;max-width:100%;object-fit:contain}
+.f-value{font-family:var(--font);font-size:calc(var(--f)*11*var(--fs));font-weight:var(--hw);line-height:.95;letter-spacing:-.04em;white-space:nowrap;color:transparent;background:linear-gradient(135deg,color-mix(in srgb,var(--c) 60%,var(--text)),var(--c));-webkit-background-clip:text;background-clip:text}
 .f-text{min-width:0;display:flex;flex-direction:column;gap:calc(var(--f)*.9)}
-.f-title{font-family:var(--font);font-size:calc(var(--f)*4.1*var(--fs));font-weight:var(--hw);line-height:1.08;letter-spacing:var(--track);text-wrap:balance}
-.f-title em{font-style:normal;color:var(--accent)}
-.f-detail{font-size:calc(var(--f)*2.7);font-weight:500;line-height:1.26;letter-spacing:-.005em;opacity:.72;text-wrap:balance}
-.f-tile.hero .f-icon{height:calc(var(--f)*15)}
-.f-tile.hero .f-value{font-size:calc(var(--f)*17*var(--fs))}
-.f-tile.hero .f-title{font-size:calc(var(--f)*5.8*var(--fs))}
-.f-tile.hero .f-detail{font-size:calc(var(--f)*3.2)}
-.f-tile.tall .f-icon{height:calc(var(--f)*13)}
-.f-tile.tall .f-value{font-size:calc(var(--f)*13.5*var(--fs))}
-.f-tile.tall .f-title{font-size:calc(var(--f)*4.5*var(--fs))}
+.f-title{font-family:var(--font);font-size:calc(var(--f)*4.4*var(--fs));font-weight:var(--hw);line-height:1.08;letter-spacing:var(--track);text-wrap:balance}
+.f-title em{font-style:normal;color:var(--c)}
+.f-detail{font-size:calc(var(--f)*2.9);font-weight:500;line-height:1.26;letter-spacing:-.005em;opacity:.72;text-wrap:balance}
+.f-tile.hero .f-icon{height:calc(var(--f)*16)}
+.f-tile.hero .f-img{height:calc(var(--f)*19)}
+.f-tile.hero .f-value{font-size:calc(var(--f)*18*var(--fs))}
+.f-tile.hero .f-title{font-size:calc(var(--f)*6.2*var(--fs))}
+.f-tile.hero .f-detail{font-size:calc(var(--f)*3.4)}
+.f-tile.tall .f-icon{height:calc(var(--f)*13.5)}
+.f-tile.tall .f-img{height:calc(var(--f)*16)}
+.f-tile.tall .f-value{font-size:calc(var(--f)*14*var(--fs))}
+.f-tile.tall .f-title,.f-tile.wide .f-title{font-size:calc(var(--f)*4.8*var(--fs))}
+.f-tile.wide .f-detail{font-size:calc(var(--f)*3.1)}
 .fs-cards .f-tile{padding:calc(var(--f)*2.6) calc(var(--f)*3.2);border-radius:calc(var(--u)*4)}
-.fs-cards .f-lead{min-width:calc(var(--f)*11.6);height:calc(var(--f)*11.6);padding:0 calc(var(--f)*2);border-radius:calc(var(--f)*3.1);background:color-mix(in srgb,var(--accent) 17%,transparent)}
+.fs-cards .f-lead{min-width:calc(var(--f)*11.6);height:calc(var(--f)*11.6);padding:0 calc(var(--f)*2);border-radius:calc(var(--f)*3.1);background:color-mix(in srgb,var(--c) 17%,transparent)}
 .fs-cards .f-icon{height:calc(var(--f)*6.4)}
 .fs-cards .f-value{font-size:calc(var(--f)*4.8*var(--fs))}
 .fs-cards .f-title,.fs-list .f-title{font-size:calc(var(--f)*3.9*var(--fs))}
@@ -698,6 +869,91 @@ html,body{background:#000;overflow:hidden}
 .fs-list .f-lead{min-width:calc(var(--f)*10)}
 .fs-list .f-icon{height:calc(var(--f)*9.4)}
 .fs-list .f-value{font-size:calc(var(--f)*6.2*var(--fs))}
+.fl-tint .f-tile{background:linear-gradient(145deg,color-mix(in srgb,var(--c) 36%,transparent),color-mix(in srgb,var(--c) 13%,transparent)),var(--card);box-shadow:inset 0 0 0 calc(var(--u)*.14) color-mix(in srgb,var(--c) 36%,transparent),var(--card-shadow)}
+.fl-solid .f-tile{color:var(--ci);background:linear-gradient(150deg,color-mix(in srgb,var(--c) 84%,#fff),var(--c));box-shadow:var(--card-shadow)}
+.fl-solid .f-icon{fill:var(--ci)}
+.fl-solid .f-value{color:var(--ci);background:none}
+.fl-solid .f-title em{color:inherit}
+.fl-solid .f-detail{opacity:.84}
+.fl-outline .f-tile{background:none;box-shadow:inset 0 0 0 calc(var(--u)*.26) color-mix(in srgb,var(--text) 24%,transparent)}
+.fl-outline .f-tile.wash{background:none;box-shadow:inset 0 0 0 calc(var(--u)*.34) var(--c)}
+.fs-list .f-tile,.fs-list .f-tile.wash{color:inherit;background:none;box-shadow:none}
+.fs-list .f-value{color:transparent;background:linear-gradient(135deg,color-mix(in srgb,var(--c) 60%,var(--text)),var(--c));-webkit-background-clip:text;background-clip:text}
+.fi-plain .f-icon{fill:var(--text)}
+.fl-solid.fi-plain .f-icon,.fs-list.fl-solid.fi-gradient .f-icon{fill:var(--ci)}
+.fs-list.fl-solid.fi-gradient .f-icon{fill:var(--g)}
+.f-lead.badge{width:calc(var(--f)*13.5);height:calc(var(--f)*13.5);min-width:0;padding:0;border-radius:27%;background:linear-gradient(160deg,color-mix(in srgb,var(--c) 74%,#fff),var(--c));box-shadow:0 calc(var(--f)*.9) calc(var(--f)*2.4) color-mix(in srgb,var(--c) 36%,transparent),inset 0 0 0 calc(var(--f)*.12) rgba(255,255,255,.2)}
+.f-lead.badge .f-icon{height:54%;fill:var(--ci)}
+.f-tile.hero .f-lead.badge{width:calc(var(--f)*19);height:calc(var(--f)*19)}
+.f-tile.tall .f-lead.badge{width:calc(var(--f)*16);height:calc(var(--f)*16)}
+.fs-cards .f-lead.badge,.fs-list .f-lead.badge{width:calc(var(--f)*11.6);height:calc(var(--f)*11.6)}
+.fl-solid:not(.fs-list) .f-lead.badge{background:var(--ci);box-shadow:none}
+.fl-solid:not(.fs-list) .f-lead.badge .f-icon{fill:var(--c)}
+.fs-cards .f-lead.art{padding:0;background:none}
+.fs-cards .f-img,.fs-list .f-img{height:calc(var(--f)*11.6)}
+.f-lead.thumb{width:calc(var(--f)*11.6);height:calc(var(--f)*11.6);min-width:0;padding:0;overflow:hidden;border-radius:calc(var(--f)*2.6);background:#101012;box-shadow:0 0 0 calc(var(--u)*.12) rgba(128,128,128,.3)}
+.f-lead.thumb img{display:block;width:100%;height:100%;object-fit:cover;object-position:top center}
+.f-tile.pic{justify-content:flex-start;gap:calc(var(--f)*2.8);padding-bottom:0}
+.f-tile.pic .f-text{flex:none}
+.f-shot{flex:1 1 0;align-self:center;width:72%;min-height:calc(var(--f)*12);container-type:inline-size}
+.f-shot.land{width:92%}
+.f-shot-in{height:100%;overflow:hidden;border-radius:var(--sr) var(--sr) 0 0;background:#101012;box-shadow:0 0 0 calc(var(--u)*.12) rgba(128,128,128,.3),0 calc(var(--u)*-.4) calc(var(--u)*2.8) rgba(0,0,0,.2)}
+.f-shot-in img{display:block;width:100%;height:100%;object-fit:cover;object-position:top center}
+.f-tile.pic.row{align-items:stretch;justify-content:space-between}
+.f-tile.pic.row .f-text{flex:1 1 0;align-self:center;padding-bottom:calc(var(--f)*3.2)}
+.f-tile.pic.row .f-shot{flex:0 0 36%;align-self:stretch;width:auto;min-height:0}
+.f-tile.pic.row .f-shot.land{flex-basis:50%}
+.stat{--s:calc(var(--u)*var(--sz));position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;display:flex;flex-direction:column;align-items:center;text-align:center;padding:calc(var(--u)*5.5) calc(var(--u)*7) 0}
+.align-left .stat{align-items:flex-start;text-align:left;padding-left:calc(var(--u)*8);padding-right:calc(var(--u)*8)}
+.st-main,.st-item{display:flex;flex-direction:column;align-items:inherit;min-width:0;max-width:100%}
+.st-value{font-family:var(--font);font-weight:var(--hw);white-space:nowrap;color:transparent;background:linear-gradient(135deg,color-mix(in srgb,var(--c) 55%,var(--text)),var(--c));-webkit-background-clip:text;background-clip:text}
+.st-icon{display:block;width:auto;fill:var(--g)}
+.st-main .st-value{font-size:calc(var(--s)*var(--sv)*var(--fs));line-height:.92;letter-spacing:-.05em;padding:0 .05em}
+.st-main .st-icon{height:calc(var(--s)*var(--sv)*.8)}
+.st-main .st-title{font-family:var(--font);font-size:calc(var(--s)*6.6*var(--fs));font-weight:var(--hw);line-height:1.08;letter-spacing:var(--track);margin-top:calc(var(--s)*2.6);text-wrap:balance}
+.st-title em{font-style:normal;color:var(--c)}
+.st-main .st-detail{font-size:calc(var(--s)*3.9);font-weight:500;line-height:1.27;letter-spacing:-.01em;opacity:.76;margin-top:calc(var(--s)*1.7);max-width:calc(var(--u)*78);text-wrap:balance}
+.st-row{display:grid;grid-template-columns:repeat(var(--sc),minmax(0,1fr));gap:calc(var(--s)*5) calc(var(--s)*4.5);width:100%;max-width:calc(var(--u)*33*var(--sc));margin-top:calc(var(--s)*9)}
+.st-item{gap:calc(var(--s)*1);padding-top:calc(var(--s)*3.4);border-top:calc(var(--u)*.3) solid color-mix(in srgb,var(--text) 18%,transparent)}
+.st-item .st-value{font-size:calc(var(--s)*8.8*var(--fs));line-height:1;letter-spacing:-.035em}
+.st-item .st-icon{height:calc(var(--s)*8)}
+.st-item .st-title{font-size:calc(var(--s)*3.3);font-weight:600;line-height:1.2;letter-spacing:-.005em;opacity:.88;text-wrap:balance}
+.st-item .st-detail{font-size:calc(var(--s)*2.7);font-weight:500;line-height:1.25;opacity:.62;text-wrap:balance}
+.steps{--p:calc(var(--u)*var(--pz));position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;display:flex;justify-content:center;padding:calc(var(--u)*7.5) calc(var(--u)*8) 0}
+.align-left .steps{justify-content:flex-start}
+.sp-list{display:flex;flex-direction:column;gap:calc(var(--p)*6.4);width:100%;max-width:calc(var(--u)*124);min-width:0}
+.sp-step{position:relative;display:flex;align-items:flex-start;gap:calc(var(--p)*4.2);min-width:0}
+.sp-rail{flex:none;line-height:0}
+.sp-num{display:grid;place-items:center;min-width:calc(var(--p)*12);height:calc(var(--p)*12);padding:0 calc(var(--p)*2.6);border-radius:calc(var(--p)*6);background:linear-gradient(150deg,color-mix(in srgb,var(--c) 76%,#fff),var(--c));color:var(--ci);font-family:var(--font);font-size:calc(var(--p)*5.6*var(--fs));font-weight:var(--hw);line-height:1;letter-spacing:-.02em;white-space:nowrap;box-shadow:0 calc(var(--p)*.8) calc(var(--p)*2.4) color-mix(in srgb,var(--c) 34%,transparent)}
+.sp-step:not(:last-child) .sp-rail::after{content:"";position:absolute;left:calc(var(--p)*6);top:calc(var(--p)*13.8);bottom:calc(var(--p)*-4.6);width:calc(var(--u)*.44);margin-left:calc(var(--u)*-.22);border-radius:99px;background:color-mix(in srgb,var(--text) 22%,transparent)}
+.sp-text{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:calc(var(--p)*1.3);padding-top:calc(var(--p)*1.5);text-align:left}
+.sp-title{font-family:var(--font);font-size:calc(var(--p)*5.7*var(--fs));font-weight:var(--hw);line-height:1.08;letter-spacing:var(--track);text-wrap:balance}
+.sp-title em{font-style:normal;color:var(--c)}
+.sp-detail{font-size:calc(var(--p)*3.7);font-weight:500;line-height:1.28;letter-spacing:-.005em;opacity:.76;text-wrap:pretty}
+.sp-pic{flex:none;width:calc(var(--p)*27);aspect-ratio:3/4;overflow:hidden;border-radius:calc(var(--p)*3);background:#101012;box-shadow:0 calc(var(--p)*1.2) calc(var(--p)*3.4) rgba(0,0,0,.28),0 0 0 calc(var(--u)*.12) rgba(128,128,128,.3)}
+.sp-pic.land{width:calc(var(--p)*40);aspect-ratio:var(--ar)}
+.sp-pic img{display:block;width:100%;height:100%;object-fit:cover;object-position:top center}
+.roomy .sp-pic{width:calc(var(--p)*30);aspect-ratio:1/1}
+.roomy .sp-pic.land{width:calc(var(--p)*40);aspect-ratio:var(--ar)}
+.wide .sp-list{flex-direction:row;gap:calc(var(--p)*6);max-width:none}
+.wide .sp-step{flex:1 1 0;flex-direction:column;gap:calc(var(--p)*3.2)}
+.wide .sp-step:not(:last-child) .sp-rail::after{left:calc(var(--p)*14);right:calc(var(--p)*-4);top:calc(var(--p)*6);bottom:auto;width:auto;height:calc(var(--u)*.44);margin:calc(var(--u)*-.22) 0 0}
+.wide .sp-text{flex:none;padding-top:0}
+.wide .sp-pic{width:100%;aspect-ratio:5/4;margin-top:calc(var(--p)*1.4)}
+.wide .sp-pic.land{width:100%;aspect-ratio:var(--ar)}
+.reviews{--b:calc(var(--u)*var(--rz));position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;display:flex;justify-content:center;padding:calc(var(--u)*6.5) calc(var(--u)*7) 0}
+.align-left .reviews{justify-content:flex-start;padding-left:calc(var(--u)*8);padding-right:calc(var(--u)*8)}
+.rv-wall{width:100%;max-width:calc(var(--u)*var(--rw));column-count:var(--rc);column-gap:calc(var(--u)*2.6)}
+.rv-card{break-inside:avoid;display:flex;flex-direction:column;align-items:flex-start;gap:calc(var(--b)*1.9);margin-bottom:calc(var(--u)*2.6);padding:calc(var(--b)*3.6) calc(var(--b)*3.8);border-radius:calc(var(--u)*4.2);background:var(--card);box-shadow:inset 0 0 0 calc(var(--u)*.14) var(--card-line),var(--card-shadow);text-align:left}
+.rv-card .stars{height:calc(var(--b)*3.2)}
+.rv-quote{font-family:var(--font);font-size:calc(var(--b)*4.2*var(--fs));font-weight:600;line-height:1.24;letter-spacing:-.012em;text-wrap:pretty}
+.rv-by{font-size:calc(var(--b)*2.4);font-weight:700;line-height:1.2;letter-spacing:.08em;text-transform:uppercase;opacity:.6}
+.rv-card.gold .s-fg polygon{fill:url(#b-gold);stroke:url(#b-gold)}
+.layout-statement .headline{font-size:calc(var(--u)*18*var(--ts)*var(--fs));line-height:.99}
+.layout-statement .eyebrow{font-size:calc(var(--u)*3.5*var(--ts));margin-bottom:calc(var(--u)*4.4)}
+.layout-statement .sub{font-size:calc(var(--u)*5*var(--ts));margin-top:calc(var(--u)*5.2)}
+.em-marker .headline em{color:var(--mi);background:linear-gradient(var(--accent),var(--accent)) 0 58%/100% 84% no-repeat;padding:0 .13em;margin:0 -.05em;border-radius:.13em;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.em-underline .headline em{color:inherit;text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:.085em;text-underline-offset:.1em;text-decoration-skip-ink:none}
 .device{position:relative;flex:none;width:var(--dw);transform-origin:50% 35%}
 .frame{position:relative;z-index:1;border-radius:calc(var(--dw)*var(--ro));padding:calc(var(--dw)*var(--band));background:linear-gradient(135deg,var(--f1),var(--f2) 28%,var(--f3) 62%,var(--f4));box-shadow:var(--shadow)}
 .frame::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 calc(var(--dw)*.0018) rgba(255,255,255,.3),inset 0 0 calc(var(--dw)*.006) rgba(0,0,0,.45);pointer-events:none}
@@ -899,11 +1155,35 @@ export const FIT_SCRIPT = `(async () => {
     const tiles = [...grid.querySelectorAll('.f-tile')];
     // A card much wider than it is tall reads better with its icon beside the text.
     for (const tile of tiles) {
-      if (!tile.classList.contains('row') && tile.clientWidth > tile.clientHeight * (tile.classList.contains('hero') ? 2.7 : 2.05)) tile.classList.add('row');
+      // One that shows a screenshot turns sooner: the picture needs the height more than the text does.
+      const turns = tile.classList.contains('pic') ? 1.25 : tile.classList.contains('hero') ? 2.7 : 2.05;
+      if (!tile.classList.contains('row') && tile.clientWidth > tile.clientHeight * turns) tile.classList.add('row');
     }
     let fz = parseFloat(grid.style.getPropertyValue('--fz'));
     const spills = () => tiles.some((tile) => tile.scrollHeight > tile.clientHeight + 1 || tile.scrollWidth > tile.clientWidth + 1);
     while (spills() && fz > 0.45) grid.style.setProperty('--fz', (fz -= 0.03));
+  }
+
+  // A stat, a set of steps or a wall of reviews grows into the room the copy leaves, then gives way until it fits.
+  for (const box of canvas.querySelectorAll('[data-size]')) {
+    const name = box.dataset.size;
+    const most = parseFloat(box.dataset.grow);
+    let size = parseFloat(box.style.getPropertyValue(name));
+    const room = () => canvas.clientHeight - (copy ? copy.offsetHeight : 0) - u * 22;
+    // The giant figure of a stat is as wide as the slide lets it be, whatever size the lines under it have.
+    const figure = box.querySelector('.st-main .st-value');
+    let sv = parseFloat(box.style.getPropertyValue('--sv'));
+    const hold = () => {
+      while (figure && figure.scrollWidth > box.clientWidth - u * 14 && sv > 4) box.style.setProperty('--sv', (sv -= 0.4));
+    };
+    const cramped = () => [...box.querySelectorAll('.st-item .st-value')].some((value) => value.scrollWidth > value.parentElement.clientWidth + 1);
+    const spills = () => box.scrollHeight > room() + 1 || box.scrollWidth > box.clientWidth + 1 || cramped();
+    hold();
+    while (!spills() && size < most) {
+      box.style.setProperty(name, (size += 0.03));
+      hold();
+    }
+    while (spills() && size > 0.4) box.style.setProperty(name, (size -= 0.03));
   }
 
   if (stage) {
@@ -981,9 +1261,9 @@ export const anchorOf = (ratios: number[]) => ratios.findIndex((ratio) => ratio 
 export async function slideHtml(ctx: SlideContext): Promise<string> {
   const { project, shots, locale } = ctx;
   const shotsPath = shotsDir(ctx.space, project.id);
-  const slide = project.slides[ctx.index];
-  if (!slide) throw new Error(`Slide ${ctx.index + 1} does not exist`);
   const target = TARGETS[ctx.target];
+  const slide = slidesFor(project, target.device)[ctx.index];
+  if (!slide) throw new Error(`Slide ${ctx.index + 1} does not exist`);
   const fallback = project.locales[0] ?? "en";
   const theme = project.theme;
   const layout: LayoutId = slide.layout ?? "device-bottom";
@@ -1014,11 +1294,14 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const eyebrow = pick(slide.eyebrow, locale, fallback);
   const headline = pick(slide.headline, locale, fallback);
   const sub = pick(slide.subheadline, locale, fallback);
-  const badges = slide.badges ?? [];
+  // The reviews layout hangs its review badges on the wall and keeps the others with the copy.
+  const wall = layout === "reviews" ? (slide.badges ?? []).filter((badge) => badge.type === "review").slice(0, REVIEWS_SHOWN) : [];
+  const badges = (slide.badges ?? []).filter((badge) => !wall.includes(badge)).slice(0, BADGES_SHOWN);
   const badgePosition = slide.badgePosition ?? (layout === "hero" ? "top" : "bottom");
-  // The features layout shows them as its cards. Any other slide lists them with the copy.
-  const features = layout === "features" ? (slide.features ?? []) : [];
-  const points = layout === "features" ? [] : (slide.features ?? []);
+  // The features, stat and steps layouts draw them as their picture. Any other slide lists them with the copy.
+  const own = FEATURE_LAYOUTS.includes(layout);
+  const features = own ? (slide.features ?? []) : [];
+  const points = own ? [] : (slide.features ?? []);
   const cardStyle: FeatureStyleId = slide.featureStyle === "chips" ? "list" : (slide.featureStyle ?? "bento");
   const pointStyle: PointStyleId = !slide.featureStyle || slide.featureStyle === "bento" ? "list" : slide.featureStyle;
 
@@ -1033,9 +1316,11 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
     ? `<div class="badges ${badgePosition}">${badges.map((badge) => badgeHtml(badge, locale, fallback)).join("")}</div>`
     : "";
   const placed = slide.images ?? [];
-  const images = slide.logo || placed.length ? await listImages(ctx.space, project.id) : [];
+  const images = slide.logo || placed.length || features.some((feature) => feature.image) ? await listImages(ctx.space, project.id) : [];
   const headlineHtml = rich(headline);
-  const twoTone = !accent && headlineHtml.includes("<em>");
+  const emphasis: EmphasisId = slide.emphasis ?? theme.emphasis ?? "tint";
+  // Without an accent colour there is nothing to tint the words with, so the rest of the headline steps back instead.
+  const twoTone = emphasis === "tint" && !accent && headlineHtml.includes("<em>");
   // The copy column of a side layout is 56% of the canvas with one margin, or 41% on a wide one; the row is sized for what that leaves.
   const rowHtml = slide.iconRow ? iconRowHtml(slide.iconRow, side ? { width: canvas.width * column + unit * 9 } : canvas, unit, dark, locale, fallback) : "";
   const rowOnTop = slide.iconRow?.position === "top";
@@ -1122,29 +1407,50 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
       });
     }
     stageHtml = `<div class="stage${LAYOUT_SHOTS[layout] > 1 ? " multi" : ""}${desk ? ` desk" style="--aw:${round(anchorWidth)}px` : ""}">${stageHtml}</div>`;
-  } else if (features.length) {
-    stageHtml = featuresHtml(features, cardStyle, canvas, unit, locale, fallback, !copyHtml);
+  } else {
+    const scene: Scene = { canvas, unit, locale, fallback, projectId: project.id, shots, images, device: target.device };
+    if (layout === "stat") stageHtml = statHtml(features, scene);
+    else if (layout === "steps") stageHtml = stepsHtml(features, scene);
+    else if (layout === "reviews") stageHtml = reviewsHtml(wall, scene);
+    else if (features.length) stageHtml = featuresHtml(features, cardStyle, slide.featureCards ?? {}, scene, !copyHtml);
   }
 
-  const filled = hasDevice || features.length > 0;
+  const board = !hasDevice && Boolean(stageHtml);
+  const filled = hasDevice || board;
   // Badges on a slide with nothing but copy have the room to be the picture.
   const badgeScale = (layout === "hero" ? 1.3 : 1.1) * (badges.length >= 3 ? 0.78 : 1) * (filled ? 1 : 1.3);
-  const classes = ["canvas", `layout-${layout}`, `align-${align}`, dark ? "dark" : "light", wide ? "wide" : "", side ? "side" : "", filled ? "" : "no-device"].filter(Boolean).join(" ");
+  const classes = ["canvas", `layout-${layout}`, `align-${align}`, `em-${emphasis}`, dark ? "dark" : "light", wide ? "wide" : "", side ? "side" : "", board ? "board" : "", filled ? "" : "no-device"]
+    .filter(Boolean)
+    .join(" ");
   // Feature points need room of their own: each row lets the copy take a little more of the slide before the text shrinks.
   const pointRows = pointStyle === "chips" ? Math.ceil(points.length / 2) * 0.6 : pointStyle === "grid" && !side ? Math.ceil(points.length / 2) : points.length;
-  const copyMax = !filled ? 0.92 : side ? COPY_MAX[layout] : Math.min(0.6, COPY_MAX[layout] + (points.length ? 0.03 + pointRows * 0.045 : 0));
+  // Badges with the copy of a slide that is all type need room of their own too, or the headline shrinks to make it.
+  const badgeRoom = board && badges.length ? (wide ? 0.13 : 0.07) : 0;
+  const copyMax = !filled
+    ? layout === "statement"
+      ? COPY_MAX.statement
+      : 0.92
+    : side
+      ? COPY_MAX[layout]
+      : Math.min(0.6, COPY_MAX[layout] + badgeRoom + (points.length ? 0.03 + pointRows * 0.045 : 0));
+  // What the accent colour is drawn on needs ink that reads on it.
+  const ink = inkOn(accent ?? textColor);
   const vars = [
     `width:${target.width}px`,
     `height:${target.height}px`,
     `--u:${round(unit)}px`,
     // The copy column on a tablet canvas is as wide as a whole phone slide, so its type grows with it.
-    `--ts:${round(textScale * (side && target.width / target.height > 0.6 ? 1.3 : 1))}`,
+    // A statement is all headline, and a canvas wider than a phone's has the room to set it larger still.
+    `--ts:${round(textScale * (side && target.width / target.height > 0.6 ? 1.3 : layout === "statement" ? { phone: 1, tablet: 1.3, wide: 1.2 }[shapeOf(canvas)] : 1))}`,
     `--bs:${round(badgeScale)}`,
     `--fs:${font.scale}`,
     `--hw:${font.weight}`,
     `--track:${font.tracking}`,
     `--text:${textColor}`,
     `--accent:${accent ?? textColor}`,
+    `--c:var(--accent)`,
+    `--ci:${ink}`,
+    `--mi:${ink}`,
     `--star:${accent ?? "#FFB61E"}`,
     `--font:'${font.family}','Inter Variable',system-ui,sans-serif`,
     `--body:'${body.family}','Inter Variable',system-ui,sans-serif`,

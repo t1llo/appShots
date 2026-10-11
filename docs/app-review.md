@@ -19,7 +19,7 @@ Screenshots are part of what Apple reviews. A set that breaks the rules gets the
 
 ## Only real numbers
 
-A badge with a rating, a download count, an award or a review is a claim.
+A badge with a rating, a download count, an award or a review is a claim. So is a figure on a `stat` slide and a quote on a `reviews` slide.
 
 - Use the figures your app really has, and keep them current.
 - A review quote must be a real review. Name who said it only with their permission.

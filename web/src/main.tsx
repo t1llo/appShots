@@ -3,15 +3,15 @@
 
 import "./app.css";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { createHashHistory, createRootRoute, createRoute, createRouter, Link, Navigate, Outlet, RouterProvider } from "@tanstack/react-router";
+import { createHashHistory, createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider } from "@tanstack/react-router";
 import { type ReactNode, StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { detailQuery, errorText, metaQuery, projectsQuery } from "./api.ts";
+import { detailQuery, errorText, type Meta, metaQuery, projectsQuery } from "./api.ts";
 import { DialogHost, type DialogKind, OpenDialog, useOpenDialog } from "./dialogs.tsx";
 import { MockupsPage } from "./mockups.tsx";
+import { AdminPage, ProjectsPage, SettingsPage } from "./pages.tsx";
 import { dropTarget, ProjectPage } from "./project.tsx";
 import { RenderList, useRenderNotes, useRenders } from "./renders.tsx";
-import { type Appearance, readAppearance, setAppearance } from "./theme.ts";
 import { Icon, Menu, Toasts } from "./ui.tsx";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -19,40 +19,9 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false 
 const PAGE = "M4.2 1.8h4.9l2.7 2.7v9.7H4.2zM9 2v2.7h2.7";
 const PLUS = "M8 3.5v9M3.5 8h9";
 const BOLT = "M9 1.8 3.8 9H8l-1 5.2L12.2 7H8z";
-const LEAVE = "M6.5 2.5h-3v11h3M10 5l3 3-3 3M13 8H6.5";
 const BOOK = "M3.5 12V4a1.5 1.5 0 0 1 1.5-1.5h7.5v9M5 10.5h7.5v3H5a1.5 1.5 0 0 1 0-3z";
-
-const APPEARANCES: { id: Appearance; text: string; title: string; path: string }[] = [
-  { id: "system", text: "Auto", title: "Follow this device's setting", path: "M2.5 3.5h11v7h-11zM6 13.5h4M8 10.5v3" },
-  { id: "light", text: "Light", title: "Light", path: "M8 5.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6zM8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" },
-  { id: "dark", text: "Dark", title: "Dark", path: "M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z" },
-];
-
-/** Light, dark, or whatever the device says. */
-function AppearanceSwitch() {
-  const [chosen, setChosen] = useState(readAppearance);
-  return (
-    <div className="appearance" role="radiogroup" aria-label="Appearance">
-      {APPEARANCES.map((entry) => (
-        <button
-          key={entry.id}
-          className={chosen === entry.id ? "on" : ""}
-          type="button"
-          role="radio"
-          aria-checked={chosen === entry.id}
-          title={entry.title}
-          onClick={() => {
-            setAppearance(entry.id);
-            setChosen(entry.id);
-          }}
-        >
-          <Icon path={entry.path} />
-          {entry.text}
-        </button>
-      ))}
-    </div>
-  );
-}
+const GRID = "M2.5 2.5h4.4v4.4H2.5zM9.1 2.5h4.4v4.4H9.1zM2.5 9.1h4.4v4.4H2.5zM9.1 9.1h4.4v4.4H9.1z";
+const CHART = "M3 13.2V8.6M8 13.2V2.8M13 13.2V6";
 
 /** The frame of a page that has no project to show. */
 function Blank({ children }: { children?: ReactNode }) {
@@ -98,27 +67,39 @@ function Shell() {
     );
   }
 
-  const { account, authEnabled } = meta.data;
+  const { account } = meta.data;
   const name = account ? account.name || account.email : "appShots";
   return (
     <OpenDialog.Provider value={setDialog}>
       <nav className="sidebar" aria-label="Projects and settings">
-        <div className="who">
+        <Link className="who" to="/settings" title="Settings">
           <span className="avatar" aria-hidden="true">
             {name[0]!.toUpperCase()}
           </span>
           <span className="who-text">
             <span className="who-name">{name}</span>
-            <span className="who-sub">{account?.email ?? ""}</span>
+            <span className="who-sub">{account?.email ?? "Studio"}</span>
           </span>
+        </Link>
+
+        <div className="nav-group">
+          <Link className="nav-item" activeProps={{ className: "on" }} activeOptions={{ exact: true }} to="/">
+            <Icon path={GRID} />
+            <span className="nav-text">All projects</span>
+          </Link>
         </div>
 
         <div className="nav-group grow">
-          <div className="nav-label">Projects</div>
+          <div className="nav-label">
+            Projects
+            <button className="icon-btn plain" type="button" title="New project" aria-label="New project" onClick={() => setDialog("new")}>
+              <Icon path={PLUS} />
+            </button>
+          </div>
           <div id="project-list">
             {projects.data.map((project) => (
               <div key={project.id} className="nav-row">
-                <Link className="nav-item" activeProps={{ className: "on" }} to="/$projectId" params={{ projectId: project.id }}>
+                <Link className="nav-item" activeProps={{ className: "on" }} activeOptions={{ includeSearch: false }} to="/$projectId" params={{ projectId: project.id }}>
                   <Icon path={PAGE} />
                   <span className="nav-text">{project.name}</span>
                 </Link>
@@ -126,21 +107,23 @@ function Shell() {
                   label={`Rename or delete ${project.name}`}
                   items={[
                     { text: "Rename", run: () => setDialog({ rename: project }) },
-                    { text: "Delete", danger: true, run: () => setDialog({ remove: project }) },
+                    { text: "Delete…", danger: true, run: () => setDialog({ remove: project }) },
                   ]}
                 />
               </div>
             ))}
           </div>
-          <button className="nav-item quiet" type="button" onClick={() => setDialog("new")}>
-            <Icon path={PLUS} />
-            <span className="nav-text">New project</span>
-          </button>
+          {projects.data.length === 0 ? (
+            <button className="nav-item quiet" type="button" onClick={() => setDialog("new")}>
+              <Icon path={PLUS} />
+              <span className="nav-text">New project</span>
+            </button>
+          ) : null}
         </div>
 
         {renders.data ? <RenderList renders={renders.data} /> : null}
 
-        <div className="nav-group">
+        <div className="nav-group foot">
           <button className="nav-item" type="button" onClick={() => setDialog("connect")}>
             <Icon path={BOLT} />
             <span className="nav-text">Connect an agent</span>
@@ -150,32 +133,19 @@ function Shell() {
             <span className="nav-text">Docs</span>
           </a>
           {account?.admin ? (
-            <button className="nav-item" type="button" onClick={() => setDialog("people")}>
-              <svg className="icon" viewBox="0 0 16 16" aria-hidden="true">
-                <circle cx="6" cy="5.5" r="2.3" />
-                <path d="M1.8 13c.5-2.1 2.1-3.2 4.2-3.2s3.7 1.1 4.2 3.2M10.6 3.5a2.2 2.2 0 0 1 0 4.2M12 9.9c1.2.4 2 1.4 2.3 3.1" />
-              </svg>
-              <span className="nav-text">People</span>
-            </button>
+            <Link className="nav-item" activeProps={{ className: "on" }} to="/admin">
+              <Icon path={CHART} />
+              <span className="nav-text">Admin</span>
+            </Link>
           ) : null}
-          {account ? (
-            <button className="nav-item" type="button" onClick={() => setDialog("account")}>
-              <svg className="icon" viewBox="0 0 16 16" aria-hidden="true">
-                <circle cx="8" cy="5.5" r="2.5" />
-                <path d="M3 13.5c.6-2.4 2.6-3.5 5-3.5s4.4 1.1 5 3.5" />
-              </svg>
-              <span className="nav-text">Account</span>
-            </button>
-          ) : null}
-          {authEnabled ? (
-            <form method="post" action="/logout">
-              <button className="nav-item" type="submit">
-                <Icon path={LEAVE} />
-                <span className="nav-text">Sign out</span>
-              </button>
-            </form>
-          ) : null}
-          <AppearanceSwitch />
+          <Link className="nav-item" activeProps={{ className: "on" }} to="/settings">
+            <svg className="icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2.5 5h6.2M12.3 5h1.2M2.5 11h1.2M7.3 11h6.2" />
+              <circle cx="10.5" cy="5" r="1.8" />
+              <circle cx="5.5" cy="11" r="1.8" />
+            </svg>
+            <span className="nav-text">Settings</span>
+          </Link>
         </div>
       </nav>
 
@@ -236,32 +206,16 @@ function DropVeil() {
   return shown ? <div className="drop-veil">{images ? "Drop to add as logos and images" : "Drop screenshots to upload"}</div> : null;
 }
 
-function Home() {
-  const first = useQuery(projectsQuery).data?.[0];
-  const open = useOpenDialog();
-  if (first) return <Navigate to="/$projectId" params={{ projectId: first.id }} replace />;
-  return (
-    <Message title="App Store screenshots, on tap" text="Create a project here, or let your agent build one. Either way the result shows up here in the Studio.">
-      <button className="btn primary" type="button" onClick={() => open("new")}>
-        New project
-      </button>
-      <button className="btn" type="button" onClick={() => open("connect")}>
-        Connect an agent
-      </button>
-    </Message>
-  );
-}
-
-/** A project's page: the App Store set, or its mockups. */
-function ProjectRoute({ projectId, mockups = false }: { projectId: string; mockups?: boolean }) {
+/** A project's page: its slides, what it is made of, or its mockups. */
+function ProjectRoute({ projectId, view }: { projectId: string; view: "slides" | "assets" | "mockups" }) {
   const meta = useQuery(metaQuery).data!;
   const detail = useQuery(detailQuery(projectId));
   const open = useOpenDialog();
   if (detail.data) {
-    return mockups ? (
+    return view === "mockups" ? (
       <MockupsPage key={projectId} meta={meta} initial={detail.data} />
     ) : (
-      <ProjectPage key={projectId} meta={meta} initial={detail.data} openConnect={() => open("connect")} />
+      <ProjectPage key={projectId} meta={meta} initial={detail.data} view={view} openConnect={() => open("connect")} />
     );
   }
   if (!detail.error) return <Blank />;
@@ -274,12 +228,23 @@ function ProjectRoute({ projectId, mockups = false }: { projectId: string; mocku
   );
 }
 
-const rootRoute = createRootRoute({ component: Shell });
-const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Home });
-const projectRoute = createRoute({ getParentRoute: () => rootRoute, path: "$projectId", component: () => <ProjectRoute projectId={projectRoute.useParams().projectId} /> });
-const mockupsRoute = createRoute({ getParentRoute: () => rootRoute, path: "$projectId/mockups", component: () => <ProjectRoute projectId={mockupsRoute.useParams().projectId} mockups /> });
+/** A page that needs nothing but what the shell has loaded already. */
+const withMeta = (PageOf: (props: { meta: Meta }) => ReactNode) => () => <PageOf meta={useQuery(metaQuery).data!} />;
 
-const router = createRouter({ routeTree: rootRoute.addChildren([homeRoute, projectRoute, mockupsRoute]), history: createHashHistory() });
+const rootRoute = createRootRoute({ component: Shell });
+const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: withMeta(ProjectsPage) });
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "settings", component: withMeta(SettingsPage) });
+const adminRoute = createRoute({ getParentRoute: () => rootRoute, path: "admin", component: withMeta(AdminPage) });
+const projectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "$projectId",
+  // #/<project>?view=assets is what the project is made of; anything else is its slides.
+  validateSearch: (search: Record<string, unknown>): { view?: "assets" } => (search.view === "assets" ? { view: "assets" } : {}),
+  component: () => <ProjectRoute projectId={projectRoute.useParams().projectId} view={projectRoute.useSearch().view ?? "slides"} />,
+});
+const mockupsRoute = createRoute({ getParentRoute: () => rootRoute, path: "$projectId/mockups", component: () => <ProjectRoute projectId={mockupsRoute.useParams().projectId} view="mockups" /> });
+
+const router = createRouter({ routeTree: rootRoute.addChildren([homeRoute, settingsRoute, adminRoute, projectRoute, mockupsRoute]), history: createHashHistory() });
 
 declare module "@tanstack/react-router" {
   interface Register {

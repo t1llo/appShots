@@ -10,7 +10,7 @@ Mockups come from the same raw screenshots as the App Store set. A project needs
 
 ## Three ways
 
-**In the Studio.** Open the project and switch from **App Store** to **Mockups** at the top. Every screenshot is shown in its device. Set the device on the right, then press **PNG** under a mockup, **Copy** to paste it into a design or a document, or **Download all** for a ZIP.
+**In the Studio.** Open the project and pick **Mockups** in the bar at the top. Every screenshot is shown in its device. Set the device on the right, then press **PNG** under a mockup, **Copy** to paste it into a design or a document, or **Download all** for a ZIP.
 
 **From the Mac.**
 

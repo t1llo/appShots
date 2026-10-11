@@ -9,11 +9,11 @@ Sign in with a Google account on the [home page](/home). There is no password to
 
 Your projects are yours alone. No account can see another's.
 
-You stay signed in on that browser for 30 days after your last visit, so you are not signed out while you keep coming back. The [home page](/home) knows you too and takes you straight to your projects. **Sign out** in the sidebar ends it.
+You stay signed in on that browser for 30 days after your last visit, so you are not signed out while you keep coming back. The [home page](/home) knows you too and takes you straight to your projects. **Sign out** under **Settings** ends it.
 
 ## Who can sign in
 
-The person who runs the server decides, under **People** in the Studio:
+The person who runs the server decides, under **Admin** in the Studio:
 
 - **Anyone with a Google account**, or
 - **Only the people listed there**, by email address.
@@ -26,7 +26,7 @@ A token is what lets your agent, the `appshots` command or a script act as you. 
 
 **Create one** under **Connect an agent** in the Studio, with **Create token**. It is shown once, inside the setup command. Run that command, and the token is saved on your Mac. See [Connect an agent](/docs/connect).
 
-**See them** under **Account**: the last four characters of each, the day it was created, and the day it was last used.
+**See them** under **Settings**: the last four characters of each, the day it was created, and the day it was last used.
 
 **Revoke one** with **Revoke** beside it. It stops working at once, everywhere it was used. Then create a new one and run the setup command again.
 
@@ -57,13 +57,13 @@ The person who runs the server has no limit on projects, screenshots, images and
 
 An account gets {{RENDERS}} renders. Every export uses one, whether it comes from **Export ZIP**, from `appshots pull --render` or from an agent's `render` tool, and whatever it draws. Previews in the Studio are free, and a render that fails or is cancelled uses none. See [Render and export](/docs/export#how-many-renders).
 
-The Studio shows how many are left beside **Renders** in the sidebar and under **Account**.
+The Studio shows how many are left beside **Renders** in the sidebar and under **Settings**.
 
-**To get more**, ask the person who runs the server. Under **People**, the button with the number of renders an account has left sets a new number for that account.
+**To get more**, ask the person who runs the server. Under **Admin**, a click on the number of renders an account has left sets a new number for that account.
 
 ## Delete your account
 
-**Account → Delete account**, then type your email address to confirm. It deletes your account, every project, every screenshot, image and render, and every token, at once and for good. There is no undo and no backup to restore from.
+**Settings → Delete account**, then type your email address to confirm. It deletes your account, every project, every screenshot, image and render, and every token, at once and for good. There is no undo and no backup to restore from.
 
 One number outlives the account: how many renders it used, kept with a scrambled form of Google's id for you and nothing else. It is there so that deleting an account and signing up again does not hand out a fresh set of renders.
 

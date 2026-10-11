@@ -21,10 +21,11 @@ Create the token under **Connect an agent** in the Studio. The examples expect i
 | Request | What it does |
 | --- | --- |
 | `GET /api/projects` | Lists your projects |
-| `POST /api/projects` | Creates one. Body: `name`, and optionally `locales`, `targets`, `theme`, `slides`, `creatives` |
+| `POST /api/projects` | Creates one. Body: `name`, and optionally `locales`, `targets`, `theme`, `slides`, `deviceSlides`, `creatives` |
 | `GET /api/projects/:id` | Returns the project with its screenshots, images and rendered files |
-| `PUT /api/projects/:id` | Changes any of `name`, `locales`, `targets`, `theme`, `slides`, `creatives`, `mockups`. Each one given is replaced as a whole |
+| `PUT /api/projects/:id` | Changes any of `name`, `locales`, `targets`, `theme`, `slides`, `deviceSlides`, `creatives`, `mockups`. Each one given is replaced as a whole |
 | `DELETE /api/projects/:id` | Deletes it with everything in it |
+| `GET /api/usage` | What the account keeps on the server: the number of `projects`, `slides`, `shots` and `images`, and their size in `bytes` |
 
 ```bash
 curl -s {{SERVER}}/api/projects \
@@ -33,7 +34,7 @@ curl -s {{SERVER}}/api/projects \
   -d '{"name":"Streaks","locales":["en-US","de-DE"]}'
 ```
 
-The answer holds the project's `id`, which every other request uses. The shape of `slides`, `theme` and `creatives` is on [Slides](/docs/slides), [Header and search results](/docs/store-assets) and [Banners](/docs/banners). `creatives` holds both, by name: `header`, `search`, `universal`, `readme`, `social`, `link`, `post`. `targets` is the list of sizes the project exports, such as `["iphone-6.9","iphone-5.5"]`. Leave it out, or send `null` or `[]`, for the standard sizes. See [Sizes](/docs/sizes).
+The answer holds the project's `id`, which every other request uses. The shape of `slides`, `theme` and `creatives` is on [Slides](/docs/slides), [Header and search results](/docs/store-assets) and [Banners](/docs/banners). `deviceSlides` holds the sets single devices have of their own, by `iphone`, `duo`, `ipad` and `mac`, such as `{ "ipad": [ … ] }`. A device that is not in it draws `slides`. See [A set for each device](/docs/slides#a-set-for-each-device). `creatives` holds both, by name: `header`, `search`, `universal`, `readme`, `social`, `link`, `post`. `targets` is the list of sizes the project exports, such as `["iphone-6.9","iphone-5.5"]`. Leave it out, or send `null` or `[]`, for the standard sizes. See [Sizes](/docs/sizes).
 
 ## Screenshots
 
@@ -149,6 +150,7 @@ These need no token:
 | --- | --- |
 | `/healthz` | Answers when the server is up |
 | `/skill.md` | The skill, as the server hands it out |
+| `/skill.json` | A short hash of the skill and one of the command, which `appshots` compares its own copies with |
 | `/install.sh` | The setup script |
 | `/cli/appshots.mjs` | The `appshots` command |
 | `/docs/<page>.md` | Any page of these docs as Markdown |

@@ -88,7 +88,7 @@ No. The agent reads your code on your Mac. What reaches the server is the screen
 
 ### How do I delete everything?
 
-**Account → Delete account** in the Studio. See [Accounts, tokens and limits](/docs/accounts#delete-your-account).
+**Settings → Delete account** in the Studio. See [Accounts, tokens and limits](/docs/accounts#delete-your-account).
 
 ## Working with it
 

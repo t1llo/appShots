@@ -4,7 +4,7 @@ import { hasBakedIsland } from "./palette.ts";
 import type { Creative, DeviceStyle, Project } from "./schema.ts";
 import { isDeviceKind, PLACEMENTS, type PlacementId } from "./sizes.ts";
 import { findShot, listImages, type Shot, shotsDir, type Space } from "./store.ts";
-import { anchorOf, backgroundCss, backgroundLuminance, badgeHtml, CSS, DEFS, deskSlots, deviceHtml, deviceShape, esc, FIT_SCRIPT, logoHtml, pick, resolveBackground, rich, round, type Slot, statusLook } from "./template.ts";
+import { anchorOf, backgroundCss, backgroundLuminance, badgeHtml, CSS, DEFS, deskSlots, deviceHtml, deviceShape, esc, FIT_SCRIPT, inkOn, logoHtml, pick, resolveBackground, rich, round, type Slot, statusLook } from "./template.ts";
 
 export interface CreativeContext {
   space: Space;
@@ -244,7 +244,8 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
     ? `<div class="badges ${badgePosition}">${badges.map((badge) => badgeHtml(badge, locale, fallback)).join("")}</div>`
     : "";
   const headlineHtml = rich(headline);
-  const twoTone = !accent && headlineHtml.includes("<em>");
+  const emphasis = creative.emphasis ?? theme.emphasis ?? "tint";
+  const twoTone = emphasis === "tint" && !accent && headlineHtml.includes("<em>");
   const copyParts = [
     creative.logo ? logoHtml(creative.logo, await listImages(ctx.space, project.id), project.id) : "",
     badgePosition === "top" ? badgesHtml : "",
@@ -324,6 +325,7 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
     `--track:${font.tracking}`,
     `--text:${textColor}`,
     `--accent:${accent ?? textColor}`,
+    `--mi:${inkOn(accent ?? textColor)}`,
     `--star:${accent ?? "#FFB61E"}`,
     `--font:'${font.family}','Inter Variable',system-ui,sans-serif`,
     `--body:'${body.family}','Inter Variable',system-ui,sans-serif`,
@@ -344,7 +346,7 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
 <style>${CSS}${CREATIVE_CSS}</style>
 </head>
 <body>
-<div class="canvas creative creative-${layout} ${dark ? "dark" : "light"}" style="${vars}" data-copy-max="${(box.height / canvas.height).toFixed(4)}" data-shrink="together" data-fonts="${esc(fonts)}">
+<div class="canvas creative creative-${layout} em-${emphasis} ${dark ? "dark" : "light"}" style="${vars}" data-copy-max="${(box.height / canvas.height).toFixed(4)}" data-shrink="together" data-fonts="${esc(fonts)}">
 <div class="bg" style="${backgroundCss(background)}"></div>${noise}${DEFS}
 ${artHtml}
 ${copyHtml}

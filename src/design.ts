@@ -17,7 +17,11 @@ export const LAYOUTS = {
   "device-right": "Copy in a column on the left, the device standing on the right and bleeding off that edge. Made for more text: a headline with a list of feature points under it.",
   "device-left": "The mirror of device-right: the device on the left, the copy column on the right.",
   hero: "Social-proof opener: big badges above the headline, device peeking in from the bottom. Without a screenshot it becomes a centred text slide.",
-  features: "No device: the copy on top and the slide's feature cards below it, each an icon or a big figure with a title. The card style picks the look.",
+  features: "No device: the copy on top and the slide's feature cards below it, each an icon, a big figure or a small picture with a title. The card style picks the look.",
+  statement: "No device: the headline set very large, as the picture itself. For a claim, a promise or a question.",
+  stat: "No device: the slide's first feature as one giant figure with what it counts under it, and the next ones as a row of smaller figures.",
+  steps: "No device: the slide's features as numbered steps joined by a line, each a title and one line. A step can show a small picture of its screen.",
+  reviews: "No device: the slide's review badges as a wall of quote cards under the copy, each with its stars, the quote and who wrote it.",
 } as const;
 
 export type LayoutId = keyof typeof LAYOUTS;
@@ -38,10 +42,22 @@ export const LAYOUT_SHOTS: Record<LayoutId, number> = {
   "device-left": 1,
   hero: 1,
   features: 0,
+  statement: 0,
+  stat: 0,
+  steps: 0,
+  reviews: 0,
 };
 
 /** Layouts that stand the copy in a column beside the device instead of above or below it. */
 export const SIDE_LAYOUTS: readonly LayoutId[] = ["device-right", "device-left"];
+
+/** Layouts that draw the slide's features themselves. Every other layout lists them with the copy as feature points. */
+export const FEATURE_LAYOUTS: readonly LayoutId[] = ["features", "stat", "steps"];
+
+/** How many badges a slide draws with its copy. The reviews layout takes more, because its reviews stand in the wall. */
+export const BADGES_SHOWN = 4;
+/** How many reviews the wall of the reviews layout holds. */
+export const REVIEWS_SHOWN = 6;
 
 /** Looks of the cards on a features slide. */
 export const FEATURE_STYLES = {
@@ -52,6 +68,37 @@ export const FEATURE_STYLES = {
 } as const;
 
 export type FeatureStyleId = keyof typeof FEATURE_STYLES;
+
+/** What the cards of a features slide are made of. */
+export const CARD_LOOKS = {
+  glass: "A translucent film over the background. The first card of a bento, and any card with a colour of its own, is washed in that colour.",
+  tint: "Every card washed in its colour: its own, or the accent colour.",
+  solid: "Every card filled with its colour, the text on it black or white. Blocks of colour.",
+  outline: "No fill, a thin line around each card.",
+} as const;
+
+export type CardLookId = keyof typeof CARD_LOOKS;
+export const CARD_LOOK_IDS = Object.keys(CARD_LOOKS) as [CardLookId, ...CardLookId[]];
+
+/** How the icon of a feature card is drawn. */
+export const CARD_ICONS = {
+  gradient: "The icon alone, shaded from the text colour to the card's colour.",
+  badge: "The icon on a rounded square of the card's colour, like an app icon.",
+  plain: "The icon alone, in the text colour.",
+} as const;
+
+export type CardIconId = keyof typeof CARD_ICONS;
+export const CARD_ICON_IDS = Object.keys(CARD_ICONS) as [CardIconId, ...CardIconId[]];
+
+/** How a headline marks its *emphasised* words. */
+export const EMPHASIS = {
+  tint: "The words take the accent colour. Without one, the rest of the headline is dimmed instead.",
+  marker: "A band of the accent colour behind the words, like a highlighter.",
+  underline: "A thick line of the accent colour under the words.",
+} as const;
+
+export type EmphasisId = keyof typeof EMPHASIS;
+export const EMPHASIS_IDS = Object.keys(EMPHASIS) as [EmphasisId, ...EmphasisId[]];
 
 /** Looks of the feature points a slide shows with its copy when it has a device as well. */
 export const POINT_STYLES = {

@@ -9,9 +9,13 @@ import {
   BACKGROUNDS,
   BADGE_TONES,
   BADGE_TYPES,
+  BADGES_SHOWN,
+  CARD_ICONS,
+  CARD_LOOKS,
   CREATIVE_LAYOUTS,
   DEVICE_COLOR_IDS,
   DEVICE_STYLES,
+  EMPHASIS,
   FEATURE_STYLES,
   POINT_STYLES,
   FONT_GROUPS,
@@ -23,13 +27,14 @@ import {
   LAYOUTS,
   LOGO_SHAPES,
   LOGO_SIZE_IDS,
+  REVIEWS_SHOWN,
   STATUS_BARS,
 } from "./design.ts";
 import { rendersLeft } from "./accounts.ts";
 import { mockupName, mockupShots } from "./mockup.ts";
 import { defaultTargets, type Mockup, mockupSheet, renderMockup, renderProject } from "./render.ts";
-import { creativeSchema, localeSchema, mockupsSchema, type Project, slideSchema, slugSchema, targetsSchema, themeSchema } from "./schema.ts";
-import { PLACEMENT_IDS, PLACEMENTS, type PlacementId, placementsOf, sourceOf, type Target, TARGET_IDS, TARGETS } from "./sizes.ts";
+import { allSlides, creativeSchema, localeSchema, mockupsSchema, type Project, slideSchema, slugSchema, targetsSchema, themeSchema } from "./schema.ts";
+import { DEVICE_KINDS, DEVICE_LABELS, PLACEMENT_IDS, PLACEMENTS, type PlacementId, placementsOf, sourceOf, type Target, TARGET_IDS, TARGETS } from "./sizes.ts";
 import { createProject, getProject, InputError, listImages, listProjects, listShots, outDir, type Shot, shotLocale, type Space, type StoredImage, updateProject } from "./store.ts";
 import { deviceShape } from "./template.ts";
 
@@ -61,8 +66,8 @@ function designGuide(base: string, space: Space): string {
 ## Workflow
 1. \`create_project\`, or \`list_projects\` / \`get_project\` to continue an existing one.
 2. Get raw screenshots into the project (see Uploading below), then check them with \`get_project\`.
-3. \`set_slides\` with the copy and design for the whole set. Put shared styling in \`theme\`; slides override it.
-4. \`render\`. It returns a contact sheet image: look at it, fix what is off with \`update_slide\`, render again.
+3. \`set_slides\` with the copy and design for the whole set. Put shared styling in \`theme\`; slides override it. Then give every other device the project has screenshots of a set composed for its own canvas (see A set for each device).
+4. \`render\`. It returns one contact sheet image per device: look at each, fix what is off with \`update_slide\`, render again.
 5. Optionally \`set_creative_assets\` for the product page header and the search results asset, or for a banner outside the store such as the picture at the top of a README (see Banners), and \`render\` again.
 6. The user downloads the PNGs from ${base}/#/<project> or with \`appshots pull <project>\`.${renderBudget(space)}
 When what is wanted is not store screenshots but the devices alone, for a website or a README, see Mockups at the end: that needs only steps 1 and 2. For a macOS app, read Mac apps before step 2.
@@ -71,11 +76,25 @@ When what is wanted is not store screenshots but the devices alone, for a websit
 ${uploadHelp(base, "<project>")}
 
 ## Output sizes
-A set is designed once per device: iPhone, iPhone Duo, iPad and Mac. One slide set serves all of them; each device shows its own variant of a screenshot name. App Store Connect has one screenshot slot per display, and each takes its own pixel size, so a render writes one folder per size:
+A set is designed once per device: iPhone, iPhone Duo, iPad and Mac. Each device shows its own variant of a screenshot name, and can have slides of its own (see A set for each device). App Store Connect has one screenshot slot per display, and each takes its own pixel size, so a render writes one folder per size:
 ${Object.entries(TARGETS as Record<string, Target>)
   .map(([id, target]) => `- \`${id}\`: ${target.width}×${target.height}, for "${target.slot}"${target.standard ? ", standard" : ""}${target.from ? `, the ${target.from} picture scaled` : ""}`)
   .join("\n")}
 Left to itself, \`render\` writes the standard sizes of every device the project has screenshots of (iPhone while it has none). The others are for older displays, for the Duo's cover display and the smaller sizes the Mac App Store takes as well: add them with \`update_project\` \`targets\` only when the user asks. Sizes marked as scaled are the same picture as the size they name, so judge the design on one contact sheet per device. iPhone and iPad sets are portrait, a Mac set is landscape. Up to 10 slides per set.
+
+## A set for each device
+The project's \`slides\` are the shared set. Every device draws them on its own canvas, with its own variant of each screenshot name. That is where a project starts, not where it should end: an iPhone's canvas is tall and narrow, an iPad's is close to square and a Mac's is wide, and a slide composed for one rarely sits best on another. So when a project has screenshots of more than one device, design each device on its own:
+- \`set_slides\` without \`device\` writes the shared set. Compose it for the iPhone, or for the one device the app has.
+- \`set_slides\` with \`"device":"ipad"\` (or \`mac\`, \`duo\`, \`iphone\`) gives that device a set of its own, which it draws in place of the shared one. Start from the shared slides and recompose each for that canvas. The sets may tell the same story in the same words, and a slide that already sits well stays as it is; what matters is that each was looked at on its own canvas. They may also differ in number and in order.
+- \`update_slide\` with \`"of":"ipad"\` changes one slide of that device's own set. It is \`of\` there because \`device\` inside \`changes\` is how the slide's device is drawn. \`get_project\` lists the sets under \`deviceSlides\`.
+- \`set_slides\` with a \`device\` and an empty \`slides\` list takes the device's own set away, so it shows the shared one again.
+What usually changes from the iPhone's set:
+- iPad: there is width to spare. \`device-right\` and \`device-left\` use it where a centred phone-style slide leaves bands at the sides, and \`duo\`, \`side-by-side\` and \`trio\` show more at once. A tablet screenshot shows more of the app, so one slide can cover what took two.
+- Mac: the canvas is wide and short. Put the copy beside the window (\`device-right\`, \`device-left\`) or keep it to one line above. See Mac apps.
+- iPhone Duo: its canvas has a tablet's shape with a phone's screens; treat it like the iPad.
+- \`features\`, \`statement\`, \`stat\`, \`steps\` and \`reviews\` lay themselves out for each canvas and can be carried over unchanged.
+- Each device names the screenshots it has. A screen that exists only on the iPhone is drawn as an iPhone on the other canvases too, which is rarely what an iPad set wants.
+A render draws every device from its own set and returns a contact sheet for each. The \`slides\` of \`render\` count within each device's set.
 
 ## Mac apps
 The same server makes the screenshots of a macOS app for the Mac App Store. Find out which kind of app this is before anything else: an Xcode target whose \`SDKROOT\` is \`macosx\` or whose \`SUPPORTED_PLATFORMS\` holds \`macosx\`, a Swift package with \`.macOS\` in its \`platforms\`, or an Electron or Tauri app is a Mac app. An app for iPhone and Mac gets both: one project holds iPhone, iPad and Mac screenshots side by side.
@@ -85,7 +104,7 @@ The same server makes the screenshots of a macOS app for the Mac App Store. Find
 - A window suits a small app better than a full screen: it is drawn large, so its text stays readable, where a full screen in a MacBook turns into fine print. A MacBook makes a good first slide.
 - The Mac App Store takes 1 to 10 landscape pictures of 16:10. \`mac-2880\` (2880×1800) is the size exported, and that one size is all the store needs.
 - Every layout works on the wide canvas. What differs there: the copy of \`device-right\` and \`device-left\` gets the narrower part and the device the wider one; a MacBook that would be cut off only slightly at the bottom is made small enough to show whole; in \`duo\`, \`side-by-side\` and \`trio\`, laptops and windows stand level instead of fanned out; a \`features\` slide lays its cards across. There is little height, so one line of headline and one of subheadline is the most a slide with a device below takes well.
-- A slide shows the Mac variant of a screenshot name on the Mac canvas and the iPhone variant on the iPhone canvas. So for an app on both, give the same screen the same name on every device and one slide set serves them all. When the Mac app shows other screens or wants its slides in another order, make it a project of its own.
+- A slide shows the Mac variant of a screenshot name on the Mac canvas and the iPhone variant on the iPhone canvas. So for an app on both, give the same screen the same name on every device, then give the Mac a slide set of its own with \`set_slides\` and \`"device":"mac"\`, composed for the wide canvas: other layouts, other screens or another order as the Mac app needs.
 - A name that has no Mac screenshot is drawn as the device it has one of. That is how a Mac slide says "also on iPhone": \`duo\` or \`side-by-side\` with \`screenshot\` the Mac one and \`screenshot2\` one that exists for the iPhone only.
 
 ## Layouts
@@ -93,17 +112,35 @@ ${list(LAYOUTS)}
 \`duo\` and \`side-by-side\` take \`screenshot\` and \`screenshot2\`; \`trio\` takes \`screenshot3\` as well. A name with nothing uploaded under it is drawn as a labelled placeholder. Slides with several devices suit two steps of one flow, light next to dark, or an overview; keep the headline to one line there.
 \`device-right\` and \`device-left\` are the layouts for a slide that says more: the copy stands in a column beside the device, always left-aligned, with room for a headline, a subheadline and three or four feature points (see below).
 
+## Slides without a screenshot
+Five layouts show no device: \`features\`, \`statement\`, \`stat\`, \`steps\` and \`reviews\`. They are for the slide where a claim, a number, a short how-to or other people's words sell better than one more screen, and for an app whose screens say little on their own. One or two per set is plenty; the rest should show the app. All of them take \`eyebrow\`, \`headline\`, \`subheadline\` and badges like any slide, lay themselves out for a phone, a tablet and a Mac canvas, and fit their type to the room there is.
+- \`statement\`: the headline alone, set very large. One sentence of up to about six words, with the words that matter in *asterisks*. It suits the first slide of an app that is about an idea, and a slide in the middle that changes the subject. \`emphasis\` (see Copy) makes it more than plain text. Example: \`{"layout":"statement","headline":"Stop *scrolling.* Start living.","subheadline":"One tap blocks every app that eats your day.","emphasis":"marker"}\`
+- \`stat\`: one giant figure. The first entry of \`features\` is it: \`value\` is the figure (\`"2M+"\`, \`"4.9"\`, \`"93%"\`; up to five characters come out largest), \`title\` says what it counts, and \`text\` is one line of small print such as where the number is from. Up to four more entries become a row of smaller figures under it. Example: \`{"layout":"stat","headline":"Join the *club*","features":[{"value":"2M+","title":"people focus with us"},{"value":"4.9","title":"App Store rating"},{"value":"#1","title":"in Productivity"}]}\`
+- \`steps\`: \`features\` as numbered steps joined by a line, two to five of them, each a \`title\` and optionally one line of \`text\`. The numbers are drawn for you; a step's \`value\` stands in its place (such as \`"✓"\` on the last). A step's \`screenshot\` names a raw screenshot shown small beside it. Steps run down a portrait canvas and across a Mac's. Example: \`{"layout":"steps","headline":"Set up in a *minute*","features":[{"title":"Pick your apps","text":"Choose what distracts you most."},{"title":"Set a schedule"},{"title":"Get your time back"}]}\`
+- \`reviews\`: the slide's \`review\` badges as a wall of quote cards, up to ${REVIEWS_SHOWN}. \`title\` is the quote, \`subtitle\` who said it (a person, or a publication for a line from the press), \`stars\` the rating (left out, five). Badges of any other type stay with the copy. Three read best on an iPhone; keep each quote to a sentence. Example: \`{"layout":"reviews","headline":"People *can't stop* talking","badges":[{"type":"review","title":"I got two hours of my day back.","subtitle":"Maya, App Store review"},{"type":"review","title":"Simple, calm and it just works.","subtitle":"The Verge"}]}\`
+- \`features\`: cards, see the next section.
+Every figure, quote and name on these slides has to be real, as with badges: ask the user for them and never make one up.
+
 ## Feature slides
-A slide with \`"layout":"features"\` shows no screenshot. It lists what the app does as cards, the way a keynote sums up a release, and suits a "what's new" or "everything you get" slide, or an app whose screens say little on their own. One or two per set is plenty; the rest should show the app.
-\`features\` holds up to 8 entries, most important first. Each has a \`title\` of two to four words, an \`icon\` (see Icons) or a \`value\` (a big figure or word in its place, such as \`"0"\`, \`"24h"\` or \`"100%"\`), and optionally one short line of \`text\`. \`featureStyle\` picks the look:
+A slide with \`"layout":"features"\` lists what the app does as cards, the way a keynote sums up a release, and suits a "what's new" or "everything you get" slide.
+\`features\` holds up to 8 entries, most important first. Each has a \`title\` of two to four words, an \`icon\` (see Icons) or a \`value\` (a big figure or word in its place, such as \`"0"\`, \`"24h"\` or \`"100%"\`), and optionally one short line of \`text\`. \`featureStyle\` picks the arrangement:
 ${list(FEATURE_STYLES)}
 - \`bento\` and \`grid\` read best with 3 to 6 features and little or no \`text\`; \`cards\` with 2 to 5, each with a line of \`text\`; \`list\` with 4 to 8.
 - The type shrinks until every card fits, so shorter titles come out larger. With \`"align":"left"\` the cards go left-aligned too.
 - The headline sits above the cards and stays short. Badges work here as on any slide.
-Example: \`{"layout":"features","headline":"Everything you *need*","featureStyle":"bento","features":[{"icon":"video-off","title":"No short videos","text":"Reels and Shorts are gone."},{"value":"100%","title":"On your device"},{"icon":"timer","title":"Daily limits"}]}\`
+A feature can also carry:
+- \`color\`: a hex colour of its own, for its icon, its figure and a wash over its card. Give each card its own for a colourful set, or only the one that matters most. Left out, the accent colour.
+- \`image\`: the name of an uploaded image in place of the icon, such as the app's own artwork (see Logo and images).
+- \`screenshot\`: the name of a raw screenshot shown small on the card. On a \`bento\` or \`grid\` card it stands under the title and runs off the lower edge; in a \`cards\` or \`list\` row it is a thumbnail where the icon would be. It turns a feature slide into an overview of the app's screens.
+\`featureCards\` sets how all cards of the slide look. \`look\`, default glass:
+${list(CARD_LOOKS)}
+\`icons\`, default gradient:
+${list(CARD_ICONS)}
+\`columns\`, 1 to 4, sets how many \`grid\` cards, \`cards\` or \`list\` rows stand side by side; left out, what suits the canvas.
+Example: \`{"layout":"features","headline":"Everything you *need*","featureStyle":"bento","featureCards":{"look":"tint","icons":"badge"},"features":[{"icon":"video-off","title":"No short videos","text":"Reels and Shorts are gone.","color":"#7C5CFF"},{"value":"100%","title":"On your device","color":"#34D399"},{"icon":"timer","title":"Daily limits","color":"#F59E0B"}]}\`
 
 ## Feature points
-On every other layout, \`features\` is a short list with the copy, under the subheadline: what this screen does, in two to four points, each with an \`icon\` or a \`value\`, a \`title\` and optionally one line of \`text\`. The device gives up room for them, so use them where the slide is meant to explain; a slide that should hit hard keeps to its headline. \`featureStyle\` picks the look, default \`list\`:
+On a layout that shows a device, \`features\` is a short list with the copy, under the subheadline: what this screen does, in two to four points, each with an \`icon\` or a \`value\`, a \`title\` and optionally one line of \`text\`. The device gives up room for them, so use them where the slide is meant to explain; a slide that should hit hard keeps to its headline. \`featureStyle\` picks the look, default \`list\`:
 ${list(POINT_STYLES)}
 - \`chips\` under a centred headline is the lightest; \`list\` and \`cards\` belong in the column of \`device-right\` or \`device-left\`, or under the headline of a slide whose device is made smaller.
 - The points shrink together with the headline when the copy grows too tall.
@@ -150,7 +187,7 @@ ${list(STATUS_BARS)}
 ${list(BADGE_TYPES)}
 \`tone\` sets the colour of the wreath, stars and icon:
 ${list(BADGE_TONES)}
-Up to 4 per slide; they shrink to stay on one row. On a slide without a device or cards they are drawn larger. Examples:
+A slide draws up to ${BADGES_SHOWN} with its copy; they shrink to stay on one row. On a slide without a device or cards they are drawn larger. Examples:
 - \`{"type":"rating","title":"4.9","subtitle":"12K ratings","tone":"gold"}\`
 - \`{"type":"laurel","icon":"trophy","title":"App of the Day","subtitle":"App Store","tone":"gold"}\`
 - \`{"type":"laurel","title":"10K+","subtitle":"Downloads"}\`
@@ -186,7 +223,9 @@ ${Object.entries(ICON_GROUPS)
 The Brands group holds the logos of other companies, as simplified marks that an icon row can show in each company's own colours. They are trademarks, so use one only where the app really works with that service ("Works with Instagram", "Blocks Shorts on YouTube"), and never to suggest a partnership or an endorsement: App Review turns down screenshots that lean on another company's brand, and so can the company. Header and search results assets take no icon rows at all, because Apple allows no other company's logo there. A logo that is not in the list cannot be added; say so and leave it out, or name the service in the copy.
 
 ## Copy
-- Headline: two to five words, one benefit per slide, verb first where it fits. It is set large so it still reads at the small size the store shows screenshots in search results; a longer one shrinks to fit, so shorten the words before reaching for \`textScale\`. Wrap a word in *asterisks* to tint it with \`accentColor\` (with no accent set, the rest of the headline dims instead). \`\\n\` forces a line break.
+- Headline: two to five words, one benefit per slide, verb first where it fits. It is set large so it still reads at the small size the store shows screenshots in search results; a longer one shrinks to fit, so shorten the words before reaching for \`textScale\`. Wrap a word in *asterisks* to mark it. \`emphasis\`, in the theme or on a slide, picks how: ${Object.entries(EMPHASIS)
+    .map(([id, note]) => `\`${id}\` (${note.charAt(0).toLowerCase()}${note.slice(1).replace(/\.$/, "")})`)
+    .join("; ")}. \`tint\` is the default. \`\\n\` forces a line break.
 - Subheadline: one short sentence, or leave it out.
 - Any text field also accepts \`{"en":"…","de":"…"}\`; list the locales on the project and every one is rendered. The first locale is the fallback, for text and for screenshots alike: a language without its own screenshot of a name shows the first language's (\`get_project\` lists what there is, and Uploading above says how to add one per language).
 - Slide 1 does the selling: lead with the main benefit, or use the \`hero\` layout with real social proof. Vary layouts across the set so it does not read as one template repeated.
@@ -239,6 +278,8 @@ function describe(project: Project, shots: Shot[], images: StoredImage[], base: 
     locales: project.locales,
     theme: project.theme,
     slides: project.slides.map((slide, i) => ({ slide: i + 1, ...slide })),
+    // Devices that draw a set of their own. Any other device draws `slides`.
+    deviceSlides: Object.fromEntries(Object.entries(project.deviceSlides).map(([device, set]) => [device, (set ?? []).map((slide, i) => ({ slide: i + 1, ...slide }))])),
     creativeAssets: project.creatives,
     mockups: project.mockups,
     screenshots: shots.map((shot) => ({
@@ -271,7 +312,10 @@ async function guard(run: () => Promise<CallToolResult>): Promise<CallToolResult
 function unknownScreenshots(project: Project, shots: Shot[]): string[] {
   const known = new Set(shots.map((shot) => shot.name));
   const missing = new Set<string>();
-  const named = [...project.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]), ...Object.values(project.creatives).flatMap((creative) => creative?.screenshots ?? [])];
+  const named = [
+    ...allSlides(project).flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3, ...(slide.features ?? []).map((feature) => feature.screenshot)]),
+    ...Object.values(project.creatives).flatMap((creative) => creative?.screenshots ?? []),
+  ];
   for (const name of named) if (name && !known.has(name)) missing.add(name);
   return [...missing];
 }
@@ -280,7 +324,7 @@ function unknownImages(project: Project, images: StoredImage[]): string[] {
   const known = new Set(images.map((image) => image.name));
   const missing = new Set<string>();
   const named = [
-    ...project.slides.flatMap((slide) => [slide.logo?.image, ...(slide.images ?? []).map((placed) => placed.image)]),
+    ...allSlides(project).flatMap((slide) => [slide.logo?.image, ...(slide.images ?? []).map((placed) => placed.image), ...(slide.features ?? []).map((feature) => feature.image)]),
     ...Object.values(project.creatives).map((creative) => creative?.logo?.image),
   ];
   for (const name of named) if (name && !known.has(name)) missing.add(name);
@@ -318,6 +362,7 @@ async function creativePreview(file: string, placement: PlacementId): Promise<st
 
 const project = slugSchema.describe("Project id");
 const slideNumber = z.number().int().min(1).max(10).describe("Slide number, starting at 1");
+const deviceKind = z.enum(DEVICE_KINDS);
 
 /** `space` is the account the request was authenticated as; every tool works inside it. */
 export function createMcpServer(base: string, space: Space): McpServer {
@@ -346,7 +391,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
     () =>
       guard(async () => {
         const projects = await listProjects(space);
-        return json(projects.map((p) => ({ id: p.id, name: p.name, slides: p.slides.length, locales: p.locales, updatedAt: p.updatedAt })));
+        return json(projects.map((p) => ({ id: p.id, name: p.name, slides: p.slides.length, ownSets: Object.keys(p.deviceSlides), locales: p.locales, updatedAt: p.updatedAt })));
       }),
   );
 
@@ -399,17 +444,30 @@ export function createMcpServer(base: string, space: Space): McpServer {
     "set_slides",
     {
       title: "Set slides",
-      description: "Replaces the project's whole slide set, in store order, and optionally its theme. Nothing is rendered until you call render.",
+      description:
+        "Replaces a whole slide set, in store order, and optionally the theme. Without `device` it is the project's shared set, which every device draws that has none of its own. With `device` it is that device's own set, composed for its canvas; an empty list there takes the device's own set away again. Nothing is rendered until you call render.",
       inputSchema: {
         project,
-        slides: z.array(slideSchema).min(1).max(10),
+        slides: z.array(slideSchema).max(10),
+        device: deviceKind.optional().describe("The device this set is for: it then draws these slides in place of the shared ones. Left out, the shared set is replaced"),
         theme: themeSchema.optional().describe("Replaces the project theme when given"),
       },
     },
-    ({ project: id, slides, theme }) =>
+    ({ project: id, slides, device, theme }) =>
       guard(async () => {
-        const updated = await updateProject(space, id, { slides, theme });
-        return text(`Saved ${slides.length} slide${slides.length === 1 ? "" : "s"}. Call render to see them.${await missingNote(space, updated)}`);
+        if (!device) {
+          if (slides.length === 0) throw new Error("Give at least one slide.");
+          const updated = await updateProject(space, id, { slides, theme });
+          const own = DEVICE_KINDS.filter((kind) => updated.deviceSlides[kind]);
+          const note = own.length ? ` ${own.map((kind) => DEVICE_LABELS[kind]).join(" and ")} ${own.length === 1 ? "has a set of its own and does" : "have sets of their own and do"} not show these.` : "";
+          return text(`Saved ${slides.length} slide${slides.length === 1 ? "" : "s"}.${note} Call render to see them.${await missingNote(space, updated)}`);
+        }
+        const current = await getProject(space, id);
+        const { [device]: _own, ...others } = current.deviceSlides;
+        const updated = await updateProject(space, id, { deviceSlides: slides.length ? { ...others, [device]: slides } : others, theme });
+        const label = DEVICE_LABELS[device];
+        if (slides.length === 0) return text(`The ${label} has no slide set of its own any more and shows the shared one.`);
+        return text(`Saved ${slides.length} slide${slides.length === 1 ? "" : "s"} for the ${label} alone. Call render to see them.${await missingNote(space, updated)}`);
       }),
   );
 
@@ -417,26 +475,30 @@ export function createMcpServer(base: string, space: Space): McpServer {
     "update_slide",
     {
       title: "Update slide",
-      description: "Changes one slide. Fields in `changes` are merged over the slide (nested `device` included); list field names in `remove` to clear them.",
+      description:
+        "Changes one slide. Fields in `changes` are merged over the slide (nested `device` included); list field names in `remove` to clear them. `of` picks a device's own slide set; left out, the shared set is changed.",
       inputSchema: {
         project,
         slide: slideNumber,
+        of: deviceKind.optional().describe("Change the slide in this device's own set (see A set for each device). Left out, the shared set"),
         changes: slideSchema.optional(),
         remove: z.array(z.string()).optional().describe("Slide fields to clear, e.g. [\"subheadline\", \"badges\"]"),
       },
     },
-    ({ project: id, slide, changes, remove }) =>
+    ({ project: id, slide, of, changes, remove }) =>
       guard(async () => {
         const current = await getProject(space, id);
-        const existing = current.slides[slide - 1];
-        if (!existing) throw new Error(`Slide ${slide} does not exist; the project has ${current.slides.length}.`);
+        const set = of ? current.deviceSlides[of] : current.slides;
+        if (!set) throw new Error(`The ${DEVICE_LABELS[of!]} has no slide set of its own. Give it one with set_slides and "device", or leave "of" out to change the shared slide.`);
+        const existing = set[slide - 1];
+        if (!existing) throw new Error(`Slide ${slide} does not exist; ${of ? `the ${DEVICE_LABELS[of]} set` : "the project"} has ${set.length}.`);
         const next: Record<string, unknown> = { ...existing, ...changes };
         if (changes?.device) next.device = { ...existing.device, ...changes.device };
         for (const field of remove ?? []) delete next[field];
-        const slides = current.slides.map((s, i) => (i === slide - 1 ? slideSchema.parse(next) : s));
-        await updateProject(space, id, { slides });
-        const missing = unknownImages({ ...current, slides: [slides[slide - 1]!], creatives: {} }, await listImages(space, id));
-        const result = json({ slide, ...slides[slide - 1] });
+        const slides = set.map((s, i) => (i === slide - 1 ? slideSchema.parse(next) : s));
+        await updateProject(space, id, of ? { deviceSlides: { ...current.deviceSlides, [of]: slides } } : { slides });
+        const missing = unknownImages({ ...current, slides: [slides[slide - 1]!], deviceSlides: {}, creatives: {} }, await listImages(space, id));
+        const result = json({ slide, ...(of ? { of } : {}), ...slides[slide - 1] });
         if (missing.length) result.content.push({ type: "text", text: `No image is uploaded under these names, so they will be left out: ${missing.join(", ")}.` });
         return result;
       }),

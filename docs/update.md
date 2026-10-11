@@ -29,7 +29,12 @@ It needs no token and leaves your agent's connection alone. If you set up severa
 appshots check
 ```
 
-The `Skill:` line says whether the server has a newer one. You rarely have to look. The skill starts every job with `appshots check`, and when the server has a newer skill, the agent runs `appshots update` and reads the new instructions before going on.
+The `Skill:` line says whether the server has a newer one. You rarely have to look:
+
+- The skill starts every job with `appshots check`, and when the server has a newer skill, the agent runs `appshots update` and reads the new instructions before going on.
+- The command says so by itself. After a command such as `appshots upload` or `appshots pull` it prints one line when your copies are behind the server's. It asks the server for that at most twice a day, and stays quiet when the server cannot be reached.
+
+A copy from before this notice existed learns it with its next `appshots update`.
 
 ## When to run the setup command again
 

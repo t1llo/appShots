@@ -18,6 +18,8 @@ import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const CONFIG_FILE = path.join(process.env.XDG_CONFIG_HOME ?? path.join(homedir(), ".config"), "appshots", "config.json");
+// What the server last said its skill and command are, so that asking again can wait.
+const LATEST_FILE = path.join(path.dirname(CONFIG_FILE), "latest.json");
 // Where agents look for the skill. Claude Code has a folder of its own; Codex, OpenCode, Pi and most others
 // read the shared Agent Skills folder. The CLI goes next to the skill, so the skill finds it without a PATH.
 const CLAUDE_SKILL = path.join(homedir(), ".claude", "skills", "appshots");
@@ -364,6 +366,39 @@ async function skillStatus() {
   return current ? "up to date" : "the server has a newer one. Run 'appshots update', then read SKILL.md again from the top before going on.";
 }
 
+const stamp = (text) => createHash("sha256").update(text).digest("hex").slice(0, 16);
+
+/**
+ * Says so when the server has a newer skill or command than this Mac. It asks at most twice a day, for two
+ * hashes instead of the files, and never gets in the way: a server that does not answer means no notice.
+ */
+async function staleNotice() {
+  const { value: config } = attempt(readConfig);
+  const dirs = installedSkills();
+  if (!config?.url || dirs.length === 0) return;
+  let known = {};
+  try {
+    known = JSON.parse(readFileSync(LATEST_FILE, "utf8"));
+  } catch {}
+  if (known.url !== config.url || !(Date.now() - known.at < 12 * 3600 * 1000)) {
+    try {
+      const response = await fetch(`${config.url}/skill.json`, { signal: AbortSignal.timeout(3000) });
+      // A server from before this file existed has nothing to compare with.
+      if (!response.ok) return;
+      const now = await response.json();
+      known = { url: config.url, at: Date.now(), skill: now.skill, cli: now.cli };
+      mkdirSync(path.dirname(LATEST_FILE), { recursive: true });
+      writeFileSync(LATEST_FILE, `${JSON.stringify(known)}\n`);
+    } catch {
+      return;
+    }
+  }
+  if (typeof known.skill !== "string" || typeof known.cli !== "string") return;
+  const same = (name, hash) => dirs.every((dir) => existsSync(path.join(dir, name)) && stamp(readFileSync(path.join(dir, name), "utf8")) === hash);
+  if (same("SKILL.md", known.skill) && same("appshots.mjs", known.cli)) return;
+  console.error("appshots: the server has a newer skill and command. Run 'appshots update', then read SKILL.md again from the top.");
+}
+
 /**
  * Brings every installed copy of the skill, and the CLI next to it, up to date with the server's. A deploy
  * changes what the server hands out; this is how a Mac that was set up before gets it without a new token.
@@ -388,6 +423,8 @@ async function update() {
     }
     chmodSync(path.join(dir, "appshots.mjs"), 0o755);
   }
+  // What was remembered about the server is older than what has just been fetched.
+  rmSync(LATEST_FILE, { force: true });
   const where = dirs.map(tilde).join(" and ");
   console.log(changed ? `Updated the appshots skill and command in ${where}. Read SKILL.md again from the top: it has changed.` : `The appshots skill and command in ${where} are up to date.`);
 }
@@ -1214,13 +1251,20 @@ async function check() {
   }
 }
 
+/** Commands that set the skill up, bring it up to date or report on it themselves. */
+const NO_NOTICE = new Set(["setup", "login", "update", "check"]);
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   // simctl's arguments are its own, --help among them.
   if (command === "simctl") process.exit(xcrun(["simctl", ...rest], { stdio: "inherit" }).status ?? 1);
   const { positional, flags, passthrough } = parseArgs(rest);
   if (!command || command === "help" || command === "--help" || flags.help) return console.log(HELP);
+  await dispatch(command, positional, flags, passthrough);
+  if (!NO_NOTICE.has(command)) await staleNotice();
+}
 
+async function dispatch(command, positional, flags, passthrough) {
   switch (command) {
     case "setup":
       return setup(positional[0], flags);

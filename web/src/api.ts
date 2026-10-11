@@ -3,7 +3,7 @@ import type { CreativeLayoutId } from "../../src/design.ts";
 import type { Mockups, Project, Text } from "../../src/schema.ts";
 import type { DeviceKind, Placement, PlacementId, Target, TargetId } from "../../src/sizes.ts";
 
-export type { Background, Badge, Creative, DeviceStyle, Feature, IconRow, Logo, Mockups, PlacedImage, Project, Slide, Text, Theme } from "../../src/schema.ts";
+export type { Background, Badge, Creative, DeviceStyle, Feature, FeatureCards, IconRow, Logo, Mockups, PlacedImage, Project, Slide, Text, Theme } from "../../src/schema.ts";
 export type { CreativeLayoutId, DeviceKind, Placement, PlacementId, Target, TargetId };
 
 export interface Meta {
@@ -31,6 +31,15 @@ export interface Meta {
   badgeTones: Record<string, string>;
   featureStyles: Record<string, string>;
   pointStyles: Record<string, string>;
+  /** The layouts that make their whole picture of the slide's features, so these take cards, figures or steps. */
+  featureLayouts: string[];
+  cardLooks: Record<string, string>;
+  cardIcons: Record<string, string>;
+  /** How the words between asterisks in a headline are marked. */
+  emphasis: Record<string, string>;
+  /** How many badges a slide draws with its copy, and how many reviews the reviews layout puts on its wall. */
+  badgesShown: number;
+  reviewsShown: number;
   iconRowStyles: Record<string, string>;
   iconRowTones: Record<string, string>;
   iconRowSizes: string[];
@@ -47,7 +56,10 @@ export interface Meta {
 export interface ProjectEntry {
   id: string;
   name: string;
+  /** How many slides the devices share. */
   slides: number;
+  /** The devices that have slides of their own instead. */
+  ownSets?: DeviceKind[];
   locales: string[];
   updatedAt: string;
 }

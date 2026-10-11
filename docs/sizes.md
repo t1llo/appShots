@@ -61,7 +61,7 @@ Each raw screenshot belongs to one device:
 
 A picture at the exact size of an iPhone or iPad screenshot stays with that device when it is turned on its side.
 
-The iPhone Duo is told by its exact size because its shape is close to an iPad's. When a screenshot lands under the wrong device, change it with the small menu on its thumbnail in the Studio, or say it at upload: `appshots upload streaks home.png --as duo`. `--as` takes `iphone`, `duo`, `ipad` and `mac`.
+The iPhone Duo is told by its exact size because its shape is close to an iPad's. When a screenshot lands under the wrong device, change it with the small menu on its thumbnail under **Assets** in the Studio, or say it at upload: `appshots upload streaks home.png --as duo`. `--as` takes `iphone`, `duo`, `ipad` and `mac`.
 
 Upload each device's screenshot under the same name. A slide that uses `home` then shows the iPhone `home` on iPhone sizes, the Duo `home` on Duo sizes, the iPad `home` on iPad sizes and the Mac `home` on the Mac size. If a device has none of its own, the closest other one stands in, and the render says so.
 

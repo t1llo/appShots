@@ -7,7 +7,7 @@ import { holdRender } from "./accounts.ts";
 import { config } from "./config.ts";
 import { CREATIVE_CAPACITY, creativeLayout } from "./creative.ts";
 import { mockupStage } from "./mockup.ts";
-import { LOCALE, type Mockups, type Project } from "./schema.ts";
+import { LOCALE, type Mockups, type Project, slidesFor } from "./schema.ts";
 import { DEVICE_LABELS, type DeviceKind, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, standardTargets, TARGETS, type TargetId } from "./sizes.ts";
 import { BANNER_DIR, CREATIVE_DIR, creativeDir, findShot, getProject, InputError, listImages, listShots, NotFoundError, outDir, type Shot, type Space } from "./store.ts";
 import { SHADOW_LAYERS } from "./template.ts";
@@ -439,33 +439,45 @@ async function renderNow(run: Run, space: Space, request: RenderRequest): Promis
   const passes = new Map<TargetId, TargetId[]>();
   for (const target of targets) passes.set(sourceOf(target), [...(passes.get(sourceOf(target)) ?? []), target]);
   const locales = request.locales?.length ? request.locales : project.locales;
-  // Asking for assets alone leaves the slides as they are.
-  const indexes = request.slides?.length ? [...new Set(request.slides)].sort((a, b) => a - b) : placements.length && !everything ? [] : project.slides.map((_, i) => i);
-  for (const index of indexes) {
-    if (!Number.isInteger(index) || index < 0 || index >= project.slides.length) {
-      throw new InputError(`Slide ${index + 1} does not exist; the project has ${project.slides.length}.`);
+  // A device with a slide set of its own draws that one, which may be longer or shorter than the others.
+  const kinds = [...new Set(targets.map((target) => TARGETS[target].device))];
+  const sets = new Map(kinds.map((kind) => [kind, slidesFor(project, kind)]));
+  const longest = Math.max(0, ...[...sets.values()].map((set) => set.length));
+  const asked = request.slides?.length ? [...new Set(request.slides)].sort((a, b) => a - b) : undefined;
+  for (const index of asked ?? []) {
+    if (!Number.isInteger(index) || index < 0 || index >= longest) {
+      throw new InputError(`Slide ${index + 1} does not exist; the project has ${longest}.`);
     }
   }
-  if (indexes.length === 0 && placements.length === 0) {
+  /** The slides to draw for a device: the ones asked for that its set has, or all of it. Asking for assets alone leaves the slides as they are. */
+  const indexesFor = (kind: DeviceKind): number[] => {
+    const count = sets.get(kind)!.length;
+    if (asked) return asked.filter((index) => index < count);
+    return placements.length && !everything ? [] : Array.from({ length: count }, (_, i) => i);
+  };
+  const drawn = [...passes.keys()].reduce((sum, source) => sum + indexesFor(TARGETS[source].device).length, 0);
+  if (drawn === 0 && placements.length === 0) {
     throw new InputError("This project has nothing to render yet. Add slides with set_slides, or a header or search results asset.");
   }
-  const full = indexes.length === project.slides.length;
-  run.job.total = locales.length * (indexes.length * passes.size + placements.length);
+  run.job.total = locales.length * (drawn + placements.length);
 
   const warnings = new Set<string>();
   const images = new Set((await listImages(space, id)).map((image) => image.name));
   const noImage = (where: string, name: string) => warnings.add(`${where}: no image named "${name}" has been uploaded, so it was left out.`);
-  for (const index of indexes) {
-    const slide = project.slides[index]!;
-    for (const name of [slide.logo?.image, ...(slide.images ?? []).map((placed) => placed.image)]) {
-      if (name && !images.has(name)) noImage(`Slide ${index + 1}`, name);
-    }
-    for (const name of [slide.screenshot, slide.screenshot2, slide.screenshot3]) {
-      if (!name) continue;
-      for (const kind of new Set(targets.map((target) => TARGETS[target].device))) {
+  for (const kind of kinds) {
+    // A set of its own is named with its device, so it is clear which slide 2 is meant.
+    const prefix = project.deviceSlides[kind] ? `${DEVICE_LABELS[kind]} slide` : "Slide";
+    for (const index of indexesFor(kind)) {
+      const slide = sets.get(kind)![index]!;
+      const where = `${prefix} ${index + 1}`;
+      for (const name of [slide.logo?.image, ...(slide.images ?? []).map((placed) => placed.image), ...(slide.features ?? []).map((feature) => feature.image)]) {
+        if (name && !images.has(name)) noImage(where, name);
+      }
+      for (const name of [slide.screenshot, slide.screenshot2, slide.screenshot3, ...(slide.features ?? []).map((feature) => feature.screenshot)]) {
+        if (!name) continue;
         const shot = findShot(shots, name, kind);
-        if (!shot) warnings.add(`Slide ${index + 1}: no screenshot named "${name}" has been uploaded, so a placeholder was drawn.`);
-        else if (shot.device !== kind) warnings.add(`Slide ${index + 1}: "${name}" has no ${DEVICE_LABELS[kind]} screenshot, so the ${DEVICE_LABELS[shot.device]} one was used for the ${DEVICE_LABELS[kind]} sizes.`);
+        if (!shot) warnings.add(`${where}: no screenshot named "${name}" has been uploaded, so ${slide.screenshot === name || slide.screenshot2 === name || slide.screenshot3 === name ? "a placeholder was drawn" : "it was left out"}.`);
+        else if (shot.device !== kind) warnings.add(`${where}: "${name}" has no ${DEVICE_LABELS[kind]} screenshot, so the ${DEVICE_LABELS[shot.device]} one was used for the ${DEVICE_LABELS[kind]} sizes.`);
       }
     }
   }
@@ -523,7 +535,12 @@ async function renderNow(run: Run, space: Space, request: RenderRequest): Promis
 
   for (const locale of locales) {
     const query = `locale=${encodeURIComponent(locale)}&job=${run.job.id}`;
-    for (const [source, wanted] of indexes.length ? passes : []) {
+    for (const [source, wanted] of passes) {
+      const kind = TARGETS[source].device;
+      const indexes = indexesFor(kind);
+      if (!indexes.length) continue;
+      // A whole set replaces the folder, so slides the set no longer has do not linger in it.
+      const full = indexes.length === sets.get(kind)!.length;
       for (const target of wanted) {
         const dir = path.join(root, locale, target);
         if (full) await rm(dir, { recursive: true, force: true });

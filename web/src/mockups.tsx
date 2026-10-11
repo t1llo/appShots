@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Detail, detailQuery, type DeviceStyle, errorText, fetchFile, label, type Meta, type MockupItem, type Mockups, mockupsQuery, plural, put, saveFile, type Shot, slugify } from "./api.ts";
 import { DEVICE_LOOKS, ids, Slider, STATUS_BARS, TimeInput } from "./editor.tsx";
 import { languageName, LanguageSwitch } from "./languages.tsx";
-import { dropTarget, shotsKey, Stage, ViewSwitch } from "./project.tsx";
+import { dropTarget, ProjectBar, shotsKey, Stage, UPLOAD } from "./project.tsx";
 import { CopyBlock, Field, Icon, NumberInput, Select, toast } from "./ui.tsx";
 
 const DOWNLOAD = "M8 2.6v7.8M4.9 7.5L8 10.6l3.1-3.1M2.8 10.4v2.8h10.4v-2.8";
@@ -206,6 +206,7 @@ export function MockupsPage({ meta, initial }: { meta: Meta; initial: Detail }) 
 
   const picker = (
     <label className="btn small">
+      <Icon path={UPLOAD} />
       Upload
       <input
         type="file"
@@ -222,50 +223,45 @@ export function MockupsPage({ meta, initial }: { meta: Meta; initial: Detail }) 
 
   return (
     <div className="main">
-      <header className="bar">
-        <span className="crumb">{project.name}</span>
-        <ViewSwitch id={id} view="mockups" />
-        <span className="spacer" />
+      <ProjectBar id={id} name={project.name} view="mockups">
         <span className={`status${status.error ? " error" : ""}`} role="status">
           {status.text}
         </span>
-        <button className="btn primary export" type="button" disabled={busy != null || shots.length === 0} onClick={() => void download("zip", `/api/projects/${id}/mockups.zip`, `${id}-mockups.zip`)}>
+        <button className="btn primary" type="button" disabled={busy != null || shots.length === 0} onClick={() => void download("zip", `/api/projects/${id}/mockups.zip`, `${id}-mockups.zip`)}>
           {busy === "zip" ? "Drawing…" : "Download all"}
         </button>
-      </header>
+      </ProjectBar>
 
       <div className="content">
         <div className="workspace">
-          <div className="page-head">
-            <h1 className="page-title">Mockups</h1>
-            <div className="page-meta">Each screenshot in its device with nothing behind it, as a transparent PNG for a website, a README or a deck.</div>
-          </div>
-
           <section>
-            <div className="section-head wrap">
-              <h2>{shots.length ? plural(items.length, "mockup") : "No screenshots yet"}</h2>
-              <span className="hint">{items.length ? "A PNG is cut to the device and its shadow." : ""}</span>
-              <div className="head-actions">
-                {project.locales.length > 1 ? <LanguageSwitch locales={project.locales} value={locale} onChange={setLocale} /> : null}
-                {shots.length ? (
-                  <div className="segmented" role="radiogroup" aria-label="What the previews stand on">
-                    {(Object.keys(BACKDROPS) as Backdrop[]).map((key) => (
-                      <button
-                        key={key}
-                        className={backdrop === key ? "on" : ""}
-                        type="button"
-                        role="radio"
-                        aria-checked={backdrop === key}
-                        title={key === "checker" ? "Show what is transparent as a chequered pattern" : `See the mockups on a ${key} page. The PNG stays transparent.`}
-                        onClick={() => setBackdrop(key)}
-                      >
-                        {BACKDROPS[key]}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-                {picker}
-              </div>
+            <div className="toolbar">
+              {shots.length ? (
+                <div className="segmented" role="radiogroup" aria-label="What the previews stand on">
+                  {(Object.keys(BACKDROPS) as Backdrop[]).map((key) => (
+                    <button
+                      key={key}
+                      className={backdrop === key ? "on" : ""}
+                      type="button"
+                      role="radio"
+                      aria-checked={backdrop === key}
+                      title={key === "checker" ? "Show what is transparent as a chequered pattern" : `See the mockups on a ${key} page. The PNG stays transparent.`}
+                      onClick={() => setBackdrop(key)}
+                    >
+                      {BACKDROPS[key]}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <span className="spacer" />
+              {project.locales.length > 1 ? <LanguageSwitch locales={project.locales} value={locale} onChange={setLocale} /> : null}
+              {picker}
+            </div>
+            <div className="set-line">
+              <span>
+                <b>{shots.length ? plural(items.length, "mockup") : "No screenshots yet"}</b>
+                {items.length ? ". Each screenshot in its device with nothing behind it: a transparent PNG, cut to the device and its shadow." : ""}
+              </span>
             </div>
 
             {shots.length === 0 ? (
@@ -324,7 +320,7 @@ export function MockupsPage({ meta, initial }: { meta: Meta; initial: Detail }) 
               </button>
             ) : null}
           </div>
-          <div className="panel-fields">
+          <div className="panel-body">
             <div className="form">
               <div className="cols">
                 <Field label="Device look">
@@ -394,11 +390,11 @@ export function MockupsPage({ meta, initial }: { meta: Meta; initial: Detail }) 
                   placeholder="Actual size"
                 />
               </Field>
-              <div className="group-head">
+              <div className="field">
                 <span className="label">From the terminal</span>
+                <CopyBlock text={`appshots mockups ${id}`} />
+                <span className="hint">Saves every mockup into a folder, drawn with the settings above. An agent does the same with the render_mockups tool.</span>
               </div>
-              <p className="hint">Saves every mockup into a folder, drawn with the settings above. An agent does the same with the render_mockups tool.</p>
-              <CopyBlock text={`appshots mockups ${id}`} />
             </div>
           </div>
         </aside>

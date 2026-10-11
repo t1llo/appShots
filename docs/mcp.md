@@ -23,7 +23,7 @@ A token reaches the projects of the account it belongs to and nothing else. See 
 1. `get_design_guide`, once, before anything else.
 2. `create_project`, or `list_projects` and `get_project` to continue one.
 3. Upload the raw screenshots. This goes through the [command line](/docs/cli) or the [HTTP API](/docs/api), because MCP has no way to send files. A project in several languages can hold each screenshot once per language.
-4. `set_slides`.
+4. `set_slides`. For an app on more than one device, once more for each of the others with `device`, so every device has a set composed for its own canvas.
 5. `render`, and look at the pictures it returns.
 6. `update_slide` for the fixes, then `render` again.
 
@@ -37,7 +37,7 @@ Returns the guide the server is built around: the workflow, how to upload screen
 
 ### list_projects
 
-Lists the projects of the account: id, name, number of slides, languages and when each last changed. No arguments.
+Lists the projects of the account: id, name, number of slides, languages and when each last changed. `ownSets` names the devices that have a slide set of their own. No arguments.
 
 ### create_project
 
@@ -51,7 +51,7 @@ Returns the project's id and how to upload screenshots into it.
 
 ### get_project
 
-`project` is the id. Returns the theme, the slides, the header and search results images and banners, the screenshots and images uploaded so far, and `exportSizes`, the sizes a render writes. Each screenshot is listed with its `device`, and with its `locale` when it was uploaded for one language only. A Mac screenshot also says whether it is `shown` as a `window` or inside a `MacBook`. See [Languages](/docs/languages#screenshots-per-language).
+`project` is the id. Returns the theme, the slides, the sets single devices have of their own under `deviceSlides`, the header and search results images and banners, the screenshots and images uploaded so far, and `exportSizes`, the sizes a render writes. Each screenshot is listed with its `device`, and with its `locale` when it was uploaded for one language only. A Mac screenshot also says whether it is `shown` as a `window` or inside a `MacBook`. See [Languages](/docs/languages#screenshots-per-language).
 
 ### update_project
 
@@ -63,9 +63,18 @@ Changes `name`, `locales`, `targets` or `theme` of `project`. The theme is repla
 | --- | --- |
 | `project` | The id |
 | `slides` | One to ten slides, in store order. See [Slides](/docs/slides) |
+| `device` | `iphone`, `duo`, `ipad` or `mac`: the set is for this device alone, which then draws it in place of the shared one. Left out, the shared set is replaced |
 | `theme` | Replaces the project's theme when given |
 
 Replaces the whole set. It names screenshots that slides refer to but that are not uploaded yet.
+
+A project starts with one shared set that every device draws on its own canvas. An agent designs the iPhone's first and then gives the iPad and the Mac a set of their own, with the same story recomposed for the wider canvas:
+
+```json
+{ "project": "streaks", "device": "ipad", "slides": [{ "layout": "device-right", "screenshot": "home", "headline": "Never miss a *day*" }] }
+```
+
+With `device` and an empty `slides` list, the device's own set is removed and it shows the shared one again. See [A set for each device](/docs/slides#a-set-for-each-device).
 
 ### update_slide
 
@@ -73,6 +82,7 @@ Replaces the whole set. It names screenshots that slides refer to but that are n
 | --- | --- |
 | `project` | The id |
 | `slide` | The slide's number, starting at 1 |
+| `of` | `iphone`, `duo`, `ipad` or `mac`: the slide is in this device's own set. Left out, it is in the shared set |
 | `changes` | Fields to set. They are merged over the slide, `device` included |
 | `remove` | Names of fields to clear, such as `["subheadline", "badges"]` |
 

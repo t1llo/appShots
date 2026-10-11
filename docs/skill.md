@@ -35,7 +35,7 @@ It also makes [banners](/docs/banners): ask for "a banner for the README" and th
 5. **Creates the project**, or continues the one your app has already.
 6. **Gets the screens**, the way you chose. See [Get your screens in](/docs/screens).
 7. **Writes the copy**: headlines of two to five words, one benefit each.
-8. **Builds and renders** the set, looks at the result, and fixes single slides. Two rounds at most.
+8. **Builds and renders** the set, looks at the result, and fixes single slides. Two rounds at most. When you asked for more than one device, each gets a set of its own: the same story, composed again for the iPad's or the Mac's canvas. See [A set for each device](/docs/slides#a-set-for-each-device).
 9. **Hands over**: the link to the project in the Studio, how to get the files, and what it assumed or left out.
 
 ## The questions it asks
@@ -54,7 +54,7 @@ Say "decide yourself" and it takes: iPhone only, does everything itself without 
 
 ## What it will not do
 
-- **Invent figures.** Badges show only the ratings, download counts, awards and reviews you gave it. Invented ones get an app rejected.
+- **Invent figures.** Badges, a slide of figures and a slide of reviews show only the ratings, download counts, awards and reviews you gave it. Invented ones get an app rejected.
 - **Draw, generate or download artwork.** It uses the files you give it or the ones in your repository.
 - **Write scripts or UI tests** to take screenshots. It uses the `appshots` command for everything on the Mac.
 - **Change your app without asking.** Reaching a screen sometimes needs a few lines that only exist in debug builds. It asks first and tells you which file it changed.
