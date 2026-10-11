@@ -4,7 +4,6 @@ node_modules
 data
 raw-shots
 store-screenshots
-cli
 *.md
 compose.local.yaml
 docker-compose.yaml

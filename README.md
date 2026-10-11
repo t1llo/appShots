@@ -1,4 +1,4 @@
-# Shots
+# appShots
 
 Self-hosted App Store screenshot generator for iPhone and iPad. Describe the slides to Claude (copy, look, badges such as "10K+ downloads", a five-star rating or an award wreath), feed it screenshots straight from the simulator or a plugged-in iPhone, and get back PNGs at the exact sizes App Store Connect accepts.
 
@@ -10,7 +10,7 @@ It is three things:
 | --- | --- | --- |
 | Server | Docker or `npm start` | Renders slides, stores projects, serves the web gallery, the REST API and the MCP endpoint at `/mcp` |
 | MCP endpoint | Part of the server | Lets Claude create projects, write slides and render them |
-| `shots` CLI | Your Mac | Captures the simulator or a connected device and uploads the screenshot; a container cannot see your USB devices, so this part stays local |
+| `appshots` CLI | Your Mac | Captures the simulator or a connected device and uploads the screenshot; a container cannot see your USB devices, so this part stays local |
 
 ## Run it locally
 
@@ -22,48 +22,70 @@ npm run browser   # one-time download of the headless Chromium used for renderin
 npm start         # http://localhost:3000
 ```
 
-Without `SHOTS_TOKEN` the server is open to anyone who can reach the port, which is fine on localhost and nowhere else.
+Without `APPSHOTS_TOKEN` there is no sign-in and no accounts: whoever can reach the port is the owner. That is fine on localhost and nowhere else.
 
 To run the container instead:
 
 ```bash
-cp .env.example .env   # then set SHOTS_TOKEN
+cp .env.example .env   # then set APPSHOTS_TOKEN
 docker compose -f docker-compose.yaml -f compose.local.yaml up --build
 ```
 
 ## Deploy
 
 1. Start the stack from this repository, with `docker-compose.yaml`.
-2. Set `SHOTS_TOKEN` to a long random string (`openssl rand -hex 32`). The stack refuses to start without it.
-3. Give the `shots` service a domain on port `3000`.
+2. Set `APPSHOTS_TOKEN` to a long random string (`openssl rand -hex 32`). The stack refuses to start without it.
+3. Set `PUBLIC_URL` to the address people will use, for example `https://appshots.example.com`.
+4. Give the `appshots` service a domain on port `3000`.
 
-Projects, uploaded screenshots and renders live in the `shots-data` volume. `PUBLIC_URL` is optional; set it only if the links handed back to Claude should use a different origin than the one Claude called.
+Everything lives in the `appshots-data` volume: projects, uploaded screenshots, renders, accounts and the key that signs sessions.
+
+## People and accounts
+
+The server has one owner and any number of accounts.
+
+- **You, the owner,** sign in with the server token (`APPSHOTS_TOKEN`) through "Sign in with the server token" on the sign-in page. The same token is your bearer token for Claude and the CLI. Changing it signs you out everywhere.
+- **Everyone else** has an account with an email and a password, or signs in with Google. Each account gets a private space: its own projects, screenshots, renders and API tokens. Accounts cannot see each other's work, and neither can they see yours.
+
+Open **People** in the sidebar (owner only) to manage this:
+
+- **Invite only** is the default. Create an invite link and send it to one person; it creates one account and expires after 14 days.
+- **Anyone can sign up** opens `/signup` to everybody who can reach the address. Rendering costs CPU, so open it only if you mean to.
+- Remove an account, with all of its projects, or create a password reset link for it. There is no outgoing email: you pass invite and reset links on yourself. A reset link works once, for 24 hours, and revokes the account's sessions and tokens.
+
+People manage their own tokens and password, or delete their account, under **Account**. Accounts other than the owner are capped at 20 projects and 40 screenshots per project (`USER_MAX_PROJECTS`, `USER_MAX_SHOTS`), and one account renders one set at a time.
+
+### Sign in with Google
+
+Optional. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create an OAuth client of type "Web application", add `<PUBLIC_URL>/auth/google/callback` as an authorised redirect URI, and set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` on the server. The sign-in page then shows "Continue with Google".
+
+Sign-up rules still apply: in invite-only mode a new Google user needs an invite link, and "Sign up with Google" on that link uses it. An email that already has a password account is not linked to a Google sign-in automatically.
 
 ## Connect Claude
 
 ```bash
-claude mcp add --transport http shots https://shots.example.com/mcp --header "Authorization: Bearer $SHOTS_TOKEN"
+claude mcp add --transport http appshots https://appshots.example.com/mcp --header "Authorization: Bearer <token>"
 ```
 
-Then ask in plain words, for example:
+The token is `APPSHOTS_TOKEN` for the owner, or a personal token for an account: **Connect** in the sidebar creates one and fills in the command. Then ask in plain words, for example:
 
 > Make App Store screenshots for my habit tracker in project "streaks". Six slides, dark purple look, open with a hero slide with a laurel badge "4.8 · App Store rating" and one for "50K+ downloads", then one slide per feature using the screenshots home, stats and widgets.
 
-Claude answers with a contact sheet of the rendered set, a link to the gallery and a ZIP link. Tools: `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `render`.
+Claude answers with a contact sheet of the rendered set, a link to the gallery and a ZIP link. Tools: `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `render`. Every tool works inside the space the token belongs to.
 
 The endpoint authenticates with a bearer header, so it works with clients that can send one (Claude Code, the Agent SDK, `mcp-remote`). It does not implement OAuth.
 
 ## Capture from your Mac
 
-The CLI has no dependencies. Run it as `node cli/shots.mjs`, or `npm link` once to get a `shots` command.
+The CLI is one file with no dependencies. In a checkout, run it as `node cli/appshots.mjs`, or `npm link` once to get an `appshots` command. People without the repository download the same file from **Connect** in the gallery.
 
 ```bash
-shots login https://shots.example.com          # asks for the token, stores it in ~/.config/shots
-shots devices                                  # booted simulators and connected devices
-shots capture --name home --project streaks    # from the booted simulator, uploaded straight away
-shots capture --name home --device --project streaks   # from the plugged-in, unlocked iPhone or iPad
-shots capture --name home --clean              # simulator only: 9:41, full battery and signal
-shots pull streaks --render                    # render everything and unpack it into ./store-screenshots/streaks
+appshots login https://appshots.example.com       # asks for the token, stores it in ~/.config/appshots
+appshots devices                                  # booted simulators and connected devices
+appshots capture --name home --project streaks    # from the booted simulator, uploaded straight away
+appshots capture --name home --device --project streaks   # from the plugged-in, unlocked iPhone or iPad
+appshots capture --name home --clean              # simulator only: 9:41, full battery and signal
+appshots pull streaks --render                    # render everything and unpack it into ./store-screenshots/streaks
 ```
 
 The `--name` is what slides refer to (`"screenshot": "home"`). Capturing the same name again replaces the screenshot, and every slide using it updates. An iPhone and an iPad screenshot can share a name; each target size picks the matching one.
@@ -72,7 +94,7 @@ Simulator capture uses `simctl`. Device capture uses `devicectl device capture s
 
 ## Web gallery
 
-Open the server in a browser to see every slide as a live preview at export size, edit copy, layout, badges and style, drop in screenshots, and download the set as a ZIP. Changes Claude makes through MCP show up in an open gallery within a few seconds.
+Open the server in a browser to see every slide as a live preview at export size, edit copy, layout, badges and style, drop in screenshots, and download the set as a ZIP. Projects sit in the sidebar. Changes Claude makes through MCP show up in an open gallery within a few seconds.
 
 ## Slides
 
@@ -89,7 +111,7 @@ Output sizes, portrait: iPhone 6.9" (1320×2868), iPhone 6.5" (1284×2778), iPad
 
 ## REST API
 
-Everything the gallery and the CLI do goes through `/api`, with the same bearer token:
+Everything the gallery and the CLI do goes through `/api`, with the same bearer token. A token only ever reaches the projects of the space it belongs to.
 
 ```
 GET    /api/projects                       list
@@ -103,9 +125,11 @@ POST   /api/projects/:id/render            {targets?, locales?, slides?}
 GET    /api/projects/:id/export.zip        ?render=1 renders first
 ```
 
+Account settings and the People page need a browser sign-in; an API token cannot create more tokens, change a password or manage accounts.
+
 ## Good to know
 
 - Portrait only; there is no landscape or Apple Watch/TV output.
 - Put only real figures and awards in badges. App Review rejects screenshots with invented download counts, ratings or rankings.
 - The device frames are drawn in CSS, not Apple's product images.
-- One shared token guards everything. Put the server behind HTTPS and rotate the token by changing `SHOTS_TOKEN`.
+- Put the server behind HTTPS. Passwords are stored as scrypt hashes and API tokens as SHA-256 hashes in `accounts.json` on the data volume; a token is shown once when it is created.

@@ -4,7 +4,7 @@ import path from "node:path";
 import { config } from "./config.ts";
 import { InputError, NotFoundError, type Space } from "./store.ts";
 
-// The owner signs in with SHOTS_TOKEN and keeps the projects directly under the data directory.
+// The owner signs in with APPSHOTS_TOKEN and keeps the projects directly under the data directory.
 // Everyone else is an account in accounts.json with a private directory under users/<id>.
 
 export type SignupMode = "invite" | "open";
@@ -47,8 +47,14 @@ interface State {
   links: Link[];
 }
 
-/** Thrown for wrong credentials and expired links; the server answers 401 without saying which part was wrong. */
-export class AuthError extends Error {}
+/** Wrong credentials or a dead link while signing in; the server answers 401. `code` names the case for the sign-in page. */
+export class AuthError extends Error {
+  code: string;
+  constructor(message: string, code = "denied") {
+    super(message);
+    this.code = code;
+  }
+}
 
 const file = path.join(config.dataDir, "accounts.json");
 const state: State = { signup: "invite", users: [], links: [] };
@@ -148,7 +154,7 @@ export function unseal<T>(purpose: string, value: string | undefined): T | null 
 }
 
 export const SESSION_TTL = 30 * 24 * 3600 * 1000;
-// Changing SHOTS_TOKEN signs the owner out everywhere.
+// Changing APPSHOTS_TOKEN signs the owner out everywhere.
 const ownerEpoch = sha256(`owner:${config.token}`).slice(0, 16);
 
 export const ownerSession = () => seal("session", { u: ownerSpace.id, k: ownerEpoch }, SESSION_TTL);
@@ -200,13 +206,13 @@ function findLink(kind: Link["kind"], code: unknown): Link | undefined {
 export const inviteValid = (code: unknown) => Boolean(findLink("invite", code));
 export const resetValid = (code: unknown) => Boolean(findLink("reset", code));
 
-/** New accounts need an invite unless the owner has opened sign-ups. The invite is used up here. */
-function admit(invite: unknown): void {
-  if (!config.token) throw new InputError("Accounts are off because this server runs without SHOTS_TOKEN.");
+/** New accounts need an invite unless the owner has opened sign-ups. With `consume` the invite is used up. */
+function admit(invite: unknown, consume: boolean): void {
+  if (!config.token) throw new InputError("Accounts are off because this server runs without APPSHOTS_TOKEN.");
   if (state.signup === "open") return;
   const link = findLink("invite", invite);
-  if (!link) throw new AuthError("Signing up needs an invite link from the person who runs this server. This one is missing, used or expired.");
-  state.links = state.links.filter((entry) => entry !== link);
+  if (!link) throw new AuthError("Signing up needs an invite link from the person who runs this server. This one is missing, used or expired.", "invite_required");
+  if (consume) state.links = state.links.filter((entry) => entry !== link);
 }
 
 async function addUser(fields: Pick<User, "email" | "name" | "password" | "googleSub">): Promise<User> {
@@ -220,10 +226,11 @@ export async function signUp(input: { email: unknown; password: unknown; name?: 
   const email = normalizeEmail(input.email);
   assertPassword(input.password);
   if (byEmail(email)) throw new InputError("There is already an account with this email. Sign in instead.");
+  admit(input.invite, false);
   const password = await hashPassword(input.password);
-  // Checked again after the slow hash, so two sign-ups racing for one email cannot both win.
+  // Checked again after the slow hash, so two sign-ups racing for one email or one invite cannot both win.
   if (byEmail(email)) throw new InputError("There is already an account with this email. Sign in instead.");
-  admit(input.invite);
+  admit(input.invite, true);
   return addUser({ email, name: cleanName(input.name, email), password });
 }
 
@@ -244,14 +251,14 @@ export async function logInWithGoogle(profile: { sub: string; email: string; nam
   const known = state.users.find((user) => user.googleSub === profile.sub);
   if (known) return known;
   const email = normalizeEmail(profile.email);
-  if (byEmail(email)) throw new AuthError("This email already has an account with a password. Sign in with the password instead.");
-  admit(invite);
+  if (byEmail(email)) throw new AuthError("This email already has an account that signs in another way.", "email_taken");
+  admit(invite, true);
   return addUser({ email, name: cleanName(profile.name, email), googleSub: profile.sub });
 }
 
 export async function changePassword(user: User, current: unknown, next: unknown): Promise<void> {
   if (!user.password) throw new InputError("This account signs in with Google and has no password.");
-  if (!(await checkPassword(typeof current === "string" ? current : "", user.password))) throw new AuthError("The current password is not correct.");
+  if (!(await checkPassword(typeof current === "string" ? current : "", user.password))) throw new InputError("The current password is not correct.");
   assertPassword(next);
   user.password = await hashPassword(next);
   user.epoch++;
@@ -270,7 +277,7 @@ export async function deleteUser(id: string): Promise<void> {
 
 export async function confirmDelete(user: User, confirmation: unknown): Promise<void> {
   const ok = user.password ? await checkPassword(typeof confirmation === "string" ? confirmation : "", user.password) : confirmation === user.email;
-  if (!ok) throw new AuthError(user.password ? "The password is not correct." : "Type your email address to confirm.");
+  if (!ok) throw new InputError(user.password ? "The password is not correct." : "Type your email address to confirm.");
   await deleteUser(user.id);
 }
 
@@ -279,7 +286,7 @@ export const listUsers = () => state.users;
 // ---------------------------------------------------------------- API tokens
 
 export function userByToken(token: string): User | null {
-  if (!token.startsWith("shots_")) return null;
+  if (!token.startsWith("appshots_")) return null;
   const hash = sha256(token);
   for (const user of state.users) {
     const entry = user.tokens.find((candidate) => candidate.hash === hash);
@@ -299,7 +306,7 @@ export const describeToken = ({ id, name, hint, createdAt, lastUsedAt }: ApiToke
 export async function createToken(user: User, nameInput: unknown): Promise<{ token: string; entry: ApiToken }> {
   if (user.tokens.length >= 20) throw new InputError("This account already has 20 tokens. Revoke one first.");
   const name = typeof nameInput === "string" && nameInput.trim() ? nameInput.trim().slice(0, 60) : "Token";
-  const token = `shots_${randomBytes(24).toString("base64url")}`;
+  const token = `appshots_${randomBytes(24).toString("base64url")}`;
   const entry: ApiToken = { id: randomId("t"), name, hash: sha256(token), hint: token.slice(-4), createdAt: new Date().toISOString() };
   user.tokens.push(entry);
   await save();

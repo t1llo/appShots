@@ -136,7 +136,7 @@ async function renderNow(space: Space, id: string, request: RenderRequest): Prom
       const context = await instance.newContext({
         viewport: { width: size.width, height: size.height },
         deviceScaleFactor: 1,
-        extraHTTPHeaders: { "x-shots-internal": config.internalSecret, "x-shots-space": space.id },
+        extraHTTPHeaders: { "x-appshots-internal": config.internalSecret, "x-appshots-space": space.id },
       });
       // Slide pages only ever need this server; nothing a slide contains may make the browser call out, least of all with those headers.
       await context.route("**/*", (route) => {

@@ -12,8 +12,8 @@ import { createProject, getProject, listProjects, listShots, outDir, type Shot, 
 function uploadHelp(base: string, id: string): string {
   return [
     "This server cannot see the user's devices, so raw screenshots are captured on their Mac and uploaded:",
-    `- With the bundled CLI: \`shots capture --name home --project ${id}\` grabs the booted simulator; add \`--device\` for a connected iPhone or iPad. \`shots upload ${id} path/to/*.png\` sends existing files.`,
-    `- With curl: \`curl -fsS -X PUT -H "Authorization: Bearer $SHOTS_TOKEN" -H "Content-Type: image/png" --data-binary @home.png "${base}/api/projects/${id}/shots/home"\` (the token is the one this MCP connection uses)`,
+    `- With the bundled CLI: \`appshots capture --name home --project ${id}\` grabs the booted simulator; add \`--device\` for a connected iPhone or iPad. \`appshots upload ${id} path/to/*.png\` sends existing files.`,
+    `- With curl: \`curl -fsS -X PUT -H "Authorization: Bearer $APPSHOTS_TOKEN" -H "Content-Type: image/png" --data-binary @home.png "${base}/api/projects/${id}/shots/home"\` (the token is the one this MCP connection uses)`,
     "The last path segment is the screenshot name slides refer to. iPhone or iPad is detected from the aspect ratio, and one name can hold both variants.",
   ].join("\n");
 }
@@ -23,14 +23,14 @@ function designGuide(base: string): string {
     Object.entries(entries)
       .map(([key, value]) => `- \`${key}\`: ${value}`)
       .join("\n");
-  return `# Shots: App Store screenshot generator
+  return `# appShots: App Store screenshot generator
 
 ## Workflow
 1. \`create_project\`, or \`list_projects\` / \`get_project\` to continue an existing one.
 2. Get raw screenshots into the project (see Uploading below), then check them with \`get_project\`.
 3. \`set_slides\` with the copy and design for the whole set. Put shared styling in \`theme\`; slides override it.
 4. \`render\`. It returns a contact sheet image: look at it, fix what is off with \`update_slide\`, render again.
-5. The user downloads the PNGs from ${base}/#/<project> or with \`shots pull <project>\`.
+5. The user downloads the PNGs from ${base}/#/<project> or with \`appshots pull <project>\`.
 
 ## Uploading
 ${uploadHelp(base, "<project>")}
@@ -115,7 +115,7 @@ const slideNumber = z.number().int().min(1).max(10).describe("Slide number, star
 /** `space` is the account the request was authenticated as; every tool works inside it. */
 export function createMcpServer(base: string, space: Space): McpServer {
   const server = new McpServer(
-    { name: "shots", version: "0.1.0" },
+    { name: "appshots", version: "0.1.0" },
     {
       instructions:
         "Generates App Store screenshots: raw app screenshots placed in device frames with headlines, backgrounds and social-proof badges, exported at exact store sizes. Call get_design_guide first.",
@@ -256,7 +256,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
             lines.push(`  ${String(file.slide + 1).padStart(2, "0")}  ${base}/files/${id}/out/${file.path}`);
           }
         }
-        lines.push("", `Gallery: ${base}/#/${id}`, `ZIP of everything: ${base}/api/projects/${id}/export.zip (or \`shots pull ${id}\`)`);
+        lines.push("", `Gallery: ${base}/#/${id}`, `ZIP of everything: ${base}/api/projects/${id}/export.zip (or \`appshots pull ${id}\`)`);
         if (result.warnings.length) lines.push("", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`));
 
         const content: CallToolResult["content"] = [{ type: "text", text: lines.join("\n") }];

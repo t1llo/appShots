@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Mac-side companion to a Shots server: captures screenshots from a simulator or a connected
+// Mac-side companion to an appShots server: captures screenshots from a simulator or a connected
 // iPhone/iPad, uploads them, and pulls the rendered store screenshots back down.
-// No dependencies, so it runs straight from a checkout: `node cli/shots.mjs` or `npm link`.
+// No dependencies, so it runs straight from a checkout: `node cli/appshots.mjs` or `npm link`.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -9,29 +9,30 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 
-const CONFIG_FILE = path.join(process.env.XDG_CONFIG_HOME ?? path.join(homedir(), ".config"), "shots", "config.json");
+const CONFIG_FILE = path.join(process.env.XDG_CONFIG_HOME ?? path.join(homedir(), ".config"), "appshots", "config.json");
 const BOOLEAN_FLAGS = new Set(["clean", "render", "help"]);
 
-const HELP = `shots: capture app screenshots and sync them with a Shots server
+const HELP = `appshots: capture app screenshots and sync them with an appShots server
 
-  shots login <url>                      Save the server URL and token (asks for the token)
-  shots projects                         List projects on the server
-  shots devices                          List booted simulators and connected devices
-  shots capture [options]                Take a screenshot
+  appshots login <url>                   Save the server URL and token (asks for the token)
+  appshots projects                      List projects on the server
+  appshots devices                       List booted simulators and connected devices
+  appshots capture [options]             Take a screenshot
       --name <name>                        Screenshot name slides refer to (default: timestamp)
       --sim [name|udid]                    From a booted simulator (the default source)
       --device [name|udid]                 From a connected, unlocked iPhone or iPad (Xcode 27+)
       --clean                              Simulator only: show 9:41, full battery and signal
       --project <id>                       Upload it to this project straight away
       --out <dir>                          Where to save the PNG (default: ./raw-shots)
-  shots upload <project> <files...>      Upload existing screenshots (name = file name, or --name)
-  shots pull <project> [--out <dir>]     Download the rendered screenshots (--render renders first)
-  shots open [project]                   Open the web gallery
+  appshots upload <project> <files...>   Upload existing screenshots (name = file name, or --name)
+  appshots pull <project> [--out <dir>]  Download the rendered screenshots (--render renders first)
+  appshots open [project]                Open the web gallery
 
-Server and token come from SHOTS_URL / SHOTS_TOKEN, or from 'shots login'.`;
+Server and token come from APPSHOTS_URL / APPSHOTS_TOKEN, or from 'appshots login'.
+The token is a personal one from Account in the web gallery, or the server's own token if you run it.`;
 
 function fail(message) {
-  console.error(`shots: ${message}`);
+  console.error(`appshots: ${message}`);
   process.exit(1);
 }
 
@@ -73,12 +74,12 @@ function loadConfig() {
     try {
       saved = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
     } catch {
-      fail(`${CONFIG_FILE} is not valid JSON. Run 'shots login <url>' again.`);
+      fail(`${CONFIG_FILE} is not valid JSON. Run 'appshots login <url>' again.`);
     }
   }
-  const url = (process.env.SHOTS_URL ?? saved.url ?? "").replace(/\/+$/, "");
-  const token = process.env.SHOTS_TOKEN ?? saved.token ?? "";
-  if (!url) fail("No server configured. Run 'shots login <url>' or set SHOTS_URL.");
+  const url = (process.env.APPSHOTS_URL ?? saved.url ?? "").replace(/\/+$/, "");
+  const token = process.env.APPSHOTS_TOKEN ?? saved.token ?? "";
+  if (!url) fail("No server configured. Run 'appshots login <url>' or set APPSHOTS_URL.");
   return { url, token };
 }
 
@@ -119,9 +120,9 @@ function promptHidden(question) {
 }
 
 async function login(url) {
-  if (!url) fail("Usage: shots login <url>");
+  if (!url) fail("Usage: appshots login <url>");
   if (!/^https?:\/\//.test(url)) fail("The URL must start with http:// or https://");
-  const config = { url: url.replace(/\/+$/, ""), token: process.env.SHOTS_TOKEN ?? (await promptHidden("Token (leave empty if the server has none): ")) };
+  const config = { url: url.replace(/\/+$/, ""), token: process.env.APPSHOTS_TOKEN ?? (await promptHidden("Token (from Account in the gallery; leave empty if the server has none): ")) };
   await request(config, "GET", "/api/projects");
   mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
   writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
@@ -144,7 +145,7 @@ function xcodeEnv() {
 }
 
 function xcrun(args) {
-  if (process.platform !== "darwin") fail("Capturing needs a Mac with Xcode. Use 'shots upload' for existing screenshots.");
+  if (process.platform !== "darwin") fail("Capturing needs a Mac with Xcode. Use 'appshots upload' for existing screenshots.");
   const result = spawnSync("xcrun", args, { encoding: "utf8", env: xcodeEnv() });
   if (result.error) fail(`Could not run xcrun: ${result.error.message}`);
   return result;
@@ -160,7 +161,7 @@ function bootedSimulators() {
 }
 
 function connectedDevices() {
-  const dir = mkdtempSync(path.join(tmpdir(), "shots-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "appshots-"));
   const file = path.join(dir, "devices.json");
   try {
     const result = xcrun(["devicectl", "list", "devices", "--json-output", file]);
@@ -239,7 +240,7 @@ async function upload(config, project, file, name) {
 async function pull(config, project, flags) {
   const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join("store-screenshots", project));
   const response = await request(config, "GET", `/api/projects/${project}/export.zip${flags.render ? "?render=1" : ""}`);
-  const dir = mkdtempSync(path.join(tmpdir(), "shots-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "appshots-"));
   const zip = path.join(dir, "export.zip");
   try {
     writeFileSync(zip, Buffer.from(await response.arrayBuffer()));
@@ -277,7 +278,7 @@ async function main() {
     }
     case "upload": {
       const [project, ...files] = positional;
-      if (!project || files.length === 0) fail("Usage: shots upload <project> <files...> [--name <name>]");
+      if (!project || files.length === 0) fail("Usage: appshots upload <project> <files...> [--name <name>]");
       if (typeof flags.name === "string" && files.length > 1) fail("--name only works with a single file.");
       const config = loadConfig();
       for (const file of files) {
@@ -287,7 +288,7 @@ async function main() {
       return;
     }
     case "pull":
-      if (!positional[0]) fail("Usage: shots pull <project> [--out <dir>] [--render]");
+      if (!positional[0]) fail("Usage: appshots pull <project> [--out <dir>] [--render]");
       return pull(loadConfig(), positional[0], flags);
     case "projects": {
       const projects = await (await request(loadConfig(), "GET", "/api/projects")).json();
@@ -300,7 +301,7 @@ async function main() {
       return;
     }
     default:
-      fail(`Unknown command "${command}". Run 'shots help'.`);
+      fail(`Unknown command "${command}". Run 'appshots help'.`);
   }
 }
 

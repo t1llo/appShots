@@ -26,7 +26,7 @@ export const config = {
   port: Number(process.env.PORT ?? 3000),
   dataDir,
   /** The owner's token for the web UI, the REST API and the MCP endpoint. Empty disables auth and accounts. */
-  token: process.env.SHOTS_TOKEN ?? "",
+  token: process.env.APPSHOTS_TOKEN ?? "",
   /** Public origin used in links handed to MCP clients and in the Google redirect. Falls back to the request's host. */
   publicUrl: (process.env.PUBLIC_URL ?? "").replace(/\/+$/, ""),
   /** Lets the in-process renderer fetch slide pages without anyone's token. */

@@ -18,6 +18,8 @@ RUN apt-get update \
 
 COPY src ./src
 COPY public ./public
+# Served to signed-in users from /cli/appshots.mjs.
+COPY cli ./cli
 
 ENV PORT=3000 \
     DATA_DIR=/data

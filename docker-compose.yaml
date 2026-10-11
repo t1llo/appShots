@@ -1,8 +1,9 @@
-# Shots: App Store screenshot generator. One service carries the web gallery, the REST API and
+# appShots: App Store screenshot generator. One service carries the web gallery, the REST API and
 # the MCP endpoint (/mcp).
 #
-# Deploy the Compose file from this repository: set SHOTS_TOKEN, then give the
-# `shots` service a domain on port 3000. A reverse proxy terminates TLS; no host port is published.
+# Deploy the Compose file from this repository: set APPSHOTS_TOKEN and PUBLIC_URL,
+# then give the `appshots` service a domain on port 3000. A reverse proxy terminates TLS; no host
+# port is published.
 #
 # Local:   docker compose -f docker-compose.yaml -f compose.local.yaml up --build
 x-service: &service
@@ -14,18 +15,26 @@ x-service: &service
       max-file: "3"
 
 services:
-  shots:
+  appshots:
     <<: *service
     build: .
     # Reaps the Chromium helper processes the renderer leaves behind.
     init: true
     environment:
-      SHOTS_TOKEN: ${SHOTS_TOKEN:?Set a long random access token (openssl rand -hex 32)}
-      # Optional. Only needed when the links Claude gets back should use another origin than the one it called.
+      # The owner's token: signs you in, and is the bearer token for your own Claude and CLI.
+      APPSHOTS_TOKEN: ${APPSHOTS_TOKEN:?Set a long random access token (openssl rand -hex 32)}
+      # The public origin, e.g. https://appshots.example.com. Used in invite and reset links, in the
+      # links Claude gets back and as the Google redirect. Empty falls back to each request's host.
       PUBLIC_URL: ${PUBLIC_URL:-}
+      # Optional: offer "Continue with Google". Redirect URI: <PUBLIC_URL>/auth/google/callback
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Caps for every account other than the owner.
+      USER_MAX_PROJECTS: ${USER_MAX_PROJECTS:-20}
+      USER_MAX_SHOTS: ${USER_MAX_SHOTS:-40}
     expose: ["3000"]
     volumes:
-      - shots-data:/data
+      - appshots-data:/data
     healthcheck:
       test: [CMD-SHELL, "curl -fsS http://localhost:3000/healthz || exit 1"]
       interval: 30s
@@ -34,4 +43,4 @@ services:
       start_period: 20s
 
 volumes:
-  shots-data:
+  appshots-data:

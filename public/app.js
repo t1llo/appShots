@@ -1,4 +1,4 @@
-// Gallery and editor for a Shots server. Plain DOM, no build step: previews are iframes of the very
+// Gallery and editor for an appShots server. Plain DOM, no build step: previews are iframes of the very
 // pages the renderer screenshots, so what is on screen is what gets exported.
 
 const PREVIEW_HEIGHT = 440;
@@ -35,6 +35,15 @@ function h(tag, props, ...children) {
   el.append(...children.flat().filter((child) => child != null && child !== false));
   return el;
 }
+
+function icon(path) {
+  const holder = document.createElement("span");
+  holder.innerHTML = `<svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="${path}"/></svg>`;
+  return holder.firstChild;
+}
+
+const day = (iso) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 const label = (id) => id.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
 
@@ -119,8 +128,10 @@ function copyBlock(text) {
 
 function openDialog(...children) {
   const dialog = $("#dialog");
-  dialog.replaceChildren(...children);
-  dialog.showModal();
+  dialog.replaceChildren(...children.flat().filter(Boolean));
+  // The account and people dialogs redraw themselves while open.
+  if (!dialog.open) dialog.showModal();
+  dialog.scrollTop = 0;
   return dialog;
 }
 
@@ -178,6 +189,7 @@ function edited(structure = false) {
   saveTimer = setTimeout(save, structure ? 0 : 350);
   setStatus("Saving…");
   if (structure) {
+    renderHead();
     renderShots();
     renderSlides();
     renderEditor();
@@ -300,24 +312,39 @@ async function sync() {
     if (entry) entry.name = fresh.project.name;
   }
   renderBar();
+  renderHead();
   renderShots();
   renderSlides();
   // The editor holds references into the old project, so it has to follow; otherwise leave the cursor alone.
   if (projectChanged || !$("#panel").contains(document.activeElement)) renderEditor();
 }
 
-// ---------------------------------------------------------------- top bar
+// ---------------------------------------------------------------- sidebar, top bar and page head
+
+const PAGE_ICON = "M4.2 1.8h4.9l2.7 2.7v9.7H4.2zM9 2v2.7h2.7";
 
 function renderBar() {
-  const projects = $("#project-select");
-  projects.replaceChildren(...state.projects.map((p) => h("option", { value: p.id }, p.name)));
-  projects.hidden = state.projects.length === 0;
-  $("#logout").hidden = !state.meta.authEnabled;
-
   const detail = state.detail;
+  const { account, authEnabled } = state.meta;
+  const name = account ? account.name || account.email : "appShots";
+  $("#avatar").textContent = name[0].toUpperCase();
+  $("#who-name").textContent = name;
+  $("#who-sub").textContent = account ? account.email : authEnabled ? "Owner" : "";
+  $("#logout").hidden = !authEnabled;
+  $("#account").hidden = !account;
+  $("#people").hidden = !authEnabled || Boolean(account);
+
+  $("#project-list").replaceChildren(
+    ...state.projects.map((p) => {
+      const on = p.id === detail?.project.id;
+      return h("a", { class: `nav-item${on ? " on" : ""}`, href: `#/${p.id}`, "aria-current": on ? "page" : null }, icon(PAGE_ICON), h("span", { class: "nav-text" }, p.name));
+    }),
+  );
+  $("#crumb").textContent = detail ? detail.project.name : "";
+  document.title = detail ? `${detail.project.name} · appShots` : "appShots";
+
   for (const id of ["target-select", "locale-select", "export"]) $(`#${id}`).hidden = !detail;
   if (!detail) return;
-  projects.value = detail.project.id;
 
   const targets = $("#target-select");
   targets.replaceChildren(...Object.entries(state.meta.targets).map(([id, t]) => h("option", { value: id }, `${t.label} · ${t.width}×${t.height}`)));
@@ -329,19 +356,28 @@ function renderBar() {
   locales.hidden = detail.project.locales.length < 2;
 }
 
+function renderHead() {
+  const { project, shots } = state.detail;
+  const title = $("#title");
+  // Leave the name alone while it is being typed.
+  if (document.activeElement !== title) title.value = project.name;
+  $("#page-meta").textContent = [plural(project.slides.length, "slide"), plural(shots.length, "screenshot"), project.locales.join(", ")].join(" · ");
+}
+
 function renderAll() {
   renderBar();
   const open = Boolean(state.detail);
   $("#empty").hidden = open;
-  for (const id of ["shots-section", "slides-section", "panel"]) $(`#${id}`).hidden = !open;
+  for (const id of ["page-head", "shots-section", "slides-section", "panel"]) $(`#${id}`).hidden = !open;
   if (!open) {
     $("#empty").replaceChildren(
       h("h1", null, "App Store screenshots, on tap"),
       h("p", null, "Create a project here, or let Claude build one through the MCP endpoint. Either way the result shows up in this gallery."),
-      h("div", { class: "actions" }, button("New project", newProjectDialog, { class: "btn primary" }), button("Connect Claude and the CLI", connectDialog, { class: "btn" })),
+      h("div", { class: "actions" }, button("New project", newProjectDialog, { class: "btn primary" }), button("Connect Claude and the CLI", () => connectDialog(), { class: "btn" })),
     );
     return;
   }
+  renderHead();
   renderShots();
   renderSlides();
   renderEditor();
@@ -389,7 +425,7 @@ function renderShots() {
     { class: "dropzone" },
     shots.length
       ? h("div", null, "Drop more screenshots here")
-      : h("div", null, "Drop screenshots here, or capture one from your Mac:", h("br"), h("code", null, `shots capture --name home --project ${project.id}`)),
+      : h("div", null, "Drop screenshots here, or capture one from your Mac:", h("br"), h("code", null, `appshots capture --name home --project ${project.id}`)),
   );
   $("#shots").replaceChildren(...thumbs, dropzone);
 }
@@ -814,12 +850,6 @@ function slideEditor(slide, index) {
 }
 
 function projectEditor(project) {
-  const name = h("input", { type: "text", value: project.name, maxLength: 80 });
-  name.addEventListener("input", () => {
-    if (!name.value.trim()) return;
-    project.name = name.value.trim();
-    edited();
-  });
   const locales = h("input", { type: "text", value: project.locales.join(", "), spellcheck: false });
   locales.addEventListener("change", () => {
     const list = [...new Set(locales.value.split(/[\s,]+/).filter(Boolean))];
@@ -836,7 +866,6 @@ function projectEditor(project) {
   return h(
     "div",
     { class: "form" },
-    field("Name", name),
     field("Languages", locales, "The first is the fallback. Pick a language in the top bar, then type its translations into the slide fields."),
     h("div", { class: "group-head" }, h("span", { class: "label" }, "Theme"), h("span", { class: "hint" }, "Used by every slide that does not override it.")),
     ...styleFields(project.theme, false),
@@ -900,34 +929,250 @@ async function deleteProject() {
   }
 }
 
-function connectDialog() {
+/** Runs a dialog action and reports a failure instead of leaving the click without an answer. */
+const attempt = (work) => async () => {
+  try {
+    await work();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+};
+
+// Done takes the focus on open, so the first field does not light up before anyone has touched it.
+const done = (dialog) => h("div", { class: "foot" }, button("Done", () => dialog.close(), { class: "btn primary", autofocus: true }));
+const row = (title, sub, ...actions) => h("div", { class: "list-row" }, h("div", { class: "list-main" }, h("span", { class: "list-title" }, title), h("span", { class: "list-sub" }, sub)), actions);
+
+/** `token` is a personal token created a moment ago; it can only be shown this once. */
+function connectDialog(token) {
   const origin = location.origin;
   const project = state.detail?.project.id ?? "<project>";
-  const header = state.meta.authEnabled ? ' --header "Authorization: Bearer $SHOTS_TOKEN"' : "";
+  const { account, authEnabled } = state.meta;
+  const bearer = token ?? (account ? "<your token>" : "$APPSHOTS_TOKEN");
+  const header = authEnabled ? ` --header "Authorization: Bearer ${bearer}"` : "";
+  const create = button("Create a token", attempt(async () => connectDialog((await api("POST", "/account/tokens", { name: "Claude and CLI" })).token)), { class: "btn primary" });
+  const tokenStep = !authEnabled
+    ? null
+    : !account
+      ? h("div", null, h("h3", null, "Your token"), h("p", null, "You run this server, so your token is the ", h("code", null, "APPSHOTS_TOKEN"), " it was deployed with."))
+      : token
+        ? h("div", null, h("h3", null, "Your token"), h("p", null, "Copy it now: it is shown this once. You can revoke it under Account."), copyBlock(token))
+        : h("div", null, h("h3", null, "Your token"), h("p", null, "Claude and the CLI sign in with a personal token instead of your password."), h("div", null, create));
   const dialog = openDialog(
     h("h1", null, "Connect"),
     h(
       "div",
       { class: "steps" },
+      tokenStep,
       h(
         "div",
         null,
         h("h3", null, "Claude"),
-        h("p", { class: "muted" }, "Add the MCP endpoint to Claude Code, then ask for screenshots in plain words: the copy, the look, the badges."),
-        copyBlock(`claude mcp add --transport http shots ${origin}/mcp${header}`),
+        h("p", null, "Add the MCP endpoint to Claude Code, then ask for screenshots in plain words: the copy, the look, the badges."),
+        copyBlock(`claude mcp add --transport http appshots ${origin}/mcp${header}`),
       ),
       h(
         "div",
         null,
         h("h3", null, "Capture from your Mac"),
-        h("p", { class: "muted" }, "The shots CLI in this repository grabs the running simulator, or a plugged-in iPhone or iPad with --device, and uploads the result."),
-        copyBlock(`shots login ${origin}`),
-        h("div", { style: "height:8px" }),
-        copyBlock(`shots capture --name home --project ${project}`),
+        h(
+          "p",
+          null,
+          "The CLI grabs the running simulator, or a plugged-in iPhone or iPad with --device, and uploads the result. It is one file that needs Node and nothing else: run it as ",
+          h("code", null, "node appshots.mjs"),
+          ", or put it on your PATH as ",
+          h("code", null, "appshots"),
+          ".",
+        ),
+        h("div", null, h("a", { class: "btn small", href: "/cli/appshots.mjs", download: "appshots.mjs" }, "Download appshots.mjs")),
+        copyBlock(`appshots login ${origin}`),
+        copyBlock(`appshots capture --name home --project ${project}`),
+      ),
+      done($("#dialog")),
+    ),
+  );
+  return dialog;
+}
+
+/** `fresh` is a token created a moment ago, shown once. */
+async function accountDialog(fresh) {
+  const { account } = state.meta;
+  const tokens = await api("GET", "/account/tokens");
+  const redraw = (created) => attempt(() => accountDialog(created))();
+
+  const tokenName = h("input", { type: "text", maxLength: 60, placeholder: "Name it, e.g. MacBook", "aria-label": "Token name" });
+  const tokenForm = h(
+    "form",
+    {
+      class: "row",
+      onsubmit: (event) => {
+        event.preventDefault();
+        void attempt(async () => redraw(await api("POST", "/account/tokens", { name: tokenName.value })))();
+      },
+    },
+    tokenName,
+    h("button", { class: "btn", type: "submit" }, "Create token"),
+  );
+  const tokenRows = tokens.map((token) =>
+    row(
+      token.name,
+      `appshots_…${token.hint} · created ${day(token.createdAt)} · ${token.lastUsedAt ? `last used ${day(token.lastUsedAt)}` : "never used"}`,
+      button(
+        "Revoke",
+        attempt(async () => {
+          if (!confirm(`Revoke "${token.name}"? Whatever uses it stops working.`)) return;
+          await api("DELETE", `/account/tokens/${token.id}`);
+          redraw();
+        }),
+        { class: "btn small danger" },
       ),
     ),
-    h("div", { class: "foot", style: "margin-top:16px" }, button("Done", () => dialog.close(), { class: "btn primary" })),
   );
+
+  const current = h("input", { type: "password", autocomplete: "current-password", required: true });
+  const next = h("input", { type: "password", autocomplete: "new-password", required: true, minLength: 8 });
+  const passwordForm = h(
+    "form",
+    {
+      onsubmit: (event) => {
+        event.preventDefault();
+        void attempt(async () => {
+          await api("POST", "/account/password", { current: current.value, password: next.value });
+          event.target.reset();
+          toast("Password changed. Your other browsers were signed out.");
+        })();
+      },
+    },
+    h("div", { class: "cols" }, field("Current password", current), field("New password", next)),
+    h("div", null, h("button", { class: "btn", type: "submit" }, "Change password")),
+  );
+
+  const proof = account.password ? h("input", { type: "password", autocomplete: "current-password", required: true, placeholder: "Your password" }) : h("input", { type: "text", required: true, placeholder: account.email });
+  const deleteForm = h(
+    "form",
+    {
+      onsubmit: (event) => {
+        event.preventDefault();
+        void attempt(async () => {
+          await api("DELETE", "/account", { confirm: proof.value });
+          location.href = "/login";
+        })();
+      },
+    },
+    h("p", null, `This removes every project, screenshot and render of yours for good. ${account.password ? "Enter your password" : "Type your email address"} to confirm.`),
+    h("div", { class: "row" }, proof, h("button", { class: "btn danger", type: "submit" }, "Delete account")),
+  );
+
+  const dialog = openDialog(
+    h("h1", null, "Account"),
+    h(
+      "div",
+      { class: "steps" },
+      h("div", null, h("div", { class: "list" }, row(account.name, `${account.email} · signs in with ${account.google ? "Google" : "a password"}`))),
+      h(
+        "div",
+        null,
+        h("h3", null, "API tokens"),
+        h("p", null, "Claude and the CLI use a token instead of your password. Each one reaches your projects only."),
+        fresh && h("p", null, `Copy "${fresh.name}" now: it is shown this once.`),
+        fresh && copyBlock(fresh.token),
+        tokenRows.length > 0 && h("div", { class: "list" }, tokenRows),
+        tokenForm,
+      ),
+      account.password && h("div", null, h("h3", null, "Password"), passwordForm),
+      h("details", null, h("summary", null, "Delete account"), h("div", { class: "stack" }, deleteForm)),
+      done($("#dialog")),
+    ),
+  );
+  return dialog;
+}
+
+/** Owner only. `link` is an invite or reset link created a moment ago, shown once. */
+async function peopleDialog(link) {
+  const data = await api("GET", "/admin/people");
+  const redraw = (created) => attempt(() => peopleDialog(created))();
+
+  const mode = select(
+    [
+      ["invite", "Invite only"],
+      ["open", "Anyone can sign up"],
+    ],
+    data.signup,
+    (value) =>
+      attempt(async () => {
+        await api("PUT", "/admin/signup", { mode: value });
+        redraw();
+      })(),
+  );
+  const invite = button(
+    "Create invite link",
+    attempt(async () => {
+      const created = await api("POST", "/admin/invites");
+      redraw({ note: "Send this link to one person. It creates one account and expires in 14 days.", url: created.url });
+    }),
+    { class: "btn primary" },
+  );
+  const inviteRows = data.invites.map((entry) =>
+    row(
+      "Invite link, not used yet",
+      `created ${day(entry.createdAt)} · expires ${day(entry.expiresAt)}`,
+      button(
+        "Revoke",
+        attempt(async () => {
+          await api("DELETE", `/admin/invites/${entry.id}`);
+          redraw();
+        }),
+        { class: "btn small danger" },
+      ),
+    ),
+  );
+  const userRows = data.users.map((user) =>
+    row(
+      user.name,
+      `${user.email} · ${user.signIn} · ${plural(user.projects, "project")} · joined ${day(user.createdAt)}`,
+      user.signIn === "Password" &&
+        button(
+          "Reset link",
+          attempt(async () => {
+            const created = await api("POST", `/admin/users/${user.id}/reset`);
+            redraw({ note: `Send this link to ${user.email} to set a new password. It works once and expires in 24 hours.`, url: created.url });
+          }),
+        ),
+      button(
+        "Remove",
+        attempt(async () => {
+          if (!confirm(`Remove ${user.email} with all of their projects? This cannot be undone.`)) return;
+          await api("DELETE", `/admin/users/${user.id}`);
+          redraw();
+        }),
+        { class: "btn small danger" },
+      ),
+    ),
+  );
+
+  const dialog = openDialog(
+    h("h1", null, "People"),
+    h(
+      "div",
+      { class: "steps" },
+      link && h("div", null, h("p", null, link.note), copyBlock(link.url)),
+      h(
+        "div",
+        null,
+        h("h3", null, "Who can join"),
+        h("p", null, "Everyone gets a private space: their own projects, screenshots and tokens. You sign in with the server token and are the only one who sees this page."),
+        field(
+          "New accounts",
+          mode,
+          data.signup === "open" ? "Anyone who can reach this address can create an account and render with it." : "Only people you send an invite link to can create an account.",
+        ),
+        h("span", { class: "hint" }, data.google ? "Sign in with Google is on." : "Sign in with Google is off. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server to offer it."),
+      ),
+      h("div", null, h("h3", null, "Invites"), inviteRows.length > 0 && h("div", { class: "list" }, inviteRows), h("div", null, invite)),
+      h("div", null, h("h3", null, data.users.length > 0 ? plural(data.users.length, "account") : "Accounts"), userRows.length > 0 ? h("div", { class: "list" }, userRows) : h("p", null, "Nobody has joined yet.")),
+      done($("#dialog")),
+    ),
+  );
+  return dialog;
 }
 
 async function exportZip() {
@@ -955,7 +1200,19 @@ async function exportZip() {
 
 // ---------------------------------------------------------------- wiring
 
-$("#project-select").addEventListener("change", (event) => navigate(event.target.value));
+$("#title").addEventListener("input", (event) => {
+  const name = event.target.value.trim();
+  if (!name || !state.detail) return;
+  state.detail.project.name = name;
+  const entry = state.projects.find((p) => p.id === state.detail.project.id);
+  if (entry) entry.name = name;
+  renderBar();
+  edited();
+});
+$("#title").addEventListener("keydown", (event) => event.key === "Enter" && event.target.blur());
+$("#title").addEventListener("blur", (event) => {
+  if (state.detail) event.target.value = state.detail.project.name;
+});
 $("#target-select").addEventListener("change", (event) => {
   state.target = event.target.value;
   renderSlides();
@@ -967,7 +1224,9 @@ $("#locale-select").addEventListener("change", (event) => {
   renderEditor();
 });
 $("#new-project").addEventListener("click", newProjectDialog);
-$("#connect").addEventListener("click", connectDialog);
+$("#connect").addEventListener("click", () => connectDialog());
+$("#account").addEventListener("click", attempt(() => accountDialog()));
+$("#people").addEventListener("click", attempt(() => peopleDialog()));
 $("#export").addEventListener("click", exportZip);
 $("#file-input").addEventListener("change", (event) => {
   void uploadFiles([...event.target.files]);

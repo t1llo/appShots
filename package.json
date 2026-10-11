@@ -1,5 +1,5 @@
 {
-  "name": "shots-app",
+  "name": "appshots",
   "version": "0.1.0",
   "private": true,
   "description": "Self-hosted App Store screenshot generator with an MCP endpoint, a web gallery and a Mac capture CLI.",
@@ -8,7 +8,7 @@
     "node": ">=24"
   },
   "bin": {
-    "shots": "cli/shots.mjs"
+    "appshots": "cli/appshots.mjs"
   },
   "scripts": {
     "start": "node src/server.ts",
