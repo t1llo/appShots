@@ -216,7 +216,7 @@ function StyleFields({ owner, change, inherits, asset = false, placed = false }:
         </Field>
         <Field label="Frame">
           <Select
-            options={[["", base], ["auto", "Match screenshot"], ["iphone", "iPhone"], ["duo", "iPhone Duo"], ["ipad", "iPad"], ["none", "No frame"]]}
+            options={[["", base], ["auto", "Match screenshot"], ["iphone", "iPhone"], ["duo", "iPhone Duo"], ["ipad", "iPad"], ["mac", "MacBook"], ["none", "No frame"]]}
             value={device.frame ?? ""}
             onChange={(value) => setDevice("frame", value)}
           />
@@ -1195,7 +1195,11 @@ export function CreativeEditor({ project, placement, change, remove }: { project
   const { meta, locale, guides } = useScope();
   const creative = project.creatives[placement]!;
   const spec = meta.placements[placement];
-  const layout: CreativeLayoutId = creative.layout ?? "fan";
+  const banner = spec.kind === "banner";
+  // As the renderer draws it: a banner is a split unless it says otherwise, and a store asset never is one.
+  const wanted: CreativeLayoutId = creative.layout ?? (banner ? "split" : "fan");
+  const layout: CreativeLayoutId = wanted === "split" && !banner ? "sides" : wanted;
+  const layouts = Object.keys(meta.creativeLayouts).filter((id) => banner || id !== "split");
   const capacity = meta.creativeLayouts[layout].screenshots;
   const picked = creative.screenshots ?? [];
   const query = new URLSearchParams(guides ? { locale, guides: "1" } : { locale });
@@ -1212,10 +1216,11 @@ export function CreativeEditor({ project, placement, change, remove }: { project
         </a>
       </div>
       <span className="hint">
-        {spec.width}×{spec.height} ({spec.ratio}). {spec.note} The store crops it differently on each device, so the copy is kept inside the safe area, the part every device shows.
+        {spec.width}×{spec.height} ({spec.ratio}). {spec.note}{" "}
+        {banner ? "It is shown whole wherever it goes, so nothing of it is cropped." : "The store crops it differently on each device, so the copy is kept inside the safe area, the part every device shows."}
       </span>
       <Field label="Layout" hint={meta.creativeLayouts[layout].note}>
-        <Select options={ids(Object.keys(meta.creativeLayouts))} value={layout} onChange={(value) => change((item) => put(item, "layout", value))} />
+        <Select options={ids(layouts)} value={layout} onChange={(value) => change((item) => put(item, "layout", value))} />
       </Field>
       <ShotGrid
         chosen={picked}
@@ -1231,13 +1236,13 @@ export function CreativeEditor({ project, placement, change, remove }: { project
       <Field label="Eyebrow">
         <TextInput value={creative.eyebrow} onChange={(value) => change((item) => put(item, "eyebrow", value))} placeholder="Small line above the headline" />
       </Field>
-      <Field label="Headline" hint="A short phrase, or nothing at all. No prices, web addresses or claims you cannot back up. *Asterisks* tint words.">
+      <Field label="Headline" hint={banner ? "A short phrase, or nothing at all. *Asterisks* tint words." : "A short phrase, or nothing at all. No prices, web addresses or claims you cannot back up. *Asterisks* tint words."}>
         <TextInput value={creative.headline} onChange={(value) => change((item) => put(item, "headline", value))} rows={2} />
       </Field>
       <Field label="Subheadline">
         <TextInput value={creative.subheadline} onChange={(value) => change((item) => put(item, "subheadline", value))} rows={2} />
       </Field>
-      <BadgesEditor owner={creative} change={change} max={3} hint="Real figures only, and no Apple accolades such as App of the Day." byDefault="below the copy" />
+      <BadgesEditor owner={creative} change={change} max={3} hint={banner ? "Real figures only." : "Real figures only, and no Apple accolades such as App of the Day."} byDefault="below the copy" />
       <LogoEditor owner={creative} change={change} hint="Over the headline. Your app's own only: Apple allows no other company's here." />
       <Section id="style" title="Style for this asset">
         <StyleFields owner={creative} change={change} inherits asset />

@@ -1,8 +1,8 @@
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 import { type Creatives, type Project, projectSchema, SLUG, type Slide, type Theme } from "./schema.ts";
-import { type DeviceKind, deviceKindOf, PLACEMENT_IDS, type PlacementId } from "./sizes.ts";
+import { type DeviceKind, deviceKindOf, PLACEMENT_IDS, PLACEMENTS, type PlacementId } from "./sizes.ts";
 
 export class NotFoundError extends Error {}
 export class InputError extends Error {}
@@ -19,6 +19,8 @@ export interface Shot {
   bytes: number;
   /** Changes whenever the file is replaced, so previews can bust their cache. */
   version: number;
+  /** The radius of its round, see-through corners in pixels. Only a capture of a Mac window has them; a screenshot of a display has none. */
+  corner?: number;
 }
 
 /**
@@ -144,7 +146,7 @@ export async function deleteProject(space: Space, id: string): Promise<void> {
   await rm(projectDir(space, id), { recursive: true, force: true });
 }
 
-const SHOT_FILE = /^([a-z0-9][a-z0-9_-]{0,63})\.(iphone|duo|ipad)(?:\.([a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*))?\.png$/;
+const SHOT_FILE = /^([a-z0-9][a-z0-9_-]{0,63})\.(iphone|duo|ipad|mac)(?:\.([a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*))?\.png$/;
 const shotFile = (name: string, device: DeviceKind, locale?: string) => `${name}.${device}${locale ? `.${locale}` : ""}.png`;
 
 /**
@@ -185,6 +187,8 @@ export async function listShots(space: Space, id: string): Promise<Shot[]> {
     if (!match) continue;
     const full = path.join(dir, file);
     const [info, meta] = await Promise.all([stat(full), sharp(full).metadata()]);
+    const version = Math.round(info.mtimeMs);
+    const corner = match[2] === "mac" && meta.hasAlpha ? await cornerOf(full, version, meta.width, meta.height) : 0;
     shots.push({
       name: match[1]!,
       device: match[2] as DeviceKind,
@@ -193,10 +197,68 @@ export async function listShots(space: Space, id: string): Promise<Shot[]> {
       width: meta.width,
       height: meta.height,
       bytes: info.size,
-      version: Math.round(info.mtimeMs),
+      version,
+      ...(corner ? { corner } : {}),
     });
   }
   return shots;
+}
+
+/** A pixel counts as part of the window from this much opacity on. Its shadow never reaches it. */
+const SOLID = 250;
+
+/**
+ * How round the corners of a picture are: the radius of the circle that fits its see-through top left corner,
+ * in pixels, or 0 where the corner is filled.
+ */
+async function cornerRadius(image: Sharp, width: number, height: number): Promise<number> {
+  const side = Math.max(2, Math.round(Math.min(width, height) * 0.03));
+  const alpha = await image.extract({ left: 0, top: 0, width: side, height: side }).ensureAlpha().extractChannel(3).raw().toBuffer();
+  let reach = 0;
+  while (reach < side && alpha[reach * side + reach]! < 128) reach++;
+  // A circle leaves 1 - 1/sqrt(2) of its radius bare along the diagonal of its corner.
+  return reach === 0 ? 0 : Math.round(reach / (1 - Math.SQRT1_2));
+}
+
+const cornerCache = new Map<string, number>();
+
+async function cornerOf(file: string, version: number, width: number, height: number): Promise<number> {
+  const key = `${file}:${version}`;
+  const cached = cornerCache.get(key);
+  if (cached !== undefined) return cached;
+  const corner = await cornerRadius(sharp(file), width, height).catch(() => 0);
+  cornerCache.set(key, corner);
+  return corner;
+}
+
+/**
+ * A capture of a Mac window comes with see-through round corners, and with the window's shadow around it unless that
+ * was left out. Cuts the picture down to the window itself. Null for a picture that is no such capture.
+ */
+async function windowCapture(png: Buffer, width: number, height: number): Promise<{ png: Buffer; width: number; height: number } | null> {
+  const alpha = await sharp(png).extractChannel(3).raw().toBuffer();
+  if (alpha[0]! >= 128) return null;
+  let [left, top, right, bottom] = [width, height, -1, -1];
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    let first = -1;
+    let last = -1;
+    for (let x = 0; x < width; x++) {
+      if (alpha[row + x]! < SOLID) continue;
+      if (first < 0) first = x;
+      last = x;
+    }
+    if (first < 0) continue;
+    if (top > y) top = y;
+    bottom = y;
+    if (first < left) left = first;
+    if (last > right) right = last;
+  }
+  const box = { left, top, width: right - left + 1, height: bottom - top + 1 };
+  // Mostly see-through: artwork with a cut-out subject, not a window.
+  if (box.width < width * 0.5 || box.height < height * 0.5 || Math.min(box.width, box.height) < 300) return null;
+  if (box.width === width && box.height === height) return { png, width, height };
+  return { png: await sharp(png).extract(box).png().toBuffer(), width: box.width, height: box.height };
 }
 
 /** Stores a raw screenshot as PNG. One name can hold an iPhone, an iPhone Duo and an iPad variant side by side, and each of them once per language. */
@@ -207,16 +269,20 @@ export async function saveShot(space: Space, id: string, name: string, data: Buf
   let png: Buffer;
   let width: number;
   let height: number;
+  let window: Awaited<ReturnType<typeof windowCapture>>;
   try {
     const result = await sharp(data).rotate().png().toBuffer({ resolveWithObject: true });
     png = result.data;
     width = result.info.width;
     height = result.info.height;
+    // Only a Mac window is captured with see-through corners, so one is a Mac's whatever its shape.
+    window = result.info.channels === 4 && (!device || device === "mac") ? await windowCapture(png, width, height) : null;
+    if (window) ({ png, width, height } = window);
   } catch {
     throw new InputError("Not a readable image. Upload a PNG, JPEG or WebP screenshot.");
   }
   if (Math.min(width, height) < 300) throw new InputError(`Image is only ${width}×${height}; that is too small for a screenshot.`);
-  const kind = device ?? deviceKindOf(width, height);
+  const kind = device ?? (window ? "mac" : deviceKindOf(width, height));
   const file = shotFile(name, kind, locale);
   const dir = shotsDir(space, id);
   await mkdir(dir, { recursive: true });
@@ -229,7 +295,8 @@ export async function saveShot(space: Space, id: string, name: string, data: Buf
   // One filed under the first language while that was not the first yet would otherwise keep hiding this one.
   if (!locale) await rm(path.join(dir, shotFile(name, kind, project.locales[0])), { force: true });
   const info = await stat(path.join(dir, file));
-  return { name, device: kind, ...(locale ? { locale } : {}), file, width, height, bytes: info.size, version: Math.round(info.mtimeMs) };
+  const corner = window ? await cornerRadius(sharp(png), width, height) : 0;
+  return { name, device: kind, ...(locale ? { locale } : {}), file, width, height, bytes: info.size, version: Math.round(info.mtimeMs), ...(corner ? { corner } : {}) };
 }
 
 export async function deleteShot(space: Space, id: string, file: string): Promise<void> {
@@ -349,8 +416,10 @@ export async function listOutputs(space: Space, id: string): Promise<OutputSet[]
   return sets;
 }
 
-/** Where the header and search results assets of one locale are written, inside the output directory. */
+/** Where the wide pictures of one locale are written, inside the output directory: the App Store's in one folder, the banners in another. */
 export const CREATIVE_DIR = "creative-assets";
+export const BANNER_DIR = "banners";
+export const creativeDir = (placement: PlacementId) => (PLACEMENTS[placement].kind === "banner" ? BANNER_DIR : CREATIVE_DIR);
 
 export interface CreativeOutput {
   locale: string;
@@ -360,13 +429,13 @@ export interface CreativeOutput {
   version: number;
 }
 
-/** Lists the header and search results assets rendered so far. */
+/** Lists the header and search results assets and the banners rendered so far. */
 export async function listCreativeOutputs(space: Space, id: string): Promise<CreativeOutput[]> {
   const root = outDir(space, id);
   const found: CreativeOutput[] = [];
   for (const locale of (await readdir(root).catch(() => [])).sort()) {
     for (const placement of PLACEMENT_IDS) {
-      const relative = path.join(locale, CREATIVE_DIR, `${placement}.png`);
+      const relative = path.join(locale, creativeDir(placement), `${placement}.png`);
       const info = await stat(path.join(root, relative)).catch(() => null);
       if (info) found.push({ locale, placement, path: relative, version: Math.round(info.mtimeMs) });
     }
@@ -383,9 +452,10 @@ export function safeJoin(root: string, relative: string): string {
 
 /** Which device's screenshot stands in when a name has none for the device asked for: the one closest in shape first. */
 const STAND_INS: Record<DeviceKind, DeviceKind[]> = {
-  iphone: ["iphone", "duo", "ipad"],
-  duo: ["duo", "ipad", "iphone"],
-  ipad: ["ipad", "duo", "iphone"],
+  iphone: ["iphone", "duo", "ipad", "mac"],
+  duo: ["duo", "ipad", "iphone", "mac"],
+  ipad: ["ipad", "duo", "iphone", "mac"],
+  mac: ["mac", "ipad", "duo", "iphone"],
 };
 
 /**

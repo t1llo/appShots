@@ -8,7 +8,7 @@ description: Short answers about appShots. What it is, which agents it works wit
 
 ### What is appShots?
 
-A tool that turns raw screenshots of your iPhone or iPad app into the framed, captioned images the App Store shows, at the exact sizes App Store Connect accepts. You can use it by hand in the browser, or let a coding agent do the whole set. See the [overview](/docs).
+A tool that turns raw screenshots of your iPhone, iPad or Mac app into the framed, captioned images the App Store shows, at the exact sizes App Store Connect accepts. You can use it by hand in the browser, or let a coding agent do the whole set. See the [overview](/docs).
 
 ### Do I need an agent?
 
@@ -38,11 +38,19 @@ No. The server draws every slide from your screenshots, text and settings, the s
 
 ### Can it make Google Play screenshots?
 
-Not at Google Play's sizes. It exports App Store sizes for iPhone, iPhone Duo and iPad. See [Sizes](/docs/sizes).
+Not at Google Play's sizes. It exports App Store sizes for iPhone, iPhone Duo, iPad and Mac. See [Sizes](/docs/sizes).
 
 ### Do I have to design every iPhone size?
 
 No. You design the set once for the iPhone, and once each for the iPhone Duo and the iPad if your app runs on them. The export holds every size App Store Connect lists. See [Sizes](/docs/sizes).
+
+### Does it work for Mac apps?
+
+Yes. The Mac is a device like the iPhone and the iPad. Capture the app's window with `appshots capture --mac`, or upload a screenshot of it, and the set is exported in landscape at the Mac App Store's size. A window is shown as a window, an app in full screen inside a MacBook. See [Mac apps](/docs/mac).
+
+### Can it make a banner for my README?
+
+Yes. A project can have a README banner, a social preview for the repository, a link preview and a 16:9 picture for a post, made from the same screenshots and theme. See [Banners](/docs/banners).
 
 ### Can I get the device alone, for my website?
 
@@ -50,7 +58,7 @@ Yes. The **Mockups** page of a project shows every screenshot in its device with
 
 ### Landscape screenshots, or app preview videos?
 
-No. Portrait still images only.
+iPhone and iPad sets are portrait, and a Mac set is landscape. There are no landscape iPhone or iPad sets and no videos.
 
 ### Can I use my own fonts?
 

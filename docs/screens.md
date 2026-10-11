@@ -1,6 +1,6 @@
 ---
 title: Get your screens in
-description: Three ways to get raw app screenshots into an appShots project. Upload files you have, capture each screen as you open it, or let the agent run the app in the iOS Simulator.
+description: Three ways to get raw app screenshots into an appShots project. Upload files you have, capture each screen as you open it, let the agent run the app in the iOS Simulator, or capture the window of a Mac app.
 ---
 
 A slide shows a raw screenshot of your app inside a device frame. Raw means the plain screen, as the simulator or the phone saves it, with nothing around it.
@@ -10,7 +10,7 @@ A slide shows a raw screenshot of your app inside a device frame. Raw means the 
 Every screenshot has a short name, such as `home`, `stats` or `detail`. Slides refer to screenshots by name.
 
 - Uploading under a name that exists **replaces** that screenshot, and every slide that uses it updates.
-- iPhone, iPhone Duo and iPad are told apart by the size of the image. **One name can hold one of each**, and each output size picks the matching one. See [Sizes](/docs/sizes#iphone-iphone-duo-or-ipad).
+- iPhone, iPhone Duo, iPad and Mac are told apart by the size and shape of the image. **One name can hold one of each**, and each output size picks the matching one. See [Sizes](/docs/sizes#which-device-a-screenshot-counts-as).
 - Names are lowercase letters, digits, `-` and `_`.
 
 ## In the browser
@@ -59,6 +59,17 @@ To land on a screen, the agent uses what your app has already: launch arguments,
 
 React Native, Expo and Flutter apps use the project's own run command for the build. Capturing works the same.
 
+## A Mac app
+
+A Mac app runs on the Mac itself. Open it on the screen to show, then capture its window:
+
+```bash
+appshots capture --mac Ledger --name overview --project ledger
+appshots shoot ledger overview budgets reports --mac Ledger
+```
+
+`Ledger` is the app's name. The terminal needs the Screen Recording permission for this. See [Mac apps](/docs/mac).
+
 ## A clean status bar
 
 `--clean` sets the simulator's status bar to 9:41 with full battery and signal before capturing. It works on simulators only. On a real device the status bar is whatever the device shows.
@@ -87,6 +98,7 @@ A language shows the first language's screenshots until it has its own. See [Lan
 | The command itself | Node.js 18 or newer |
 | Simulator capture | Xcode with an iOS simulator |
 | Device capture | Xcode 27 or newer, and the device plugged in, unlocked and trusting the Mac |
+| Mac window capture | The Screen Recording permission for the terminal, under System Settings → Privacy & Security |
 
 If `xcode-select` points at the Command Line Tools, the command switches to `/Applications/Xcode.app` by itself.
 

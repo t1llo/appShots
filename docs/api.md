@@ -33,7 +33,7 @@ curl -s {{SERVER}}/api/projects \
   -d '{"name":"Streaks","locales":["en-US","de-DE"]}'
 ```
 
-The answer holds the project's `id`, which every other request uses. The shape of `slides`, `theme` and `creatives` is on [Slides](/docs/slides) and [Header and search results](/docs/store-assets). `targets` is the list of sizes the project exports, such as `["iphone-6.9","iphone-5.5"]`. Leave it out, or send `null` or `[]`, for the standard sizes. See [Sizes](/docs/sizes).
+The answer holds the project's `id`, which every other request uses. The shape of `slides`, `theme` and `creatives` is on [Slides](/docs/slides), [Header and search results](/docs/store-assets) and [Banners](/docs/banners). `creatives` holds both, by name: `header`, `search`, `universal`, `readme`, `social`, `link`, `post`. `targets` is the list of sizes the project exports, such as `["iphone-6.9","iphone-5.5"]`. Leave it out, or send `null` or `[]`, for the standard sizes. See [Sizes](/docs/sizes).
 
 ## Screenshots
 
@@ -49,7 +49,9 @@ curl -s -X PUT {{SERVER}}/api/projects/streaks/shots/home \
 | `PATCH /api/projects/:id/shots/:file` | Files one under another device, another language, or both. Body: `{ "device": "ipad" }`, `{ "locale": "de-DE" }`, or `{ "locale": null }` for the first language. Replaces what was there under the name |
 | `DELETE /api/projects/:id/shots/:file` | Deletes one. `:file` is the `file` value from the project's `shots` list |
 
-iPhone, iPhone Duo or iPad is read from the size of the image. Add `?device=iphone`, `?device=duo` or `?device=ipad` to the upload to say it yourself. See [Sizes](/docs/sizes#iphone-iphone-duo-or-ipad).
+iPhone, iPhone Duo, iPad or Mac is read from the size and shape of the image. Add `?device=iphone`, `?device=duo`, `?device=ipad` or `?device=mac` to the upload to say it yourself. See [Sizes](/docs/sizes#which-device-a-screenshot-counts-as).
+
+A captured Mac window is stored without the shadow macOS adds, so its `width` and `height` in the `shots` list are those of the window. Its entry has `corner`, the radius of its round corners in pixels. See [Mac apps](/docs/mac).
 
 A screenshot is for the project's first language unless you add `?locale=de-DE`. The language has to be one of the project's `locales`, and `de` finds `de-DE`. Each entry of the project's `shots` list says which `locale` it is for; the first language's have none. See [Languages](/docs/languages#screenshots-per-language).
 
@@ -77,6 +79,8 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/render \
 | `DELETE /api/renders/:job` | Cancels one that is waiting or running |
 | `GET /api/projects/:id/export.zip` | The files of the last render as a ZIP. `?render=1` renders everything first |
 | `GET /files/:id/out/<language>/<size>/<number>.png` | One rendered file |
+| `GET /files/:id/out/<language>/creative-assets/<name>.png` | One header or search results image |
+| `GET /files/:id/out/<language>/banners/<name>.png` | One banner |
 
 **`slides` counts from 0 here**, unlike the MCP tool, which counts from 1.
 

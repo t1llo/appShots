@@ -5,11 +5,11 @@ import { type Browser, chromium } from "playwright";
 import sharp from "sharp";
 import { holdRender } from "./accounts.ts";
 import { config } from "./config.ts";
-import { CREATIVE_CAPACITY } from "./creative.ts";
+import { CREATIVE_CAPACITY, creativeLayout } from "./creative.ts";
 import { mockupStage } from "./mockup.ts";
 import { LOCALE, type Mockups, type Project } from "./schema.ts";
 import { DEVICE_LABELS, type DeviceKind, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, standardTargets, TARGETS, type TargetId } from "./sizes.ts";
-import { CREATIVE_DIR, findShot, getProject, InputError, listImages, listShots, NotFoundError, outDir, type Shot, type Space } from "./store.ts";
+import { BANNER_DIR, CREATIVE_DIR, creativeDir, findShot, getProject, InputError, listImages, listShots, NotFoundError, outDir, type Shot, type Space } from "./store.ts";
 import { SHADOW_LAYERS } from "./template.ts";
 
 export interface RenderRequest {
@@ -421,6 +421,9 @@ export async function mockupSheet(drawn: Mockup[]): Promise<Buffer> {
     .toBuffer();
 }
 
+/** The largest social preview GitHub accepts, in bytes. */
+const SOCIAL_LIMIT = 1_000_000;
+
 async function renderNow(run: Run, space: Space, request: RenderRequest): Promise<RenderResult> {
   const { project, shots } = run.frozen!;
   const { id } = project;
@@ -471,13 +474,14 @@ async function renderNow(run: Run, space: Space, request: RenderRequest): Promis
     const creative = project.creatives[placement]!;
     const { label } = PLACEMENTS[placement];
     const names = creative.screenshots ?? [];
-    const room = CREATIVE_CAPACITY[creative.layout ?? "fan"];
+    const layout = creativeLayout(creative, placement);
+    const room = CREATIVE_CAPACITY[layout];
     for (const name of names.slice(0, room)) {
-      if (!shots.some((shot) => shot.name === name)) warnings.add(`${label}: no screenshot named "${name}" has been uploaded, so ${creative.layout === "wall" ? "it was left out" : "a placeholder was drawn"}.`);
+      if (!shots.some((shot) => shot.name === name)) warnings.add(`${label}: no screenshot named "${name}" has been uploaded, so ${layout === "wall" ? "it was left out" : "a placeholder was drawn"}.`);
     }
     if (creative.logo && !images.has(creative.logo.image)) noImage(label, creative.logo.image);
     const extra = names.length - room;
-    if (extra > 0) warnings.add(`${label}: the ${creative.layout ?? "fan"} layout shows ${room} screenshots, so the last ${extra === 1 ? "one was" : `${extra} were`} left out.`);
+    if (extra > 0) warnings.add(`${label}: the ${layout} layout shows ${room} screenshots, so the last ${extra === 1 ? "one was" : `${extra} were`} left out.`);
   }
 
   const files: RenderedFile[] = [];
@@ -547,17 +551,19 @@ async function renderNow(run: Run, space: Space, request: RenderRequest): Promis
       sheets.push({ target: shown, locale, path: path.join(locale, shown, "sheet.jpg") });
     }
 
-    const relDir = path.join(locale, CREATIVE_DIR);
-    const dir = path.join(root, relDir);
     // A render of everything also clears assets that have since been removed from the project.
-    if (everything) await rm(dir, { recursive: true, force: true });
-    if (placements.length) await mkdir(dir, { recursive: true });
+    if (everything) for (const folder of [CREATIVE_DIR, BANNER_DIR]) await rm(path.join(root, locale, folder), { recursive: true, force: true });
     for (const placement of placements) {
       const size = PLACEMENTS[placement];
+      const relDir = path.join(locale, creativeDir(placement));
+      await mkdir(path.join(root, relDir), { recursive: true });
       await capture(size, [`http://${local}/render/${id}/creative/${placement}?${query}`], async (png) => {
         const file = `${placement}.png`;
-        await writeFile(path.join(dir, file), png);
+        await writeFile(path.join(root, relDir, file), png);
         creatives.push({ placement, locale, path: path.join(relDir, file), width: size.width, height: size.height, bytes: png.length });
+        if (placement === "social" && png.length > SOCIAL_LIMIT) {
+          warnings.add(`${size.label}: the file is ${(png.length / 1e6).toFixed(1)} MB, and GitHub takes a social preview of up to 1 MB. A plainer background without grain makes it smaller.`);
+        }
       });
     }
   }

@@ -1,7 +1,7 @@
 ---
 title: The appshots command
 nav: Command line
-description: Reference for the appshots command line tool on the Mac. Setup, update, check, run an app in the iOS Simulator, capture and upload screens, pull the finished set, download mockups, and call the server's tools.
+description: Reference for the appshots command line tool on the Mac. Setup, update, check, run an app in the iOS Simulator, capture and upload screens, capture a Mac app's window, pull the finished set, download mockups, and call the server's tools.
 ---
 
 `appshots` is one small Node.js file with no dependencies. It runs your app in a simulator, captures screens, moves files between your Mac and the server, and can call every tool the server has. The [setup command](/docs/connect) installs it as `~/.local/bin/appshots`.
@@ -28,7 +28,7 @@ appshots run --duo
 appshots run --capture home --to streaks
 ```
 
-`run` builds the app in the current folder and starts it in a simulator.
+`run` builds the app in the current folder and starts it in a simulator. It is for iPhone and iPad apps. A Mac app runs on the Mac itself: start it your own way and use `capture --mac`. See [Mac apps](/docs/mac).
 
 | Option | What it does |
 | --- | --- |
@@ -68,9 +68,10 @@ Options of `capture`, which `shoot` takes too:
 | `--name <name>` | The name slides refer to. Default: a timestamp |
 | `--sim [name or udid]` | From a booted simulator. This is the default |
 | `--device [name or udid]` | From a connected, unlocked iPhone or iPad. Needs Xcode 27 or newer |
+| `--mac <app>` | From a Mac app running on this Mac: its frontmost window, without the shadow. `<app>` is the app's name. The terminal needs the Screen Recording permission. See [Mac apps](/docs/mac) |
 | `--clean` | Simulator only: shows 9:41, full battery and full signal |
 | `--project <id>` | Uploads it to this project straight away. `--to` works too |
-| `--as <iphone, duo or ipad>` | Files it under this device. Only needed when the server cannot tell from the size. `upload`, `run` and `launch` take it too |
+| `--as <iphone, duo, ipad or mac>` | Files it under this device. Only needed when the server cannot tell from the size. `upload`, `run` and `launch` take it too |
 | `--lang <code>` | The language the screenshot shows the app in, one the project has. Left out, it is for the project's first language. See [Languages](/docs/languages#screenshots-per-language) |
 | `--out <dir>` | Where the PNG is saved. Default `./raw-shots` |
 
@@ -86,8 +87,8 @@ appshots pull streaks --render
 | Command | What it does |
 | --- | --- |
 | `appshots projects` | Lists your projects |
-| `appshots upload <project> <files or folders…>` | Uploads screenshots. The name is the file name, or `--name` for a single file. `--as duo` files them under the iPhone Duo. `--lang de-DE` files them under that language. `--image` uploads logos and artwork instead |
-| `appshots pull <project> [--out <dir>]` | Downloads the rendered set into `./store-screenshots/<project>`, one folder per display of App Store Connect. `--render` renders first |
+| `appshots upload <project> <files or folders…>` | Uploads screenshots. The name is the file name, or `--name` for a single file. `--as duo` or `--as mac` files them under that device. `--lang de-DE` files them under that language. `--image` uploads logos and artwork instead |
+| `appshots pull <project> [--out <dir>]` | Downloads the rendered set into `./store-screenshots/<project>`, one folder per display of App Store Connect, with the header and search results images and the [banners](/docs/banners). `--render` renders first |
 | `appshots mockups <project>` | Downloads every screenshot in its device on a transparent background. See [Mockups](#mockups) |
 | `appshots open [project]` | Opens the Studio in the browser |
 

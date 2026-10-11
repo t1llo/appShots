@@ -37,6 +37,8 @@ const TRASH = "M2.8 4.2h10.4M6.3 4.2V2.6h3.4v1.6M4.1 4.2l.6 9.2h6.6l.6-9.2M6.7 6
 const UPLOAD = "M8 10.6V2.8M4.9 5.7L8 2.6l3.1 3.1M2.8 10.4v2.8h10.4v-2.8";
 
 const SLIDE_HEIGHT = 440;
+/** A landscape slide or a wide image is as wide as this at most, so that it fits beside the panel on a narrow window. */
+const SLIDE_WIDTH = 420;
 const ASSET_HEIGHT = 190;
 /** From this window width on, the selected slide is also shown large beside its fields. */
 const FOCUS_FROM = 1360;
@@ -503,19 +505,21 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     },
   });
 
-  /** A new asset starts as a copy of one the project already has, or from the slides: their first headline and screenshots. */
+  /** A new asset starts as a copy of one of its kind the project already has, or from the slides: their first headline and screenshots. */
   const addCreative = (where: PlacementId) => {
-    const existing = placements.map((other) => draft.creatives[other]).find(Boolean);
+    const banner = meta.placements[where].kind === "banner";
+    const existing = placements.filter((other) => meta.placements[other].kind === meta.placements[where].kind).map((other) => draft.creatives[other]).find(Boolean);
     const fromSlides = draft.slides.map((slide) => slide.screenshot).filter((name): name is string => name != null && shotNames.includes(name));
     const screenshots = [...new Set([...fromSlides, ...shotNames])].slice(0, 3);
     const headline = draft.slides.find((slide) => slide.headline)?.headline ?? draft.name;
-    const seed: Creative = existing ? structuredClone(existing) : { layout: "fan", headline, ...(screenshots.length ? { screenshots } : {}) };
+    // A banner is left to its own layout, the one with the copy on the left.
+    const seed: Creative = existing ? structuredClone(existing) : { ...(banner ? {} : { layout: "fan" as const }), headline, ...(screenshots.length ? { screenshots } : {}) };
     update((project) => void (project.creatives[where] = seed), true);
     select({ kind: "creative", placement: where });
   };
 
   const removeCreative = (where: PlacementId) => {
-    if (!confirm(`Remove the ${meta.placements[where].label.toLowerCase()} asset?`)) return;
+    if (!confirm(`Remove the ${meta.placements[where].label.toLowerCase()}${meta.placements[where].kind === "store" ? " asset" : ""}?`)) return;
     update((project) => void delete project.creatives[where], true);
     setSelection(draft.slides.length ? { kind: "slide", index: 0 } : null);
   };
@@ -578,7 +582,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   // One tile per name and device: what the language shown has there, which is the first language's until it gets its own.
   const shownShots = deviceOrder.flatMap((kind) => shotNames.flatMap((name) => shotIn(shots.filter((shot) => shot.device === kind && shot.name === name), locale) ?? []));
   const mixed = new Set(shots.map((shot) => shot.device)).size > 1;
-  const slideScale = SLIDE_HEIGHT / size.height;
+  const slideScale = Math.min(SLIDE_HEIGHT / size.height, SLIDE_WIDTH / size.width);
   const used = new Set([...draft.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]), ...placements.flatMap((where) => draft.creatives[where]?.screenshots ?? [])]);
   const usedImages = new Set([
     ...draft.slides.flatMap((slide) => [slide.logo?.image, ...(slide.images ?? []).map((placed) => placed.image)]),
@@ -868,7 +872,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
               })}
               {draft.slides.length < 10 ? (
                 <button className="card add" type="button" onClick={addSlide}>
-                  <div className="stage" style={{ width: Math.round(size.width * slideScale), height: SLIDE_HEIGHT }}>
+                  <div className="stage" style={{ width: Math.round(size.width * slideScale), height: Math.round(size.height * slideScale) }}>
                     + Add slide
                   </div>
                   <div className="caption">&nbsp;</div>
@@ -877,55 +881,64 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
             </div>
           </section>
 
-          <section className="block">
-            <div className="section-head wrap">
-              <h2>Header and search results</h2>
-              <span className="hint">Optional images for the Header and Search Results tab in App Store Connect.</span>
-              {placements.some((where) => draft.creatives[where]) ? (
-                <label className="check" title="Draws the part every device shows as a dashed frame. It is a guide in this preview only and never part of the exported image.">
-                  <input type="checkbox" checked={guides} onChange={(event) => setGuides(event.target.checked)} />
-                  Show safe area
-                </label>
-              ) : null}
-            </div>
-            <div className="slides">
-              {placements.map((where) => {
-                const spec = meta.placements[where];
-                const scale = ASSET_HEIGHT / spec.height;
-                const caption = (
-                  <div className="caption">
-                    <span>{spec.label}</span>
-                    <span>
-                      {spec.ratio} · {spec.width}×{spec.height}
-                    </span>
-                  </div>
-                );
-                if (!draft.creatives[where]) {
-                  return (
-                    <button key={where} className="card add" type="button" aria-label={`Add the ${spec.label.toLowerCase()} asset`} onClick={() => addCreative(where)}>
-                      <div className="stage" style={{ width: Math.round(spec.width * scale), height: ASSET_HEIGHT }}>
-                        + Add
+          {(["store", "banner"] as const).map((kind) => {
+            const group = placements.filter((where) => meta.placements[where].kind === kind);
+            const store = kind === "store";
+            return (
+              <section className="block" key={kind}>
+                <div className="section-head wrap">
+                  <h2>{store ? "Header and search results" : "Banners"}</h2>
+                  <span className="hint">
+                    {store ? "Optional images for the Header and Search Results tab in App Store Connect." : "Wide pictures for outside the store: the top of a README, the preview of a link, a post."}
+                  </span>
+                  {store && group.some((where) => draft.creatives[where]) ? (
+                    <label className="check" title="Draws the part every device shows as a dashed frame. It is a guide in this preview only and never part of the exported image.">
+                      <input type="checkbox" checked={guides} onChange={(event) => setGuides(event.target.checked)} />
+                      Show safe area
+                    </label>
+                  ) : null}
+                </div>
+                <div className="slides">
+                  {group.map((where) => {
+                    const spec = meta.placements[where];
+                    const scale = Math.min(ASSET_HEIGHT / spec.height, SLIDE_WIDTH / spec.width);
+                    const marked = store && guides;
+                    const caption = (
+                      <div className="caption">
+                        <span>{spec.label}</span>
+                        <span>
+                          {spec.ratio} · {spec.width}×{spec.height}
+                        </span>
                       </div>
-                      {caption}
-                    </button>
-                  );
-                }
-                const on = placement === where;
-                return (
-                  <button key={where} className={`card${on ? " selected" : ""}`} type="button" aria-pressed={on} aria-label={`${spec.label} asset`} onClick={() => select({ kind: "creative", placement: where })}>
-                    <Stage
-                      src={saved.creatives[where] ? `/render/${id}/creative/${where}?${new URLSearchParams(guides ? { locale, guides: "1" } : { locale })}` : null}
-                      frameKey={JSON.stringify([saved.creatives[where], guides, ...look])}
-                      width={spec.width}
-                      height={spec.height}
-                      scale={scale}
-                    />
-                    {caption}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+                    );
+                    if (!draft.creatives[where]) {
+                      return (
+                        <button key={where} className="card add" type="button" aria-label={`Add the ${spec.label.toLowerCase()}${store ? " asset" : ""}`} onClick={() => addCreative(where)}>
+                          <div className="stage" style={{ width: Math.round(spec.width * scale), height: Math.round(spec.height * scale) }}>
+                            + Add
+                          </div>
+                          {caption}
+                        </button>
+                      );
+                    }
+                    const on = placement === where;
+                    return (
+                      <button key={where} className={`card${on ? " selected" : ""}`} type="button" aria-pressed={on} aria-label={store ? `${spec.label} asset` : spec.label} onClick={() => select({ kind: "creative", placement: where })}>
+                        <Stage
+                          src={saved.creatives[where] ? `/render/${id}/creative/${where}?${new URLSearchParams(marked ? { locale, guides: "1" } : { locale })}` : null}
+                          frameKey={JSON.stringify([saved.creatives[where], marked, ...look])}
+                          width={spec.width}
+                          height={spec.height}
+                          scale={scale}
+                        />
+                        {caption}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
         </div>
 
         <aside className={`panel${focused ? " with-focus" : ""}`}>

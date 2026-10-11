@@ -90,7 +90,10 @@ export const backgroundSchema = z
   .describe('A preset name, "auto" (derived from the slide\'s screenshot), a hex colour, or a custom {type, colors} object');
 
 export const deviceSchema = z.object({
-  frame: z.enum(["auto", "iphone", "duo", "ipad", "none"]).optional().describe("auto picks the frame matching the screenshot; duo is the unfolded iPhone Duo; none shows the bare rounded screenshot"),
+  frame: z
+    .enum(["auto", "iphone", "duo", "ipad", "mac", "none"])
+    .optional()
+    .describe("auto picks the frame matching the screenshot; duo is the unfolded iPhone Duo; mac is a MacBook; none shows the bare rounded screenshot, which for a Mac is the window alone"),
   style: z.enum(DEVICE_STYLE_IDS).optional().describe("How the frame is drawn: real (default), clay (one matte colour), outline (a line drawing) or sketch (the line drawing, hand-drawn)"),
   color: z.enum(DEVICE_COLOR_IDS).optional(),
   scale: z.number().min(0.4).max(1.6).optional().describe("Size multiplier, default 1"),
@@ -162,6 +165,10 @@ export const creativesSchema = z.object({
   header: creativeSchema.optional().describe("Product page header, 21:9, 3840×1646"),
   search: creativeSchema.optional().describe("Search results asset, 3:2, 3840×2560"),
   universal: creativeSchema.optional().describe("One 16:9 file, 5244×2950, that App Store Connect crops for both places"),
+  readme: creativeSchema.optional().describe("Banner for the top of a README or a web page, 3:1, 2400×800"),
+  social: creativeSchema.optional().describe("Social preview of a GitHub repository, 2:1, 1280×640"),
+  link: creativeSchema.optional().describe("Link preview of a web page, its og:image, 1.91:1, 1200×630"),
+  post: creativeSchema.optional().describe("Picture for a post, a deck or a video thumbnail, 16:9, 1920×1080"),
 });
 
 /**

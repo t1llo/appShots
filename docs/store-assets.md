@@ -7,6 +7,8 @@ Besides screenshots, App Store Connect takes wide images on its **Header and Sea
 
 They are optional. A project has none until you add one.
 
+For a wide picture outside the store, such as the top of a README, see [Banners](/docs/banners).
+
 ## The three assets
 
 {{PLACEMENTS}}
@@ -25,7 +27,7 @@ Each device crops these images differently. Only the **safe area**, a rectangle 
 
 {{CREATIVE_LAYOUTS}}
 
-`fan` shows up to five screenshots, `sides` up to four and `wall` up to six. Further ones are left out.
+`fan` shows up to five screenshots, `sides` up to four and `wall` up to six. Further ones are left out. `split` is the layout of [banners](/docs/banners), where nothing is cropped.
 
 ## Fields
 

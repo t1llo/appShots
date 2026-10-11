@@ -22,6 +22,10 @@ Or just ask for App Store screenshots. An agent that has the skill installed pic
 
 The same skill makes [mockups](/docs/mockups): ask for "iPhone mockups of the app for the website" or "a transparent picture of the home screen for the README", and the agent gets the screens, draws each one in its device on a transparent background and puts the files where you want them. It asks no questions for that and writes no headlines.
 
+It also makes [banners](/docs/banners): ask for "a banner for the README" and the agent builds it from the project's screenshots, renders it and puts the file into the repository.
+
+**A Mac app** takes a route of its own, which the agent picks when it reads the project: it builds and opens the app on your Mac and captures its window, instead of using the simulator. See [Mac apps](/docs/mac).
+
 ## What the agent does
 
 1. **Checks the setup** with `appshots check`: the server, the token, Xcode, the project, simulators and devices. If the server has a newer skill, it updates itself first.
@@ -38,7 +42,7 @@ The same skill makes [mockups](/docs/mockups): ask for "iPhone mockups of the ap
 
 | Question | Your choices |
 | --- | --- |
-| Devices | iPhone only, or the iPad or the iPhone Duo as well. Never about sizes: one design covers every size of a device |
+| Devices | iPhone only, or the iPad or the iPhone Duo as well. For an app that also runs on the Mac, the Mac as well. Never about sizes: one design covers every size of a device |
 | The screens | You have screenshots. You open each screen and it captures. Or it does everything itself |
 | Where the app runs | A simulator, or the plugged-in iPhone or iPad |
 | The look | Light or dark, and which languages |

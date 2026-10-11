@@ -1,6 +1,6 @@
 # appShots
 
-Self-hosted App Store screenshot generator for iPhone and iPad. Describe the slides to your coding agent (copy, look, badges such as "10K+ downloads", a five-star rating or an award wreath), feed it screenshots straight from the simulator or a plugged-in iPhone, and get back PNGs at the exact sizes App Store Connect accepts. It also makes the wide images for App Store Connect's Header and Search Results tab, and device mockups with a transparent background for a website or a README.
+Self-hosted App Store screenshot generator for iPhone, iPad and Mac. Describe the slides to your coding agent (copy, look, badges such as "10K+ downloads", a five-star rating or an award wreath), feed it screenshots straight from the simulator or a plugged-in iPhone, and get back PNGs at the exact sizes App Store Connect accepts. It also makes the wide images for App Store Connect's Header and Search Results tab, device mockups with a transparent background for a website or a README, and banners such as the picture at the top of a README.
 
 ![An example set: five slides rendered for the 6.9-inch iPhone](docs/example.jpg)
 
@@ -10,7 +10,7 @@ It is four things:
 | --- | --- | --- |
 | Server | Docker or `npm start` | Renders slides, stores projects, serves the home page, the Studio (the editor in the browser), the REST API and the MCP endpoint at `/mcp` |
 | MCP endpoint | Part of the server | Lets an agent create projects, write slides and render them |
-| `appshots` CLI | Your Mac | Captures the simulator or a connected device and uploads the screenshot; a container cannot see your USB devices, so this part stays local. Also reaches the server's tools for agents without MCP |
+| `appshots` CLI | Your Mac | Captures the simulator, a connected device or the window of a Mac app and uploads the screenshot; a container cannot see your USB devices, so this part stays local. Also reaches the server's tools for agents without MCP |
 | `appshots` skill | Your agent, on your Mac | Does the whole job in an app's repository: runs the app, captures the screens, writes the copy and builds the set. Works in Claude Code, Codex, OpenCode, Pi and anything else that reads a skill or follows a file |
 
 ## Run it locally
@@ -216,21 +216,24 @@ appshots shoot streaks home stats detail --clean  # you open each screen and pre
 appshots capture --name home --project streaks    # from the booted simulator, uploaded straight away
 appshots capture --name home --device --project streaks   # from the plugged-in, unlocked iPhone or iPad
 appshots capture --name home --clean              # simulator only: 9:41, full battery and signal
+appshots capture --mac Ledger --name overview --project ledger   # the frontmost window of a Mac app
 appshots simctl openurl booted "streaks://stats"  # simctl with the right Xcode, for deep links and the like
 appshots devices                                  # booted simulators and connected devices
 appshots pull streaks --render                    # render everything and unpack it into ./store-screenshots/streaks,
-                                                  # header and search results assets included
+                                                  # header and search results assets and banners included
 appshots update                                   # the skill and the CLI as the server has them now
 appshots login https://appshots.example.com       # only the token, without the skill or the MCP connection
 ```
 
-The `--name` is what slides refer to (`"screenshot": "home"`). Capturing the same name again replaces the screenshot, and every slide using it updates. An iPhone and an iPad screenshot can share a name; each target size picks the matching one.
+The `--name` is what slides refer to (`"screenshot": "home"`). Capturing the same name again replaces the screenshot, and every slide using it updates. An iPhone, an iPad and a Mac screenshot can share a name; each target size picks the matching one.
 
 A project in several languages holds each screenshot once per language under the same name: `--lang <code>` on `capture`, `upload`, `run` and `launch` says which one it is, and has to name one of the project's languages. Without it a screenshot is for the first language, and every other language shows that one until it has its own.
 
 `appshots run` finds the workspace or project and its scheme, boots the simulator the store sizes ask for (iPhone Pro Max, the 13-inch iPad Pro with `--ipad`, or the iPhone Duo with `--duo`), and builds in Xcode's own build folder, so a project Xcode has built already starts in seconds. `--fresh` builds in a folder of its own instead. What follows a lone `--` goes to the app as launch arguments.
 
 Simulator capture uses `simctl`. Device capture uses `devicectl device capture screenshot`, which needs Xcode 27 or newer and a device that is unlocked and trusts the Mac. If `xcode-select` points at the Command Line Tools, the CLI switches to `/Applications/Xcode.app` by itself.
+
+A Mac app runs on the Mac itself, so `run` and `launch` are not for it. `capture --mac <app>` finds the app's frontmost window through the window list and takes it with `screencapture -l`, without the shadow. macOS allows that only when the terminal has the Screen Recording permission. See [Mac apps](#mac-apps).
 
 ## The Studio
 
@@ -239,10 +242,11 @@ Open the server in a browser and sign in to see every slide as a live preview at
 - **Projects** sit in the sidebar. **Rename** and **Delete** are beside the project's title, which can also be clicked and typed over, and under the three dots next to every project in the sidebar. Renaming keeps the project's address, so links to it go on working.
 
 - **Languages.** A new project asks for its languages. The switch beside the slides picks the one the page shows, which is also the one you type and upload for, and **+ Language** adds another. A language shows the first one's texts and screenshots until it has its own; **Project → Languages** removes one or makes another the first.
-- **Slides.** The heading of the section switches between iPhone, iPhone Duo and iPad. Click a slide to edit it: the editor opens beside a large preview of that slide, with the layouts as small sketches, the screenshots as thumbnails to pick from (two or three for the layouts that take several), sliders for the device's size, position and tilt, and editors for feature cards or points, badges, and the row of icons or logos.
+- **Slides.** The heading of the section switches between iPhone, iPhone Duo, iPad and Mac. Click a slide to edit it: the editor opens beside a large preview of that slide, with the layouts as small sketches, the screenshots as thumbnails to pick from (two or three for the layouts that take several), sliders for the device's size, position and tilt, and editors for feature cards or points, badges, and the row of icons or logos.
 - **Screenshots.** Drop files anywhere on the page, or use the upload button.
 - **Logos and images.** Everything else a slide can show: your logo or app icon, a mascot, stickers, shapes. Upload PNG, SVG, JPEG or WebP files there, or drop them on that section. Click one to place it on the selected slide, then drag it in the large preview; size, turn, opacity, shadow, mirroring and whether it lies over or under the device are in the slide's editor, with ready arrangements for several images at once. A slide's logo is picked under **Your logo**.
 - **Header and search results.** Adds, previews and edits the three store assets. **Show safe area** draws the part every device shows as a dashed frame; it is off until you tick it and never in the exported file.
+- **Banners.** Adds, previews and edits the wide pictures for outside the store. See [Banners](#banners).
 - **Mockups.** The switch at the top of a project goes from **App Store** to **Mockups**: every screenshot in its device with nothing behind it. Set the device's look, colour, shadow, tilt and width on the right, then download one as a transparent PNG, copy it, or take all of them as a ZIP. See [Mockups](#mockups).
 - **Light and dark.** The switch at the bottom of the sidebar picks **Light**, **Dark** or **Auto**, which follows the device. The home page has the same choice as a button in its header, and the browser remembers it.
 
@@ -268,14 +272,14 @@ A project has a theme and up to ten slides. Every style field can be set on the 
   - Mono: JetBrains Mono, Space Mono
 
   Faces that only work large, such as the handwritten ones, set the headline; the small print beside them is set in a plain face that goes with them
-- **Device:** frame (`auto`, `iphone`, `duo`, `ipad`, `none`), colour and shadow, and per slide its size (`scale`), place (`offsetX`, `offsetY`), tilt (`rotate`) and turn in 3D (`perspective`). With two or three devices, `spread` is the angle between them and `gap` their distance
+- **Device:** frame (`auto`, `iphone`, `duo`, `ipad`, `mac`, `none`), colour and shadow, and per slide its size (`scale`), place (`offsetX`, `offsetY`), tilt (`rotate`) and turn in 3D (`perspective`). With two or three devices, `spread` is the angle between them and `gap` their distance
 - **Device look:** `style` draws the frame as the device looks (`real`), in one matte colour (`clay`), as a line drawing (`outline`) or as one drawn by hand (`sketch`)
 - **Status bar:** `statusBar` draws a clean one, with the time, full signal, Wi-Fi and a full battery, over the one a screenshot came with (`cover`) or onto a screenshot that has none (`overlay`); `statusBarTime` and `statusBarColor` set what it shows
 - **Text:** `*asterisks*` tint words with the accent colour, a newline forces a break, and any text can be a `{ "en-US": "...", "de-DE": "..." }` map for localized sets
 
 ### Output sizes
 
-A set is designed once per device (iPhone, iPhone Duo, iPad) and exported at the exact size of every display App Store Connect lists. Sizes of the same shape are one picture drawn at the largest size and scaled, so they look alike everywhere.
+A set is designed once per device (iPhone, iPhone Duo, iPad, Mac) and exported at the exact size of every display App Store Connect lists. Sizes of the same shape are one picture drawn at the largest size and scaled, so they look alike everywhere.
 
 | Folder | Pixels | Display in App Store Connect | Exported |
 | --- | --- | --- | --- |
@@ -286,13 +290,26 @@ A set is designed once per device (iPhone, iPhone Duo, iPad) and exported at the
 | `iphone-duo` | 2007×2853 | iPhone Duo | with Duo screenshots |
 | `ipad-13` | 2064×2752 | iPad 13" display | with iPad screenshots |
 | `ipad-11` | 1668×2420 | iPad 11" display | with iPad screenshots |
+| `mac-2880` | 2880×1800 | Mac | with Mac screenshots |
 | `iphone-5.5`, `iphone-4.7`, `iphone-4`, `iphone-3.5` | 1242×2208, 750×1334, 640×1136, 640×960 | iPhone with Home Button | when chosen |
 | `iphone-duo-cover` | 1398×2034 | iPhone Duo | when chosen |
 | `ipad-12.9`, `ipad-10.5`, `ipad-9.7` | 2048×2732, 1668×2224, 1536×2048 | older iPads | when chosen |
+| `mac-2560`, `mac-1440`, `mac-1280` | 2560×1600, 1440×900, 1280×800 | Mac | when chosen |
 
 Choose other sizes under **Project → Export sizes** in the Studio or with `targets` on the project. Files are opaque PNGs laid out as `<locale>/<target>/01.png`, and the ZIP has a `README.txt` that says which folder goes onto which display.
 
-A raw screenshot counts as iPhone Duo when it is exactly 2007×2853 or 1398×2034, as iPhone when it is narrow, and as iPad otherwise. `--as iphone|duo|ipad` on upload, or the menu on its thumbnail in the Studio, overrides that.
+A raw screenshot counts as iPhone Duo when it is exactly 2007×2853 or 1398×2034, as Mac when it is wider than tall or a captured window with see-through corners, as iPhone when it is narrow, and as iPad otherwise. `--as iphone|duo|ipad|mac` on upload, or the menu on its thumbnail in the Studio, overrides that.
+
+### Mac apps
+
+The Mac is a fourth device. Its set is landscape, 2880×1800, the largest of the four sizes the Mac App Store takes; the three smaller ones are scaled copies for whoever wants them.
+
+- **Screens** come from the app's own window: `appshots capture --mac <app> --name overview --project <id>`, or a window taken by hand (Shift-Command-4, Space, click) and uploaded with `--as mac`.
+- **A captured window** has see-through round corners and macOS's shadow around it. On upload the shadow is cut away, the corner radius is measured and kept as `corner`, and the picture is filed as Mac whatever its shape.
+- **Window or MacBook.** A captured window is drawn as that window with its own corners. An opaque picture between 1.45 and 1.85 times as wide as tall, such as an app in full screen, is drawn inside a MacBook. `"frame": "mac"` and `"frame": "none"` on `device` decide it by hand. The MacBook is silver by default and has no status bar.
+- **Layouts** are the same thirteen. On the wide canvas the side layouts give the device the wider part, laptops in `duo`, `side-by-side` and `trio` stand level, and a `features` slide lays its cards across.
+- **Mixed devices.** A name without a Mac screenshot is drawn as the device it has. A group that mixes a laptop or window with phones or tablets puts the laptop in the middle and the others in front of its lower corners.
+- **Mockups** of Mac screenshots come out as MacBooks or windows the same way.
 
 ## Header and search results assets
 
@@ -316,6 +333,21 @@ Apple reviews these images and asks for more restraint than in screenshots: one 
 
 Apple publishes the safe areas as a design template, not as numbers. The values above are measured from that template, so check each asset in App Store Connect's preview before submitting. The video variants of these assets are not generated.
 
+## Banners
+
+Wide pictures for outside the store, kept beside the store assets in `creatives` and built from the same screenshots and theme:
+
+| Banner | Size | Used for |
+| --- | --- | --- |
+| `readme` | 2400×800 (3:1) | The top of a README or a web page |
+| `social` | 1280×640 (2:1) | A GitHub repository's social preview |
+| `link` | 1200×630 (1.91:1) | A page's `og:image` |
+| `post` | 1920×1080 (16:9) | A post, a slide of a deck, a video thumbnail |
+
+- A banner is shown whole, so it has no safe area. Its default layout is `split`: the copy in a column on the left, up to three devices on the right. `fan`, `sides` and `wall` work too. On a store asset `split` is drawn as `sides`, because its copy would leave the safe area.
+- A Mac screenshot named first stands in the middle, with phones or tablets in front of its lower corners.
+- **Output:** `<locale>/banners/<name>.png`, rendered with the slides and included in the ZIP. A render warns when `social.png` is over the 1 MB GitHub takes.
+
 ## Mockups
 
 For a website, a README or a deck: each raw screenshot inside its device on a transparent background, one PNG per screenshot and device, cut to the device and named `<screenshot>-<device>.png`. A project needs no slides for them, and they use no render.
@@ -337,10 +369,10 @@ Everything the Studio and the CLI do goes through `/api`, with the same bearer t
 GET    /api/projects                       list
 POST   /api/projects                       create {name, locales?, targets?, theme?, slides?}
 GET    /api/projects/:id                   project, screenshots, images, rendered files
-PUT    /api/projects/:id                   update {name?, locales?, targets?, theme?, slides?, creatives?: {header?, search?, universal?},
+PUT    /api/projects/:id                   update {name?, locales?, targets?, theme?, slides?, creatives?: {header?, search?, universal?, readme?, social?, link?, post?},
                                            mockups?: {device?, width?}}
 DELETE /api/projects/:id
-PUT    /api/projects/:id/shots/:name       upload a screenshot (raw image body, ?device=iphone|duo|ipad to override detection,
+PUT    /api/projects/:id/shots/:name       upload a screenshot (raw image body, ?device=iphone|duo|ipad|mac to override detection,
                                            ?locale=de-DE for one language only)
 PATCH  /api/projects/:id/shots/:file       {device?, locale?} files it under another device or language (locale null: the first)
 DELETE /api/projects/:id/shots/:file
@@ -357,7 +389,7 @@ GET    /api/projects/:id/mockups/:file     one as a transparent PNG (?width=1200
 GET    /api/projects/:id/mockups.zip       all of them (?locale= for one language)
 ```
 
-A render without `slides` and `creatives` produces everything. `slides` (zero-based indexes) or `creatives` (`header`, `search`, `universal`) narrow it to those, and `"creatives": []` renders the slides alone.
+A render without `slides` and `creatives` produces everything. `slides` (zero-based indexes) or `creatives` (`header`, `search`, `universal`, `readme`, `social`, `link`, `post`) narrow it to those, and `"creatives": []` renders the slides alone.
 
 The Studio renders in the background: **Export ZIP** starts a job, the sidebar shows its progress, and the ZIP downloads when it is done, so the page stays free meanwhile. A job draws the project as it was when it was asked for. Jobs live in memory, so one that is cut off by a restart has to be started again; it is not counted.
 
@@ -365,7 +397,8 @@ Account settings and the People page need a browser sign-in; an API token cannot
 
 ## Good to know
 
-- Screenshots are portrait only; there is no landscape or Apple Watch/TV output.
+- iPhone and iPad sets are portrait only and a Mac set is landscape; there is no Apple Watch or Apple TV output.
+- `appshots capture --mac` needs the Screen Recording permission for the terminal it runs in. The MacBook, like the other frames, is drawn in CSS.
 - Put only real figures, reviews and awards in badges. App Review rejects screenshots with invented download counts, ratings or rankings.
 - Logos are other companies' trademarks. Show them only for services the app really works with, and none in the header and search results assets, where Apple does not allow them. The same goes for images you upload: your own logo and artwork, not somebody else's.
 - Uploaded images are kept as PNGs of at most 2048 pixels a side; an SVG is drawn once when it is uploaded.

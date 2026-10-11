@@ -33,7 +33,7 @@ Every `render` uses one of the account's renders, whatever it draws. So an agent
 
 ### get_design_guide
 
-Returns the guide the server is built around: the workflow, how to upload screenshots, every layout, background, font, device option and badge, and the rules for header and search results images. No arguments. It always matches the server's version.
+Returns the guide the server is built around: the workflow, how to upload screenshots, every layout, background, font, device option and badge, what differs for a Mac app, and the rules for header and search results images and banners. No arguments. It always matches the server's version.
 
 ### list_projects
 
@@ -51,7 +51,7 @@ Returns the project's id and how to upload screenshots into it.
 
 ### get_project
 
-`project` is the id. Returns the theme, the slides, the header and search results images, the screenshots and images uploaded so far, and `exportSizes`, the sizes a render writes. Each screenshot is listed with its `device`, and with its `locale` when it was uploaded for one language only. See [Languages](/docs/languages#screenshots-per-language).
+`project` is the id. Returns the theme, the slides, the header and search results images and banners, the screenshots and images uploaded so far, and `exportSizes`, the sizes a render writes. Each screenshot is listed with its `device`, and with its `locale` when it was uploaded for one language only. A Mac screenshot also says whether it is `shown` as a `window` or inside a `MacBook`. See [Languages](/docs/languages#screenshots-per-language).
 
 ### update_project
 
@@ -82,7 +82,7 @@ Replaces the whole set. It names screenshots that slides refer to but that are n
 
 ### set_creative_assets
 
-Sets `header`, `search` or `universal` of `project`. Each one given replaces that asset, and the others stay. `remove` deletes assets by name. See [Header and search results](/docs/store-assets).
+Sets the wide pictures of `project`: `header`, `search` or `universal` for App Store Connect, and the banners `readme`, `social`, `link` and `post` for outside the store. Each one given replaces that picture, and the others stay. `remove` deletes them by name. See [Header and search results](/docs/store-assets) and [Banners](/docs/banners).
 
 ### render
 
@@ -90,11 +90,11 @@ Sets `header`, `search` or `universal` of `project`. Each one given replaces tha
 | --- | --- |
 | `project` | The id |
 | `slides` | Slide numbers to render, starting at 1. Left out: all |
-| `creatives` | Header and search results images to render. Left out: all of them, along with the slides. Given alone: the slides are left as they are. `[]` skips them |
+| `creatives` | Header and search results images and banners to render. Left out: all of them, along with the slides. Given alone: the slides are left as they are. `[]` skips them |
 | `targets` | Sizes for this render only. Left out: every size the project exports, which is the standard sizes of each device it has screenshots of. See [Sizes](/docs/sizes) |
 | `locales` | Languages. Default: all of the project's |
 
-Returns a contact sheet per device as a picture, a preview of each wide image with its safe area marked, a link to every PNG, a link to the ZIP, warnings such as a missing screenshot, and how many renders the account has left.
+Returns a contact sheet per device as a picture, a preview of each wide image, the store's with their safe area marked, a link to every PNG, a link to the ZIP, warnings such as a missing screenshot, and how many renders the account has left.
 
 ### render_mockups
 

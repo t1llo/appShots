@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import sharp from "sharp";
-import { CREATIVE_CAPACITY } from "./creative.ts";
+import { CREATIVE_CAPACITY, creativeLayout } from "./creative.ts";
 import {
   BACKGROUNDS,
   BADGE_TONES,
@@ -29,15 +29,16 @@ import { rendersLeft } from "./accounts.ts";
 import { mockupName, mockupShots } from "./mockup.ts";
 import { defaultTargets, type Mockup, mockupSheet, renderMockup, renderProject } from "./render.ts";
 import { creativeSchema, localeSchema, mockupsSchema, type Project, slideSchema, slugSchema, targetsSchema, themeSchema } from "./schema.ts";
-import { PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, type Target, TARGET_IDS, TARGETS } from "./sizes.ts";
+import { PLACEMENT_IDS, PLACEMENTS, type PlacementId, placementsOf, sourceOf, type Target, TARGET_IDS, TARGETS } from "./sizes.ts";
 import { createProject, getProject, InputError, listImages, listProjects, listShots, outDir, type Shot, shotLocale, type Space, type StoredImage, updateProject } from "./store.ts";
+import { deviceShape } from "./template.ts";
 
 function uploadHelp(base: string, id: string): string {
   return [
     "This server cannot see the user's devices, so raw screenshots are captured on their Mac and uploaded:",
-    `- With the bundled CLI: \`appshots upload ${id} <files or folders>\` sends screenshots that exist already. \`appshots capture --name home --project ${id} --clean\` grabs the booted simulator; add \`--device\` for a connected iPhone or iPad. \`appshots launch <bundle id> --capture home --to ${id} -- <launch arguments>\` starts an installed app on one screen and captures it in one go. \`appshots check\` reports what there is to work with.`,
+    `- With the bundled CLI: \`appshots upload ${id} <files or folders>\` sends screenshots that exist already. \`appshots capture --name home --project ${id} --clean\` grabs the booted simulator; add \`--device\` for a connected iPhone or iPad. \`appshots launch <bundle id> --capture home --to ${id} -- <launch arguments>\` starts an installed app on one screen and captures it in one go. A Mac app runs on the Mac itself: \`appshots capture --mac <app name> --name home --project ${id}\` takes its frontmost window (see Mac apps). \`appshots check\` reports what there is to work with.`,
     `- With curl: \`curl -fsS -X PUT -H "Authorization: Bearer $APPSHOTS_TOKEN" -H "Content-Type: image/png" --data-binary @home.png "${base}/api/projects/${id}/shots/home"\` (the token is the one this MCP connection uses)`,
-    "The last path segment is the screenshot name slides refer to. iPhone, iPhone Duo or iPad is told from the size of the picture, and one name can hold a variant for each. `get_project` lists what each one was filed under; when that is wrong, upload it again with `--as iphone`, `--as duo` or `--as ipad` (`?device=` with curl).",
+    "The last path segment is the screenshot name slides refer to. iPhone, iPhone Duo, iPad or Mac is told from the picture, and one name can hold a variant for each: a picture wider than it is tall is a Mac's, and so is a captured window, which has see-through round corners. `get_project` lists what each one was filed under; when that is wrong, upload it again with `--as iphone`, `--as duo`, `--as ipad` or `--as mac` (`?device=` with curl).",
     "A project in several languages can hold each screenshot once per language, under the same name. Upload the first language's as above: every other language shows those until it has its own. Then start the app in the next language and upload under the same names with `--lang de-DE` (`?locale=de-DE` with curl); `appshots launch <bundle id> --lang de-DE --capture home --to " + id + "` does both in one go. The language has to be one of the project's `locales`, and slides keep naming the screenshot as before: the render picks the variant of the language it draws.",
     `A logo or other artwork for the slides (see Logo and images) goes up the same way: \`appshots upload ${id} logo.png --image\`, or with curl to \`${base}/api/projects/${id}/images/<name>\`. PNG, SVG, JPEG and WebP are taken, and transparency is kept.`,
   ].join("\n");
@@ -62,19 +63,30 @@ function designGuide(base: string, space: Space): string {
 2. Get raw screenshots into the project (see Uploading below), then check them with \`get_project\`.
 3. \`set_slides\` with the copy and design for the whole set. Put shared styling in \`theme\`; slides override it.
 4. \`render\`. It returns a contact sheet image: look at it, fix what is off with \`update_slide\`, render again.
-5. Optionally \`set_creative_assets\` for the product page header and the search results asset (see below), and \`render\` again.
+5. Optionally \`set_creative_assets\` for the product page header and the search results asset, or for a banner outside the store such as the picture at the top of a README (see Banners), and \`render\` again.
 6. The user downloads the PNGs from ${base}/#/<project> or with \`appshots pull <project>\`.${renderBudget(space)}
-When what is wanted is not store screenshots but the devices alone, for a website or a README, see Mockups at the end: that needs only steps 1 and 2.
+When what is wanted is not store screenshots but the devices alone, for a website or a README, see Mockups at the end: that needs only steps 1 and 2. For a macOS app, read Mac apps before step 2.
 
 ## Uploading
 ${uploadHelp(base, "<project>")}
 
 ## Output sizes
-A set is designed once per device: iPhone, iPhone Duo and iPad. One slide set serves all three; each device shows its own variant of a screenshot name. App Store Connect has one screenshot slot per display, and each takes its own pixel size, so a render writes one folder per size:
+A set is designed once per device: iPhone, iPhone Duo, iPad and Mac. One slide set serves all of them; each device shows its own variant of a screenshot name. App Store Connect has one screenshot slot per display, and each takes its own pixel size, so a render writes one folder per size:
 ${Object.entries(TARGETS as Record<string, Target>)
   .map(([id, target]) => `- \`${id}\`: ${target.width}×${target.height}, for "${target.slot}"${target.standard ? ", standard" : ""}${target.from ? `, the ${target.from} picture scaled` : ""}`)
   .join("\n")}
-Left to itself, \`render\` writes the standard sizes of every device the project has screenshots of (iPhone while it has none). The others are for older displays and for the Duo's cover display: add them with \`update_project\` \`targets\` only when the user asks. Sizes marked as scaled are the same picture as the size they name, so judge the design on one contact sheet per device. Portrait only. Up to 10 slides per set.
+Left to itself, \`render\` writes the standard sizes of every device the project has screenshots of (iPhone while it has none). The others are for older displays, for the Duo's cover display and the smaller sizes the Mac App Store takes as well: add them with \`update_project\` \`targets\` only when the user asks. Sizes marked as scaled are the same picture as the size they name, so judge the design on one contact sheet per device. iPhone and iPad sets are portrait, a Mac set is landscape. Up to 10 slides per set.
+
+## Mac apps
+The same server makes the screenshots of a macOS app for the Mac App Store. Find out which kind of app this is before anything else: an Xcode target whose \`SDKROOT\` is \`macosx\` or whose \`SUPPORTED_PLATFORMS\` holds \`macosx\`, a Swift package with \`.macOS\` in its \`platforms\`, or an Electron or Tauri app is a Mac app. An app for iPhone and Mac gets both: one project holds iPhone, iPad and Mac screenshots side by side.
+- A Mac app runs on the user's Mac, not in a simulator, so \`appshots run\` and \`launch\` are not for it. Build and open it the project's own way, for an Xcode project \`xcodebuild -scheme <scheme> -configuration Debug -derivedDataPath build build\` and then \`open build/Build/Products/Debug/<App>.app\` (\`--args <launch arguments>\` opens it on one screen; \`open\` only brings a running app to the front, so quit the app before opening it with other arguments). Bring it to the screen to show and take the window with \`appshots capture --mac <app name> --name <name> --project <project>\`.
+- That needs the Screen Recording permission for the terminal the command runs in. When macOS refuses, the command says where to switch it on; pass that on to the user, or ask them to take the window themselves (Shift-Command-4, then Space, then a click on the window) and upload the file with \`appshots upload <project> <file> --as mac\`.
+- A captured window is shown as that window: its own round corners, a soft shadow, the shadow macOS adds cut away. A picture that fills its rectangle and has about the shape of a display (1.45 to 1.85 times as wide as tall), such as an app in full screen, is shown inside a MacBook. \`get_project\` says which of the two each Mac screenshot is \`shown\` as. \`"frame":"mac"\` in \`device\` asks for the MacBook and \`"frame":"none"\` for the bare window, whatever the picture is. Neither has a status bar. The MacBook is silver unless \`color\` says otherwise.
+- A window suits a small app better than a full screen: it is drawn large, so its text stays readable, where a full screen in a MacBook turns into fine print. A MacBook makes a good first slide.
+- The Mac App Store takes 1 to 10 landscape pictures of 16:10. \`mac-2880\` (2880×1800) is the size exported, and that one size is all the store needs.
+- Every layout works on the wide canvas. What differs there: the copy of \`device-right\` and \`device-left\` gets the narrower part and the device the wider one; a MacBook that would be cut off only slightly at the bottom is made small enough to show whole; in \`duo\`, \`side-by-side\` and \`trio\`, laptops and windows stand level instead of fanned out; a \`features\` slide lays its cards across. There is little height, so one line of headline and one of subheadline is the most a slide with a device below takes well.
+- A slide shows the Mac variant of a screenshot name on the Mac canvas and the iPhone variant on the iPhone canvas. So for an app on both, give the same screen the same name on every device and one slide set serves them all. When the Mac app shows other screens or wants its slides in another order, make it a project of its own.
+- A name that has no Mac screenshot is drawn as the device it has one of. That is how a Mac slide says "also on iPhone": \`duo\` or \`side-by-side\` with \`screenshot\` the Mac one and \`screenshot2\` one that exists for the iPhone only.
 
 ## Layouts
 ${list(LAYOUTS)}
@@ -116,7 +128,7 @@ ${FONT_GROUPS.map(
   .join("\n")}
 
 ## Device
-\`frame\`: auto, iphone, duo, ipad or none (bare rounded screenshot). \`duo\` is the unfolded iPhone Duo, drawn as a plain thin frame. \`color\`: ${DEVICE_COLOR_IDS.join(", ")}. \`shadow\`: none, soft or strong.
+\`frame\`: auto, iphone, duo, ipad, mac or none (bare rounded screenshot). \`duo\` is the unfolded iPhone Duo, drawn as a plain thin frame. \`mac\` is a MacBook; see Mac apps for when a Mac screenshot gets one by itself. \`color\`: ${DEVICE_COLOR_IDS.join(", ")}. \`shadow\`: none, soft or strong.
 Where the device stands and how large it is can be set per slide, in the slide's own \`device\`, on top of what the layout does:
 - \`scale\`: 0.4 to 1.6, default 1. Smaller leaves the copy more room; larger turns the screen into a detail shot.
 - \`offsetX\`, \`offsetY\`: a shift in percent of the canvas width and height, -60 to 60. Positive is right and down. \`"offsetY":8\` lets a device bleed further off the bottom; \`"offsetX":-12\` moves it left to make room on the right.
@@ -181,7 +193,8 @@ The Brands group holds the logos of other companies, as simplified marks that an
 
 ## Header and search results assets
 App Store Connect has a "Header and Search Results" tab under Product Page Information. The images uploaded there show at the top of the product page and with the app in search results on iOS 27 and iPadOS 27 or later. They are optional and set per language; without them the store keeps showing screenshots there. Build them with \`set_creative_assets\` from the same screenshots and theme as the slides:
-${Object.entries(PLACEMENTS)
+${placementsOf("store")
+  .map((id) => [id, PLACEMENTS[id]] as const)
   .map(([id, p]) => `- \`${id}\`: ${p.label}, ${p.width}×${p.height} (${p.ratio}). ${p.note} Safe area ${p.safe.width}×${p.safe.height} at ${p.safe.x},${p.safe.y}.`)
   .join("\n")}
 The store crops these images differently per device and orientation, and only the safe area is always shown. So the copy is always centred and kept inside it, and everything outside it has to work as decoration that may be cut off. A header and a search asset can be made separately, or one \`universal\` asset serves both (App Store Connect's "Use header asset in search results" switch needs the universal file).
@@ -197,11 +210,25 @@ Apple reviews these assets and is stricter than with screenshots:
 - Translate the text for every language the asset is uploaded for, or leave it out. The content has to suit a 4+ age rating.
 \`render\` returns a preview of each asset with the safe area drawn as a dashed frame, which is not part of the PNG. Check that nothing important falls outside it.
 
+## Banners
+\`set_creative_assets\` also makes wide pictures for outside the store, from the same screenshots and theme. They are what the repository and the website of an app usually lack: the picture at the top of the README, and the one a link to the project shows.
+${placementsOf("banner")
+  .map((id) => [id, PLACEMENTS[id]] as const)
+  .map(([id, p]) => `- \`${id}\`: ${p.label}, ${p.width}×${p.height} (${p.ratio}). ${p.note}`)
+  .join("\n")}
+A banner takes the fields of the assets above. It is shown whole, so it has no safe area, and Apple's rules for store assets do not apply to it; figures, awards and reviews still have to be real. Left to itself it uses the \`split\` layout: the copy in a column on the left, up to ${CREATIVE_CAPACITY.split} devices on the right. \`fan\`, \`sides\` and \`wall\` work as well, with the copy in the middle. Keep the copy short: a headline, perhaps a subheadline, and the app's \`logo\` when it has one uploaded.
+Mac screenshots come out as MacBooks or windows and iPhone ones as iPhones, and one banner can mix them: name the Mac screenshot first and it stands in the middle, with a phone or a tablet in front of its lower corners.
+A render writes them to \`<language>/banners/<name>.png\`, apart from the store's pictures, and \`appshots pull <project>\` puts them in \`./store-screenshots/<project>/<language>/banners/\`. Where each goes:
+- \`readme\`: copy the file into the repository, such as \`docs/banner.png\`, and make \`![<App name>](docs/banner.png)\` the first line of the README. When you are working in the user's repository, do that for them.
+- \`social\`: the user uploads it under the repository's Settings, General, Social preview. GitHub takes a file of up to 1 MB there, and the render warns when it is larger.
+- \`link\`: the page's \`og:image\`, as in \`<meta property="og:image" content="https://example.com/link.png">\`, with \`og:image:width\` 1200 and \`og:image:height\` 630.
+Example: \`{"project":"ledger","readme":{"headline":"Your money, *at a glance*","subheadline":"A calm budget app for the Mac.","screenshots":["overview","phone"]}}\`
+
 ## Mockups
 For a website, a README, a press kit or a slide deck, \`render_mockups\` draws each raw screenshot inside its device with nothing behind it: one transparent PNG per screenshot, cut to the device. There is no slide, no copy and no background, so nothing has to be designed first, and it uses no render. These are not for App Store Connect, which takes no transparency.
 - \`device\` sets how every mockup is drawn, with the fields of Device above that make sense for a device on its own: \`frame\`, \`style\`, \`color\`, \`shadow\`, \`rotate\`, \`perspective\`, \`statusBar\`, \`statusBarTime\`, \`statusBarColor\`. It is separate from the theme. A mockup casts no shadow unless \`shadow\` asks for one, so it sits on a page of any colour; a shadow is part of the PNG and is made for a light page.
 - \`width\` is the width of each PNG in pixels. Left out, the screenshot is shown pixel for pixel, which is the sharpest and suits a page that scales the picture itself. A turned device makes a wider picture than an upright one.
-- \`screenshots\` picks some by name; left out, every screenshot of the project is drawn, each device variant as its own file named \`<name>-<device>.png\`.
+- \`screenshots\` picks some by name; left out, every screenshot of the project is drawn, each device variant as its own file named \`<name>-<device>.png\`. A Mac screenshot comes out as a window or inside a MacBook, by the rule in Mac apps.
 What is given is saved with the project, so ${base}/#/<project>/mockups shows the same, and the user can change it there. They download the PNGs from that page, from the links the tool returns, or with \`appshots mockups <project>\`, which puts them in \`./mockups/<project>/\`: the place to send them when the pictures are to go into a repository. A line drawing (\`outline\`, \`sketch\`) is drawn in near-black unless a \`color\` is set; on a dark page give it \`"color":"silver"\`.`;
 }
 
@@ -214,7 +241,14 @@ function describe(project: Project, shots: Shot[], images: StoredImage[], base: 
     slides: project.slides.map((slide, i) => ({ slide: i + 1, ...slide })),
     creativeAssets: project.creatives,
     mockups: project.mockups,
-    screenshots: shots.map((shot) => ({ name: shot.name, device: shot.device, ...(shot.locale ? { locale: shot.locale } : {}), size: `${shot.width}×${shot.height}` })),
+    screenshots: shots.map((shot) => ({
+      name: shot.name,
+      device: shot.device,
+      ...(shot.locale ? { locale: shot.locale } : {}),
+      size: `${shot.width}×${shot.height}`,
+      // What a Mac screenshot is drawn as while no slide asks for the other.
+      ...(shot.device === "mac" ? { shown: deviceShape(shot, {}, "mac").frame === "none" ? "window" : "MacBook" } : {}),
+    })),
     images: images.map((image) => ({ name: image.name, size: `${image.width}×${image.height}` })),
     exportSizes: defaultTargets(shots, project.targets),
     studio: `${base}/#/${project.id}`,
@@ -263,9 +297,12 @@ async function missingNote(space: Space, project: Project, shots?: Shot[]): Prom
   ].join("");
 }
 
-/** A small JPEG of a rendered asset with the safe area drawn in, so the model can check what a narrow crop keeps. */
+/**
+ * A small JPEG of a rendered asset. A store asset has its safe area drawn in, so the model can check what a narrow
+ * crop keeps; a banner is shown whole and has none.
+ */
 async function creativePreview(file: string, placement: PlacementId): Promise<string> {
-  const { width, height, safe } = PLACEMENTS[placement];
+  const { width, height, safe, kind } = PLACEMENTS[placement];
   const scale = 1400 / width;
   const [w, h] = [1400, Math.round(height * scale)];
   const frame = (colour: string, extra: string) =>
@@ -273,7 +310,7 @@ async function creativePreview(file: string, placement: PlacementId): Promise<st
   const overlay = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${frame("#FFFFFF", 'stroke-opacity=".7"')}${frame("#FF2D78", 'stroke-dasharray="12 8"')}</svg>`;
   const data = await sharp(file)
     .resize(w, h)
-    .composite([{ input: Buffer.from(overlay) }])
+    .composite(kind === "store" ? [{ input: Buffer.from(overlay) }] : [])
     .jpeg({ quality: 80 })
     .toBuffer();
   return data.toString("base64");
@@ -288,7 +325,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
     { name: "appshots", version: "0.1.0" },
     {
       instructions:
-        "Generates App Store screenshots: raw app screenshots placed in device frames with headlines, backgrounds and social-proof badges, exported at exact store sizes. Also makes the product page header and search results assets of App Store Connect. Call get_design_guide first.",
+        "Generates App Store screenshots for iPhone, iPad and Mac apps: raw app screenshots placed in device frames with headlines, backgrounds and social-proof badges, exported at exact store sizes. Also makes the product page header and search results assets of App Store Connect, wide banners for a README or a link preview, and transparent device mockups. Call get_design_guide first.",
     },
   );
 
@@ -297,7 +334,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
     {
       title: "Design guide",
       description:
-        "How to use this server: the workflow, how screenshots get uploaded, every layout, background, font, device option and badge, and the rules for header and search results assets. Read this before building a set.",
+        "How to use this server: the workflow, how screenshots get uploaded, what differs for a Mac app, every layout, background, font, device option and badge, the rules for header and search results assets, and banners and mockups for outside the store. Read this before building a set.",
       annotations: { readOnlyHint: true },
     },
     () => guard(async () => text(designGuide(base, space))),
@@ -335,7 +372,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
     "get_project",
     {
       title: "Get project",
-      description: "Returns a project's theme, slides, header and search results assets, the raw screenshots, and the logos and other images uploaded so far.",
+      description: "Returns a project's theme, slides, header and search results assets, banners, the raw screenshots, and the logos and other images uploaded so far.",
       inputSchema: { project },
       annotations: { readOnlyHint: true },
     },
@@ -408,14 +445,18 @@ export function createMcpServer(base: string, space: Space): McpServer {
   server.registerTool(
     "set_creative_assets",
     {
-      title: "Set header and search results assets",
+      title: "Set header, search results and banner images",
       description:
-        "Designs the wide images for the Header and Search Results tab of App Store Connect: the product page header, the search results asset, or one universal asset for both. Each asset given replaces that one; the others stay. Nothing is rendered until you call render.",
+        "Designs the project's wide images. For the Header and Search Results tab of App Store Connect: the product page header, the search results asset, or one universal asset for both. For outside the store: a README banner, the social preview of a repository, the link preview of a web page, and a 16:9 picture for a post. Each one given replaces that one; the others stay. Nothing is rendered until you call render.",
       inputSchema: {
         project,
         header: creativeSchema.optional().describe("Product page header, 3840×1646"),
         search: creativeSchema.optional().describe("Search results asset, 3840×2560"),
         universal: creativeSchema.optional().describe("Universal asset, 5244×2950, cropped by App Store Connect for both places"),
+        readme: creativeSchema.optional().describe("Banner for the top of a README or a web page, 2400×800"),
+        social: creativeSchema.optional().describe("Social preview of a GitHub repository, 1280×640"),
+        link: creativeSchema.optional().describe("Link preview of a web page (its og:image), 1200×630"),
+        post: creativeSchema.optional().describe("Picture for a post, a deck or a video thumbnail, 1920×1080"),
         remove: z.array(z.enum(PLACEMENT_IDS)).optional().describe("Assets to delete from the project"),
       },
     },
@@ -429,12 +470,12 @@ export function createMcpServer(base: string, space: Space): McpServer {
         const shots = await listShots(space, id);
         const lines = PLACEMENT_IDS.filter((placement) => updated.creatives[placement]).map((placement) => {
           const creative = updated.creatives[placement]!;
-          const layout = creative.layout ?? "fan";
+          const layout = creativeLayout(creative, placement);
           const extra = (creative.screenshots?.length ?? 0) - CREATIVE_CAPACITY[layout];
           return `- ${placement}: ${PLACEMENTS[placement].label}, ${layout} layout${extra > 0 ? ` (it shows ${CREATIVE_CAPACITY[layout]} screenshots, so the last ${extra} will be left out)` : ""}`;
         });
         const note = await missingNote(space, updated, shots);
-        return text(lines.length ? `The project now has these assets:\n${lines.join("\n")}\nCall render to see them.${note}` : "The project has no header or search results assets now.");
+        return text(lines.length ? `The project now has these assets:\n${lines.join("\n")}\nCall render to see them.${note}` : "The project has no header, search results or banner images now.");
       }),
   );
 
@@ -443,14 +484,14 @@ export function createMcpServer(base: string, space: Space): McpServer {
     {
       title: "Render screenshots",
       description:
-        "Renders the slides, and the header and search results assets if the project has any, to PNGs at exact App Store sizes. Returns images to review plus download links. Pass `slides` or `creatives` to re-render only those while iterating.",
+        "Renders the slides to PNGs at exact App Store sizes, and the header and search results assets and the banners if the project has any. Returns images to review plus download links. Pass `slides` or `creatives` to re-render only those while iterating.",
       inputSchema: {
         project,
         slides: z.array(slideNumber).optional().describe("Slide numbers to render; all when omitted"),
         creatives: z
           .array(z.enum(PLACEMENT_IDS))
           .optional()
-          .describe("Header and search results assets to render. Left out, all of them are rendered along with the slides; given alone, the slides are left as they are; [] skips the assets."),
+          .describe("Header and search results assets and banners to render. Left out, all of them are rendered along with the slides; given alone, the slides are left as they are; [] skips them."),
         targets: z.array(z.enum(TARGET_IDS)).optional().describe("Sizes for this render only; defaults to the project's export sizes. While iterating, one size per device is enough, such as [\"iphone-6.9\"]"),
         locales: z.array(localeSchema).optional().describe("Defaults to every project locale"),
       },
@@ -471,9 +512,11 @@ export function createMcpServer(base: string, space: Space): McpServer {
           if (copy && sets.has(`${source} ${first!.locale}`)) lines.push(`  ${rest.length ? `${rest.length + 1} files` : "1 file"} under ${base}/files/${id}/out/${path.dirname(first!.path)}/`);
           else for (const file of [first!, ...rest]) lines.push(`  ${String(file.slide + 1).padStart(2, "0")}  ${base}/files/${id}/out/${file.path}`);
         }
-        if (result.creatives.length) {
-          lines.push("", "Header and search results assets (the dashed frame in the previews marks the safe area and is not in the PNG):");
-          for (const file of result.creatives) lines.push(`  ${file.placement} (${file.width}×${file.height}), ${file.locale}  ${base}/files/${id}/out/${file.path}`);
+        for (const kind of ["store", "banner"] as const) {
+          const drawn = result.creatives.filter((file) => PLACEMENTS[file.placement].kind === kind);
+          if (drawn.length === 0) continue;
+          lines.push("", kind === "store" ? "Header and search results assets (the dashed frame in the previews marks the safe area and is not in the PNG):" : "Banners:");
+          for (const file of drawn) lines.push(`  ${file.placement} (${file.width}×${file.height}), ${file.locale}  ${base}/files/${id}/out/${file.path}`);
         }
         lines.push("", `Studio: ${base}/#/${id}`, `ZIP of everything: ${base}/api/projects/${id}/export.zip (or \`appshots pull ${id}\`)`);
         const left = rendersLeft(space.id);

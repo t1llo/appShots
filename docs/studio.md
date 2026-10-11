@@ -17,7 +17,7 @@ One project per app. Projects are in the sidebar on the left.
 
 ## Slides
 
-A set has up to ten slides, in store order. You design it once, and it is exported at every size. The switch in the heading shows the previews for the **iPhone**, the **iPhone Duo** or the **iPad**. Where a device has two shapes, such as the 13-inch and the 11-inch iPad, a menu beside the switch picks which one is shown.
+A set has up to ten slides, in store order. You design it once, and it is exported at every size. The switch in the heading shows the previews for the **iPhone**, the **iPhone Duo**, the **iPad** or the **Mac**. The Mac's are landscape. See [Mac apps](/docs/mac). Where a device has two shapes, such as the 13-inch and the 11-inch iPad, a menu beside the switch picks which one is shown.
 
 - **+ Add slide** adds one at the end.
 - Click a slide to edit it. The editor opens on the right beside a large preview.
@@ -54,6 +54,10 @@ Everything else a slide can show: your logo or app icon, a mascot, stickers, sha
 
 Adds, previews and edits the wide images for the Header and Search Results tab of App Store Connect. **Show safe area** draws the part every device shows as a dashed frame. The frame is a guide and never in the exported file. See [Header and search results](/docs/store-assets).
 
+## Banners
+
+Adds, previews and edits wide pictures for outside the store: a README banner, a repository's social preview, a link preview and a 16:9 picture for a post. They are shown whole wherever they go, so they have no safe area. See [Banners](/docs/banners).
+
 ## Languages
 
 The language switch beside the slides sets what the page shows: the texts, and each language's own screenshots. It is also the language you are typing and uploading for. **+ Language** next to it adds one, and **Project → Languages** lists them, removes one or makes another the first.
@@ -62,7 +66,7 @@ With a language other than the first picked, **Screenshots** shows that language
 
 ## Export ZIP
 
-**Export ZIP** renders the whole set and downloads it: every slide for every language and every display of App Store Connect, plus the header and search results images. **Project → Export sizes** lists the sizes and lets you add the older ones. See [Render and export](/docs/export).
+**Export ZIP** renders the whole set and downloads it: every slide for every language and every display of App Store Connect, plus the header and search results images and the banners. **Project → Export sizes** lists the sizes and lets you add the older ones. See [Render and export](/docs/export).
 
 The render runs on the server, in the background. You can keep editing, open another project or switch to another tab while it works. What you change after pressing the button is not in that render.
 

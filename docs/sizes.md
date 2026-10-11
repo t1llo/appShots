@@ -1,11 +1,11 @@
 ---
 title: Sizes
-description: The exact pixel sizes appShots exports for the App Store. One design each for iPhone, iPhone Duo and iPad, exported once for every display App Store Connect lists, plus the wide header and search results images.
+description: The exact pixel sizes appShots exports for the App Store. One design each for iPhone, iPhone Duo, iPad and Mac, exported once for every display App Store Connect lists, plus the wide header and search results images and the banners.
 ---
 
-You design a set once per device: once for the iPhone, once for the iPhone Duo and once for the iPad. The export then holds that design at the exact pixel size of every display App Store Connect lists, each in a folder of its own.
+You design a set once per device: once for the iPhone, once for the iPhone Duo, once for the iPad and once for the Mac. The export then holds that design at the exact pixel size of every display App Store Connect lists, each in a folder of its own.
 
-Every file is a PNG in portrait, without transparency.
+Every file is a PNG without transparency. iPhone and iPad sets are portrait, and a Mac set is landscape.
 
 ## Screenshots
 
@@ -22,10 +22,11 @@ The sizes marked **Always**, for every device the project has screenshots of:
 | iPhone screenshots | `iphone-6.9`, `iphone-6.3`, `iphone-6.5`, `iphone-6.1` |
 | iPhone Duo screenshots as well | `iphone-duo` too |
 | iPad screenshots as well | `ipad-13` and `ipad-11` too |
+| Mac screenshots as well | `mac-2880` too |
 
 A project without any screenshots yet counts as an iPhone project.
 
-The other sizes are for displays Apple no longer sells. App Store Connect fills a display you leave empty from a larger one, so most apps never need them. To add or drop sizes, tick them under **Project → Export sizes** in the Studio, or set the project's `targets`:
+The other sizes are for displays Apple no longer sells, and the three smaller sizes the Mac App Store takes besides its largest. App Store Connect fills a display you leave empty from a larger one, and a Mac app needs one size only, so most apps never need them. To add or drop sizes, tick them under **Project → Export sizes** in the Studio, or set the project's `targets`:
 
 ```json
 { "project": "streaks", "targets": ["iphone-6.9", "iphone-6.3", "iphone-5.5"] }
@@ -42,26 +43,31 @@ Displays of the same shape get the same picture. The slide is drawn once at the 
 | `iphone-6.9` | `iphone-6.3`, `iphone-6.5`, `iphone-6.1` |
 | `iphone-5.5` | `iphone-4.7`, `iphone-4` |
 | `ipad-13` | `ipad-12.9`, `ipad-10.5`, `ipad-9.7` |
+| `mac-2880` | `mac-2560`, `mac-1440`, `mac-1280` |
 
 `iphone-3.5`, `iphone-duo`, `iphone-duo-cover` and `ipad-11` have a shape of their own and are drawn on their own. The layout is the same and follows the shape.
 
-## iPhone, iPhone Duo or iPad
+## Which device a screenshot counts as
 
-Each raw screenshot belongs to one of the three:
+Each raw screenshot belongs to one device:
 
 | The image is | It counts as |
 | --- | --- |
 | Exactly 2007 × 2853 or 1398 × 2034 | iPhone Duo |
-| Narrow, such as 1320 × 2868 | iPhone |
-| Anything wider | iPad |
+| Wider than it is tall, such as 2880 × 1800 | Mac |
+| A captured Mac window, which has see-through round corners | Mac, whatever its shape |
+| Tall and narrow, such as 1320 × 2868 | iPhone |
+| Tall and wider than that, such as 2064 × 2752 | iPad |
 
-The iPhone Duo is told by its exact size because its shape is close to an iPad's. When a screenshot lands under the wrong device, change it with the small menu on its thumbnail in the Studio, or say it at upload: `appshots upload streaks home.png --as duo`.
+A picture at the exact size of an iPhone or iPad screenshot stays with that device when it is turned on its side.
 
-Upload each device's screenshot under the same name. A slide that uses `home` then shows the iPhone `home` on iPhone sizes, the Duo `home` on Duo sizes and the iPad `home` on iPad sizes. If a device has none of its own, the closest other one stands in, and the render says so.
+The iPhone Duo is told by its exact size because its shape is close to an iPad's. When a screenshot lands under the wrong device, change it with the small menu on its thumbnail in the Studio, or say it at upload: `appshots upload streaks home.png --as duo`. `--as` takes `iphone`, `duo`, `ipad` and `mac`.
+
+Upload each device's screenshot under the same name. A slide that uses `home` then shows the iPhone `home` on iPhone sizes, the Duo `home` on Duo sizes, the iPad `home` on iPad sizes and the Mac `home` on the Mac size. If a device has none of its own, the closest other one stands in, and the render says so.
 
 ## Raw screenshots
 
-Any resolution from 300 pixels on the short side works. The screenshot is scaled to the device's screen. For the sharpest result, capture on the simulators the largest sizes are made for: an iPhone Pro Max, the iPhone Duo and the 13-inch iPad Pro. `appshots run` picks them for you.
+Any resolution from 300 pixels on the short side works. The screenshot is scaled to the device's screen. For the sharpest result, capture on the simulators the largest sizes are made for: an iPhone Pro Max, the iPhone Duo and the 13-inch iPad Pro. `appshots run` picks them for you. A Mac app is captured from its own window. See [Mac apps](/docs/mac).
 
 ## Header and search results
 
@@ -69,6 +75,12 @@ Any resolution from 300 pixels on the short side works. The screenshot is scaled
 
 These are the largest sizes App Store Connect accepts for them. See [Header and search results](/docs/store-assets).
 
+## Banners
+
+{{BANNERS}}
+
+Wide pictures for outside the store. See [Banners](/docs/banners).
+
 ## What appShots does not make
 
-Landscape screenshots, app previews (videos), and Mac, Apple Watch, Apple TV or Vision Pro sizes.
+Landscape screenshots of an iPhone or iPad app, app previews (videos), and Apple Watch, Apple TV or Vision Pro sizes.

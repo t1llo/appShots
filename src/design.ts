@@ -70,6 +70,7 @@ export const CREATIVE_LAYOUTS = {
   fan: "Copy at the top of the safe area, up to five devices fanned out below it and bleeding off the bottom edge. The first screenshot takes the centre.",
   sides: "Copy in the middle of the safe area, up to four devices standing left and right of it. With one screenshot the device stands on the right.",
   wall: "Copy over a dimmed, tilted wall of bare screenshots that fills the whole canvas.",
+  split: "Copy in a column on the left, up to three devices on the right. Made for banners. On an App Store asset the copy would leave the safe area, so it is drawn as sides there.",
 } as const;
 
 export type CreativeLayoutId = keyof typeof CREATIVE_LAYOUTS;

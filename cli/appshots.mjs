@@ -33,7 +33,8 @@ const AGENTS = {
 const BUILD_CACHE = path.join(homedir(), "Library", "Caches", "appshots", "build");
 const BOOLEAN_FLAGS = new Set(["clean", "render", "help", "ipad", "duo", "dark", "light", "fresh", "image"]);
 
-const HELP = `appshots: run an app in a simulator, capture its screens and sync them with an appShots server
+const HELP = `appshots: run an app in a simulator, capture its screens and sync them with an appShots server.
+A Mac app runs on the Mac itself: capture its window with 'appshots capture --mac <app>'
 
   appshots setup <url> [--agent <agent>] Everything in one go: save the token, install the appshots skill
                                          and this CLI, connect the agent. Agents: claude (the default),
@@ -71,9 +72,13 @@ const HELP = `appshots: run an app in a simulator, capture its screens and sync 
       --name <name>                        Screenshot name slides refer to (default: timestamp)
       --sim [name|udid]                    From a booted simulator (the default source)
       --device [name|udid]                 From a connected, unlocked iPhone or iPad (Xcode 27+)
+      --mac <app>                          From a Mac app running on this Mac: its frontmost window,
+                                           without the shadow. A window is shown as a window, an app
+                                           in full screen inside a MacBook. The terminal needs the
+                                           Screen Recording permission in System Settings
       --clean                              Simulator only: show 9:41, full battery and signal
       --project <id>                       Upload it to this project straight away (--to works too)
-      --as <iphone|duo|ipad>               File it under this device. Only needed when the server
+      --as <iphone|duo|ipad|mac>           File it under this device. Only needed when the server
                                            cannot tell from the size; upload, run and launch take it too
       --lang <code>                        It shows the app in this language, one the project has.
                                            Left out, it is for the project's first language, which
@@ -81,7 +86,8 @@ const HELP = `appshots: run an app in a simulator, capture its screens and sync 
       --out <dir>                          Where to save the PNG (default: ./raw-shots)
   appshots shoot <project> <names...>    For a person at the Terminal: names each screen in turn, waits
                                          for Return while you open it, then captures and uploads it.
-                                         Options as for capture: --sim, --device, --clean, --out, --lang
+                                         Options as for capture: --sim, --device, --mac, --clean, --out,
+                                         --lang
   appshots upload <project> <files or folders...>
                                          Upload screenshots that exist already. A folder stands for the
                                          PNG and JPEG files in it. The name is the file name, or --name
@@ -89,8 +95,8 @@ const HELP = `appshots: run an app in a simulator, capture its screens and sync 
       --lang <code>                        They show the app in this language, as for capture
       --image                              They are not screenshots but a logo or other artwork for the
                                            slides: PNG, SVG, JPEG or WebP, transparency kept
-  appshots pull <project> [--out <dir>]  Download the rendered screenshots and header and search
-                                         results assets (--render renders first)
+  appshots pull <project> [--out <dir>]  Download the rendered screenshots, the header and search
+                                         results assets and the banners (--render renders first)
   appshots mockups <project> [options]   Download every screenshot inside its device with nothing behind
                                          it: one transparent PNG each, for a website or a README. Needs
                                          no slides and uses no render
@@ -535,13 +541,53 @@ function choose(candidates, query, kind, flag) {
   fail(`Several ${kind}s are available; pick one with ${flag} <name>:\n${describe(candidates)}`);
 }
 
+/**
+ * The windows apps show on this Mac, the frontmost first. Only what the system tells anyone: which app a window
+ * belongs to and how large it is, not its title or what is in it.
+ */
+function macWindows() {
+  if (process.platform !== "darwin") fail("--mac captures a window of an app running on this computer, which needs a Mac.");
+  // 1 | 16: the windows on screen, without the desktop's. Layer 0 is where apps keep their ordinary windows.
+  const script = `ObjC.import('CoreGraphics');
+const list = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo(1 | 16, 0)));
+JSON.stringify(list.filter((w) => w.kCGWindowLayer === 0 && w.kCGWindowOwnerName && w.kCGWindowBounds).map((w) => ({ id: w.kCGWindowNumber, app: w.kCGWindowOwnerName, width: w.kCGWindowBounds.Width, height: w.kCGWindowBounds.Height })))`;
+  const result = spawnSync("osascript", ["-l", "JavaScript", "-e", script], { encoding: "utf8" });
+  if (result.status !== 0) fail(`Could not list the windows on this Mac:\n${(result.stderr ?? "").trim()}`);
+  // Smaller than this is a palette or a leftover, not the window to show.
+  return JSON.parse(result.stdout).filter((window) => window.width >= 200 && window.height >= 150);
+}
+
+/** The frontmost window of the app called `query`. */
+function macWindow(query) {
+  const windows = macWindows();
+  const apps = [...new Set(windows.map((window) => window.app))];
+  const open = apps.length > 0 ? `Apps with a window open:\n${apps.map((app) => `  ${app}`).join("\n")}` : "No app has a window open.";
+  if (typeof query !== "string") fail(`--mac needs the name of the app, as in: --mac Ledger\n${open}`);
+  const needle = query.toLowerCase();
+  const exact = apps.filter((app) => app.toLowerCase() === needle);
+  const matches = exact.length > 0 ? exact : apps.filter((app) => app.toLowerCase().includes(needle));
+  if (matches.length === 0) fail(`No app called "${query}" has a window open. Start it first, and bring it out of the Dock if it is minimised.\n${open}`);
+  if (matches.length > 1) fail(`"${query}" matches several apps:\n${matches.map((app) => `  ${app}`).join("\n")}`);
+  return windows.find((window) => window.app === matches[0]);
+}
+
 function capture(flags) {
   const name = typeof flags.name === "string" ? slugify(flags.name) : `shot-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`;
+  // Before the folder is made: a wrong name should leave nothing behind.
+  const window = flags.mac ? macWindow(flags.mac) : null;
   const outDir = path.resolve(typeof flags.out === "string" ? flags.out : "raw-shots");
   mkdirSync(outDir, { recursive: true });
   const file = path.join(outDir, `${name}.png`);
 
-  if (flags.device) {
+  if (window) {
+    rmSync(file, { force: true });
+    // -o leaves the window's shadow out, -x the camera sound.
+    const result = spawnSync("screencapture", ["-x", "-o", "-l", String(window.id), file], { encoding: "utf8" });
+    if (result.status !== 0 || !existsSync(file) || statSync(file).size === 0) {
+      fail(`Could not capture the window of ${window.app}.${result.stderr ? `\n${result.stderr.trim()}` : ""}\nmacOS lets a program capture windows only with the Screen Recording permission: System Settings, Privacy & Security, Screen & System Audio Recording, switch on the terminal app this runs in, then start that app again.`);
+    }
+    console.log(`Captured ${window.app} -> ${file}`);
+  } else if (flags.device) {
     const device = choose(connectedDevices(), flags.device, "device", "--device");
     const result = xcrun(["devicectl", "device", "capture", "screenshot", "--device", device.udid, "--destination", file]);
     if (result.status !== 0) {
@@ -730,6 +776,11 @@ function build(project, scheme, simulator, fresh) {
     const text = readFileSync(log, "utf8");
     // A build folder takes one build at a time, and Xcode holds it while it builds.
     if (/database is locked|unable to attach DB/.test(text)) fail(`Xcode is building ${scheme} right now and holds its build folder. Wait for that build to finish and run this again, or pass --fresh for a build kept apart from Xcode's.`);
+    // What Xcode offers instead of the simulator it was asked for says what kind of app this is.
+    const offered = text.split("Available destinations")[1] ?? "";
+    if (/platform:macOS/.test(offered) && !/platform:iOS/.test(offered)) {
+      fail(`${scheme} is a Mac app, and a Mac app runs on this Mac, not in a simulator. Build and open it, then capture its window:\n  xcodebuild -scheme ${scheme} -configuration Debug -derivedDataPath build build\n  open build/Build/Products/Debug/*.app\n  appshots capture --mac <the app's name> --name <name> --project <id>`);
+    }
     const lines = text.split("\n").map((line) => line.trimEnd()).filter(Boolean);
     // Swift repeats each error, indented, under the line of code it is about, and xcodebuild once more in its summary.
     const mentions = lines.filter((line) => line.includes("error:"));
@@ -841,10 +892,10 @@ function installedApps(udid) {
 
 // ---------------------------------------------------------------- commands
 
-/** The device a screenshot is filed under when --as or --duo says so. Left out, the server tells from the size. */
+/** The device a screenshot is filed under when --as, --duo or --mac says so. Left out, the server tells from the size. */
 function shotDevice(flags) {
-  const device = typeof flags.as === "string" ? flags.as.toLowerCase() : flags.as === undefined ? (flags.duo ? "duo" : undefined) : "";
-  if (device !== undefined && !["iphone", "duo", "ipad"].includes(device)) fail("--as needs iphone, duo or ipad.");
+  const device = typeof flags.as === "string" ? flags.as.toLowerCase() : flags.as === undefined ? (flags.duo ? "duo" : flags.mac ? "mac" : undefined) : "";
+  if (device !== undefined && !["iphone", "duo", "ipad", "mac"].includes(device)) fail("--as needs iphone, duo, ipad or mac.");
   return device;
 }
 

@@ -37,13 +37,15 @@ en-US/
   iphone-6.1/01.png … 08.png
   ipad-13/01.png … 08.png
   ipad-11/01.png … 08.png
+  mac-2880/01.png … 08.png
   creative-assets/header.png
   creative-assets/search.png
+  banners/readme.png
 de-DE/
   …
 ```
 
-One folder per language, then one per display of App Store Connect, with the slides numbered in store order. `README.txt` lists which folder goes onto which display. The files are PNGs without transparency at the exact pixel size of their display, which is what App Store Connect asks for.
+One folder per language, then one per display of App Store Connect, with the slides numbered in store order. `README.txt` lists which folder goes onto which display. `banners` holds the pictures for outside the store, when the project has any. See [Banners](/docs/banners). The files are PNGs without transparency at the exact pixel size of their display, which is what App Store Connect asks for.
 
 ## Which sizes
 
@@ -54,6 +56,7 @@ You design the set once per device. The export holds it at every size:
 | iPhone screenshots | `iphone-6.9`, `iphone-6.3`, `iphone-6.5`, `iphone-6.1` |
 | iPhone Duo screenshots as well | `iphone-duo` too |
 | iPad screenshots as well | `ipad-13` and `ipad-11` too |
+| Mac screenshots as well | `mac-2880` too |
 
 Sizes of the same shape are the same picture scaled, so they look alike on every display. The sizes for older devices are left out until you tick them under **Project → Export sizes**. See [Sizes](/docs/sizes).
 
@@ -93,6 +96,7 @@ When none are left, ask the person who runs the server for more. Their own rende
 3. Open a display and drag all files of its folder onto it. The file names keep them in order.
 4. Do the same for each language.
 5. Header and search results images go on the **Header and Search Results** tab. See [Header and search results](/docs/store-assets).
+6. Banners are not for App Store Connect. See [where each one goes](/docs/banners#where-each-one-goes).
 
 | Display in App Store Connect | Folder |
 | --- | --- |
@@ -103,6 +107,7 @@ When none are left, ask the person who runs the server for more. Their own rende
 | iPhone Duo | `iphone-duo` |
 | iPad 13" display | `ipad-13` |
 | iPad 11" display | `ipad-11` |
+| Mac, on the macOS version of the app | `mac-2880` |
 
 **A display only takes its own sizes.** A file from another folder is refused as having the wrong dimensions. A display you leave empty is filled by App Store Connect from a larger one, so you can also upload the largest iPhone and iPad folders alone.
 

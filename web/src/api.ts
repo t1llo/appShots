@@ -62,6 +62,8 @@ export interface Shot {
   height: number;
   bytes: number;
   version: number;
+  /** Set on a capture of a Mac window: the radius of its see-through corners in pixels. */
+  corner?: number;
 }
 
 /** A logo or other artwork that slides place by its name. */

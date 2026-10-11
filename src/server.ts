@@ -48,7 +48,7 @@ import { creativesSchema, localeSchema, type Mockups, mockupsSchema, type Projec
 import { homePage, siteRoutes } from "./site.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, isDeviceKind, isPlacementId, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, sourceOf, TARGET_IDS, type TargetId, TARGETS } from "./sizes.ts";
 import {
-  CREATIVE_DIR,
+  creativeDir,
   type CreativeOutput,
   countProjects,
   createProject,
@@ -540,7 +540,10 @@ function exportNotes(name: string, outputs: OutputSet[], creatives: CreativeOutp
       ...orderTargets(sets.map((set) => set.target as TargetId)).map((id) => [`${id}/`, `${TARGETS[id].width} x ${TARGETS[id].height}`, TARGETS[id].slot]),
       ...creatives
         .filter((output) => output.locale === locale)
-        .map((output) => [`${CREATIVE_DIR}/${output.placement}.png`, `${PLACEMENTS[output.placement].width} x ${PLACEMENTS[output.placement].height}`, `Header and Search Results tab: ${PLACEMENTS[output.placement].label}`]),
+        .map((output) => {
+          const placement = PLACEMENTS[output.placement];
+          return [`${creativeDir(output.placement)}/${output.placement}.png`, `${placement.width} x ${placement.height}`, placement.kind === "banner" ? `Banner: ${placement.label}` : `Header and Search Results tab: ${placement.label}`];
+        }),
     ];
     const pad = [0, 1].map((column) => Math.max(...rows.map((row) => row[column]!.length)));
     for (const row of rows) lines.push(`  ${row[0]!.padEnd(pad[0]!)}  ${row[1]!.padEnd(pad[1]!)}  ${row[2]}`);

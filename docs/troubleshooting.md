@@ -51,15 +51,23 @@ export PATH="$HOME/.local/bin:$PATH"
 
 **The screenshot shows the launch screen.** The app needed longer to settle. Add `--wait 5`.
 
+**"Could not capture the window" with `--mac`.** macOS only lets a program take pictures of windows with the Screen Recording permission. Switch on your terminal app under **System Settings → Privacy & Security → Screen & System Audio Recording**, then quit and reopen the terminal. Or take the window yourself with Shift-Command-4, Space and a click, and upload the file with `--as mac`. See [Mac apps](/docs/mac#get-the-screens-in).
+
+**`--mac` does not find the app.** The app has to be open with a window on screen. Use its name as the menu bar shows it. The command lists the apps it can see.
+
+**`appshots run` says the project is a Mac app.** `run` is for the iOS Simulator. Start a Mac app your own way and capture its window with `appshots capture --mac`.
+
 ## Slides
 
 **A device is empty.** The slide names a screenshot that is not uploaded. The render lists the missing names. Upload it under exactly that name.
 
-**An iPad slide shows a phone screen.** The project has no iPad screenshot under that name. Upload one with the same name. See [Sizes](/docs/sizes#iphone-iphone-duo-or-ipad).
+**An iPad slide shows a phone screen.** The project has no iPad screenshot under that name. Upload one with the same name. See [Sizes](/docs/sizes#which-device-a-screenshot-counts-as).
+
+**A Mac screenshot sits in a MacBook, or does not, and it should be the other way.** A captured window is shown as a window, and a display-shaped picture in a MacBook. Set **Frame** in the slide's device settings to **MacBook** or **No frame**. See [Mac apps](/docs/mac#a-window-or-a-macbook).
 
 **App Store Connect says the dimensions are wrong.** Each display only takes its own sizes. Drag the files of the folder named after that display, as listed in the `README.txt` of the ZIP. See [Render and export](/docs/export#upload-to-app-store-connect).
 
-**A screenshot is filed under the wrong device.** Change it with the small menu on its thumbnail in the Studio, or upload it again with `--as iphone`, `--as duo` or `--as ipad`.
+**A screenshot is filed under the wrong device.** Change it with the small menu on its thumbnail in the Studio, or upload it again with `--as iphone`, `--as duo`, `--as ipad` or `--as mac`.
 
 **The headline is tiny.** Text shrinks to fit. Shorten the headline, force a line break, or lower the device with the position control.
 

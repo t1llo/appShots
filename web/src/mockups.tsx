@@ -343,7 +343,7 @@ export function MockupsPage({ meta, initial }: { meta: Meta; initial: Detail }) 
               <div className="cols">
                 <Field label="Frame">
                   <Select
-                    options={[["auto", "Match screenshot"], ["iphone", "iPhone"], ["duo", "iPhone Duo"], ["ipad", "iPad"], ["none", "No frame"]]}
+                    options={[["auto", "Match screenshot"], ["iphone", "iPhone"], ["duo", "iPhone Duo"], ["ipad", "iPad"], ["mac", "MacBook"], ["none", "No frame"]]}
                     value={device.frame ?? "auto"}
                     onChange={set("frame", "auto")}
                   />

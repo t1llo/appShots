@@ -74,7 +74,7 @@ These fields can be set once in the project's **theme** and again on any slide. 
 
 | Field | Values | Default |
 | --- | --- | --- |
-| `frame` | `auto`, `iphone`, `duo`, `ipad`, `none`. `auto` matches the screenshot, `duo` is the unfolded iPhone Duo, and `none` shows the bare rounded screen | `auto` |
+| `frame` | `auto`, `iphone`, `duo`, `ipad`, `mac`, `none`. `auto` matches the screenshot, `duo` is the unfolded iPhone Duo, `mac` is a MacBook, and `none` shows the bare rounded screen, which for a Mac screenshot is the window alone. See [Mac apps](/docs/mac#a-window-or-a-macbook) | `auto` |
 | `style` | `real`, `clay`, `outline`, `sketch`. How the frame is drawn. See [Device look](#device-look) | `real` |
 | `color` | {{DEVICE_COLORS}} | `black` |
 | `scale` | 0.4 to 1.6 | 1 |
@@ -98,6 +98,8 @@ These fields can be set once in the project's **theme** and again on any slide. 
 ### Two or three devices
 
 On `duo`, `side-by-side` and `trio`, `spread` is the angle between the devices. At 0 they stand parallel, and a larger angle fans them out. `gap` moves them apart or together, and `rotate` turns the whole group.
+
+A group that mixes a Mac screenshot with iPhone or iPad ones is arranged differently: the laptop or window stands in the middle, and the phones and tablets stand in front of its lower corners. `spread` does not apply there. See [Mac apps](/docs/mac#mac-and-iphone-together).
 
 ```json
 { "layout": "duo", "screenshot": "home", "screenshot2": "stats", "device": { "spread": 24, "gap": 4 } }

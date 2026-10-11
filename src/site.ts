@@ -29,7 +29,7 @@ import {
   POINT_STYLES,
   STATUS_BARS,
 } from "./design.ts";
-import { PLACEMENTS, TARGETS } from "./sizes.ts";
+import { PLACEMENTS, placementsOf, TARGETS } from "./sizes.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
 const docsDir = path.join(root, "docs");
@@ -38,7 +38,7 @@ const webDir = path.join(root, "web", "dist");
 /** The sidebar, top to bottom. A page is the file docs/<name>.md. */
 const SECTIONS: { title: string; pages: string[] }[] = [
   { title: "Start", pages: ["index", "quick-start", "connect", "update"] },
-  { title: "Make a set", pages: ["skill", "screens", "studio", "images", "languages", "export", "mockups", "app-review"] },
+  { title: "Make a set", pages: ["skill", "screens", "mac", "studio", "images", "languages", "export", "mockups", "banners", "app-review"] },
   { title: "Reference", pages: ["slides", "store-assets", "sizes", "cli", "mcp", "api"] },
   { title: "Help", pages: ["accounts", "troubleshooting", "faq"] },
   { title: "Legal", pages: ["privacy", "terms"] },
@@ -100,7 +100,15 @@ const VALUES: Record<string, string> = {
   ),
   PLACEMENTS: table(
     ["Asset", "Pixels", "Safe area", "Used for"],
-    Object.entries(PLACEMENTS).map(([id, place]) => [`\`${id}\``, `${place.width} × ${place.height} (${place.ratio})`, `${place.safe.width} × ${place.safe.height} at ${place.safe.x}, ${place.safe.y}`, place.note]),
+    placementsOf("store")
+      .map((id) => [id, PLACEMENTS[id]] as const)
+      .map(([id, place]) => [`\`${id}\``, `${place.width} × ${place.height} (${place.ratio})`, `${place.safe.width} × ${place.safe.height} at ${place.safe.x}, ${place.safe.y}`, place.note]),
+  ),
+  BANNERS: table(
+    ["Banner", "Pixels", "Used for"],
+    placementsOf("banner")
+      .map((id) => [id, PLACEMENTS[id]] as const)
+      .map(([id, place]) => [`\`${id}\``, `${place.width} × ${place.height} (${place.ratio})`, place.note]),
   ),
 };
 
@@ -198,7 +206,7 @@ const asMarkdown = (page: Page) => `# ${page.title}\n\n${page.updated ? `Last up
 
 // ---------------------------------------------------------------- HTML
 
-const SUMMARY = "App Store screenshots for iPhone and iPad, made in the Studio or by your agent over MCP. Device frames, headlines, badges, and every size App Store Connect asks for.";
+const SUMMARY = "App Store screenshots for iPhone, iPad and Mac, made in the Studio or by your agent over MCP. Device frames, headlines, badges, and every size App Store Connect asks for.";
 
 /** JSON inside a <script> tag: a "<" in it must not be able to end the tag. */
 const jsonLd = (value: unknown) => `<script type="application/ld+json">${JSON.stringify(value).replaceAll("<", "\\u003c")}</script>`;

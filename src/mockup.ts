@@ -37,7 +37,6 @@ export const mockupName = (shot: Shot) => `${shot.name}-${shot.device}.png`;
 export function mockupStage(shot: Shot, settings: Mockups): { device: number; width: number; height: number } {
   const style: DeviceStyle = settings.device ?? {};
   const shape = deviceShape(shot, style, shot.device);
-  const rim = shape.frame === "none" ? 0 : (shape.geometry.band + shape.geometry.bezel) * 2;
   const angle = (Math.abs(style.rotate ?? 0) * Math.PI) / 180;
   /** The box a device of this width fills once it is rotated. */
   const box = (device: number) => ({
@@ -45,7 +44,7 @@ export function mockupStage(shot: Shot, settings: Mockups): { device: number; wi
     height: device * Math.sin(angle) + device * shape.ratio * Math.cos(angle),
   });
   // Pixel for pixel: the screen of the device is exactly as wide as the screenshot.
-  const native = shot.width / (1 - rim);
+  const native = shot.width / shape.screen;
   const device = Math.min(MAX_DEVICE, settings.width ? (native * settings.width) / box(native).width : native);
   const room = device * (ROOM[style.shadow ?? "none"] + (style.perspective && style.perspective !== "none" ? 0.12 : 0));
   const { width, height } = box(device);

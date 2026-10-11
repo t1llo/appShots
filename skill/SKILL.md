@@ -1,6 +1,6 @@
 ---
 name: appshots
-description: Make the App Store screenshots for the app in this repository from start to finish. Asks a few questions, takes the screens from screenshots the user already has, from the iOS Simulator or from a plugged-in iPhone or iPad, writes the headlines, and builds and renders the set on the appShots server. Also makes device mockups: the app's screens inside an iPhone or iPad on a transparent background, for a website or a README. Use when asked for App Store screenshots, store screenshots, a screenshot set, the header and search results assets of an app, or device mockups of its screens.
+description: Make the App Store screenshots for the app in this repository from start to finish. Asks a few questions, takes the screens from screenshots the user already has, from the iOS Simulator, from a plugged-in iPhone or iPad or from the window of a Mac app, writes the headlines, and builds and renders the set on the appShots server. Works for iPhone, iPad and Mac apps. Also makes device mockups: the app's screens inside an iPhone, iPad or MacBook on a transparent background, for a website or a README. And banners: the wide picture at the top of a README, a repository's social preview, a link preview. Use when asked for App Store or Mac App Store screenshots, store screenshots, a screenshot set, the header and search results assets of an app, device mockups of its screens, or a README banner or social preview made from them.
 ---
 
 # appShots
@@ -9,13 +9,13 @@ Turn the app in this repository into a finished set of App Store screenshots: ge
 
 Follow the steps in order, the same way every time. Say in a line or two what you decided at each step and carry on.
 
-If what the user wants is not store screenshots but the devices alone, such as "iPhone mockups for the website" or "a transparent PNG of the app for the README", go to [Mockups](#mockups-for-a-website-or-a-readme) at the end. That needs no questions, no copy and no slides.
+If what the user wants is not store screenshots but the devices alone, such as "iPhone mockups for the website" or "a transparent PNG of the app for the README", go to [Mockups](#mockups-for-a-website-or-a-readme) at the end. That needs no questions, no copy and no slides. If it is a wide picture with a headline, such as "a banner for the README" or "a social preview for the repository", go to [Banners](#a-banner-for-a-readme-or-a-link).
 
 ## Keep it quick
 
 A set takes about ten minutes when the user supplies or opens the screens, and about twenty when you reach them yourself. What makes it take an hour is building the app from scratch, hunting for screens by trial and error, reading the whole codebase, and rendering over and over. So:
 
-- **Use the `appshots` commands for everything on the Mac.** Do not write shell scripts, Swift scripts, UI tests or fastlane lanes to take screenshots, and do not call `xcodebuild` or `xcrun simctl` yourself. `appshots run`, `launch`, `capture` and `simctl` do it the same way each time and know which Xcode and which simulator to use.
+- **Use the `appshots` commands for everything on the Mac.** Do not write shell scripts, Swift scripts, UI tests or fastlane lanes to take screenshots, and do not call `xcodebuild` or `xcrun simctl` yourself. `appshots run`, `launch`, `capture` and `simctl` do it the same way each time and know which Xcode and which simulator to use. The one exception is building and opening a Mac app, in step 6 D.
 - **Build at most once per device,** with `appshots run`. It reuses the build Xcode already made. Skip it when the app is installed already.
 - **Two tries per screen.** If a screen does not come up after two attempts, ask the user to open it and capture it then.
 - **Read little.** The README, the root view with its tabs or navigation, and the accent colour. Ten files at most.
@@ -37,7 +37,7 @@ It reports in one go: whether the server answers, whether this skill is the curr
 
 If the `Skill:` line says the server has a newer one, run `appshots update`, then read this file again from the top and follow the new one. If `check` is not a command this copy knows, it is an old one: ask the user to run the setup command again, as described below.
 
-**The server's tools** are `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets` and `render`. There are two ways to reach them, and the rest of this skill names only the tool:
+**The server's tools** are `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets`, `render` and `render_mockups`. There are two ways to reach them, and the rest of this skill names only the tool:
 
 - As MCP tools, when this session has an MCP server called `appshots` and its `list_projects` answers.
 - Through the command, in every other case, including an MCP server that answers 401:
@@ -57,18 +57,20 @@ If `check` says the server is not set up or did not accept the token, the setup 
 3. Copy the command that appears and paste it into Terminal.
 4. Start a new session in this folder and ask for the screenshots again.
 
-Then call `get_design_guide` and read it. It is the current reference for layouts, feature slides, backgrounds, fonts, badges, icon and logo rows, the app's logo and other placed images, copy and the header and search results assets, and it wins over anything remembered.
+Then call `get_design_guide` and read it. It is the current reference for layouts, feature slides, backgrounds, fonts, badges, icon and logo rows, the app's logo and other placed images, copy, Mac apps, the header and search results assets and banners, and it wins over anything remembered.
+
+**Find out what kind of app this is** before you ask anything. It is a Mac app when an Xcode target has `SDKROOT = macosx` or `macosx` among its `SUPPORTED_PLATFORMS`, when a Swift package lists `.macOS` in its `platforms`, or when it is an Electron or Tauri app. A Mac app gets a landscape set for the Mac App Store, and its screens come from its own window on this Mac: step 6 D. An app for iPhone and Mac can have both in one project.
 
 ## 2. Ask first
 
 Ask these together, in one message, before doing anything else. Use this agent's tool for asking the user questions if it has one. Leave out whatever the request or `appshots check` has already answered, and do not add questions of your own.
 
-1. **Devices:** iPhone only, or the iPad or the iPhone Duo as well? One design per device covers every size of it, so never ask about sizes.
+1. **Devices:** iPhone only, or the iPad or the iPhone Duo as well? One design per device covers every size of it, so never ask about sizes. For an app that runs on the Mac only, leave this question out. For one that runs on iPhone and Mac, ask which of them the set is for.
 2. **The screens:** how do we get them?
    - *I have screenshots.* They give you the folder.
    - *I open each screen, you capture it.* The quickest way to real content, and the one to recommend.
    - *Do it yourself.* You start the app on each screen. Slower, and it may need a few lines in the app that only exist in debug builds; ask whether adding them is fine.
-3. **Where the app runs,** only when `check` leaves it open: on a simulator or on the plugged-in iPhone or iPad? Name the ones `check` listed. If the app is installed on a booted simulator, ask whether that is the current build.
+3. **Where the app runs,** not for a Mac app, and only when `check` leaves it open: on a simulator or on the plugged-in iPhone or iPad? Name the ones `check` listed. If the app is installed on a booted simulator, ask whether that is the current build.
 4. **The look:** light or dark? Which languages, if more than the app's main one?
 5. **Extras:** Is there a real rating, download count, award or review to show? Services the app works with, whose logos belong on a slide? A logo, mascot or other artwork of their own to put on the slides, and where the files are? Header and search results assets as well?
 
@@ -106,7 +108,7 @@ appshots upload <project> home.png stats.png
 appshots upload <project> IMG_0412.png --name home
 ```
 
-Then `get_project` lists what is there. Open the files to see what each one shows, and use those names in the slides. iPhone, iPhone Duo and iPad are told apart by the size of the image, and one name can hold one of each. `get_project` says which device each one counts as; if that is wrong, upload it again with `--as iphone`, `--as duo` or `--as ipad`.
+Then `get_project` lists what is there. Open the files to see what each one shows, and use those names in the slides. iPhone, iPhone Duo and iPad are told apart by the size of the image, and one name can hold one of each. A picture that is wider than tall, or a captured window, counts as a Mac's. `get_project` says which device each one counts as; if that is wrong, upload it again with `--as iphone`, `--as duo`, `--as ipad` or `--as mac`.
 
 ### B. The user opens each screen
 
@@ -173,6 +175,35 @@ appshots capture --name home --project <project> --device          # the plugged
       Put it where the root view sets its first tab or route, fill in sample content there if the app would be empty, run `appshots run` once more, and from then on every screen is `appshots launch <bundle id> --capture <name> --to <project> -- -appshots <name>`. Tell the user which file you changed.
    4. Otherwise ask the user to open that screen, and capture it as in B.
 
+### D. A Mac app
+
+A Mac app runs on this Mac, not in a simulator, so `appshots run`, `launch` and `--clean` are not for it.
+
+1. **Get it running.** If the user has it open and says that build is current, there is nothing to build. Otherwise build and open it the project's own way. For an Xcode project:
+
+   ```bash
+   xcodebuild -scheme <scheme> -configuration Debug -derivedDataPath build build
+   open build/Build/Products/Debug/<App>.app
+   ```
+
+   Give the build a long timeout, and do not commit `build/`.
+
+2. **Capture its window with one command:**
+
+   ```bash
+   appshots capture --mac "<app name>" --name overview --project <project>
+   ```
+
+   `<app name>` is the name in the menu bar. It takes the app's frontmost window, without the shadow, and uploads it as a Mac screenshot. When the user opens the screens themselves, give them `appshots shoot <project> overview budgets reports --mac "<app name>"` to paste, as in B.
+
+3. **If macOS refuses,** the terminal lacks the Screen Recording permission, and the command says where to switch it on: System Settings, Privacy & Security, Screen & System Audio Recording. Only the user can do that. Tell them, or ask them to take each window themselves (Shift-Command-4, then Space, then a click on the window) and upload the files with `appshots upload <project> <file> --name overview --as mac`.
+
+4. **How to land on a screen,** in the order of C: launch arguments (`open <App>.app --args -appshots stats`), a deep link (`open "<scheme>://stats"`), a debug-only launch argument if the user agreed to one, and otherwise the user opens the screen. `open` only brings a running app to the front, so quit the app before opening it with other arguments: `osascript -e 'quit app "<app name>"'`. Wait two seconds after opening before you capture.
+
+5. **Window or full screen.** A captured window is drawn as that window, large and readable, which suits most apps. An app in full screen is drawn inside a MacBook, where its text turns small: at most one such slide, usually the first. Give the window a size that shows the content without empty space before capturing.
+
+For an app on iPhone and Mac, capture the same screens under the same names on both, and one slide set serves both. Read Mac apps in the design guide before writing the slides: the canvas is wide and short, so the copy has to be shorter still.
+
 For the iPad or the Duo set, capture the same names on that simulator. One name holds one screenshot of each device, and every slide picks the one of the device it is drawn for.
 
 For another language, when the user asked for it and the app itself is translated: list the language in the project's `locales` first, then capture the same names again with `--lang`, which starts the app in that language and files the screenshot under it:
@@ -224,6 +255,7 @@ Tell the user:
 - The Studio link, {{SERVER}}/#/<project>, where every slide can still be edited by hand.
 - How to get the files: **Export ZIP** in the Studio, or `appshots pull <project>` for `./store-screenshots/<project>`. There is one folder per display of App Store Connect, and `README.txt` says which folder goes onto which display. A display only takes the files of its own folder.
 - The slides with their headlines, in order.
+- For a Mac set: the files are in the `mac-2880` folder, 2880×1800, and go onto the macOS version of the app in App Store Connect.
 - What you assumed or left out: no iPad or Duo set, no badges, a screen you could not reach, a file you changed for the debug launch argument.
 - That header and search results assets, if made, should be checked in App Store Connect's preview before submitting.
 - If the `appshots` MCP server answered 401 and you used the command instead: running the setup command again, from this folder, repairs the connection.
@@ -239,3 +271,13 @@ A mockup is one raw screenshot inside its device with nothing behind it: a trans
 5. Tell the user where the files are, and that {{SERVER}}/#/<project>/mockups shows them and lets them change the device and download again.
 
 Mockups use none of the account's renders.
+
+## A banner for a README or a link
+
+A banner is a wide picture with the app's screens in their devices, a headline and the project's background, for outside the store. Make one when the user asks for a README banner or header, a social preview for the repository, a link preview (`og:image`) or a 16:9 picture for a post.
+
+1. Do step 1, then get a project with its raw screenshots as in steps 5 and 6. An existing project already has them, and its theme. Skip the questions and the plan.
+2. `set_creative_assets` with the banner asked for: `readme` (2400×800), `social` (1280×640, GitHub's social preview), `link` (1200×630) or `post` (1920×1080). Give it a headline of a few words, perhaps a subheadline, and one to three `screenshots`. Banners in the design guide has every field. In a new project, set the theme first with `update_project`: the app's accent colour and a background in the same family.
+3. `render` with `"creatives": ["readme"]`. That draws the banner alone and leaves the slides as they are. It uses one render, so make every banner that was asked for in one call. Look at the preview it returns, and fix and render once more at most.
+4. `appshots pull <project>` saves it as `./store-screenshots/<project>/<language>/banners/readme.png`. For a README, copy it into the repository, such as `docs/banner.png`, and make `![<App name>](docs/banner.png)` the first line of the README. Do not commit `store-screenshots/`.
+5. Tell the user what only they can do: a `social` banner is uploaded under the repository's Settings, General, Social preview, where GitHub takes a file of up to 1 MB; a `link` banner goes onto their website as the page's `og:image`.

@@ -1,10 +1,10 @@
 import path from "node:path";
 import { type BackgroundDef, bodyFont, type CreativeLayoutId, FONT_CSS_URL, type FontId, FONTS } from "./design.ts";
 import { hasBakedIsland } from "./palette.ts";
-import type { DeviceStyle, Project } from "./schema.ts";
+import type { Creative, DeviceStyle, Project } from "./schema.ts";
 import { isDeviceKind, PLACEMENTS, type PlacementId } from "./sizes.ts";
 import { findShot, listImages, type Shot, shotsDir, type Space } from "./store.ts";
-import { backgroundCss, backgroundLuminance, badgeHtml, CSS, DEFS, deviceHtml, deviceShape, esc, FIT_SCRIPT, logoHtml, pick, resolveBackground, rich, round, statusLook } from "./template.ts";
+import { anchorOf, backgroundCss, backgroundLuminance, badgeHtml, CSS, DEFS, deskSlots, deviceHtml, deviceShape, esc, FIT_SCRIPT, logoHtml, pick, resolveBackground, rich, round, type Slot, statusLook } from "./template.ts";
 
 export interface CreativeContext {
   space: Space;
@@ -27,24 +27,35 @@ interface Rect extends Size {
 }
 
 /** Where one device stands: its centre line, top edge and width in canvas pixels. */
-interface Slot {
-  x: number;
-  top: number;
-  width: number;
-  rotate: number;
-  z: number;
-}
-
 /** How many screenshots each layout has room for. */
-export const CREATIVE_CAPACITY: Record<CreativeLayoutId, number> = { fan: 5, sides: 4, wall: 6 };
+export const CREATIVE_CAPACITY: Record<CreativeLayoutId, number> = { fan: 5, sides: 4, wall: 6, split: 3 };
+
+/** The layout an asset is drawn with. A banner is a split unless it says otherwise, and an App Store asset never is one: its copy would stand outside the safe area, so it is drawn as sides. */
+export function creativeLayout(creative: Creative, placement: PlacementId): CreativeLayoutId {
+  const banner = PLACEMENTS[placement].kind === "banner";
+  const wanted = creative.layout ?? (banner ? "split" : "fan");
+  return wanted === "split" && !banner ? "sides" : wanted;
+}
 
 /** Positions around the centre, nearest first: 0, -1, 1, -2, 2 for five devices and -0.5, 0.5, -1.5, 1.5 for four. */
 function outward(count: number): number[] {
   return Array.from({ length: count }, (_, i) => i - (count - 1) / 2).sort((a, b) => Math.abs(a) - Math.abs(b) || a - b);
 }
 
+/** Turns positions measured in widths of the laptop into canvas pixels, with the laptop's top left corner at `left` and `top`. */
+const onCanvas = (slots: Slot[], width: number, left: number, top: number): Slot[] =>
+  slots.map((slot) => ({ ...slot, x: left + slot.x * width, top: top + slot.top * width, width: slot.width * width }));
+
 function fanSlots(ratios: number[], canvas: Size, safe: Rect, hasCopy: boolean, scale: number): Slot[] {
   const top = safe.y + safe.height * (hasCopy ? 0.58 : 0.1);
+  const anchor = anchorOf(ratios);
+  if (anchor >= 0) {
+    // A laptop is cut through its screen, well above the base: one cut just above it looks broken.
+    const width = Math.min(canvas.width * 0.6, ((canvas.height - top) * 1.3) / ratios[anchor]!) * scale;
+    const desk = deskSlots(ratios, anchor, "both");
+    const rise = Math.min(...desk.map((slot) => slot.top));
+    return onCanvas(desk, width, canvas.width / 2 - width / 2, top - rise * width);
+  }
   // Wide enough to carry the safe area, and tall enough to run off the bottom edge.
   const width = Math.max(safe.width * 0.47, ((canvas.height - top) * 1.15) / ratios[0]!) * scale;
   return outward(ratios.length).map((position) => {
@@ -69,9 +80,14 @@ function sidesSlots(ratios: number[], canvas: Size, safe: Rect, scale: number): 
     // A lone screenshot stands on the right; after that they alternate left and right, moving outwards.
     const side = ratios.length === 1 ? 1 : i % 2 === 0 ? -1 : 1;
     const outer = i >= 2;
+    const edge = side < 0 ? safe.x - gap : safe.x + safe.width + gap;
+    if (ratio < 1) {
+      // A laptop is as tall as the copy beside it and stands level. What the canvas has no room for runs off its edge.
+      const own = Math.min(room * 1.5, (canvas.height * 0.6) / ratio) * scale * (outer ? 0.78 : 1);
+      return { x: edge + side * (own / 2 + (outer ? own * 0.3 : 0)), top: middle - (own * ratio) / 2 - (outer ? canvas.height * 0.08 : 0), width: own, rotate: 0, z: outer ? 1 : 2 };
+    }
     const own = width * (outer ? 0.78 : 1);
     const height = own * ratio;
-    const edge = side < 0 ? safe.x - gap : safe.x + safe.width + gap;
     // A device taller than the canvas rises from the bottom edge; one that fits stands level with the copy.
     const top = height >= canvas.height * 0.9 ? canvas.height * 0.13 : Math.max(canvas.height * 0.05, middle - height / 2);
     return {
@@ -80,6 +96,49 @@ function sidesSlots(ratios: number[], canvas: Size, safe: Rect, scale: number): 
       width: own,
       rotate: side * (outer ? 11 : 5),
       z: outer ? 1 : 2,
+    };
+  });
+}
+
+/** The column a split sets its copy in, and where its devices start. */
+function splitBox(canvas: Size): Rect {
+  const margin = Math.max(canvas.height * 0.11, canvas.width * 0.05);
+  return { x: margin, y: canvas.height * 0.1, width: canvas.width * 0.47 - margin, height: canvas.height * 0.8 };
+}
+
+function splitSlots(ratios: number[], canvas: Size, scale: number): Slot[] {
+  const left = canvas.width * 0.5;
+  const room = canvas.width - canvas.height * 0.1 - left;
+  const anchor = anchorOf(ratios);
+  if (anchor >= 0) {
+    const desk = deskSlots(ratios, anchor, "left");
+    const from = Math.min(...desk.map((slot) => slot.x - slot.width / 2));
+    const to = Math.max(...desk.map((slot) => slot.x + slot.width / 2));
+    const rise = Math.min(...desk.map((slot) => slot.top));
+    const depth = Math.max(...desk.map((slot, i) => slot.top + slot.width * ratios[i]!)) - rise;
+    // Large enough to carry the banner. A group too wide for its half starts at the middle and runs off the right edge,
+    // as long as most of the laptop stays in view.
+    const width = Math.min((canvas.height * 0.72) / ratios[anchor]!, (canvas.width - left) / 0.62 / (to - from)) * scale;
+    const span = (to - from) * width;
+    const start = span <= room ? left + (room - span) / 2 : left;
+    return onCanvas(desk, width, start - from * width, (canvas.height - depth * width) / 2 - rise * width);
+  }
+  const count = ratios.length;
+  const step = 0.74;
+  // Phones as tall as the banner run off its bottom edge. Where three of them have no room for that, they stand whole.
+  const width = Math.min((canvas.height * 1.12) / ratios[0]!, room / (1 + step * (count - 1))) * scale;
+  const height = width * ratios[0]!;
+  const top = height >= canvas.height * 0.9 ? canvas.height * 0.13 : (canvas.height - height) / 2;
+  return outward(count).map((position, i) => {
+    const steps = Math.abs(position);
+    // Two stand side by side with the first in front; of three, the first is in the middle.
+    const back = count === 2 ? i : Math.round(steps);
+    return {
+      x: left + room / 2 + position * width * step,
+      top: top + back * width * 0.1,
+      width: width * (1 - back * 0.07),
+      rotate: position * 6,
+      z: 10 - back,
     };
   });
 }
@@ -125,6 +184,9 @@ const CREATIVE_CSS = `
 .creative .copy{flex:none;padding:0}
 .creative .badges.top{margin-bottom:calc(var(--u)*3.6)}
 .creative .badges.bottom{margin-top:calc(var(--u)*3.8)}
+.creative-split .c-box{align-items:flex-start}
+.creative-split .copy{align-items:flex-start;text-align:left}
+.creative-split .badges{justify-content:flex-start}
 .wall{position:absolute;left:50%;top:50%;z-index:1;display:flex;align-items:center;gap:var(--tg)}
 .wall .col{flex:none;width:var(--tw);display:flex;flex-direction:column;gap:var(--tg)}
 .wall .tile{overflow:hidden;background:#101012;box-shadow:0 calc(var(--tw)*.03) calc(var(--tw)*.09) rgba(0,0,0,.28)}
@@ -145,7 +207,8 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
   const shotsPath = shotsDir(ctx.space, project.id);
   const fallback = project.locales[0] ?? "en";
   const theme = project.theme;
-  const layout: CreativeLayoutId = creative.layout ?? "fan";
+  const banner = placement.kind === "banner";
+  const layout = creativeLayout(creative, ctx.placement);
 
   // These assets are not tied to one device, so a name with several variants shows the iPhone one unless another frame is asked for.
   const deviceStyle: DeviceStyle = {
@@ -206,7 +269,8 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
     }
   } else if (placed.length) {
     const ratios = placed.map(({ shot }) => deviceShape(shot, deviceStyle, prefer).ratio);
-    const slots = layout === "sides" ? sidesSlots(ratios, canvas, safe, scale) : fanSlots(ratios, canvas, safe, Boolean(copyParts), scale);
+    const slots =
+      layout === "split" ? splitSlots(ratios, canvas, scale) : layout === "sides" ? sidesSlots(ratios, canvas, safe, scale) : fanSlots(ratios, canvas, safe, Boolean(copyParts), scale);
     const devices = await Promise.all(
       placed.map(async ({ name, shot }, i) => {
         const slot = slots[i]!;
@@ -233,18 +297,21 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
 
   // The copy keeps a little clear of the safe area's edges. Under a fan it takes the upper half, so the devices' tops stay inside too.
   const halved = layout === "fan" && placed.length > 0;
-  const box: Rect = {
-    x: safe.x + safe.width * 0.02,
-    y: safe.y + safe.height * 0.04,
-    width: safe.width * 0.96,
-    height: safe.height * (halved ? 0.52 : 0.92),
-  };
+  const box: Rect =
+    layout === "split"
+      ? splitBox(canvas)
+      : {
+          x: safe.x + safe.width * 0.02,
+          y: safe.y + safe.height * 0.04,
+          width: safe.width * 0.96,
+          height: safe.height * (halved ? 0.52 : 0.92),
+        };
   const copyHtml = copyParts
     ? `<div class="c-box" style="left:${round(box.x)}px;top:${round(box.y)}px;width:${round(box.width)}px;height:${round(box.height)}px"><div class="copy">${copyParts}</div></div>`
     : "";
 
-  // Type is sized off the safe area, since that is all a narrow crop shows of the canvas.
-  const unit = Math.min(safe.width / 88, safe.height / 40);
+  // Type is sized off the safe area, since that is all a narrow crop shows of the canvas. A split sizes it off its own column.
+  const unit = layout === "split" ? Math.min(box.width / 56, box.height / 40) : Math.min(safe.width / 88, safe.height / 40);
   const badgeScale = (halved ? 0.6 : 0.8) * (badges.length >= 3 ? 0.78 : 1);
   const vars = [
     `width:${canvas.width}px`,
@@ -263,7 +330,8 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
   ].join(";");
   const fonts = JSON.stringify([`${font.weight} 40px '${font.family}'`, `500 40px '${body.family}'`, `700 40px '${body.family}'`]);
   const noise = typeof background === "object" && background.noise ? `<div class="noise" style="opacity:${round(background.noise * 0.6)}"></div>` : "";
-  const guide = ctx.guides
+  // A banner is shown whole wherever it is used, so it has no safe area to draw.
+  const guide = ctx.guides && !banner
     ? `<div class="guide" style="left:${safe.x}px;top:${safe.y}px;width:${safe.width}px;height:${safe.height}px;--g:${round(canvas.width / 480)}px"><span>Safe area</span></div>`
     : "";
 

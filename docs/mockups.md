@@ -1,7 +1,7 @@
 ---
 title: Mockups
 nav: Mockups
-description: Turn raw app screenshots into device mockups with a transparent background. One PNG per screenshot of the iPhone, iPhone Duo or iPad alone, for a website, a README or a deck, from the Studio, the appshots command or an agent.
+description: Turn raw app screenshots into device mockups with a transparent background. One PNG per screenshot of the iPhone, iPhone Duo, iPad or Mac alone, for a website, a README or a deck, from the Studio, the appshots command or an agent.
 ---
 
 A mockup is one of your screenshots inside its device, with nothing behind it. The file is a PNG with a transparent background, so it sits on a page of any colour: a landing page, a GitHub README, a press kit, a slide deck.
@@ -31,6 +31,7 @@ One PNG per screenshot and device, named after both:
 home-iphone.png
 stats-iphone.png
 home-ipad.png
+home-mac.png
 ```
 
 Each file is cut to the device and its shadow, with no margin around it. **Download all** and `appshots mockups` deliver them as `<project>-mockups.zip`.
@@ -45,7 +46,7 @@ The same settings apply to every mockup of a project. They are saved with the pr
 | --- | --- |
 | Device look | `real`, the default, or `clay`, `outline` or `sketch` |
 | Device colour | `black`, `silver`, `natural`, `gold`, `blue` or `orange` |
-| Frame | Matches the screenshot unless you pick one. `none` gives the bare screenshot with rounded corners |
+| Frame | Matches the screenshot unless you pick one. `none` gives the bare screenshot with rounded corners. A Mac screenshot comes out as a window or inside a MacBook, as on a slide. See [Mac apps](/docs/mac#a-window-or-a-macbook) |
 | Shadow | `none`, the default, or `soft` or `strong`. The shadow is part of the PNG and falls straight down |
 | Tilt | Turns the device, from -45 to 45 degrees |
 | Turn in 3D | Turns it towards the left or the right |
@@ -77,3 +78,5 @@ In a README:
 ## What it costs
 
 Nothing. Drawing mockups does not use any of the account's [renders](/docs/export#how-many-renders). A mockup is drawn when it is asked for, which takes a second or two each, so a ZIP of many takes a moment.
+
+For a wide picture with a headline and a background, such as the top of a README, see [Banners](/docs/banners).

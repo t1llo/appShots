@@ -250,6 +250,22 @@ function bentoCells(count: number): { cells: Cell[]; rows: number[] } {
   return { cells, rows };
 }
 
+/** On a landscape canvas: the hero on the left over both rows, the other cards in two rows beside it. */
+function wideBentoCells(count: number): { cells: Cell[]; tracks: number; rows: number } {
+  const rest = count - 1;
+  if (rest <= 0) return { cells: [cell(1, 1, 1, 1, "hero")], tracks: 1, rows: 1 };
+  const rows = rest > 1 ? 2 : 1;
+  const columns = Math.ceil(rest / rows);
+  const cells = [cell(1, 2, 1, rows, "hero")];
+  for (let i = 0; i < rest; i++) {
+    const at = i % columns;
+    // The last card of a shorter second row widens to close it.
+    const span = i === rest - 1 ? columns - at : 1;
+    cells.push(cell(3 + at, span, Math.floor(i / columns) + 1, 1, span > 1 ? "wide" : undefined));
+  }
+  return { cells, tracks: 2 + columns, rows };
+}
+
 /** Even cards in rows; the cards of a last, shorter row widen to fill it. */
 function gridCells(count: number, columns: number): { cells: Cell[]; rows: number } {
   const rest = count % columns;
@@ -273,9 +289,20 @@ function featuresHtml(features: Feature[], style: FeatureStyleId, canvas: { widt
   let stretch = 1.3;
   // A tablet canvas is wide enough for three tiles in a row, and for larger rows.
   const tablet = canvas.width / canvas.height > 0.6;
+  // A landscape canvas lays the cards out side by side, where a portrait one stacks them.
+  const wide = canvas.width > canvas.height;
+  // Rows of an icon beside its text, one or two across.
+  let across = 0;
   // Type is sized for a card as wide as half a phone canvas, and follows the card from there.
   let column = unit * 41.8;
-  if (style === "bento") {
+  if (style === "bento" && wide) {
+    const bento = wideBentoCells(count);
+    tracks = bento.tracks;
+    column = (inner - gap * (tracks - 1)) / tracks;
+    cells = bento.cells;
+    rows = Array.from({ length: bento.rows }, () => column * 0.66);
+    stretch = 1.4;
+  } else if (style === "bento") {
     const bento = bentoCells(count);
     column = (inner - gap) / 2;
     cells = bento.cells;
@@ -283,18 +310,20 @@ function featuresHtml(features: Feature[], style: FeatureStyleId, canvas: { widt
     tracks = 2;
     stretch = 1.4;
   } else if (style === "grid") {
-    const columns = tablet ? 3 : 2;
+    const columns = wide ? (count <= 4 ? count : Math.ceil(count / 2)) : tablet ? 3 : 2;
     const grid = gridCells(count, columns);
     column = (inner - gap * (columns - 1)) / columns;
     cells = grid.cells;
-    rows = Array.from({ length: grid.rows }, () => column * 0.8);
+    rows = Array.from({ length: grid.rows }, () => column * (wide ? 0.66 : 0.8));
     tracks = columns * 6;
   } else {
     if (style === "list") gap = unit * 1.2;
     const size = tablet ? 1.15 : 1;
     column *= size * size;
-    cells = features.map((_, i) => cell(1, 1, i + 1));
-    rows = features.map(() => unit * (style === "cards" ? 19 : 15.5) * size);
+    across = wide && count > 3 ? 2 : 1;
+    cells = features.map((_, i) => cell((i % across) + 1, 1, Math.floor(i / across) + 1));
+    rows = Array.from({ length: Math.ceil(count / across) }, () => unit * (style === "cards" ? 19 : 15.5) * size);
+    tracks = across;
   }
 
   // A few cards may grow to carry the slide; many keep their size and give way in the page if they must.
@@ -311,9 +340,11 @@ function featuresHtml(features: Feature[], style: FeatureStyleId, canvas: { widt
     const value = pick(feature.value, locale, fallback);
     const lead = value ? `<div class="f-lead"><span class="f-value">${esc(value)}</span></div>` : feature.icon ? `<div class="f-lead">${iconSvg(feature.icon, "f-icon")}</div>` : "";
     const text = `<div class="f-text"><div class="f-title">${rich(title)}</div>${detail ? `<div class="f-detail">${rich(detail)}</div>` : ""}</div>`;
-    return `<div class="f-tile${kind ? ` ${kind}` : ""}${tracks === 1 ? " row" : ""}" style="grid-column:${column};grid-row:${row}">${lead}${text}</div>`;
+    return `<div class="f-tile${kind ? ` ${kind}` : ""}${across ? " row" : ""}" style="grid-column:${column};grid-row:${row}">${lead}${text}</div>`;
   });
   const grid = [`--fz:${round(scale)}`, `gap:${round(gap)}px`, `grid-template-columns:repeat(${tracks},minmax(0,1fr))`, `grid-template-rows:${rows.map((row) => `minmax(0,${round(row)}fr)`).join(" ")}`];
+  // Two rows across need twice the width a single column of them is held to.
+  if (across > 1) grid.push(`max-width:${round(unit * 98 * across + gap * 3)}px`, `column-gap:${round(gap * 3)}px`);
   return `<div class="features fs-${style}${alone ? " alone" : ""}" style="flex-basis:${round(height)}px"><div class="f-grid" style="${grid.join(";")}">${tiles.join("")}</div></div>`;
 }
 
@@ -368,21 +399,40 @@ function pointsHtml(features: Feature[], style: PointStyleId, wide: boolean, loc
 
 // ---------------------------------------------------------------- devices
 
+interface Frame {
+  outer: number;
+  band: number;
+  bezel: number;
+  inner: number;
+  aspect: [number, number];
+  /** Corner radius of the screenshot shown without a frame. */
+  bare: number;
+  /** The proportions, width by height, of the screenshots the frame can plausibly hold. */
+  fits: [number, number];
+  /** A laptop's lid is narrower than the base it stands on, which is the full device width. */
+  lid?: number;
+  /** How tall that base is. */
+  base?: number;
+}
+
 /**
  * Frame geometry as fractions of the device width. The iPhone and the iPad are measured off the real hardware.
- * The Duo is its unfolded inner display in a plain thin frame, with no camera or hinge drawn.
+ * The Duo is its unfolded inner display in a plain thin frame, with no camera or hinge drawn. The Mac is a
+ * MacBook seen from the front: the lid with its display, and the front edge of the base under it.
  */
-const FRAMES: Record<DeviceKind, { outer: number; band: number; bezel: number; inner: number; aspect: [number, number]; bare: number; fits: [number, number] }> = {
+const FRAMES: Record<DeviceKind, Frame> = {
   iphone: { outer: 0.165, band: 0.011, bezel: 0.023, inner: 0.131, aspect: [1320, 2868], bare: 0.085, fits: [0.44, 0.58] },
   duo: { outer: 0.082, band: 0.007, bezel: 0.019, inner: 0.058, aspect: [2007, 2853], bare: 0.045, fits: [0.64, 0.76] },
   ipad: { outer: 0.058, band: 0.006, bezel: 0.034, inner: 0.024, aspect: [2064, 2752], bare: 0.03, fits: [0.66, 0.78] },
+  mac: { outer: 0.019, band: 0.0024, bezel: 0.0105, inner: 0.0075, aspect: [2880, 1800], bare: 0.011, fits: [1.45, 1.85], lid: 0.83, base: 0.019 },
 };
 
 /** Device width as a fraction of canvas width, by target device then by the frame drawn on it. */
 const BASE_WIDTH: Record<DeviceKind, Record<DeviceKind, number>> = {
-  iphone: { iphone: 0.86, duo: 0.92, ipad: 0.92 },
-  duo: { duo: 0.82, ipad: 0.82, iphone: 0.5 },
-  ipad: { ipad: 0.84, duo: 0.82, iphone: 0.5 },
+  iphone: { iphone: 0.86, duo: 0.92, ipad: 0.92, mac: 0.94 },
+  duo: { duo: 0.82, ipad: 0.82, iphone: 0.5, mac: 0.92 },
+  ipad: { ipad: 0.84, duo: 0.82, iphone: 0.5, mac: 0.92 },
+  mac: { mac: 0.8, ipad: 0.36, duo: 0.36, iphone: 0.25 },
 };
 
 const LAYOUT_WIDTH: Record<LayoutId, number> = {
@@ -461,36 +511,48 @@ interface DeviceOptions {
   defaults?: Partial<DeviceStyle>;
 }
 
-/** Which frame a screenshot gets, and how tall the device comes out per unit of its width. */
+/**
+ * Which frame a screenshot gets, how much of the device's width its screen takes, and how tall the device comes
+ * out per unit of its width.
+ */
 export function deviceShape(shot: Shot | undefined, style: DeviceStyle, fallback: DeviceKind) {
   const kind: DeviceKind = isDeviceKind(style.frame) ? style.frame : (shot?.device ?? fallback);
-  const frame: FrameKind = style.frame === "none" ? "none" : kind;
   const geometry = FRAMES[kind];
+  const [lo, hi] = geometry.fits;
+  const own = shot ? shot.width / shot.height : 0;
+  const holds = own >= lo && own <= hi;
+  // A Mac screenshot that is a captured window, or not the shape of a display, is shown as the window it is unless a MacBook is asked for.
+  const window = kind === "mac" && shot != null && (!holds || shot.corner != null) && style.frame !== "mac";
+  const frame: FrameKind = style.frame === "none" || window ? "none" : kind;
 
   // Follow the screenshot's own proportions so nothing gets cropped, within what the frame can plausibly hold.
+  // A bare window has no frame to fill, so it keeps its shape whatever that is.
   let [aw, ah] = geometry.aspect;
-  if (shot && shot.height > shot.width) {
-    const ratio = shot.width / shot.height;
-    const [lo, hi] = geometry.fits;
-    if (ratio >= lo && ratio <= hi) [aw, ah] = [shot.width, shot.height];
-  }
+  if (shot && (holds || (kind === "mac" && frame === "none"))) [aw, ah] = [shot.width, shot.height];
   const rim = frame === "none" ? 0 : (geometry.band + geometry.bezel) * 2;
-  return { kind, frame, geometry, aspect: `${aw}/${ah}`, ratio: (1 - rim) * (ah / aw) + rim };
+  const screen = (frame === "none" ? 1 : (geometry.lid ?? 1)) - rim;
+  const base = frame === "none" ? 0 : (geometry.base ?? 0);
+  // A window narrower than a display is drawn as tall as a display would be, not as wide.
+  const slim = kind === "mac" && frame === "none" ? Math.min(1, (aw / ah) * (geometry.aspect[1] / geometry.aspect[0])) : 1;
+  // A captured window keeps the corners it was captured with.
+  const corner = frame === "none" && shot?.corner ? shot.corner / shot.width : geometry.bare;
+  return { kind, frame, geometry, aspect: `${aw}/${ah}`, screen, slim, corner, ratio: screen * (ah / aw) + rim + base };
 }
 
-/** The colour behind a screenshot's status bar, where the device style asks for a clean one to be drawn. */
+/** The colour behind a screenshot's status bar, where the device style asks for a clean one to be drawn. A Mac has none. */
 export async function statusLook(shot: Shot | undefined, style: DeviceStyle, shotsPath: string): Promise<StatusBarLook | undefined> {
   if (!shot || !style.statusBar || style.statusBar === "none") return undefined;
   const kind = isDeviceKind(style.frame) ? style.frame : shot.device;
+  if (kind === "mac") return undefined;
   return statusBarLook(path.join(shotsPath, shot.file), shot.version, kind, shot.width);
 }
 
 export function deviceHtml(options: DeviceOptions): string {
   const { shot, style, canvas } = options;
   const merged = { ...options.defaults, ...style };
-  const { kind, frame, geometry, aspect } = deviceShape(shot, merged, options.targetDevice);
+  const { kind, frame, geometry, aspect, screen: screenWidth, slim, corner } = deviceShape(shot, merged, options.targetDevice);
 
-  const dw = round(options.pixels ?? canvas.width * BASE_WIDTH[options.targetDevice][kind] * options.width * (options.fit === "width" ? (merged.scale ?? 1) : 1));
+  const dw = round(options.pixels ?? canvas.width * BASE_WIDTH[options.targetDevice][kind] * slim * options.width * (options.fit === "width" ? (merged.scale ?? 1) : 1));
   const transforms: string[] = [];
   if (merged.offsetX || merged.offsetY) {
     transforms.push(`translate(${round(((merged.offsetX ?? 0) / 100) * canvas.width)}px,${round(((merged.offsetY ?? 0) / 100) * canvas.height)}px)`);
@@ -503,16 +565,17 @@ export function deviceHtml(options: DeviceOptions): string {
 
   const look = frame === "none" ? "real" : (merged.style ?? "real");
   const drawn = look === "outline" || look === "sketch";
-  const colors = DEVICE_COLORS[merged.color ?? "black"];
-  const rim = frame === "none" ? 0 : (geometry.band + geometry.bezel) * 2;
+  // A MacBook is silver unless a colour is asked for; every other device is black.
+  const colors = DEVICE_COLORS[merged.color ?? (kind === "mac" ? "silver" : "black")];
   const vars = [
     `--dw:${dw}px`,
-    `--sw:calc(var(--dw)*${round4(1 - rim)})`,
+    `--sw:calc(var(--dw)*${round4(screenWidth)})`,
     `--ar:${aspect}`,
+    frame === "mac" ? `--lid:${geometry.lid};--bh:${geometry.base}` : "",
     `--ro:${geometry.outer}`,
     `--band:${geometry.band}`,
     `--bez:${geometry.bezel}`,
-    `--ri:${frame === "none" ? geometry.bare : geometry.inner}`,
+    `--ri:${frame === "none" ? round4(corner) : geometry.inner}`,
     // A line drawing lies flat on the slide unless it is asked to cast a shadow.
     `--shadow:${SHADOWS[merged.shadow ?? (drawn ? "none" : "soft")]}`,
     ...colors.map((color, i) => `--f${i + 1}:${color}`),
@@ -527,7 +590,8 @@ export function deviceHtml(options: DeviceOptions): string {
   const bar = options.url && options.status ? statusBarHtml(kind, options.status, merged) : "";
   // A status bar painted over the screenshot's own covers an island the screenshot shows, so that one is drawn again.
   const island = kind === "iphone" && ((frame === "iphone" && options.island) || (!options.island && bar && merged.statusBar === "cover")) ? '<div class="island"></div>' : "";
-  const attrs = `class="device ${frame}${look === "real" ? "" : ` ${drawn ? "drawn " : ""}${look}`}" data-fit="${options.fit}" data-scale="${merged.scale ?? 1}" style="${vars.join(";")}"`;
+  const window = frame === "none" && kind === "mac";
+  const attrs = `class="device ${frame}${window ? " window" : ""}${look === "real" ? "" : ` ${drawn ? "drawn " : ""}${look}`}" data-fit="${options.fit}" data-scale="${merged.scale ?? 1}" style="${vars.join(";")}"`;
 
   if (frame === "none") return `<div ${attrs}><div class="screen bare">${screen}${bar}${island}</div></div>`;
   const buttons =
@@ -540,7 +604,8 @@ export function deviceHtml(options: DeviceOptions): string {
       ? `<svg class="defs" aria-hidden="true"><filter id="pen-${++pens}" x="-4%" y="-2%" width="108%" height="104%"><feTurbulence type="fractalNoise" baseFrequency="${round4(9 / dw)}" numOctaves="2" seed="${pens % 7}"/><feDisplacementMap in="SourceGraphic" scale="${round(dw * 0.014)}" xChannelSelector="R" yChannelSelector="G"/></filter></svg>`
       : "";
   const frameStyle = pen ? ` style="--pen:url(#pen-${pens})"` : "";
-  return `<div ${attrs}>${pen}${buttons}<div class="frame"${frameStyle}><div class="bezel"><div class="screen">${screen}${bar}${island}</div></div></div></div>`;
+  const base = frame === "mac" ? `<i class="base"${frameStyle}></i>` : "";
+  return `<div ${attrs}>${pen}${buttons}<div class="frame"${frameStyle}><div class="bezel"><div class="screen">${screen}${bar}${island}</div></div></div>${base}</div>`;
 }
 
 let pens = 0;
@@ -679,6 +744,26 @@ html,body{background:#000;overflow:hidden}
 .device.sketch .frame::before{content:"";position:absolute;inset:calc(var(--dw)*-.004);border-radius:calc(var(--dw)*var(--ro));border:calc(var(--dw)*.004) solid var(--line);opacity:.55;transform:rotate(.35deg);filter:var(--pen);pointer-events:none}
 .device.sketch .btn{filter:var(--pen)}
 .btn{position:absolute;width:calc(var(--dw)*.014);background:linear-gradient(90deg,var(--f2),var(--f3));border-radius:calc(var(--dw)*.004)}
+.device.window .screen{background:none}
+.device.mac{--top:calc(var(--dw)*var(--ro));--foot:calc(var(--dw)*.0035)}
+.device.mac .frame{width:calc(var(--dw)*var(--lid));margin:0 auto;border-radius:var(--top) var(--top) var(--foot) var(--foot);box-shadow:none}
+.device.mac .bezel{position:relative;border-radius:calc(var(--top) - var(--dw)*var(--band)) calc(var(--top) - var(--dw)*var(--band)) calc(var(--foot)*.5) calc(var(--foot)*.5)}
+.device.mac .bezel::before{content:"";position:absolute;left:50%;top:calc(var(--dw)*var(--bez)*.5);width:calc(var(--dw)*.0034);height:calc(var(--dw)*.0034);margin:calc(var(--dw)*-.0017);border-radius:50%;background:#26262c;box-shadow:inset 0 0 0 calc(var(--dw)*.0008) #0c0c0f}
+.device.mac .screen{border-radius:calc(var(--dw)*var(--ri)) calc(var(--dw)*var(--ri)) 0 0}
+.base{display:block;position:relative;z-index:1;height:calc(var(--dw)*var(--bh));border-radius:calc(var(--dw)*.0025) calc(var(--dw)*.0025) calc(var(--dw)*.045) calc(var(--dw)*.045)/calc(var(--dw)*.0025) calc(var(--dw)*.0025) 86% 86%;background:linear-gradient(180deg,var(--f1),var(--f3) 26%,var(--f3) 58%,var(--f4));box-shadow:inset 0 calc(var(--dw)*.0012) 0 rgba(255,255,255,.45),inset 0 calc(var(--dw)*-.003) calc(var(--dw)*.004) rgba(0,0,0,.28)}
+.base::before{content:"";position:absolute;left:50%;top:0;width:calc(var(--dw)*.124);height:calc(var(--dw)*var(--bh)*.36);margin-left:calc(var(--dw)*-.062);border-radius:0 0 calc(var(--dw)*.006) calc(var(--dw)*.006);background:linear-gradient(180deg,var(--f4),var(--f2));box-shadow:inset 0 calc(var(--dw)*.0012) calc(var(--dw)*.002) rgba(0,0,0,.35)}
+.device.mac::before,.device.mac::after{content:"";position:absolute;z-index:0;box-shadow:var(--shadow);pointer-events:none}
+.device.mac::before{left:calc(var(--dw)*(1 - var(--lid))/2);right:calc(var(--dw)*(1 - var(--lid))/2);top:0;bottom:calc(var(--dw)*var(--bh));border-radius:var(--top) var(--top) 0 0}
+.device.mac::after{left:calc(var(--dw)*.012);right:calc(var(--dw)*.012);bottom:0;height:calc(var(--dw)*var(--bh));border-radius:0 0 calc(var(--dw)*.03) calc(var(--dw)*.03)}
+.device.clay.mac .frame{box-shadow:inset 0 calc(var(--dw)*.0025) calc(var(--dw)*.004) rgba(255,255,255,.3),inset 0 calc(var(--dw)*-.003) calc(var(--dw)*.005) rgba(0,0,0,.2)}
+.device.clay.mac .bezel::before{background:color-mix(in srgb,var(--f3) 78%,#000);box-shadow:none}
+.device.clay .base{background:color-mix(in srgb,var(--f3) 93%,#000);box-shadow:inset 0 calc(var(--dw)*.0025) calc(var(--dw)*.004) rgba(255,255,255,.3),inset 0 calc(var(--dw)*-.003) calc(var(--dw)*.005) rgba(0,0,0,.2)}
+.device.clay .base::before{background:color-mix(in srgb,var(--f3) 80%,#000);box-shadow:none}
+.device.drawn.mac .frame::after{border-width:calc(var(--dw)*.005)}
+.device.drawn.mac .bezel::before,.device.drawn.mac::before,.device.drawn.mac::after{display:none}
+.device.drawn .base{background:none;box-shadow:none;border:calc(var(--dw)*.005) solid var(--line);border-top-width:0}
+.device.drawn .base::before{top:0;background:none;box-shadow:none;border:calc(var(--dw)*.004) solid var(--line);border-top-width:0}
+.device.sketch .base{filter:var(--pen)}
 .btn.l{left:calc(var(--dw)*-.006)}
 .btn.r{right:calc(var(--dw)*-.006)}
 .points{--p:calc(var(--u)*var(--ts));display:grid;grid-template-columns:repeat(var(--pc),minmax(0,1fr));gap:calc(var(--p)*3) calc(var(--p)*2);max-width:100%;margin-top:calc(var(--u)*5.5);text-align:left}
@@ -699,11 +784,15 @@ html,body{background:#000;overflow:hidden}
 .ps-chips .p-lead{min-width:0;height:auto;padding:0;border-radius:0;background:none}
 .ps-chips .p-lead .icon{height:calc(var(--p)*3.7)}
 .ps-chips .p-title{font-size:calc(var(--p)*3.2*var(--fs));white-space:nowrap}
+.wide .copy{padding-top:calc(var(--u)*9.5)}
+.wide .sub{max-width:calc(var(--u)*130)}
 .side{flex-direction:row;align-items:center}
 .side.layout-device-left{flex-direction:row-reverse}
 .side .copy{flex:0 0 56%;width:auto;padding:0 0 0 calc(var(--u)*8)}
 .side.layout-device-left .copy{padding:0 calc(var(--u)*7) 0 calc(var(--u)*1)}
 .side .headline{font-size:calc(var(--u)*9*var(--ts)*var(--fs))}
+.wide.side .copy{flex-basis:41%;padding-top:0}
+.wide.side .sub{max-width:100%}
 .side .stage,.side .stage.fits{flex:1 1 0;width:auto;min-width:0;align-self:stretch;align-items:center;justify-content:flex-start;padding:0 0 0 calc(var(--u)*5)}
 .side.layout-device-left .stage,.side.layout-device-left .stage.fits{justify-content:flex-end;padding:0 calc(var(--u)*5) 0 0}
 .logo{flex:none;max-width:100%;margin-bottom:calc(var(--u)*4.4*var(--ts))}
@@ -828,7 +917,19 @@ export const FIT_SCRIPT = `(async () => {
       } else if (!stage.classList.contains('multi') && room - device.offsetHeight > u * 4) {
         // A device that fits whole would leave a dead band at the edge it was meant to bleed off.
         stage.classList.add('fits');
+      } else if (device.classList.contains('mac') && !stage.classList.contains('multi') && !canvas.classList.contains('layout-device-top') && device.offsetHeight - room < device.offsetHeight * 0.16) {
+        // A MacBook cut off just above its base looks broken, so one that nearly fits is made to fit whole.
+        device.style.setProperty('--dw', (width * (room - u * 5)) / device.offsetHeight + 'px');
+        stage.classList.add('fits');
       }
+    }
+    if (stage.classList.contains('desk')) {
+      // A laptop with a phone or a tablet in front of it is shown whole: cut off, the smaller ones would lose their feet.
+      const devices = [...stage.querySelectorAll('.device')];
+      const top = Math.min(...devices.map((device) => device.offsetTop));
+      const tall = Math.max(...devices.map((device) => device.offsetTop + device.offsetHeight)) - top;
+      const free = stage.clientHeight - top - u * 5;
+      if (tall > free) stage.style.setProperty('--aw', (parseFloat(stage.style.getPropertyValue('--aw')) * free) / tall + 'px');
     }
     if (stage.classList.contains('multi')) {
       // Devices that all end above the bottom edge sit in the middle of the room under the copy, not against it.
@@ -839,6 +940,43 @@ export const FIT_SCRIPT = `(async () => {
   }
   document.body.dataset.ready = '1';
 })();`;
+
+/** Where one device of a group stands: its centre and its top, its width, its tilt and what it is in front of. */
+export interface Slot {
+  x: number;
+  top: number;
+  width: number;
+  rotate: number;
+  z: number;
+}
+
+/**
+ * A laptop or a window with the other devices around it, as they would stand on a desk: further laptops behind it,
+ * up and to the left, and phones and tablets in front of its lower corners. Measured in widths of the laptop,
+ * from its top left corner.
+ */
+export function deskSlots(ratios: number[], anchor: number, corners: "left" | "both"): Slot[] {
+  const depth = ratios[anchor]!;
+  let behind = 0;
+  let front = 0;
+  return ratios.map((ratio, i) => {
+    if (i === anchor) return { x: 0.5, top: 0, width: 1, rotate: 0, z: 5 };
+    if (ratio < 1) {
+      const step = ++behind;
+      return { x: 0.5 - step * 0.15, top: -step * 0.085, width: 1 - step * 0.06, rotate: 0, z: 5 - step };
+    }
+    // A tablet stands taller beside a laptop than a phone does.
+    const height = depth * (ratio > 1.7 ? 0.64 : 0.78);
+    const width = height / ratio;
+    const nth = front++;
+    const right = corners === "both" && nth % 2 === 1;
+    const out = (corners === "both" ? Math.floor(nth / 2) : nth) * width * 0.8;
+    return { x: right ? 0.98 + out : 0.02 - out, top: depth + 0.03 - height, width, rotate: 0, z: 9 - nth };
+  });
+}
+
+/** The first laptop or window among the devices, which the others gather around. */
+export const anchorOf = (ratios: number[]) => ratios.findIndex((ratio) => ratio < 1);
 
 export async function slideHtml(ctx: SlideContext): Promise<string> {
   const { project, shots, locale } = ctx;
@@ -884,8 +1022,12 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const cardStyle: FeatureStyleId = slide.featureStyle === "chips" ? "list" : (slide.featureStyle ?? "bento");
   const pointStyle: PointStyleId = !slide.featureStyle || slide.featureStyle === "bento" ? "list" : slide.featureStyle;
 
-  const unit = Math.min(target.width, target.height / 2) / 100;
   const canvas = { width: target.width, height: target.height };
+  // A Mac's canvas is wider than it is tall: the copy runs in long lines, and a column beside the device is narrower.
+  const wide = canvas.width > canvas.height;
+  // Type follows the width of a portrait canvas. A wide one is read from its height, which carries larger type.
+  const unit = wide ? canvas.height / 150 : Math.min(canvas.width, canvas.height / 2) / 100;
+  const column = wide ? 0.41 : 0.56;
 
   const badgesHtml = badges.length
     ? `<div class="badges ${badgePosition}">${badges.map((badge) => badgeHtml(badge, locale, fallback)).join("")}</div>`
@@ -894,8 +1036,8 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const images = slide.logo || placed.length ? await listImages(ctx.space, project.id) : [];
   const headlineHtml = rich(headline);
   const twoTone = !accent && headlineHtml.includes("<em>");
-  // The copy column of a side layout is 56% of the canvas with one margin; the row is sized for what that leaves.
-  const rowHtml = slide.iconRow ? iconRowHtml(slide.iconRow, side ? { width: canvas.width * 0.56 + unit * 9 } : canvas, unit, dark, locale, fallback) : "";
+  // The copy column of a side layout is 56% of the canvas with one margin, or 41% on a wide one; the row is sized for what that leaves.
+  const rowHtml = slide.iconRow ? iconRowHtml(slide.iconRow, side ? { width: canvas.width * column + unit * 9 } : canvas, unit, dark, locale, fallback) : "";
   const rowOnTop = slide.iconRow?.position === "top";
   const copyParts = [
     logoHtml(slide.logo, images, project.id),
@@ -911,12 +1053,17 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const copyHtml = copyParts ? `<div class="copy">${copyParts}</div>` : "";
 
   let stageHtml = "";
+  let desk = false;
+  let anchorWidth = 0;
   if (hasDevice) {
-    const common = { style: deviceStyle, targetDevice: target.device, canvas, width: LAYOUT_WIDTH[layout] };
+    // Beside a narrow column of copy on a wide canvas, the device has the room to stand at its full size.
+    const common = { style: deviceStyle, targetDevice: target.device, canvas, width: side && wide ? 1 : LAYOUT_WIDTH[layout] };
     const gap = unit * 6.5;
     /** One device of a layout that places several: its centre in device widths from the middle, how far down it starts, and what is in front. */
     // Several devices fan out around the slide's own tilt: the left one leans left by half the angle between them, the right one right.
-    const spread = (deviceStyle.spread ?? LAYOUT_SPREAD[layout] ?? 0) / 2;
+    // Laptops and windows stand level unless an angle is asked for: a leaning one looks like it is falling over.
+    const level = deviceShape(shot, deviceStyle, target.device).ratio < 1;
+    const spread = (deviceStyle.spread ?? (level ? 0 : LAYOUT_SPREAD[layout]) ?? 0) / 2;
     const apart = ((deviceStyle.gap ?? 0) / 100) * canvas.width;
     const fanned = (side: number): DeviceStyle => ({ ...deviceStyle, rotate: round((deviceStyle.rotate ?? 0) + side * spread) });
     /** One device of a layout that places several: which side of the middle it is on, its centre in device widths from there, how far down it starts, and what is in front. */
@@ -926,11 +1073,35 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
       const extraCss = `margin-left:calc(var(--dw)*${round(x - 0.5)} + ${round(side * apart)}px);top:${round(gap + top * unit)}px;z-index:${z}`;
       return deviceHtml({ ...common, style: fanned(side), width: common.width * boost, shot: s, wanted, url: shotUrl(s), ...(await dress(s)), fit: "width", extraCss });
     };
-    if (layout === "duo") {
+    const group = [
+      { shot, wanted: slide.screenshot },
+      { shot: shot2, wanted: slide.screenshot2 },
+      { shot: shot3, wanted: slide.screenshot3 },
+    ].slice(0, LAYOUT_SHOTS[layout]);
+    const ratios = group.map((entry) => deviceShape(entry.shot, deviceStyle, target.device).ratio);
+    // A laptop among phones and tablets: side by side they would not match in height, so they stand as on a desk.
+    desk = group.length > 1 && ratios.some((ratio) => ratio < 1) && ratios.some((ratio) => ratio >= 1);
+    if (desk) {
+      const slots = deskSlots(ratios, anchorOf(ratios), "both");
+      const edges = slots.flatMap((slot) => [slot.x - slot.width / 2, slot.x + slot.width / 2]);
+      // The group as a whole stands in the middle, whichever corners the smaller devices are at.
+      const middle = (Math.min(...edges) + Math.max(...edges)) / 2;
+      const rise = Math.min(...slots.map((slot) => slot.top));
+      anchorWidth = canvas.width * (wide ? 0.62 : 0.78) * (deviceStyle.scale ?? 1);
+      const parts = await Promise.all(
+        group.map(async (entry, i) => {
+          const slot = slots[i]!;
+          const side = Math.sign(round(slot.x - middle));
+          const extraCss = `--dw:calc(var(--aw)*${round4(slot.width)});margin-left:calc(var(--aw)*${round4(slot.x - middle - slot.width / 2)} + ${round(side * apart)}px);top:calc(${round(gap)}px + var(--aw)*${round4(slot.top - rise)});z-index:${slot.z}`;
+          return deviceHtml({ ...common, shot: entry.shot, wanted: entry.wanted, url: shotUrl(entry.shot), ...(await dress(entry.shot)), fit: "width", pixels: slot.width * anchorWidth, extraCss });
+        }),
+      );
+      stageHtml = parts.join("");
+    } else if (layout === "duo") {
       const place = (side: number, x: number, top: number, z: number) => `margin-left:calc(var(--dw)*-.5 + ${round(x * canvas.width + side * apart)}px);top:${round(top)}px;z-index:${z}`;
       stageHtml =
-        deviceHtml({ ...common, style: fanned(-1), shot: shot2, wanted: slide.screenshot2, url: shotUrl(shot2), ...(await dress(shot2)), fit: "width", extraCss: place(-1, -0.19, gap + unit * 10, 1) }) +
-        deviceHtml({ ...common, style: fanned(1), shot, wanted: slide.screenshot, url: shotUrl(shot), ...(await dress(shot)), fit: "width", extraCss: place(1, 0.17, gap, 2) });
+        deviceHtml({ ...common, style: fanned(-1), shot: shot2, wanted: slide.screenshot2, url: shotUrl(shot2), ...(await dress(shot2)), fit: "width", extraCss: place(-1, -0.19, gap + (level ? 0 : unit * 10), 1) }) +
+        deviceHtml({ ...common, style: fanned(1), shot, wanted: slide.screenshot, url: shotUrl(shot), ...(await dress(shot)), fit: "width", extraCss: place(1, 0.17, gap + (level ? unit * 9 : 0), 2) });
     } else if (layout === "side-by-side") {
       stageHtml = (await placed(shot, slide.screenshot, -1, -0.53, 0, 2)) + (await placed(shot2, slide.screenshot2, 1, 0.53, 9, 1));
     } else if (layout === "trio") {
@@ -950,7 +1121,7 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
         defaults: layout === "tilted" ? { rotate: -8, offsetX: 5 } : layout === "floating" ? { perspective: "left", shadow: "strong" } : undefined,
       });
     }
-    stageHtml = `<div class="stage${LAYOUT_SHOTS[layout] > 1 ? " multi" : ""}">${stageHtml}</div>`;
+    stageHtml = `<div class="stage${LAYOUT_SHOTS[layout] > 1 ? " multi" : ""}${desk ? ` desk" style="--aw:${round(anchorWidth)}px` : ""}">${stageHtml}</div>`;
   } else if (features.length) {
     stageHtml = featuresHtml(features, cardStyle, canvas, unit, locale, fallback, !copyHtml);
   }
@@ -958,7 +1129,7 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const filled = hasDevice || features.length > 0;
   // Badges on a slide with nothing but copy have the room to be the picture.
   const badgeScale = (layout === "hero" ? 1.3 : 1.1) * (badges.length >= 3 ? 0.78 : 1) * (filled ? 1 : 1.3);
-  const classes = ["canvas", `layout-${layout}`, `align-${align}`, dark ? "dark" : "light", side ? "side" : "", filled ? "" : "no-device"].filter(Boolean).join(" ");
+  const classes = ["canvas", `layout-${layout}`, `align-${align}`, dark ? "dark" : "light", wide ? "wide" : "", side ? "side" : "", filled ? "" : "no-device"].filter(Boolean).join(" ");
   // Feature points need room of their own: each row lets the copy take a little more of the slide before the text shrinks.
   const pointRows = pointStyle === "chips" ? Math.ceil(points.length / 2) * 0.6 : pointStyle === "grid" && !side ? Math.ceil(points.length / 2) : points.length;
   const copyMax = !filled ? 0.92 : side ? COPY_MAX[layout] : Math.min(0.6, COPY_MAX[layout] + (points.length ? 0.03 + pointRows * 0.045 : 0));
