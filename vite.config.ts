@@ -24,9 +24,12 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    rollupOptions: { input: { index: path.join(web, "index.html"), home: path.join(web, "home.html") } },
+    rollupOptions: { input: { index: path.join(web, "index.html"), home: path.join(web, "home.html"), docs: path.join(web, "docs.html") } },
   },
   server: {
-    proxy: Object.fromEntries(["^/api/", "^/auth/", "^/logout", "^/render/", "^/files/", "^/fonts/", "^/mcp", "^/cli/", "^/skill\\.md", "^/analytics\\.js"].map((route) => [route, server])),
+    // The documentation is put together by the server, from docs/ and the built web/dist/docs.html.
+    proxy: Object.fromEntries(
+      ["^/api/", "^/auth/", "^/logout", "^/render/", "^/files/", "^/fonts/", "^/mcp", "^/cli/", "^/skill\\.md", "^/analytics\\.js", "^/docs(/|$)", "^/(privacy|terms)(\\.md)?$", "^/(llms|llms-full|robots)\\.txt$", "^/sitemap\\.xml$", "^/og\\.jpg$"].map((route) => [route, server]),
+    ),
   },
 });

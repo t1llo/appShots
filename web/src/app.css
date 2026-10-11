@@ -1715,6 +1715,21 @@ dialog .foot {
   place-items: center;
   width: 32px;
 }
+.home-link {
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.home-link:hover,
+.home-link[aria-current] {
+  color: var(--text);
+}
+.home-link:hover {
+  background: var(--hover);
+}
 /* The sun shows while the page is dark, the moon while it is light: each is what a click turns on. */
 .home-actions .to-dark,
 :root[data-theme="dark"] .home-actions .to-light {
@@ -2079,6 +2094,22 @@ dialog .foot {
   color: var(--text-3);
   font-size: 12px;
   text-align: center;
+}
+.home-foot nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 22px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.home-foot a {
+  color: var(--text-2);
+  text-decoration: none;
+}
+.home-foot a:hover {
+  color: var(--text);
+  text-decoration: underline;
 }
 
 @media (max-width: 860px) {

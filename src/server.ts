@@ -40,6 +40,7 @@ import { ICONS } from "./icons.ts";
 import { createMcpServer } from "./mcp.ts";
 import { closeBrowser, defaultTargets, renderProject } from "./render.ts";
 import { creativesSchema, localeSchema, slideSchema, themeSchema } from "./schema.ts";
+import { homePage, siteRoutes } from "./site.ts";
 import { isPlacementId, isTargetId, PLACEMENT_IDS, PLACEMENTS, TARGET_IDS, TARGETS } from "./sizes.ts";
 import {
   countProjects,
@@ -237,10 +238,19 @@ function sendPage(res: Response, name: string): void {
   res.set("Cache-Control", "no-cache").sendFile(page);
 }
 
+/** The home page carries its own address, for search engines and shared links, so it is filled in rather than sent as a file. */
+function sendHome(req: Request, res: Response): void {
+  const page = homePage(baseUrl(req));
+  if (page == null) return sendPage(res, "home.html");
+  res.set("Cache-Control", "no-cache").type("html").send(page);
+}
+
 /** One address, two pages: the Studio for whoever is signed in, the public home page for everybody else. */
-app.get("/", (req, res) => sendPage(res, identify(req) ? "index.html" : "home.html"));
+app.get("/", (req, res) => (identify(req) ? sendPage(res, "index.html") : sendHome(req, res)));
 // The home page under its own address too, so it can be looked at while signed in or with sign-in off.
-app.get("/home", (_req, res) => sendPage(res, "home.html"));
+app.get("/home", sendHome);
+// The documentation, the privacy policy and the terms, which anybody can read.
+siteRoutes(app, baseUrl);
 // Where every "Open Studio" button points: straight in for whoever is signed in, through Google for everybody else.
 app.get("/studio", (req, res) => res.redirect(identify(req) ? "/" : "/auth/google"));
 // Addresses from before the home page did the signing in.

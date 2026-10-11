@@ -34,6 +34,9 @@ services:
       # one that ends up in the page anyway. POSTHOG_KEY=off turns analytics off.
       POSTHOG_KEY: ${POSTHOG_KEY:-}
       POSTHOG_HOST: ${POSTHOG_HOST:-https://us.i.posthog.com}
+      # Who runs this server and where to write about one's data, as the privacy policy and the terms name them.
+      OPERATOR_NAME: ${OPERATOR_NAME:-}
+      CONTACT_EMAIL: ${CONTACT_EMAIL:-}
       # Caps for every account other than the admin.
       USER_MAX_PROJECTS: ${USER_MAX_PROJECTS:-20}
       USER_MAX_SHOTS: ${USER_MAX_SHOTS:-40}

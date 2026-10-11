@@ -34,6 +34,8 @@ COPY --from=web /app/web/dist ./web/dist
 # Served to signed-in users from /cli/appshots.mjs, and to anybody from /skill.md.
 COPY cli ./cli
 COPY skill ./skill
+# The pages under /docs, the privacy policy and the terms, as Markdown.
+COPY docs ./docs
 
 ENV PORT=3000 \
     DATA_DIR=/data

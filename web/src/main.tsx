@@ -18,6 +18,7 @@ const PAGE = "M4.2 1.8h4.9l2.7 2.7v9.7H4.2zM9 2v2.7h2.7";
 const PLUS = "M8 3.5v9M3.5 8h9";
 const BOLT = "M9 1.8 3.8 9H8l-1 5.2L12.2 7H8z";
 const LEAVE = "M6.5 2.5h-3v11h3M10 5l3 3-3 3M13 8H6.5";
+const BOOK = "M3.5 12V4a1.5 1.5 0 0 1 1.5-1.5h7.5v9M5 10.5h7.5v3H5a1.5 1.5 0 0 1 0-3z";
 
 const APPEARANCES: { id: Appearance; text: string; title: string; path: string }[] = [
   { id: "system", text: "Auto", title: "Follow this device's setting", path: "M2.5 3.5h11v7h-11zM6 13.5h4M8 10.5v3" },
@@ -138,6 +139,10 @@ function Shell() {
             <Icon path={BOLT} />
             <span className="nav-text">Connect an agent</span>
           </button>
+          <a className="nav-item" href="/docs" target="_blank" rel="noreferrer">
+            <Icon path={BOOK} />
+            <span className="nav-text">Docs</span>
+          </a>
           {account?.admin ? (
             <button className="nav-item" type="button" onClick={() => setDialog("people")}>
               <svg className="icon" viewBox="0 0 16 16" aria-hidden="true">

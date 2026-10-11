@@ -19,6 +19,8 @@
         if (kept === "light" || kept === "dark") document.documentElement.dataset.theme = kept;
       } catch (error) {}
     </script>
+    <!-- The server (src/site.ts) puts the tags that need its own address here: the canonical link and what a shared link shows. -->
+    <!--site:head-->
     <link rel="stylesheet" href="/src/app.css" />
     <script async src="/analytics.js" vite-ignore></script>
   </head>
@@ -32,6 +34,7 @@
         appShots
       </a>
       <div class="home-actions">
+        <a class="home-link" href="/docs">Docs</a>
         <button class="icon-btn plain" type="button" id="appearance" title="Switch between light and dark" aria-label="Switch between light and dark">
           <svg class="icon to-dark" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z" /></svg>
           <svg class="icon to-light" viewBox="0 0 16 16" aria-hidden="true">
@@ -77,7 +80,7 @@
             <li><b>Skill</b><span><code>appshots</code>, start to finish</span></li>
             <li><b>CLI</b><span>Captures simulator or iPhone</span></li>
           </ul>
-          <p class="home-note">Claude Code, Codex, OpenCode, Pi or any other. One command sets it up, under Connect an agent in the Studio.</p>
+          <p class="home-note">Claude Code, Codex, OpenCode, Pi or any other. One command sets it up, under Connect an agent in the Studio. <a href="/docs/connect">How it works</a></p>
         </div>
         <div class="term" role="img" aria-label="Illustration: in Claude Code, the appshots skill reads the app, captures four screens in the iOS Simulator, writes ten headlines and renders ten slides.">
           <div class="term-bar"><i></i><i></i><i></i><span>example</span></div>
@@ -117,6 +120,7 @@
     </main>
 
     <footer class="home-foot">
+      <nav aria-label="More"><a href="/docs">Docs</a><a href="/docs/quick-start">Quick start</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
       <p>Signing in keeps your Google name and email address, and the projects you make. Not affiliated with Apple.</p>
     </footer>
 

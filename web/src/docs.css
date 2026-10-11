@@ -1,0 +1,313 @@
+/* The documentation pages (web/docs.html): the home page's bar and footer around the list of pages, the page
+   itself and its headings. The colours and the buttons are app.css's. */
+
+.docs-top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.docs-skip {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 6;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--bg);
+}
+.docs-skip:focus {
+  top: 12px;
+}
+.docs .docs-menu {
+  display: none;
+}
+
+.docs-layout {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr) 192px;
+  align-items: start;
+  gap: 48px;
+  width: min(1120px, 100% - 40px);
+  margin-inline: auto;
+}
+.docs-nav,
+.docs-toc {
+  position: sticky;
+  top: 61px;
+  max-height: calc(100vh - 61px);
+  padding: 28px 0 40px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+:is(.docs-nav, .docs-toc) ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+:is(.docs-nav, .docs-toc) p {
+  margin-bottom: 6px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+.docs-nav p {
+  padding-left: 10px;
+}
+.docs-nav ul + p {
+  margin-top: 22px;
+}
+.docs-nav a {
+  display: block;
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 14px;
+  text-decoration: none;
+}
+.docs-nav a:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.docs-nav a[aria-current] {
+  background: var(--active);
+  color: var(--text);
+  font-weight: 500;
+}
+.docs-toc a {
+  display: block;
+  padding: 4px 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+.docs-toc a:hover {
+  color: var(--text);
+}
+.docs-toc ul + .docs-source {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.docs-main {
+  min-width: 0;
+  padding: 36px 0 56px;
+}
+
+/* A page of text, written in Markdown. */
+.prose {
+  font-size: 16px;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+.docs .prose h1 {
+  max-width: none;
+  margin-bottom: 18px;
+  font-size: clamp(30px, 4vw, 38px);
+  line-height: 1.15;
+  letter-spacing: -0.028em;
+}
+.docs .prose h2 {
+  margin: 44px 0 12px;
+  font-size: 23px;
+  line-height: 1.25;
+  letter-spacing: -0.018em;
+}
+.prose h3 {
+  margin: 30px 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.prose :is(h2, h3) {
+  scroll-margin-top: 84px;
+}
+.prose .anchor {
+  margin-left: 8px;
+  color: var(--text-3);
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+}
+.prose :is(h2, h3):hover .anchor,
+.prose .anchor:focus-visible {
+  opacity: 1;
+}
+.prose :is(p, ul, ol, pre, blockquote, .table-wrap, .copy) {
+  margin: 0 0 16px;
+}
+.prose :is(ul, ol) {
+  padding-left: 24px;
+}
+.prose li + li,
+.prose li > :is(ul, ol) {
+  margin-top: 6px;
+}
+.prose li > :is(p, pre, .copy):last-child {
+  margin-bottom: 0;
+}
+.prose li > :is(pre, .copy) {
+  margin-top: 10px;
+}
+.prose a {
+  text-decoration-color: var(--line-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.prose a:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+.prose code {
+  font-size: 0.86em;
+}
+.prose pre {
+  padding: 13px 16px;
+  border-radius: 8px;
+  background: var(--soft);
+  box-shadow: inset 0 0 0 1px var(--line);
+  overflow-x: auto;
+}
+.prose pre code {
+  padding: 0;
+  background: none;
+  font-size: 13px;
+}
+/* The block that docs.ts wraps around a <pre> to give it a Copy button. The command stays on its line and scrolls. */
+.prose .copy pre {
+  margin: 0;
+  padding: 13px 76px 13px 16px;
+  background: var(--soft);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.prose .copy button {
+  right: 8px;
+  top: 8px;
+}
+/* With a pointer the button waits for it, so it does not sit on the end of a long command. */
+@media (hover: hover) {
+  .prose .copy button {
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .prose .copy:hover button,
+  .prose .copy button:focus-visible {
+    opacity: 1;
+  }
+}
+.prose blockquote {
+  padding: 12px 16px;
+  border-left: 3px solid var(--line-strong);
+  border-radius: 0 8px 8px 0;
+  background: var(--soft);
+  color: var(--text-2);
+}
+.prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+.prose hr {
+  margin: 32px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.prose .table-wrap {
+  overflow-x: auto;
+}
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.prose :is(th, td) {
+  padding: 9px 16px 9px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.prose th {
+  border-bottom-color: var(--line-strong);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.prose td:first-child {
+  white-space: nowrap;
+}
+.docs-updated {
+  color: var(--text-3);
+  font-size: 14px;
+}
+
+.docs-pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 48px;
+}
+.docs-pager a {
+  padding: 13px 16px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  font-weight: 500;
+  text-decoration: none;
+}
+.docs-pager a:hover {
+  background: var(--hover);
+}
+.docs-pager .next {
+  text-align: right;
+}
+.docs-pager small {
+  display: block;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* Below this the headings of the page make way; below the next one the list of pages moves behind the menu button. */
+@media (max-width: 1040px) {
+  .docs-layout {
+    grid-template-columns: 216px minmax(0, 1fr);
+    gap: 36px;
+  }
+  .docs-toc {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .docs-layout {
+    display: block;
+  }
+  .docs .docs-menu {
+    display: grid;
+  }
+  .docs-nav {
+    position: fixed;
+    inset: 61px 0 0;
+    z-index: 4;
+    display: none;
+    max-height: none;
+    padding: 20px 20px 48px;
+    background: var(--bg);
+  }
+  .docs-nav.open {
+    display: block;
+  }
+  .docs-nav a {
+    padding-block: 8px;
+    font-size: 15px;
+  }
+  .docs-main {
+    padding-top: 24px;
+  }
+  .prose td:first-child {
+    white-space: normal;
+  }
+}

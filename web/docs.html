@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- The frame of every documentation page. The server (src/site.ts) puts a page from docs/ into the docs: comments. -->
+    <!--docs:head-->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2337352f'/%3E%3Crect x='10.5' y='6.5' width='11' height='19' rx='3' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3C/svg%3E"
+    />
+    <script>
+      // A kept choice of light or dark is applied before the first paint; without one the page follows the device.
+      try {
+        var kept = localStorage.getItem("appshots.theme");
+        if (kept === "light" || kept === "dark") document.documentElement.dataset.theme = kept;
+      } catch (error) {}
+    </script>
+    <link rel="stylesheet" href="/src/app.css" />
+    <link rel="stylesheet" href="/src/docs.css" />
+    <script async src="/analytics.js" vite-ignore></script>
+  </head>
+  <body class="home docs">
+    <a class="docs-skip" href="#content">Skip to the page</a>
+    <header class="docs-top">
+      <div class="home-bar">
+        <a class="home-brand" href="/home">
+          <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
+            <rect width="32" height="32" rx="7" fill="currentColor" />
+            <rect x="10.5" y="6.5" width="11" height="19" rx="3" fill="none" stroke="var(--bg)" stroke-width="2.2" />
+          </svg>
+          appShots
+        </a>
+        <div class="home-actions">
+          <a class="home-link" href="/docs" aria-current="page">Docs</a>
+          <button class="icon-btn plain" type="button" id="appearance" title="Switch between light and dark" aria-label="Switch between light and dark">
+            <svg class="icon to-dark" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z" /></svg>
+            <svg class="icon to-light" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 5.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6zM8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
+            </svg>
+          </button>
+          <a class="btn" href="/studio">Open Studio</a>
+          <button class="icon-btn plain docs-menu" type="button" id="menu" aria-controls="pages" aria-expanded="false" title="All pages" aria-label="All pages">
+            <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" /></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="docs-layout">
+      <nav class="docs-nav" id="pages" aria-label="All pages">
+        <!--docs:nav-->
+      </nav>
+      <main class="docs-main" id="content">
+        <article class="prose">
+          <!--docs:body-->
+        </article>
+        <!--docs:pager-->
+      </main>
+      <aside class="docs-toc">
+        <!--docs:toc-->
+      </aside>
+    </div>
+
+    <footer class="home-foot">
+      <nav aria-label="More"><a href="/home">Home</a><a href="/docs">Docs</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
+      <p>Not affiliated with Apple. App Store and iPhone are trademarks of Apple Inc.</p>
+    </footer>
+
+    <script type="module" src="/src/docs.ts"></script>
+  </body>
+</html>

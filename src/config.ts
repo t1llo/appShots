@@ -59,6 +59,17 @@ function analytics() {
   return { key, host };
 }
 
+/** Who runs this server, as the privacy policy and the terms name them. Both are optional. */
+function operator() {
+  const name = (process.env.OPERATOR_NAME ?? "").trim().slice(0, 120);
+  let email = (process.env.CONTACT_EMAIL ?? "").trim();
+  if (email && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email)) {
+    console.warn("CONTACT_EMAIL is not an email address, so the privacy policy shows no contact.");
+    email = "";
+  }
+  return { name, email };
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   dataDir,
@@ -79,6 +90,7 @@ export const config = {
     tokenUrl: process.env.GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
   },
   posthog: analytics(),
+  operator: operator(),
   /** Caps for accounts other than the admin. */
   limits: {
     projects: positive(process.env.USER_MAX_PROJECTS, 20),

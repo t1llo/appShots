@@ -53,6 +53,18 @@ With `POSTHOG_KEY` set to a PostHog project token (`phc_…`), the home page and
 
 `docker-compose.yaml` carries a default token for the author's own server. Running your own, set `POSTHOG_KEY` to your project's token, or to `off` for no analytics. Without the variable, as with `npm start`, the pages load nothing. Sign-in is open to others, so say in your privacy notice that the site counts visits.
 
+### Docs, privacy policy and terms
+
+The server has its own documentation at `/docs`, a privacy policy at `/privacy` and terms at `/terms`, all public. Each page is a Markdown file in [`docs/`](docs), drawn into the shell built from `web/docs.html`. The reference tables in them (layouts, fonts, icons, sizes) are filled in from the code, so they cannot fall behind it.
+
+- Every page is also there as Markdown, at its address with `.md` on the end, and for a request that asks for `text/markdown`.
+- `/llms.txt` lists the pages for language models, and `/llms-full.txt` holds all of them in one file.
+- `/sitemap.xml` and `/robots.txt` are for search engines. They need `PUBLIC_URL` to carry the right address.
+
+Set `OPERATOR_NAME` and `CONTACT_EMAIL` to put a name and a contact address on the privacy policy and the terms. Without them the pages say "the person who runs this server". Both pages are a starting point written for this software, not legal advice: read them, and change `docs/privacy.md` and `docs/terms.md` to fit who you are and where you are. The analytics section of the privacy policy appears only while `POSTHOG_KEY` is set.
+
+To add a page, put `docs/<name>.md` there with a `title` and a `description` at the top, and add its name to `SECTIONS` in `src/site.ts`.
+
 ## People and accounts
 
 Everybody signs in with Google. There are no passwords.
