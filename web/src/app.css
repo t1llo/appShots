@@ -239,6 +239,7 @@ select.ghost:hover {
 
 .app {
   display: flex;
+  height: 100%;
 }
 .sidebar {
   width: 240px;
@@ -431,12 +432,16 @@ input.title:focus-visible {
   min-height: 28px;
   margin-bottom: 12px;
 }
-#slides-section {
+.section-head h2 {
+  flex: none;
+}
+.block {
   margin-top: 32px;
 }
 @media (max-width: 960px) {
   html,
-  body {
+  body,
+  .app {
     height: auto;
   }
   .app,
@@ -729,6 +734,46 @@ input.title:focus-visible {
   background: var(--hover);
   color: var(--danger);
 }
+.icon-btn.plain:hover {
+  color: var(--text);
+}
+.icon-btn:disabled {
+  background: none;
+  color: var(--text-3);
+  opacity: 0.4;
+  cursor: default;
+}
+.picks {
+  display: grid;
+  gap: 2px;
+}
+.pick {
+  display: grid;
+  grid-template-columns: 20px 1fr repeat(3, 28px);
+  align-items: center;
+  gap: 2px;
+}
+.pick img,
+.pick-missing {
+  width: 20px;
+  height: 28px;
+  border-radius: 3px;
+  background: var(--soft);
+  box-shadow: 0 0 0 1px var(--line);
+  object-fit: cover;
+}
+.pick-name {
+  min-width: 0;
+  padding-left: 6px;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pick.over img,
+.pick.over .pick-name {
+  opacity: 0.4;
+}
 details {
   padding-top: 10px;
   border-top: 1px solid var(--line);
@@ -998,6 +1043,15 @@ dialog .foot {
   line-height: 1.9;
   text-align: center;
 }
-.auth-foot a {
+.auth-foot a,
+.auth-foot .link {
   color: var(--text-2);
+}
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }

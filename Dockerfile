@@ -1,3 +1,16 @@
+# The web gallery is the one part that is built: React, bundled by Vite into web/dist.
+FROM node:24-bookworm-slim AS web
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY vite.config.ts ./
+COPY web ./web
+RUN npm run build
+
+
 FROM node:24-bookworm-slim
 
 ENV NODE_ENV=production \
@@ -17,7 +30,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY src ./src
-COPY public ./public
+COPY --from=web /app/web/dist ./web/dist
 # Served to signed-in users from /cli/appshots.mjs.
 COPY cli ./cli
 
@@ -28,5 +41,5 @@ USER node
 VOLUME /data
 EXPOSE 3000
 
-# Node 24 runs the TypeScript sources directly; there is no build step.
+# Node 24 runs the server's TypeScript sources directly; only the gallery above is built.
 CMD ["node", "src/server.ts"]

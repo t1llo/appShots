@@ -1,6 +1,7 @@
 .git
 .env
 node_modules
+web/dist
 data
 raw-shots
 store-screenshots

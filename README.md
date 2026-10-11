@@ -19,8 +19,11 @@ Needs Node 24 or newer.
 ```bash
 npm install
 npm run browser   # one-time download of the headless Chromium used for rendering
+npm run build     # bundles the web gallery into web/dist
 npm start         # http://localhost:3000
 ```
+
+The server runs straight from its TypeScript sources. Only the web gallery (React, TanStack Router and TanStack Query, bundled by Vite) has a build step; run `npm run build` again after changing anything in `web/`. To work on the gallery with hot reload, run `npm run dev` and `npm run dev:web` side by side and open the address Vite prints.
 
 Without `APPSHOTS_TOKEN` there is no sign-in and no accounts: whoever can reach the port is the owner. That is fine on localhost and nowhere else.
 
@@ -95,7 +98,7 @@ Simulator capture uses `simctl`. Device capture uses `devicectl device capture s
 
 ## Web gallery
 
-Open the server in a browser to see every slide as a live preview at export size, edit copy, layout, badges and style, drop in screenshots, and download the set as a ZIP. Projects sit in the sidebar. Changes Claude makes through MCP show up in an open gallery within a few seconds.
+Open the server in a browser to see every slide as a live preview at export size, edit copy, layout, badges and style, drop in screenshots, and download the set as a ZIP. Below the slides, the Header and search results section adds, previews and edits the three store assets, with the safe area drawn as a dashed frame. Projects sit in the sidebar. Changes Claude makes through MCP show up in an open gallery within a few seconds.
 
 ## Slides
 

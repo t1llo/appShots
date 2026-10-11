@@ -11,9 +11,11 @@
     "appshots": "cli/appshots.mjs"
   },
   "scripts": {
+    "build": "vite build",
     "start": "node src/server.ts",
     "dev": "node --watch src/server.ts",
-    "typecheck": "tsc --noEmit",
+    "dev:web": "vite",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
     "browser": "playwright install chromium --only-shell"
   },
   "dependencies": {
@@ -32,8 +34,16 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@tanstack/react-query": "^5.104.1",
+    "@tanstack/react-router": "^1.170.42",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
-    "typescript": "^7.0.2"
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
   }
 }

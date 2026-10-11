@@ -1,0 +1,134 @@
+import { queryOptions } from "@tanstack/react-query";
+import type { CreativeLayoutId } from "../../src/design.ts";
+import type { Project, Text } from "../../src/schema.ts";
+import type { Placement, PlacementId, Target, TargetId } from "../../src/sizes.ts";
+
+export type { Background, Badge, Creative, DeviceStyle, Project, Slide, Text, Theme } from "../../src/schema.ts";
+export type { CreativeLayoutId, Placement, PlacementId, Target, TargetId };
+
+export interface Meta {
+  targets: Record<TargetId, Target>;
+  layouts: Record<string, string>;
+  placements: Record<PlacementId, Placement>;
+  creativeLayouts: Record<CreativeLayoutId, { note: string; screenshots: number }>;
+  fonts: string[];
+  backgrounds: string[];
+  deviceColors: string[];
+  badgeTypes: Record<string, string>;
+  icons: string[];
+  authEnabled: boolean;
+  /** Null for the owner, who signs in with the server token rather than an account. */
+  account: { email: string; name: string; password: boolean; google: boolean } | null;
+}
+
+export interface ProjectEntry {
+  id: string;
+  name: string;
+  slides: number;
+  locales: string[];
+  updatedAt: string;
+}
+
+export interface Shot {
+  name: string;
+  device: "iphone" | "ipad";
+  file: string;
+  width: number;
+  height: number;
+  bytes: number;
+  version: number;
+}
+
+export interface Detail {
+  project: Project;
+  shots: Shot[];
+  outputs: { locale: string; target: string; files: string[]; version: number }[];
+  creativeOutputs: { locale: string; placement: PlacementId; path: string; version: number }[];
+  defaultTargets: TargetId[];
+}
+
+export interface RenderResponse extends Pick<Detail, "outputs" | "creativeOutputs"> {
+  files: unknown[];
+  creatives: unknown[];
+  warnings: string[];
+}
+
+export const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+export async function api<T = unknown>(method: string, route: string, body?: unknown, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {};
+  let payload: BodyInit | undefined;
+  if (body instanceof Blob) {
+    payload = body;
+    headers["content-type"] = "application/octet-stream";
+  } else if (body !== undefined) {
+    payload = JSON.stringify(body);
+    headers["content-type"] = "application/json";
+  }
+  const response = await fetch(`/api${route}`, { ...init, method, headers, body: payload });
+  if (response.status === 401) {
+    location.href = "/login";
+    throw new Error("Signed out");
+  }
+  if (!response.ok) {
+    let message = response.statusText;
+    try {
+      message = (await response.json()).error ?? message;
+    } catch {}
+    throw new Error(message);
+  }
+  return (response.status === 204 ? null : await response.json()) as T;
+}
+
+export const metaQuery = queryOptions({ queryKey: ["meta"], queryFn: () => api<Meta>("GET", "/meta"), staleTime: Infinity });
+export const projectsQuery = queryOptions({ queryKey: ["projects"], queryFn: () => api<ProjectEntry[]>("GET", "/projects") });
+// Fresh for a moment, so the page that opens right after the route has loaded a project does not fetch it twice.
+export const detailQuery = (id: string) => queryOptions({ queryKey: ["project", id], queryFn: () => api<Detail>("GET", `/projects/${id}`), staleTime: 2000 });
+
+// ---------------------------------------------------------------- small helpers
+
+export const LOCALE = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/;
+
+export const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+export const label = (id: string) => id.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
+
+export const slugify = (value: string) =>
+  value
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "shot";
+
+export function parseLocales(value: string): string[] {
+  const list = [...new Set(value.split(/[\s,]+/).filter(Boolean))];
+  if (list.length === 0 || list.some((code) => !LOCALE.test(code))) throw new Error("Languages are codes like en-US or de-DE, separated by commas.");
+  return list;
+}
+
+export function readText(value: Text | undefined, locale: string): string {
+  if (value == null) return "";
+  return typeof value === "string" ? value : (value[locale] ?? "");
+}
+
+/** A plain string serves every language; it only becomes a per-language map once a translation is typed. */
+export function withText(current: Text | undefined, text: string, locale: string, primary: string): Text | undefined {
+  if (current == null || typeof current === "string") {
+    if (locale === primary) return text || undefined;
+    const map: Record<string, string> = current ? { [primary]: current } : {};
+    if (text) map[locale] = text;
+    return Object.keys(map).length ? map : undefined;
+  }
+  const map = { ...current };
+  if (text) map[locale] = text;
+  else delete map[locale];
+  return Object.keys(map).length ? map : undefined;
+}
+
+/** Sets a field, or removes it when the value is empty, so stored projects carry no blank overrides. */
+export function put<T extends object>(owner: T, key: keyof T, value: unknown): void {
+  if (value === "" || value == null) delete owner[key];
+  else (owner as Record<keyof T, unknown>)[key] = value;
+}

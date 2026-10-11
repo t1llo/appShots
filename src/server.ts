@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -69,7 +70,8 @@ import { slideHtml } from "./template.ts";
 import { writeZip } from "./zip.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
-const publicDir = path.join(root, "public");
+/** The gallery and the sign-in pages, built from web/ by `npm run build`. */
+const webDir = path.join(root, "web", "dist");
 
 // ---------------------------------------------------------------- fonts
 
@@ -194,14 +196,15 @@ app.get("/fonts/:font/:file", (req, res) => {
 
 // ---------------------------------------------------------------- signing in
 
-// The sign-in pages are the only part of the UI that works without a session.
-app.get("/app.css", (_req, res) => void res.sendFile(path.join(publicDir, "app.css")));
-app.get("/auth.js", (_req, res) => void res.sendFile(path.join(publicDir, "auth.js")));
+// The sign-in pages are the only part of the UI that works without a session. The built scripts and styles
+// carry no data and have content hashes in their names, so they are public and cached for good.
+app.use("/assets", express.static(path.join(webDir, "assets"), { immutable: true, maxAge: "1y" }));
+const authPage = (res: Response) => void res.set("Cache-Control", "no-cache").sendFile(path.join(webDir, "auth.html"));
 app.get(["/login", "/signup"], (req, res) => {
   if (identify(req)) return res.redirect("/");
-  res.sendFile(path.join(publicDir, "auth.html"));
+  authPage(res);
 });
-app.get("/reset", (_req, res) => void res.sendFile(path.join(publicDir, "auth.html")));
+app.get("/reset", (_req, res) => authPage(res));
 
 const auth = express.Router();
 auth.use(express.json({ limit: "8kb" }));
@@ -557,7 +560,10 @@ app.get("/render/:id/:index", async (req, res) => {
   res.set("Cache-Control", "no-store").type("html").send(await slideHtml({ space, project, shots, index, target, locale }));
 });
 
-app.use(express.static(publicDir, { extensions: ["html"] }));
+app.get("/", (_req, res) => {
+  if (!existsSync(path.join(webDir, "index.html"))) return void res.status(503).type("text").send("The web gallery has not been built yet. Run: npm run build");
+  res.set("Cache-Control", "no-cache").sendFile(path.join(webDir, "index.html"));
+});
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
@@ -579,6 +585,7 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 const server = app.listen(config.port, () => {
   console.log(`appShots listening on http://localhost:${config.port} (data in ${config.dataDir})`);
+  if (!existsSync(path.join(webDir, "index.html"))) console.warn("The web gallery has not been built yet: run `npm run build`. The API and the MCP endpoint work without it.");
   if (!config.token) console.warn("APPSHOTS_TOKEN is not set: the UI, API and MCP endpoint are open to anyone who can reach this port, and accounts are off.");
 });
 
