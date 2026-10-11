@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { config } from "./config.ts";
 import { CREATIVE_CAPACITY } from "./creative.ts";
 import { type DeviceKind, PLACEMENT_IDS, PLACEMENTS, type PlacementId, TARGETS, type TargetId } from "./sizes.ts";
-import { CREATIVE_DIR, findShot, getProject, InputError, listShots, outDir, type Shot, type Space } from "./store.ts";
+import { CREATIVE_DIR, findShot, getProject, InputError, listImages, listShots, outDir, type Shot, type Space } from "./store.ts";
 
 export interface RenderRequest {
   targets?: TargetId[];
@@ -133,8 +133,13 @@ async function renderNow(space: Space, id: string, request: RenderRequest): Prom
   const full = indexes.length === project.slides.length;
 
   const warnings = new Set<string>();
+  const images = new Set((await listImages(space, id)).map((image) => image.name));
+  const noImage = (where: string, name: string) => warnings.add(`${where}: no image named "${name}" has been uploaded, so it was left out.`);
   for (const index of indexes) {
     const slide = project.slides[index]!;
+    for (const name of [slide.logo?.image, ...(slide.images ?? []).map((placed) => placed.image)]) {
+      if (name && !images.has(name)) noImage(`Slide ${index + 1}`, name);
+    }
     for (const name of [slide.screenshot, slide.screenshot2, slide.screenshot3]) {
       if (!name) continue;
       for (const target of targets) {
@@ -154,6 +159,7 @@ async function renderNow(space: Space, id: string, request: RenderRequest): Prom
     for (const name of names.slice(0, room)) {
       if (!shots.some((shot) => shot.name === name)) warnings.add(`${label}: no screenshot named "${name}" has been uploaded, so ${creative.layout === "wall" ? "it was left out" : "a placeholder was drawn"}.`);
     }
+    if (creative.logo && !images.has(creative.logo.image)) noImage(label, creative.logo.image);
     const extra = names.length - room;
     if (extra > 0) warnings.add(`${label}: the ${creative.layout ?? "fan"} layout shows ${room} screenshots, so the last ${extra === 1 ? "one was" : `${extra} were`} left out.`);
   }

@@ -75,6 +75,9 @@ export const CREATIVE_LAYOUTS = {
 export type CreativeLayoutId = keyof typeof CREATIVE_LAYOUTS;
 export const CREATIVE_LAYOUT_IDS = Object.keys(CREATIVE_LAYOUTS) as [CreativeLayoutId, ...CreativeLayoutId[]];
 
+export const FONT_GROUPS = ["Sans", "Rounded", "Display", "Serif", "Handwritten", "Mono"] as const;
+export type FontGroup = (typeof FONT_GROUPS)[number];
+
 export interface FontDef {
   family: string;
   pkg: string;
@@ -84,22 +87,94 @@ export interface FontDef {
   tracking: string;
   /** Optical compensation so light or narrow faces read as large as the grotesques. */
   scale: number;
+  group: FontGroup;
+  /** The face for small print, where this one only works large: a display, script or single-weight face. */
+  body?: string;
   note: string;
 }
 
+const variable = (name: string, slug: string, weight: number, tracking: string, scale: number, group: FontGroup, note: string, body?: string): FontDef => ({
+  family: `${name} Variable`,
+  pkg: `@fontsource-variable/${slug}`,
+  css: "wght.css",
+  weight,
+  tracking,
+  scale,
+  group,
+  note,
+  ...(body ? { body } : {}),
+});
+/** A face that comes in single weights. It sets headlines only, so it always names a face for the small print. */
+const fixed = (name: string, slug: string, weight: number, tracking: string, scale: number, group: FontGroup, note: string, body = "inter"): FontDef => ({
+  family: name,
+  pkg: `@fontsource/${slug}`,
+  css: `${weight}.css`,
+  weight,
+  tracking,
+  scale,
+  group,
+  note,
+  body,
+});
+
 export const FONTS = {
-  inter: { family: "Inter Variable", pkg: "@fontsource-variable/inter", css: "wght.css", weight: 800, tracking: "-0.035em", scale: 1, note: "Neutral, closest to the system look" },
-  manrope: { family: "Manrope Variable", pkg: "@fontsource-variable/manrope", css: "wght.css", weight: 800, tracking: "-0.03em", scale: 1, note: "Rounded geometric sans" },
-  "plus-jakarta-sans": { family: "Plus Jakarta Sans Variable", pkg: "@fontsource-variable/plus-jakarta-sans", css: "wght.css", weight: 800, tracking: "-0.03em", scale: 1, note: "Friendly modern sans" },
-  sora: { family: "Sora Variable", pkg: "@fontsource-variable/sora", css: "wght.css", weight: 700, tracking: "-0.035em", scale: 0.94, note: "Wide, techy sans" },
-  "space-grotesk": { family: "Space Grotesk Variable", pkg: "@fontsource-variable/space-grotesk", css: "wght.css", weight: 700, tracking: "-0.035em", scale: 1, note: "Quirky grotesk" },
-  "bricolage-grotesque": { family: "Bricolage Grotesque Variable", pkg: "@fontsource-variable/bricolage-grotesque", css: "wght.css", weight: 800, tracking: "-0.03em", scale: 1.02, note: "Expressive display grotesk" },
-  fraunces: { family: "Fraunces Variable", pkg: "@fontsource-variable/fraunces", css: "wght.css", weight: 700, tracking: "-0.025em", scale: 1, note: "Soft, characterful serif" },
-  "instrument-serif": { family: "Instrument Serif", pkg: "@fontsource/instrument-serif", css: "400.css", weight: 400, tracking: "-0.015em", scale: 1.2, note: "Elegant condensed serif, regular weight only" },
+  inter: variable("Inter", "inter", 800, "-0.035em", 1, "Sans", "Neutral, closest to the system look"),
+  manrope: variable("Manrope", "manrope", 800, "-0.03em", 1, "Sans", "Rounded geometric sans"),
+  "plus-jakarta-sans": variable("Plus Jakarta Sans", "plus-jakarta-sans", 800, "-0.03em", 1, "Sans", "Friendly modern sans"),
+  "dm-sans": variable("DM Sans", "dm-sans", 800, "-0.035em", 1, "Sans", "Low-contrast geometric sans"),
+  outfit: variable("Outfit", "outfit", 700, "-0.025em", 1.02, "Sans", "Clean geometric sans"),
+  figtree: variable("Figtree", "figtree", 800, "-0.03em", 1, "Sans", "Even and friendly"),
+  geist: variable("Geist", "geist", 700, "-0.04em", 1, "Sans", "Sharp and technical"),
+  onest: variable("Onest", "onest", 700, "-0.03em", 1, "Sans", "Calm humanist sans"),
+  urbanist: variable("Urbanist", "urbanist", 800, "-0.025em", 1.03, "Sans", "Geometric with a soft edge"),
+  lexend: variable("Lexend", "lexend", 700, "-0.035em", 0.94, "Sans", "Wide and very readable"),
+  montserrat: variable("Montserrat", "montserrat", 800, "-0.03em", 0.95, "Sans", "The wide geometric classic"),
+  rubik: variable("Rubik", "rubik", 700, "-0.025em", 1, "Sans", "Slightly rounded corners"),
+  "red-hat-display": variable("Red Hat Display", "red-hat-display", 800, "-0.025em", 1, "Sans", "A sans with some character"),
+  archivo: variable("Archivo", "archivo", 800, "-0.03em", 1, "Sans", "Sturdy grotesk"),
+  sora: variable("Sora", "sora", 700, "-0.035em", 0.94, "Sans", "Wide, techy sans"),
+  "space-grotesk": variable("Space Grotesk", "space-grotesk", 700, "-0.035em", 1, "Sans", "Quirky grotesk"),
+  nunito: variable("Nunito", "nunito", 900, "-0.02em", 1, "Rounded", "Round and warm"),
+  quicksand: variable("Quicksand", "quicksand", 700, "-0.02em", 1, "Rounded", "Light, round and airy"),
+  fredoka: variable("Fredoka", "fredoka", 600, "-0.01em", 1, "Rounded", "Chunky and playful"),
+  "baloo-2": variable("Baloo 2", "baloo-2", 800, "-0.01em", 1.06, "Rounded", "Bubbly, for games and children's apps"),
+  "bricolage-grotesque": variable("Bricolage Grotesque", "bricolage-grotesque", 800, "-0.03em", 1.02, "Display", "Expressive display grotesk"),
+  unbounded: variable("Unbounded", "unbounded", 700, "-0.03em", 0.8, "Display", "Very wide and loud", "inter"),
+  syne: variable("Syne", "syne", 800, "-0.03em", 0.8, "Display", "Wide and eccentric", "inter"),
+  oswald: variable("Oswald", "oswald", 700, "-0.01em", 1.12, "Display", "Condensed headline sans", "inter"),
+  anton: fixed("Anton", "anton", 400, "0em", 1.14, "Display", "Tall condensed poster face"),
+  "bebas-neue": fixed("Bebas Neue", "bebas-neue", 400, "0.01em", 1.26, "Display", "Condensed, capitals only"),
+  "archivo-black": fixed("Archivo Black", "archivo-black", 400, "-0.02em", 0.95, "Display", "Heavy grotesk", "archivo"),
+  fraunces: variable("Fraunces", "fraunces", 700, "-0.025em", 1, "Serif", "Soft, characterful serif"),
+  "playfair-display": variable("Playfair Display", "playfair-display", 800, "-0.02em", 1, "Serif", "High-contrast editorial serif", "inter"),
+  lora: variable("Lora", "lora", 700, "-0.02em", 1, "Serif", "Bookish serif"),
+  newsreader: variable("Newsreader", "newsreader", 700, "-0.025em", 1.06, "Serif", "Newspaper serif"),
+  cormorant: variable("Cormorant", "cormorant", 700, "-0.015em", 1.2, "Serif", "Fine, classical serif", "inter"),
+  "roboto-slab": variable("Roboto Slab", "roboto-slab", 800, "-0.03em", 0.98, "Serif", "Slab serif"),
+  "instrument-serif": fixed("Instrument Serif", "instrument-serif", 400, "-0.015em", 1.2, "Serif", "Elegant condensed serif"),
+  "dm-serif-display": fixed("DM Serif Display", "dm-serif-display", 400, "-0.015em", 1.05, "Serif", "Elegant display serif", "dm-sans"),
+  "young-serif": fixed("Young Serif", "young-serif", 400, "-0.02em", 1, "Serif", "Warm, sturdy serif"),
+  caveat: variable("Caveat", "caveat", 700, "0em", 1.22, "Handwritten", "Quick handwriting", "inter"),
+  pacifico: fixed("Pacifico", "pacifico", 400, "0em", 1, "Handwritten", "Brush script"),
+  "permanent-marker": fixed("Permanent Marker", "permanent-marker", 400, "0em", 1, "Handwritten", "Marker pen"),
+  "jetbrains-mono": variable("JetBrains Mono", "jetbrains-mono", 800, "-0.04em", 0.86, "Mono", "The code editor look"),
+  "space-mono": fixed("Space Mono", "space-mono", 700, "-0.04em", 0.86, "Mono", "Retro typewriter mono"),
 } as const satisfies Record<string, FontDef>;
 
 export type FontId = keyof typeof FONTS;
 export const FONT_IDS = Object.keys(FONTS) as [FontId, ...FontId[]];
+
+/**
+ * Where a slide loads the font faces from. Browsers keep the stylesheet for a day, so its address changes
+ * with the list of fonts: a font added in a new version shows at once instead of a day later.
+ */
+export const FONT_CSS_URL = `/fonts/fonts.css?v=${[...FONT_IDS.join(",")].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) >>> 0, 0).toString(36)}`;
+
+/** The face a font's small print is set in: itself, unless it only works large. */
+export function bodyFont(id: FontId): FontDef {
+  const font: FontDef = FONTS[id];
+  return font.body ? FONTS[font.body as FontId] : font;
+}
 
 export interface BackgroundDef {
   type: "solid" | "gradient" | "mesh";
@@ -163,6 +238,22 @@ export const BADGE_TONES = {
 
 export type BadgeTone = keyof typeof BADGE_TONES;
 export const BADGE_TONE_IDS = Object.keys(BADGE_TONES) as [BadgeTone, ...BadgeTone[]];
+
+/** How tall a slide's logo stands, in canvas units. A wide wordmark is held to the width of the copy instead. */
+export const LOGO_SIZES = { small: 9, medium: 13, large: 19 } as const;
+
+export type LogoSize = keyof typeof LOGO_SIZES;
+export const LOGO_SIZE_IDS = Object.keys(LOGO_SIZES) as [LogoSize, ...LogoSize[]];
+
+/** How a slide's logo is cut out. */
+export const LOGO_SHAPES = {
+  plain: "The image as it is. For a wordmark or a logo with a transparent background.",
+  "app-icon": "Cropped square with the rounded corners of an iOS icon and a soft shadow. For the app's own icon.",
+  circle: "Cropped round.",
+} as const;
+
+export type LogoShape = keyof typeof LOGO_SHAPES;
+export const LOGO_SHAPE_IDS = Object.keys(LOGO_SHAPES) as [LogoShape, ...LogoShape[]];
 
 /** How a slide's row of icons and logos is drawn. */
 export const ICON_ROW_STYLES = {

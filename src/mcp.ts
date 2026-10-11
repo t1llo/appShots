@@ -13,17 +13,20 @@ import {
   DEVICE_COLOR_IDS,
   FEATURE_STYLES,
   POINT_STYLES,
+  FONT_GROUPS,
   FONTS,
   ICON_GROUPS,
   ICON_ROW_SIZE_IDS,
   ICON_ROW_STYLES,
   ICON_ROW_TONES,
   LAYOUTS,
+  LOGO_SHAPES,
+  LOGO_SIZE_IDS,
 } from "./design.ts";
 import { defaultTargets, renderProject } from "./render.ts";
 import { creativeSchema, localeSchema, type Project, slideSchema, slugSchema, themeSchema } from "./schema.ts";
 import { PLACEMENT_IDS, PLACEMENTS, type PlacementId, TARGET_IDS, TARGETS } from "./sizes.ts";
-import { createProject, getProject, listProjects, listShots, outDir, type Shot, type Space, updateProject } from "./store.ts";
+import { createProject, getProject, listImages, listProjects, listShots, outDir, type Shot, type Space, type StoredImage, updateProject } from "./store.ts";
 
 function uploadHelp(base: string, id: string): string {
   return [
@@ -31,6 +34,7 @@ function uploadHelp(base: string, id: string): string {
     `- With the bundled CLI: \`appshots upload ${id} <files or folders>\` sends screenshots that exist already. \`appshots capture --name home --project ${id} --clean\` grabs the booted simulator; add \`--device\` for a connected iPhone or iPad. \`appshots launch <bundle id> --capture home --to ${id} -- <launch arguments>\` starts an installed app on one screen and captures it in one go. \`appshots check\` reports what there is to work with.`,
     `- With curl: \`curl -fsS -X PUT -H "Authorization: Bearer $APPSHOTS_TOKEN" -H "Content-Type: image/png" --data-binary @home.png "${base}/api/projects/${id}/shots/home"\` (the token is the one this MCP connection uses)`,
     "The last path segment is the screenshot name slides refer to. iPhone or iPad is detected from the aspect ratio, and one name can hold both variants.",
+    `A logo or other artwork for the slides (see Logo and images) goes up the same way: \`appshots upload ${id} logo.png --image\`, or with curl to \`${base}/api/projects/${id}/images/<name>\`. PNG, SVG, JPEG and WebP are taken, and transparency is kept.`,
   ].join("\n");
 }
 
@@ -88,8 +92,13 @@ Also \`"auto"\` (a mesh gradient derived from the slide's own screenshot), any h
 The presets are deliberately muted. Keep custom colours the same way unless the user asks for something loud: one hue family, moderate saturation, so the screenshot stays the most colourful thing on the slide.
 
 ## Fonts
-${Object.entries(FONTS)
-  .map(([id, font]) => `- \`${id}\`: ${font.note}`)
+${FONT_GROUPS.map(
+  (group) =>
+    `- ${group}: ${Object.entries(FONTS)
+      .filter(([, font]) => font.group === group)
+      .map(([id, font]) => `\`${id}\` (${font.note.toLowerCase()})`)
+      .join(", ")}`,
+)
   .join("\n")}
 
 ## Device
@@ -123,6 +132,16 @@ The row stays on one line, so with many icons they come out smaller; three to fi
 Example: \`{"layout":"device-bottom","headline":"Social apps without *short videos*","screenshot":"home","iconRow":{"icons":["instagram","youtube","tiktok"],"label":"Works with"}}\`
 Take a row off again with \`update_slide\` and \`"remove":["iconRow"]\`.
 
+## Logo and images
+The user can upload pictures that are not screenshots: the app's logo or icon, and other artwork such as stickers, characters, hand-drawn arrows or shapes. \`get_project\` lists them under \`images\` by name. Upload more with \`appshots upload <project> <files> --image\` (PNG, SVG, JPEG or WebP; a PNG or SVG with a transparent background works best), or the user adds them in the Studio under "Logos and images". Never draw or generate artwork yourself and never take it from the web; use what the user gives you or what is in the app's project, such as its app icon.
+\`logo\` puts one image at the top of the copy, above the eyebrow and headline: \`{"image":"logo","size":"medium","shape":"plain"}\`. \`size\`: ${LOGO_SIZE_IDS.join(", ")} (default medium). \`shape\`, default plain:
+${list(LOGO_SHAPES)}
+It suits the first slide and the header and search results assets, where it tells people whose app this is; on every slide it gets repetitive. A wordmark has to read on the background, so a white one needs a dark background.
+\`images\` places up to 10 images freely on a slide. Each is \`{"image":"star","x":86,"y":12,"size":18}\`: \`x\` and \`y\` are where its centre is, in % of the canvas width from the left and of the canvas height from the top (default 50, 50), and \`size\` is its width in % of the canvas width (default 30). Values below 0 or above 100 let it run off the edge. Optional: \`rotate\` in degrees; \`layer\`, \`front\` (over the device and the copy, the default) or \`behind\` (on the background, under both); \`shadow\`, none, soft or strong, following the image's outline; \`flip\`, mirrored; \`opacity\`. Later images lie over earlier ones.
+What works: a character peeking in from a bottom corner (\`"x":84,"y":92,"size":34\`), a sticker overlapping a corner of the device, two or three small shapes scattered around the headline at different angles, a large soft shape \`behind\` everything. Keep images off the headline and off the part of the screenshot the slide is about, and use few: one to three per slide. The same numbers land in different spots on the taller iPhone canvas and the wider iPad one, so look at both renders after placing anything.
+Example: \`{"layout":"device-bottom","headline":"Habits that *stick*","screenshot":"home","logo":{"image":"app-icon","shape":"app-icon"},"images":[{"image":"mascot","x":84,"y":92,"size":34,"rotate":6,"shadow":"soft"}]}\`
+Header and search results assets take a \`logo\`, which has to be the app's own, and no placed images. Take either off a slide again with \`update_slide\` and \`"remove":["logo"]\` or \`"remove":["images"]\`.
+
 ## Icons
 For the \`icon\` of a badge or a feature, and the \`icons\` of an icon row. In a badge or a feature each is one colour: the accent colour, or gold on a gold badge.
 ${Object.entries(ICON_GROUPS)
@@ -155,7 +174,7 @@ Apple reviews these assets and is stricter than with screenshots:
 \`render\` returns a preview of each asset with the safe area drawn as a dashed frame, which is not part of the PNG. Check that nothing important falls outside it.`;
 }
 
-function describe(project: Project, shots: Shot[], base: string) {
+function describe(project: Project, shots: Shot[], images: StoredImage[], base: string) {
   return {
     id: project.id,
     name: project.name,
@@ -164,6 +183,7 @@ function describe(project: Project, shots: Shot[], base: string) {
     slides: project.slides.map((slide, i) => ({ slide: i + 1, ...slide })),
     creativeAssets: project.creatives,
     screenshots: shots.map((shot) => ({ name: shot.name, device: shot.device, size: `${shot.width}×${shot.height}` })),
+    images: images.map((image) => ({ name: image.name, size: `${image.width}×${image.height}` })),
     defaultTargets: defaultTargets(shots),
     studio: `${base}/#/${project.id}`,
   };
@@ -188,6 +208,27 @@ function unknownScreenshots(project: Project, shots: Shot[]): string[] {
   const named = [...project.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]), ...Object.values(project.creatives).flatMap((creative) => creative?.screenshots ?? [])];
   for (const name of named) if (name && !known.has(name)) missing.add(name);
   return [...missing];
+}
+
+function unknownImages(project: Project, images: StoredImage[]): string[] {
+  const known = new Set(images.map((image) => image.name));
+  const missing = new Set<string>();
+  const named = [
+    ...project.slides.flatMap((slide) => [slide.logo?.image, ...(slide.images ?? []).map((placed) => placed.image)]),
+    ...Object.values(project.creatives).map((creative) => creative?.logo?.image),
+  ];
+  for (const name of named) if (name && !known.has(name)) missing.add(name);
+  return [...missing];
+}
+
+/** What a project names without having it: screenshots come out as placeholders, images are left out. */
+async function missingNote(space: Space, project: Project, shots?: Shot[]): Promise<string> {
+  const screenshots = unknownScreenshots(project, shots ?? (await listShots(space, project.id)));
+  const images = unknownImages(project, await listImages(space, project.id));
+  return [
+    screenshots.length ? `\nNot uploaded yet, so these will render as placeholders: ${screenshots.join(", ")}.` : "",
+    images.length ? `\nNo image is uploaded under these names, so they will be left out: ${images.join(", ")}.` : "",
+  ].join("");
 }
 
 /** A small JPEG of a rendered asset with the safe area drawn in, so the model can check what a narrow crop keeps. */
@@ -262,11 +303,11 @@ export function createMcpServer(base: string, space: Space): McpServer {
     "get_project",
     {
       title: "Get project",
-      description: "Returns a project's theme, slides, header and search results assets, and the raw screenshots uploaded so far.",
+      description: "Returns a project's theme, slides, header and search results assets, the raw screenshots, and the logos and other images uploaded so far.",
       inputSchema: { project },
       annotations: { readOnlyHint: true },
     },
-    (input) => guard(async () => json(describe(await getProject(space, input.project), await listShots(space, input.project), base))),
+    (input) => guard(async () => json(describe(await getProject(space, input.project), await listShots(space, input.project), await listImages(space, input.project), base))),
   );
 
   server.registerTool(
@@ -281,7 +322,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
         theme: themeSchema.optional(),
       },
     },
-    ({ project: id, ...patch }) => guard(async () => json(describe(await updateProject(space, id, patch), await listShots(space, id), base))),
+    ({ project: id, ...patch }) => guard(async () => json(describe(await updateProject(space, id, patch), await listShots(space, id), await listImages(space, id), base))),
   );
 
   server.registerTool(
@@ -298,9 +339,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
     ({ project: id, slides, theme }) =>
       guard(async () => {
         const updated = await updateProject(space, id, { slides, theme });
-        const missing = unknownScreenshots(updated, await listShots(space, id));
-        const note = missing.length ? `\nNot uploaded yet, so these will render as placeholders: ${missing.join(", ")}.` : "";
-        return text(`Saved ${slides.length} slide${slides.length === 1 ? "" : "s"}. Call render to see them.${note}`);
+        return text(`Saved ${slides.length} slide${slides.length === 1 ? "" : "s"}. Call render to see them.${await missingNote(space, updated)}`);
       }),
   );
 
@@ -326,7 +365,10 @@ export function createMcpServer(base: string, space: Space): McpServer {
         for (const field of remove ?? []) delete next[field];
         const slides = current.slides.map((s, i) => (i === slide - 1 ? slideSchema.parse(next) : s));
         await updateProject(space, id, { slides });
-        return json({ slide, ...slides[slide - 1] });
+        const missing = unknownImages({ ...current, slides: [slides[slide - 1]!], creatives: {} }, await listImages(space, id));
+        const result = json({ slide, ...slides[slide - 1] });
+        if (missing.length) result.content.push({ type: "text", text: `No image is uploaded under these names, so they will be left out: ${missing.join(", ")}.` });
+        return result;
       }),
   );
 
@@ -358,8 +400,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
           const extra = (creative.screenshots?.length ?? 0) - CREATIVE_CAPACITY[layout];
           return `- ${placement}: ${PLACEMENTS[placement].label}, ${layout} layout${extra > 0 ? ` (it shows ${CREATIVE_CAPACITY[layout]} screenshots, so the last ${extra} will be left out)` : ""}`;
         });
-        const missing = unknownScreenshots(updated, shots);
-        const note = missing.length ? `\nNot uploaded yet, so these will render as placeholders: ${missing.join(", ")}.` : "";
+        const note = await missingNote(space, updated, shots);
         return text(lines.length ? `The project now has these assets:\n${lines.join("\n")}\nCall render to see them.${note}` : "The project has no header or search results assets now.");
       }),
   );

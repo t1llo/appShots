@@ -5,8 +5,11 @@ import {
   BRAND_COLORS,
   DEVICE_COLORS,
   type FeatureStyleId,
+  FONT_CSS_URL,
   type FontId,
+  bodyFont,
   FONTS,
+  LOGO_SIZES,
   ICON_ROW_SIZES,
   type IconId,
   LAYOUT_SHOTS,
@@ -16,9 +19,9 @@ import {
 } from "./design.ts";
 import { ICONS } from "./icons.ts";
 import { hasBakedIsland, paletteFor } from "./palette.ts";
-import type { Background, Badge, DeviceStyle, Feature, IconRow, Project, Text } from "./schema.ts";
+import type { Background, Badge, DeviceStyle, Feature, IconRow, Logo, PlacedImage, Project, Text } from "./schema.ts";
 import { type DeviceKind, TARGETS, type TargetId } from "./sizes.ts";
-import { findShot, type Shot, shotsDir, type Space } from "./store.ts";
+import { findShot, listImages, type Shot, shotsDir, type Space, type StoredImage } from "./store.ts";
 
 export interface SlideContext {
   space: Space;
@@ -313,6 +316,42 @@ function featuresHtml(features: Feature[], style: FeatureStyleId, canvas: { widt
   return `<div class="features fs-${style}${alone ? " alone" : ""}" style="flex-basis:${round(height)}px"><div class="f-grid" style="${grid.join(";")}">${tiles.join("")}</div></div>`;
 }
 
+const imageUrl = (projectId: string, image: StoredImage) => `/files/${projectId}/images/${image.file}?v=${image.version}`;
+
+/** A wordmark is held to this width, in canvas units, however tall the logo was asked to be. */
+const LOGO_MAX_WIDTH = 58;
+
+/** The logo at the top of the copy. A name nothing was uploaded under leaves it out. */
+export function logoHtml(logo: Logo | undefined, images: StoredImage[], projectId: string): string {
+  const image = logo && images.find((entry) => entry.name === logo.image);
+  if (!logo || !image) return "";
+  const shape = logo.shape ?? "plain";
+  const aspect = shape === "plain" ? image.width / image.height : 1;
+  const height = Math.min(LOGO_SIZES[logo.size ?? "medium"], LOGO_MAX_WIDTH / aspect);
+  const box = `width:calc(var(--u)*${round(height * aspect)}*var(--ts));height:calc(var(--u)*${round(height)}*var(--ts))`;
+  return `<div class="logo logo-${shape}" style="${box}"><img src="${esc(imageUrl(projectId, image))}" alt=""></div>`;
+}
+
+/** The images a slide places freely, on one of its two layers: over everything, or between the background and the rest. */
+function placedHtml(placed: PlacedImage[], layer: "front" | "behind", images: StoredImage[], projectId: string): string {
+  const items = placed
+    .filter((entry) => (entry.layer ?? "front") === layer)
+    .flatMap((entry) => {
+      const image = images.find((candidate) => candidate.name === entry.image);
+      if (!image) return [];
+      const style = [
+        `left:${round(entry.x ?? 50)}%`,
+        `top:${round(entry.y ?? 50)}%`,
+        `width:${round(entry.size ?? 30)}%`,
+        `transform:translate(-50%,-50%) rotate(${round(entry.rotate ?? 0)}deg)${entry.flip ? " scaleX(-1)" : ""}`,
+        entry.opacity == null ? "" : `opacity:${round(entry.opacity)}`,
+      ];
+      const shadow = entry.shadow && entry.shadow !== "none" ? ` class="shadow-${entry.shadow}"` : "";
+      return [`<img${shadow} src="${esc(imageUrl(projectId, image))}" style="${style.filter(Boolean).join(";")}" alt="">`];
+    });
+  return items.length ? `<div class="art ${layer}">${items.join("")}</div>` : "";
+}
+
 /** The feature points a slide shows with its copy: a short list above, below or beside the device. */
 function pointsHtml(features: Feature[], style: PointStyleId, wide: boolean, locale: string, fallback: string): string {
   const columns = style === "grid" && wide && features.length > 1 ? 2 : 1;
@@ -568,6 +607,17 @@ html,body{background:#000;overflow:hidden}
 .side .headline{font-size:calc(var(--u)*8.2*var(--ts)*var(--fs))}
 .side .stage,.side .stage.fits{flex:1 1 0;width:auto;min-width:0;align-self:stretch;align-items:center;justify-content:flex-start;padding:0 0 0 calc(var(--u)*5)}
 .side.layout-device-left .stage,.side.layout-device-left .stage.fits{justify-content:flex-end;padding:0 calc(var(--u)*5) 0 0}
+.logo{flex:none;max-width:100%;margin-bottom:calc(var(--u)*4.4*var(--ts))}
+.logo img{display:block;width:100%;height:100%;object-fit:contain}
+.logo-app-icon img,.logo-circle img{object-fit:cover}
+.logo-app-icon img{border-radius:22.5%;box-shadow:0 calc(var(--u)*1.2) calc(var(--u)*3.4) rgba(0,0,0,.3),0 0 0 calc(var(--u)*.1) rgba(128,128,128,.22)}
+.logo-circle img{border-radius:50%}
+.art{position:absolute;inset:0;pointer-events:none}
+.art.behind{z-index:0}
+.art.front{z-index:3}
+.art img{position:absolute;display:block;height:auto;max-width:none}
+.art .shadow-soft{filter:drop-shadow(0 calc(var(--u)*1.2) calc(var(--u)*2.2) rgba(0,0,0,.28))}
+.art .shadow-strong{filter:drop-shadow(0 calc(var(--u)*2.6) calc(var(--u)*4.4) rgba(0,0,0,.5))}
 .icon-row{display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*2.4);max-width:100%}
 .align-left .icon-row{align-items:flex-start}
 .icon-row.top{margin-bottom:calc(var(--u)*5.5)}
@@ -714,8 +764,7 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const accent = slide.accentColor ?? theme.accentColor;
   const fontId: FontId = slide.font ?? theme.font ?? "inter";
   const font = FONTS[fontId];
-  // A display serif makes poor small print, so pair it with a neutral body face.
-  const body = fontId === "instrument-serif" ? FONTS.inter : font;
+  const body = bodyFont(fontId);
   const hasDevice = [slide.screenshot, slide.screenshot2, slide.screenshot3].slice(0, LAYOUT_SHOTS[layout]).some(Boolean);
   // A column beside the device reads from its left edge whatever the set's alignment is.
   const side = hasDevice && SIDE_LAYOUTS.includes(layout);
@@ -740,12 +789,15 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const badgesHtml = badges.length
     ? `<div class="badges ${badgePosition}">${badges.map((badge) => badgeHtml(badge, locale, fallback)).join("")}</div>`
     : "";
+  const placed = slide.images ?? [];
+  const images = slide.logo || placed.length ? await listImages(ctx.space, project.id) : [];
   const headlineHtml = rich(headline);
   const twoTone = !accent && headlineHtml.includes("<em>");
   // The copy column of a side layout is 56% of the canvas with one margin; the row is sized for what that leaves.
   const rowHtml = slide.iconRow ? iconRowHtml(slide.iconRow, side ? { width: canvas.width * 0.56 + unit * 9 } : canvas, unit, dark, locale, fallback) : "";
   const rowOnTop = slide.iconRow?.position === "top";
   const copyParts = [
+    logoHtml(slide.logo, images, project.id),
     badgePosition === "top" ? badgesHtml : "",
     rowOnTop ? rowHtml : "",
     eyebrow ? `<div class="eyebrow${accent ? "" : " muted"}">${esc(eyebrow)}</div>` : "",
@@ -828,14 +880,16 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
 <head>
 <meta charset="utf-8">
 <title>${esc(project.name)} · ${ctx.index + 1}</title>
-<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="${FONT_CSS_URL}">
 <style>${CSS}</style>
 </head>
 <body>
 <div class="${classes}" style="${vars}" data-copy-max="${round(copyMax)}" data-fonts="${esc(fonts)}">
 <div class="bg" style="${backgroundCss(background)}"></div>${noise}${DEFS}
+${placedHtml(placed, "behind", images, project.id)}
 ${copyHtml}
 ${stageHtml}
+${placedHtml(placed, "front", images, project.id)}
 </div>
 <script>${FIT_SCRIPT}</script>
 </body>

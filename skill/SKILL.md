@@ -55,7 +55,7 @@ If `check` says the server is not set up or did not accept the token, the setup 
 3. Copy the command that appears and paste it into Terminal.
 4. Start a new session in this folder and ask for the screenshots again.
 
-Then call `get_design_guide` and read it. It is the current reference for layouts, feature slides, backgrounds, fonts, badges, icon and logo rows, copy and the header and search results assets, and it wins over anything remembered.
+Then call `get_design_guide` and read it. It is the current reference for layouts, feature slides, backgrounds, fonts, badges, icon and logo rows, the app's logo and other placed images, copy and the header and search results assets, and it wins over anything remembered.
 
 ## 2. Ask first
 
@@ -68,9 +68,9 @@ Ask these together, in one message, before doing anything else. Use this agent's
    - *Do it yourself.* You start the app on each screen. Slower, and it may need a few lines in the app that only exist in debug builds; ask whether adding them is fine.
 3. **Where the app runs,** only when `check` leaves it open: on a simulator or on the plugged-in iPhone or iPad? Name the ones `check` listed. If the app is installed on a booted simulator, ask whether that is the current build.
 4. **The look:** light or dark? Which languages, if more than the app's main one?
-5. **Extras:** Is there a real rating, download count, award or review to show? Services the app works with, whose logos belong on a slide? Header and search results assets as well?
+5. **Extras:** Is there a real rating, download count, award or review to show? Services the app works with, whose logos belong on a slide? A logo, mascot or other artwork of their own to put on the slides, and where the files are? Header and search results assets as well?
 
-If the user says to decide yourself: iPhone only, do it yourself without changing the app, the appearance the app looks best in, the main language, no badges, no logos, no header and search results assets.
+If the user says to decide yourself: iPhone only, do it yourself without changing the app, the appearance the app looks best in, the main language, no badges, no logos, no artwork, no header and search results assets.
 
 ## 3. Understand the app
 
@@ -174,6 +174,17 @@ For the iPad set, capture the same names on the iPad simulator. One name holds b
 
 The PNGs are also saved in `./raw-shots`. Open each one and look at it before moving on; capture again under the same name to replace it. Do not commit `raw-shots/`.
 
+### A logo and other artwork
+
+Only when the user gave you files in step 2, or asked for the app's icon on the slides. These are not screenshots, so they go up with `--image`:
+
+```bash
+appshots upload <project> logo.svg mascot.png --image             # PNG, SVG, JPEG or WebP, named after the files
+appshots upload <project> <the 1024 px icon in the asset catalogue> --image --name app-icon
+```
+
+`get_project` lists them under `images`. A slide shows one over its headline with `logo`, and places others anywhere with `images`; the design guide has the fields. Use only what the user gave you or what is in the repository. Do not draw, generate or download artwork.
+
 ## 7. Write the copy
 
 - A headline is two to five words and one benefit. Say what the user gets, not what the feature is called: "Never miss a day", not "Reminder notifications". Verb first where it fits.
@@ -182,13 +193,14 @@ The PNGs are also saved in `./raw-shots`. Open each one and look at it before mo
 - Use the words the app itself uses. No "best", "ultimate" or "#1", and nothing the app does not do.
 - Badges only with the real figures and reviews the user gave you in step 2. Without any, leave badges out. Invented ones get the app rejected.
 - A row of logos only for services the app really works with, as the user named them in step 2.
+- The app's logo belongs on the first slide, not on every one. Other artwork: one to three images on a slide, clear of the headline and of the part of the screen the slide is about.
 - Write in the app's main language. Add other languages only when asked, as `{"en-US": "...", "de-DE": "..."}` maps, with the locales listed on the project.
 
 ## 8. Build and render
 
 1. `set_slides` with the whole set and the theme. Take the theme from the app: its accent colour, a muted background in the same family or `auto`, one font for the set. Vary the layouts so it does not read as one template repeated: one device, a close-up, the device beside a column of feature points, two or three devices on one slide, a feature slide.
 2. `render` with `"creatives": []`. Look at the contact sheet it returns as a customer would: is each headline readable at thumbnail size, does the device crop hide the point of the screen, does the set hold together?
-3. Fix what is off with `update_slide` and render only those slides, as in `"slides": [2, 5], "creatives": []`. Two rounds at most. Stop when it is good, not when it is perfect. When the device hides the point of its screen or crowds the copy, move or resize it on that slide with `device`: `scale`, `offsetX` and `offsetY`, in small steps.
+3. Fix what is off with `update_slide` and render only those slides, as in `"slides": [2, 5], "creatives": []`. Two rounds at most. Stop when it is good, not when it is perfect. When the device hides the point of its screen or crowds the copy, move or resize it on that slide with `device`: `scale`, `offsetX` and `offsetY`, in small steps. A placed image that covers something moves with its `x`, `y` and `size`; with an iPad set, look at both, because the same numbers land elsewhere on the wider canvas.
 4. Only if the user asked for them: `set_creative_assets` for the product page header and the search results image, then `render` with `"creatives": ["header", "search"]`. Keep their copy to one short phrase. The preview marks the safe area with a dashed frame so you can check that the copy is inside it; that frame is not in the file. Apple reviews these more strictly than screenshots.
 
 appShots makes still images. If the user asks for an app preview video, say that this skill does not make one.

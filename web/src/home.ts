@@ -1,6 +1,10 @@
 // The public home page is plain HTML (web/home.html). This adds what depends on the visit or needs a script:
 // why a sign-in just failed, who may sign in, and the motion.
 
+import { setAppearance, shownAppearance } from "./theme.ts";
+
+document.getElementById("appearance")!.addEventListener("click", () => setAppearance(shownAppearance() === "dark" ? "light" : "dark"));
+
 const ERRORS: Record<string, string> = {
   not_allowed: "That Google account is not on the list for this server yet. Ask the person who runs it to add your address.",
   google_cancelled: "Google sign-in was cancelled.",

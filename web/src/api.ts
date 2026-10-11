@@ -3,7 +3,7 @@ import type { CreativeLayoutId } from "../../src/design.ts";
 import type { Project, Text } from "../../src/schema.ts";
 import type { Placement, PlacementId, Target, TargetId } from "../../src/sizes.ts";
 
-export type { Background, Badge, Creative, DeviceStyle, Feature, IconRow, Project, Slide, Text, Theme } from "../../src/schema.ts";
+export type { Background, Badge, Creative, DeviceStyle, Feature, IconRow, Logo, PlacedImage, Project, Slide, Text, Theme } from "../../src/schema.ts";
 export type { CreativeLayoutId, Placement, PlacementId, Target, TargetId };
 
 export interface Meta {
@@ -14,6 +14,10 @@ export interface Meta {
   placements: Record<PlacementId, Placement>;
   creativeLayouts: Record<CreativeLayoutId, { note: string; screenshots: number }>;
   fonts: string[];
+  /** The same fonts with their names, under the headings the picker shows them under. */
+  fontList: { id: string; family: string; group: string; note: string; weight: number }[];
+  logoShapes: Record<string, string>;
+  logoSizes: string[];
   backgrounds: string[];
   deviceColors: string[];
   badgeTypes: Record<string, string>;
@@ -49,9 +53,20 @@ export interface Shot {
   version: number;
 }
 
+/** A logo or other artwork that slides place by its name. */
+export interface StoredImage {
+  name: string;
+  file: string;
+  width: number;
+  height: number;
+  bytes: number;
+  version: number;
+}
+
 export interface Detail {
   project: Project;
   shots: Shot[];
+  images: StoredImage[];
   outputs: { locale: string; target: string; files: string[]; version: number }[];
   creativeOutputs: { locale: string; placement: PlacementId; path: string; version: number }[];
   defaultTargets: TargetId[];

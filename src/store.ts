@@ -42,6 +42,7 @@ export function projectDir(space: Space, id: string): string {
 }
 
 export const shotsDir = (space: Space, id: string) => path.join(projectDir(space, id), "shots");
+export const imagesDir = (space: Space, id: string) => path.join(projectDir(space, id), "images");
 export const outDir = (space: Space, id: string) => path.join(projectDir(space, id), "out");
 
 export function slugify(input: string): string {
@@ -193,6 +194,76 @@ export async function saveShot(space: Space, id: string, name: string, data: Buf
 export async function deleteShot(space: Space, id: string, file: string): Promise<void> {
   if (!SHOT_FILE.test(file)) throw new InputError(`Invalid screenshot file "${file}"`);
   await rm(path.join(shotsDir(space, id), file), { force: true });
+}
+
+/** An uploaded image that is not a screenshot: a logo, a sticker, a character. Slides place it by name. */
+export interface StoredImage {
+  name: string;
+  /** File name inside the project's images directory. */
+  file: string;
+  width: number;
+  height: number;
+  bytes: number;
+  version: number;
+}
+
+const IMAGE_FILE = /^([a-z0-9][a-z0-9_-]{0,63})\.png$/;
+/** No slide shows an image larger than this, and a logo needs far less. */
+const IMAGE_MAX = 2048;
+
+export async function listImages(space: Space, id: string): Promise<StoredImage[]> {
+  const dir = imagesDir(space, id);
+  const files = await readdir(dir).catch(() => []);
+  const images: StoredImage[] = [];
+  for (const file of files.sort()) {
+    const match = IMAGE_FILE.exec(file);
+    if (!match) continue;
+    const full = path.join(dir, file);
+    const [info, meta] = await Promise.all([stat(full), sharp(full).metadata()]);
+    images.push({ name: match[1]!, file, width: meta.width, height: meta.height, bytes: info.size, version: Math.round(info.mtimeMs) });
+  }
+  return images;
+}
+
+/** Stores a logo or other artwork as a PNG, transparency included. An SVG is drawn large enough to stay sharp. */
+export async function saveImage(space: Space, id: string, name: string, data: Buffer): Promise<StoredImage> {
+  await getProject(space, id);
+  assertSlug(name, "image name");
+  let png: Buffer;
+  let width: number;
+  let height: number;
+  try {
+    const meta = await sharp(data).metadata();
+    // An SVG is drawn at the size it declares, which for a logo is often a few dozen pixels.
+    const vector = meta.format === "svg" && meta.width && meta.height;
+    const density = vector ? Math.min(2400, Math.max(72, Math.round((72 * 1600) / Math.max(meta.width, meta.height)))) : undefined;
+    const result = await sharp(data, density ? { density } : {})
+      .rotate()
+      .resize({ width: IMAGE_MAX, height: IMAGE_MAX, fit: "inside", withoutEnlargement: true })
+      .png()
+      .toBuffer({ resolveWithObject: true });
+    png = result.data;
+    width = result.info.width;
+    height = result.info.height;
+  } catch {
+    throw new InputError("Not a readable image. Upload a PNG, SVG, JPEG or WebP file.");
+  }
+  if (Math.min(width, height) < 16) throw new InputError(`Image is only ${width}×${height}; that is too small to show.`);
+  const file = `${name}.png`;
+  const dir = imagesDir(space, id);
+  await mkdir(dir, { recursive: true });
+  if (space.limits && !(await exists(path.join(dir, file)))) {
+    const count = (await readdir(dir)).filter((entry) => IMAGE_FILE.test(entry)).length;
+    if (count >= space.limits.shots) throw new InputError(`A project is limited to ${space.limits.shots} images. Delete some to make room.`);
+  }
+  await writeFile(path.join(dir, file), png);
+  const info = await stat(path.join(dir, file));
+  return { name, file, width, height, bytes: info.size, version: Math.round(info.mtimeMs) };
+}
+
+export async function deleteImage(space: Space, id: string, file: string): Promise<void> {
+  if (!IMAGE_FILE.test(file)) throw new InputError(`Invalid image file "${file}"`);
+  await rm(path.join(imagesDir(space, id), file), { force: true });
 }
 
 export interface OutputSet {

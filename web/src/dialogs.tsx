@@ -1,12 +1,24 @@
-// The four dialogs behind the sidebar: new project, connecting an agent, the account, and (for the admin) people.
+// The dialogs behind the sidebar: new project, renaming or deleting one, connecting an agent, the account, and
+// (for the admin) people.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { createContext, type FormEvent, type ReactNode, useContext, useState } from "react";
-import { api, day, errorText, type Meta, parseLocales, plural, type Project, projectsQuery } from "./api.ts";
+import { api, day, detailQuery, errorText, type Meta, parseLocales, plural, type Project, projectsQuery } from "./api.ts";
 import { CopyBlock, Dialog, Field, Select, toast } from "./ui.tsx";
 
-export type DialogKind = "new" | "connect" | "account" | "people";
+type Named = { id: string; name: string };
+export type DialogKind = "new" | "connect" | "account" | "people" | { rename: Named } | { remove: Named };
+
+/**
+ * The project that is open in the Studio, which holds edits the server has not seen yet. Renaming it goes through
+ * its draft, and before it is deleted its saving is stopped; `quiesce` hands back how to start it again.
+ */
+export const openProject: { id: string | null; rename: (name: string) => void; quiesce: () => Promise<() => void> } = {
+  id: null,
+  rename: () => {},
+  quiesce: async () => () => {},
+};
 
 export const OpenDialog = createContext<(kind: DialogKind) => void>(() => {});
 export const useOpenDialog = () => useContext(OpenDialog);
@@ -15,7 +27,21 @@ export function DialogHost({ kind, meta, close }: { kind: DialogKind | null; met
   if (kind == null) return null;
   return (
     <Dialog onClose={close}>
-      {kind === "new" ? <NewProject close={close} /> : kind === "connect" ? <Connect meta={meta} close={close} /> : kind === "account" ? <Account meta={meta} close={close} /> : <People close={close} />}
+      {typeof kind === "object" ? (
+        "rename" in kind ? (
+          <RenameProject project={kind.rename} close={close} />
+        ) : (
+          <DeleteProject project={kind.remove} close={close} />
+        )
+      ) : kind === "new" ? (
+        <NewProject close={close} />
+      ) : kind === "connect" ? (
+        <Connect meta={meta} close={close} />
+      ) : kind === "account" ? (
+        <Account meta={meta} close={close} />
+      ) : (
+        <People close={close} />
+      )}
     </Dialog>
   );
 }
@@ -98,6 +124,90 @@ function NewProject({ close }: { close: () => void }) {
           </button>
         </div>
       </form>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- rename and delete
+
+function RenameProject({ project, close }: { project: Named; close: () => void }) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(project.name);
+  const [error, setError] = useState("");
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const next = name.trim();
+    if (!next) return;
+    try {
+      if (openProject.id === project.id) openProject.rename(next);
+      else {
+        await api("PUT", `/projects/${project.id}`, { name: next });
+        await queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey });
+        await queryClient.invalidateQueries({ queryKey: detailQuery(project.id).queryKey });
+      }
+      close();
+    } catch (failure) {
+      setError(errorText(failure));
+    }
+  };
+
+  return (
+    <>
+      <h1>Rename project</h1>
+      <form onSubmit={(event) => void submit(event)}>
+        <Field label="Name" hint="Links to the project keep working: its address stays the same.">
+          <input type="text" required maxLength={80} data-autofocus value={name} onFocus={(event) => event.target.select()} onChange={(event) => setName(event.target.value)} />
+        </Field>
+        {error ? <div className="inline-error">{error}</div> : null}
+        <div className="foot">
+          <button className="btn" type="button" onClick={close}>
+            Cancel
+          </button>
+          <button className="btn primary" type="submit">
+            Rename
+          </button>
+        </div>
+      </form>
+    </>
+  );
+}
+
+function DeleteProject({ project, close }: { project: Named; close: () => void }) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+
+  const remove = async () => {
+    setBusy(true);
+    const open = openProject.id === project.id;
+    const resume = open ? await openProject.quiesce() : null;
+    try {
+      await api("DELETE", `/projects/${project.id}`);
+      await queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey });
+      close();
+      if (open) await navigate({ to: "/" });
+      queryClient.removeQueries({ queryKey: detailQuery(project.id).queryKey });
+      toast(`Deleted "${project.name}".`);
+    } catch (failure) {
+      resume?.();
+      toast(errorText(failure), "error");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <h1>Delete "{project.name}"?</h1>
+      <p className="dialog-sub">Its slides, screenshots, images and renders are deleted with it. This cannot be undone.</p>
+      <div className="foot">
+        <button className="btn" type="button" data-autofocus onClick={close}>
+          Cancel
+        </button>
+        <button className="btn danger solid" type="button" disabled={busy} onClick={() => void remove()}>
+          {busy ? "Deleting…" : "Delete project"}
+        </button>
+      </div>
     </>
   );
 }

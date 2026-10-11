@@ -188,6 +188,7 @@ The setup command above installs the CLI. It is one file with no dependencies, s
 appshots check                                    # the server, the skill, Xcode, the project here, simulators,
                                                   # installed apps and devices, each with what to do next
 appshots upload streaks ./screens                 # screenshots you already have: files, or a folder of them
+appshots upload streaks logo.svg mascot.png --image   # a logo and other artwork for the slides, not screenshots
 appshots run                                      # build the app in this folder and launch it in a simulator
 appshots run --ipad --dark --lang de              # on the 13-inch iPad Pro, dark, in German
 appshots launch com.example.streaks --capture stats --to streaks -- -appshots stats
@@ -213,11 +214,15 @@ Simulator capture uses `simctl`. Device capture uses `devicectl device capture s
 
 ## The Studio
 
-Open the server in a browser and sign in to see every slide as a live preview at export size, and download the set as a ZIP. Projects sit in the sidebar. Changes an agent makes through MCP show up in an open Studio within a few seconds.
+Open the server in a browser and sign in to see every slide as a live preview at export size, and download the set as a ZIP. Changes an agent makes through MCP show up in an open Studio within a few seconds.
+
+- **Projects** sit in the sidebar. **Rename** and **Delete** are beside the project's title, which can also be clicked and typed over, and under the three dots next to every project in the sidebar. Renaming keeps the project's address, so links to it go on working.
 
 - **Slides.** The heading of the section switches between iPhone and iPad. Click a slide to edit it: the editor opens beside a large preview of that slide, with the layouts as small sketches, the screenshots as thumbnails to pick from (two or three for the layouts that take several), sliders for the device's size, position and tilt, and editors for feature cards or points, badges, and the row of icons or logos.
 - **Screenshots.** Drop files anywhere on the page, or use the upload button.
+- **Logos and images.** Everything else a slide can show: your logo or app icon, a mascot, stickers, shapes. Upload PNG, SVG, JPEG or WebP files there, or drop them on that section. Click one to place it on the selected slide, then drag it in the large preview; size, turn, opacity, shadow, mirroring and whether it lies over or under the device are in the slide's editor, with ready arrangements for several images at once. A slide's logo is picked under **Your logo**.
 - **Header and search results.** Adds, previews and edits the three store assets. **Show safe area** draws the part every device shows as a dashed frame; it is off until you tick it and never in the exported file.
+- **Light and dark.** The switch at the bottom of the sidebar picks **Light**, **Dark** or **Auto**, which follows the device. The home page has the same choice as a button in its header, and the browser remembers it.
 
 ## Slides
 
@@ -228,9 +233,19 @@ A project has a theme and up to ten slides. Every style field can be set on the 
 - **Feature points:** on every other layout, `features` is a short list next to the headline, as `list`, `cards`, `grid` or `chips`. It goes best with `device-right` and `device-left`, which give the copy a column of its own
 - **Badges** (up to four per slide): `laurel` (wreath), `stars`, `rating` (the figure with five stars), `review` (a quote with its author), `icon`, `pill`; plain or in `gold`
 - **Icon and logo rows:** `iconRow` puts up to eight icons or logos under the copy with an optional label such as "Works with", as `tiles`, `circles` or `plain`, in the brands' own colours, the accent or the text colour
+- **Logo:** `logo` puts an uploaded image over the headline, `small`, `medium` or `large`, as it is (`plain`), as an iOS app icon with rounded corners (`app-icon`) or as a `circle`
+- **Images:** `images` places up to ten uploaded images anywhere on a slide, each with its position and width in percent of the canvas, and optionally a turn, a shadow that follows its outline, an opacity, mirroring, and whether it lies in front of the device and the copy or behind them
 - **Icons:** 199 of them for badges, features and rows, 43 of which are logos of services such as YouTube, Instagram, Spotify, Slack and Notion. They are the fill weight of [Phosphor Icons](https://phosphoricons.com) (MIT); `npm run icons` rebuilds `src/icons.ts` from the list in `scripts/icons.mjs`
 - **Backgrounds:** presets (`midnight`, `aurora`, `ember`, `ocean`, `sunset`, `candy`, `forest`, `graphite`, `peach`, `mint`, `lavender`, `sky`, `paper`, `ink`), `auto` (colours taken from the slide's screenshot), a hex colour, or a custom `{type, colors}` gradient or mesh
-- **Fonts:** Inter, Manrope, Plus Jakarta Sans, Sora, Space Grotesk, Bricolage Grotesque, Fraunces, Instrument Serif (bundled, nothing is fetched at render time)
+- **Fonts:** 41, bundled, so nothing is fetched at render time:
+  - Sans: Inter, Manrope, Plus Jakarta Sans, DM Sans, Outfit, Figtree, Geist, Onest, Urbanist, Lexend, Montserrat, Rubik, Red Hat Display, Archivo, Sora, Space Grotesk
+  - Rounded: Nunito, Quicksand, Fredoka, Baloo 2
+  - Display: Bricolage Grotesque, Unbounded, Syne, Oswald, Anton, Bebas Neue, Archivo Black
+  - Serif: Fraunces, Playfair Display, Lora, Newsreader, Cormorant, Roboto Slab, Instrument Serif, DM Serif Display, Young Serif
+  - Handwritten: Caveat, Pacifico, Permanent Marker
+  - Mono: JetBrains Mono, Space Mono
+
+  Faces that only work large, such as the handwritten ones, set the headline; the small print beside them is set in a plain face that goes with them
 - **Device:** frame (`auto`, `iphone`, `ipad`, `none`), colour and shadow, and per slide its size (`scale`), place (`offsetX`, `offsetY`), tilt (`rotate`) and turn in 3D (`perspective`)
 - **Text:** `*asterisks*` tint words with the accent colour, a newline forces a break, and any text can be a `{ "en-US": "...", "de-DE": "..." }` map for localized sets
 
@@ -251,7 +266,7 @@ A project can hold one of each, built from the same screenshots and theme as its
 The store crops these images differently on each device and orientation, and only the safe area is always visible. appShots therefore centres the copy and shrinks it until it fits inside that area, and treats everything around it as decoration that may be cut off. The previews an agent gets draw the safe area as a dashed frame, and the Studio does when **Show safe area** is ticked; the exported PNG never contains it.
 
 - **Layouts:** `fan` (copy above up to five fanned devices), `sides` (copy between up to four devices), `wall` (copy over a dimmed wall of bare screenshots). Without screenshots an asset is copy on the background, without copy it is the devices alone.
-- **Per asset:** eyebrow, headline, subheadline, up to six screenshots in order of importance, up to three badges, background, font, colours, headline size, and the device frame, colour, size and shadow. What an asset leaves out comes from the project theme.
+- **Per asset:** eyebrow, headline, subheadline, up to six screenshots in order of importance, up to three badges, the app's own logo over the headline, background, font, colours, headline size, and the device frame, colour, size and shadow. What an asset leaves out comes from the project theme.
 - **Output:** opaque PNGs at `<locale>/creative-assets/header.png`, `search.png` and `universal.png`, rendered with the slides and included in the ZIP.
 
 Apple reviews these images and asks for more restraint than in screenshots: one clear idea, a short phrase at most, no prices, discounts, web addresses or copyright symbols, no logos of other platforms, no claims or awards that cannot be verified and no Apple accolades (Editors' Choice, App of the Day, Apple Design Award), and text translated for every language it is uploaded for. See Apple's [creative asset specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications/).
@@ -265,11 +280,13 @@ Everything the Studio and the CLI do goes through `/api`, with the same bearer t
 ```
 GET    /api/projects                       list
 POST   /api/projects                       create {name, locales?, theme?, slides?}
-GET    /api/projects/:id                   project, screenshots, rendered files
+GET    /api/projects/:id                   project, screenshots, images, rendered files
 PUT    /api/projects/:id                   update {name?, locales?, theme?, slides?, creatives?: {header?, search?, universal?}}
 DELETE /api/projects/:id
 PUT    /api/projects/:id/shots/:name       upload a screenshot (raw image body, ?device=iphone|ipad to override detection)
 DELETE /api/projects/:id/shots/:file
+PUT    /api/projects/:id/images/:name      upload a logo or other artwork (raw PNG, SVG, JPEG or WebP body)
+DELETE /api/projects/:id/images/:file
 POST   /api/projects/:id/render            {targets?, locales?, slides?, creatives?}
 GET    /api/projects/:id/export.zip        ?render=1 renders first
 ```
@@ -282,6 +299,7 @@ Account settings and the People page need a browser sign-in; an API token cannot
 
 - Screenshots are portrait only; there is no landscape or Apple Watch/TV output.
 - Put only real figures, reviews and awards in badges. App Review rejects screenshots with invented download counts, ratings or rankings.
-- Logos are other companies' trademarks. Show them only for services the app really works with, and none in the header and search results assets, where Apple does not allow them.
+- Logos are other companies' trademarks. Show them only for services the app really works with, and none in the header and search results assets, where Apple does not allow them. The same goes for images you upload: your own logo and artwork, not somebody else's.
+- Uploaded images are kept as PNGs of at most 2048 pixels a side; an SVG is drawn once when it is uploaded.
 - The device frames are drawn in CSS, not Apple's product images.
 - Put the server behind HTTPS. No passwords are stored. `accounts.json` on the data volume holds each person's name, email address and Google account id, the list of allowed addresses, and API tokens as SHA-256 hashes; a token is shown once when it is created.

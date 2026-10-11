@@ -9,7 +9,8 @@ import { createRoot } from "react-dom/client";
 import { detailQuery, errorText, metaQuery, projectsQuery } from "./api.ts";
 import { DialogHost, type DialogKind, OpenDialog, useOpenDialog } from "./dialogs.tsx";
 import { dropTarget, ProjectPage } from "./project.tsx";
-import { Icon, Toasts } from "./ui.tsx";
+import { type Appearance, readAppearance, setAppearance } from "./theme.ts";
+import { Icon, Menu, Toasts } from "./ui.tsx";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -17,6 +18,38 @@ const PAGE = "M4.2 1.8h4.9l2.7 2.7v9.7H4.2zM9 2v2.7h2.7";
 const PLUS = "M8 3.5v9M3.5 8h9";
 const BOLT = "M9 1.8 3.8 9H8l-1 5.2L12.2 7H8z";
 const LEAVE = "M6.5 2.5h-3v11h3M10 5l3 3-3 3M13 8H6.5";
+
+const APPEARANCES: { id: Appearance; text: string; title: string; path: string }[] = [
+  { id: "system", text: "Auto", title: "Follow this device's setting", path: "M2.5 3.5h11v7h-11zM6 13.5h4M8 10.5v3" },
+  { id: "light", text: "Light", title: "Light", path: "M8 5.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6zM8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" },
+  { id: "dark", text: "Dark", title: "Dark", path: "M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z" },
+];
+
+/** Light, dark, or whatever the device says. */
+function AppearanceSwitch() {
+  const [chosen, setChosen] = useState(readAppearance);
+  return (
+    <div className="appearance" role="radiogroup" aria-label="Appearance">
+      {APPEARANCES.map((entry) => (
+        <button
+          key={entry.id}
+          className={chosen === entry.id ? "on" : ""}
+          type="button"
+          role="radio"
+          aria-checked={chosen === entry.id}
+          title={entry.title}
+          onClick={() => {
+            setAppearance(entry.id);
+            setChosen(entry.id);
+          }}
+        >
+          <Icon path={entry.path} />
+          {entry.text}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** The frame of a page that has no project to show. */
 function Blank({ children }: { children?: ReactNode }) {
@@ -79,10 +112,19 @@ function Shell() {
           <div className="nav-label">Projects</div>
           <div id="project-list">
             {projects.data.map((project) => (
-              <Link key={project.id} className="nav-item" activeProps={{ className: "on" }} to="/$projectId" params={{ projectId: project.id }}>
-                <Icon path={PAGE} />
-                <span className="nav-text">{project.name}</span>
-              </Link>
+              <div key={project.id} className="nav-row">
+                <Link className="nav-item" activeProps={{ className: "on" }} to="/$projectId" params={{ projectId: project.id }}>
+                  <Icon path={PAGE} />
+                  <span className="nav-text">{project.name}</span>
+                </Link>
+                <Menu
+                  label={`Rename or delete ${project.name}`}
+                  items={[
+                    { text: "Rename", run: () => setDialog({ rename: project }) },
+                    { text: "Delete", danger: true, run: () => setDialog({ remove: project }) },
+                  ]}
+                />
+              </div>
             ))}
           </div>
           <button className="nav-item quiet" type="button" onClick={() => setDialog("new")}>
@@ -122,6 +164,7 @@ function Shell() {
               </button>
             </form>
           ) : null}
+          <AppearanceSwitch />
         </div>
       </nav>
 
@@ -134,12 +177,17 @@ function Shell() {
   );
 }
 
-/** Files dragged anywhere over the window upload into the open project. */
+/**
+ * Files dragged anywhere over the window upload into the open project: as screenshots, or as logos and images
+ * when they are let go over that part of the page.
+ */
 function DropVeil() {
   const [shown, setShown] = useState(false);
+  const [images, setImages] = useState(false);
   useEffect(() => {
     let depth = 0;
     const carriesFiles = (event: DragEvent) => [...(event.dataTransfer?.types ?? [])].includes("Files");
+    const overImages = (event: DragEvent) => event.target instanceof Element && event.target.closest("[data-drop='images']") != null;
     const enter = (event: DragEvent) => {
       if (!carriesFiles(event)) return;
       event.preventDefault();
@@ -147,7 +195,9 @@ function DropVeil() {
       setShown(dropTarget.upload != null);
     };
     const over = (event: DragEvent) => {
-      if (carriesFiles(event)) event.preventDefault();
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      setImages(overImages(event));
     };
     const leave = (event: DragEvent) => {
       if (!carriesFiles(event)) return;
@@ -159,7 +209,7 @@ function DropVeil() {
       event.preventDefault();
       depth = 0;
       setShown(false);
-      dropTarget.upload?.([...event.dataTransfer!.files]);
+      dropTarget.upload?.([...event.dataTransfer!.files], overImages(event) ? "image" : "shot");
     };
     window.addEventListener("dragenter", enter);
     window.addEventListener("dragover", over);
@@ -172,7 +222,7 @@ function DropVeil() {
       window.removeEventListener("drop", drop);
     };
   }, []);
-  return shown ? <div className="drop-veil">Drop screenshots to upload</div> : null;
+  return shown ? <div className="drop-veil">{images ? "Drop to add as logos and images" : "Drop screenshots to upload"}</div> : null;
 }
 
 function Home() {

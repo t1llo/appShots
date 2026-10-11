@@ -31,7 +31,7 @@ const AGENTS = {
 };
 // Build logs go here, and with --fresh the builds themselves, one folder per project.
 const BUILD_CACHE = path.join(homedir(), "Library", "Caches", "appshots", "build");
-const BOOLEAN_FLAGS = new Set(["clean", "render", "help", "ipad", "dark", "light", "fresh"]);
+const BOOLEAN_FLAGS = new Set(["clean", "render", "help", "ipad", "dark", "light", "fresh", "image"]);
 
 const HELP = `appshots: run an app in a simulator, capture its screens and sync them with an appShots server
 
@@ -79,6 +79,8 @@ const HELP = `appshots: run an app in a simulator, capture its screens and sync 
                                          Upload screenshots that exist already. A folder stands for the
                                          PNG and JPEG files in it. The name is the file name, or --name
                                          for a single file
+      --image                              They are not screenshots but a logo or other artwork for the
+                                           slides: PNG, SVG, JPEG or WebP, transparency kept
   appshots pull <project> [--out <dir>]  Download the rendered screenshots and header and search
                                          results assets (--render renders first)
   appshots open [project]                Open the Studio in the browser
@@ -815,22 +817,39 @@ async function upload(config, project, file, name) {
   return shot;
 }
 
+/** Uploads a logo or other artwork, which slides place by its name. */
+async function uploadImage(config, project, file, name) {
+  const response = await request(config, "PUT", `/api/projects/${project}/images/${name}`, {
+    body: readFileSync(file),
+    headers: { "content-type": "application/octet-stream" },
+  });
+  const image = await response.json();
+  console.log(`Uploaded image ${image.name} (${image.width}x${image.height}) to ${project}`);
+  return image;
+}
+
 /** A file stands for itself, a folder for the PNG and JPEG files directly inside it, in the order of their names. */
-function picturesIn(source) {
+function picturesIn(source, kinds = /\.(png|jpe?g)$/i) {
   if (!existsSync(source)) fail(`No such file or folder: ${source}`);
   if (!statSync(source).isDirectory()) return [source];
   const files = readdirSync(source)
-    .filter((name) => /\.(png|jpe?g)$/i.test(name) && !name.startsWith("."))
+    .filter((name) => kinds.test(name) && !name.startsWith("."))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
     .map((name) => path.join(source, name))
     .filter((file) => statSync(file).isFile());
-  if (files.length === 0) fail(`No PNG or JPEG files in ${source}. Only the files directly inside a folder count, not those in its subfolders.`);
+  if (files.length === 0) fail(`No image files in ${source}. Only the files directly inside a folder count, not those in its subfolders.`);
   return files;
 }
 
 async function uploadAll(config, project, sources, flags) {
-  const files = sources.flatMap(picturesIn);
+  const files = sources.flatMap((source) => picturesIn(source, flags.image ? /\.(png|jpe?g|svg|webp)$/i : undefined));
   if (typeof flags.name === "string" && files.length > 1) fail("--name only works with a single file.");
+  if (flags.image) {
+    const names = new Set();
+    for (const file of files) names.add((await uploadImage(config, project, file, slugify(typeof flags.name === "string" ? flags.name : path.parse(file).name))).name);
+    console.log(`${names.size} ${names.size === 1 ? "image" : "images"} uploaded to ${project}. Slides place them by name, as "logo" or in "images".`);
+    return;
+  }
   // The server tells an iPhone from an iPad screenshot, so one name can stand for one of each.
   const sent = new Map();
   for (const file of files) {
@@ -1090,7 +1109,7 @@ async function main() {
     }
     case "upload": {
       const [project, ...sources] = positional;
-      if (!project || sources.length === 0) fail("Usage: appshots upload <project> <files or folders...> [--name <name>]");
+      if (!project || sources.length === 0) fail("Usage: appshots upload <project> <files or folders...> [--name <name>] [--image]");
       return uploadAll(loadConfig(), project, sources, flags);
     }
     case "pull":

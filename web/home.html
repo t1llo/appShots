@@ -12,6 +12,13 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2337352f'/%3E%3Crect x='10.5' y='6.5' width='11' height='19' rx='3' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3C/svg%3E"
     />
+    <script>
+      // A kept choice of light or dark is applied before the first paint; without one the page follows the device.
+      try {
+        var kept = localStorage.getItem("appshots.theme");
+        if (kept === "light" || kept === "dark") document.documentElement.dataset.theme = kept;
+      } catch (error) {}
+    </script>
     <link rel="stylesheet" href="/src/app.css" />
     <script async src="/analytics.js" vite-ignore></script>
   </head>
@@ -24,7 +31,15 @@
         </svg>
         appShots
       </a>
-      <a class="btn" href="/studio">Open Studio</a>
+      <div class="home-actions">
+        <button class="icon-btn plain" type="button" id="appearance" title="Switch between light and dark" aria-label="Switch between light and dark">
+          <svg class="icon to-dark" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z" /></svg>
+          <svg class="icon to-light" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 5.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6zM8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
+          </svg>
+        </button>
+        <a class="btn" href="/studio">Open Studio</a>
+      </div>
     </header>
 
     <main>

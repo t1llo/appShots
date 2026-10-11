@@ -35,7 +35,7 @@ import {
 } from "./accounts.ts";
 import { config } from "./config.ts";
 import { CREATIVE_CAPACITY, creativeHtml } from "./creative.ts";
-import { BACKGROUNDS, BADGE_TONES, BADGE_TYPES, CREATIVE_LAYOUTS, DEVICE_COLOR_IDS, FEATURE_STYLES, POINT_STYLES, ICON_ROW_SIZE_IDS, ICON_ROW_STYLES, ICON_ROW_TONES, FONT_IDS, FONTS, ICON_GROUPS, ICON_IDS, LAYOUT_SHOTS, LAYOUTS } from "./design.ts";
+import { BACKGROUNDS, BADGE_TONES, BADGE_TYPES, CREATIVE_LAYOUTS, DEVICE_COLOR_IDS, FEATURE_STYLES, POINT_STYLES, ICON_ROW_SIZE_IDS, ICON_ROW_STYLES, ICON_ROW_TONES, FONT_IDS, FONTS, ICON_GROUPS, ICON_IDS, LAYOUT_SHOTS, LAYOUTS, LOGO_SHAPES, LOGO_SIZE_IDS } from "./design.ts";
 import { ICONS } from "./icons.ts";
 import { createMcpServer } from "./mcp.ts";
 import { closeBrowser, defaultTargets, renderProject } from "./render.ts";
@@ -44,17 +44,21 @@ import { isPlacementId, isTargetId, PLACEMENT_IDS, PLACEMENTS, TARGET_IDS, TARGE
 import {
   countProjects,
   createProject,
+  deleteImage,
   deleteProject,
   deleteShot,
   getProject,
+  imagesDir,
   InputError,
   listCreativeOutputs,
+  listImages,
   listOutputs,
   listProjects,
   listShots,
   NotFoundError,
   outDir,
   safeJoin,
+  saveImage,
   saveShot,
   shotsDir,
   type Space,
@@ -368,8 +372,8 @@ async function creativeOutputs(space: Space, id: string) {
 }
 
 async function projectDetail(space: Space, id: string) {
-  const [project, shots, outputs, creatives] = await Promise.all([getProject(space, id), listShots(space, id), listOutputs(space, id), creativeOutputs(space, id)]);
-  return { project, shots, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots) };
+  const [project, shots, images, outputs, creatives] = await Promise.all([getProject(space, id), listShots(space, id), listImages(space, id), listOutputs(space, id), creativeOutputs(space, id)]);
+  return { project, shots, images, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots) };
 }
 
 api.get("/meta", (_req, res) => {
@@ -381,12 +385,15 @@ api.get("/meta", (_req, res) => {
     placements: PLACEMENTS,
     creativeLayouts: Object.fromEntries(Object.entries(CREATIVE_LAYOUTS).map(([id, note]) => [id, { note, screenshots: CREATIVE_CAPACITY[id as keyof typeof CREATIVE_LAYOUTS] }])),
     fonts: FONT_IDS,
+    fontList: Object.entries(FONTS).map(([id, font]) => ({ id, family: font.family, group: font.group, note: font.note, weight: font.weight })),
     backgrounds: ["auto", ...Object.keys(BACKGROUNDS)],
     deviceColors: DEVICE_COLOR_IDS,
     badgeTypes: BADGE_TYPES,
     badgeTones: BADGE_TONES,
     featureStyles: FEATURE_STYLES,
     pointStyles: POINT_STYLES,
+    logoShapes: LOGO_SHAPES,
+    logoSizes: LOGO_SIZE_IDS,
     iconRowStyles: ICON_ROW_STYLES,
     iconRowTones: ICON_ROW_TONES,
     iconRowSizes: ICON_ROW_SIZE_IDS,
@@ -426,6 +433,16 @@ api.put("/projects/:id/shots/:name", express.raw({ type: () => true, limit: "40m
 api.delete("/projects/:id/shots/:file", async (req, res) => {
   await getProject(spaceOf(res), req.params.id);
   await deleteShot(spaceOf(res), req.params.id, req.params.file);
+  res.status(204).end();
+});
+
+api.put("/projects/:id/images/:name", express.raw({ type: () => true, limit: "20mb" }), async (req, res) => {
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new InputError("Send the image file as the request body.");
+  res.status(201).json(await saveImage(spaceOf(res), req.params.id, req.params.name, req.body));
+});
+api.delete("/projects/:id/images/:file", async (req, res) => {
+  await getProject(spaceOf(res), req.params.id);
+  await deleteImage(spaceOf(res), req.params.id, req.params.file);
   res.status(204).end();
 });
 
@@ -525,6 +542,10 @@ app.use("/api", api);
 app.get("/files/:id/shots/:file", async (req, res) => {
   await getProject(spaceOf(res), req.params.id);
   res.set("Cache-Control", "private, max-age=31536000, immutable").sendFile(safeJoin(shotsDir(spaceOf(res), req.params.id), req.params.file));
+});
+app.get("/files/:id/images/:file", async (req, res) => {
+  await getProject(spaceOf(res), req.params.id);
+  res.set("Cache-Control", "private, max-age=31536000, immutable").sendFile(safeJoin(imagesDir(spaceOf(res), req.params.id), req.params.file));
 });
 app.get("/files/:id/out/*file", async (req, res) => {
   await getProject(spaceOf(res), req.params.id);

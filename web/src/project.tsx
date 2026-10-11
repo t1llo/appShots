@@ -2,11 +2,32 @@
 // The previews are iframes of the very pages the renderer screenshots, so what is on screen is what gets exported.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Creative, type Detail, detailQuery, errorText, label, type Meta, type PlacementId, plural, type Project, projectsQuery, type RenderResponse, type Shot, slugify, type TargetId } from "./api.ts";
-import { type Change, CreativeEditor, ProjectEditor, Scope, SlideEditor } from "./editor.tsx";
-import { toast } from "./ui.tsx";
+import {
+  api,
+  type Creative,
+  type Detail,
+  detailQuery,
+  errorText,
+  label,
+  type Meta,
+  type PlacedImage,
+  type PlacementId,
+  plural,
+  type Project,
+  projectsQuery,
+  type RenderResponse,
+  type Shot,
+  slugify,
+  type StoredImage,
+  type TargetId,
+} from "./api.ts";
+import { openProject, useOpenDialog } from "./dialogs.tsx";
+import { type Change, CreativeEditor, PLACED_SPOTS, ProjectEditor, Scope, SlideEditor } from "./editor.tsx";
+import { Icon, toast } from "./ui.tsx";
+
+const PENCIL = "M10.6 2.6l2.8 2.8M2.5 13.5l.6-3.1 7.9-7.9 2.5 2.5-7.9 7.9z";
+const TRASH = "M2.8 4.2h10.4M6.3 4.2V2.6h3.4v1.6M4.1 4.2l.6 9.2h6.6l.6-9.2M6.7 6.8v4.2M9.3 6.8v4.2";
 
 const SLIDE_HEIGHT = 440;
 const ASSET_HEIGHT = 190;
@@ -19,10 +40,10 @@ type Selection = { kind: "slide"; index: number } | { kind: "creative"; placemen
 type Saved = Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives">;
 
 const snapshot = (project: Project) => JSON.stringify({ name: project.name, locales: project.locales, theme: project.theme, slides: project.slides, creatives: project.creatives } satisfies Saved);
-const shotsKey = (shots: Shot[]) => shots.map((shot) => `${shot.file}:${shot.version}`).join(",");
+const shotsKey = (shots: (Shot | StoredImage)[]) => shots.map((shot) => `${shot.file}:${shot.version}`).join(",");
 
-/** The file drop anywhere in the window goes to whichever project is open. */
-export const dropTarget: { upload: ((files: File[]) => void) | null } = { upload: null };
+/** The file drop anywhere in the window goes to whichever project is open, as screenshots or as logos and images. */
+export const dropTarget: { upload: ((files: File[], kind: "shot" | "image") => void) | null } = { upload: null };
 
 // ---------------------------------------------------------------- previews
 
@@ -59,6 +80,72 @@ function Stage({ src, frameKey, width, height, scale }: { src: string | null; fr
   return <div className="stage" ref={ref} style={{ width: Math.round(width * scale), height: Math.round(height * scale) }} />;
 }
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+/**
+ * Lies over the large preview with one handle per placed image, so an image is moved by dragging it. The preview
+ * itself only changes once the move is saved, so a handle shows its image for as long as the two differ.
+ */
+function PlacedHandles(props: { placed: PlacedImage[]; shown: PlacedImage[]; images: StoredImage[]; projectId: string; onMove: (index: number, x: number, y: number) => void }) {
+  const { placed, shown, images, projectId, onMove } = props;
+  const box = useRef<HTMLDivElement>(null);
+  const grip = useRef<{ pointerX: number; pointerY: number; x: number; y: number } | null>(null);
+  const [drag, setDrag] = useState<{ index: number; x: number; y: number } | null>(null);
+  return (
+    <div className="handles" ref={box}>
+      {placed.map((item, index) => {
+        const image = images.find((entry) => entry.name === item.image);
+        if (!image) return null;
+        const dragging = drag?.index === index;
+        const x = dragging ? drag.x : (item.x ?? 50);
+        const y = dragging ? drag.y : (item.y ?? 50);
+        const waiting = shown[index]?.x !== item.x || shown[index]?.y !== item.y;
+        return (
+          <div
+            key={index}
+            className={`handle${dragging ? " dragging" : ""}`}
+            title={`Drag to move ${item.image}`}
+            style={{
+              left: `${x}%`,
+              top: `${y}%`,
+              width: `${item.size ?? 30}%`,
+              aspectRatio: `${image.width} / ${image.height}`,
+              transform: `translate(-50%, -50%) rotate(${item.rotate ?? 0}deg)${item.flip ? " scaleX(-1)" : ""}`,
+            }}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              grip.current = { pointerX: event.clientX, pointerY: event.clientY, x, y };
+              setDrag({ index, x, y });
+            }}
+            onPointerMove={(event) => {
+              const from = grip.current;
+              if (!from || !dragging) return;
+              const frame = box.current!.getBoundingClientRect();
+              setDrag({
+                index,
+                x: clamp(Math.round(from.x + ((event.clientX - from.pointerX) / frame.width) * 100), -30, 130),
+                y: clamp(Math.round(from.y + ((event.clientY - from.pointerY) / frame.height) * 100), -30, 130),
+              });
+            }}
+            onPointerUp={() => {
+              if (dragging && (drag.x !== (item.x ?? 50) || drag.y !== (item.y ?? 50))) onMove(index, drag.x, drag.y);
+              grip.current = null;
+              setDrag(null);
+            }}
+            onPointerCancel={() => {
+              grip.current = null;
+              setDrag(null);
+            }}
+          >
+            {dragging || waiting ? <img src={`/files/${projectId}/images/${image.file}?v=${image.version}`} alt="" draggable={false} style={{ opacity: item.opacity ?? 1 }} /> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function useViewport() {
   const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   useEffect(() => {
@@ -74,7 +161,8 @@ function useViewport() {
 export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initial: Detail; openConnect: () => void }) {
   const id = initial.project.id;
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
+  const openDialog = useOpenDialog();
+  const titleField = useRef<HTMLInputElement>(null);
 
   const [draft, setDraft] = useState(initial.project);
   /** What the server last accepted. The previews show this, not the draft. */
@@ -182,7 +270,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   // Picks up changes made elsewhere while the Studio is open: an agent editing through MCP, or the CLI uploading a capture.
   const live = useQuery({ ...detailQuery(id), refetchInterval: dirty ? false : 3000 });
   const detail = live.data ?? initial;
-  const { shots } = detail;
+  const { shots, images } = detail;
   useEffect(() => {
     const fresh = live.data?.project;
     if (!fresh || fresh.updatedAt <= latest.current.updatedAt || isDirty()) return;
@@ -252,12 +340,24 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   };
 
   const upload = useCallback(
-    async (files: File[]) => {
-      const images = files.filter((file) => file.type.startsWith("image/"));
-      if (images.length === 0) return toast("Those are not images.", "error");
-      setStatus(`Uploading ${images.length}…`);
+    async (files: File[], kind: "shot" | "image" = "shot") => {
+      const pictures = files.filter((file) => file.type.startsWith("image/"));
+      if (pictures.length === 0) return toast("Those are not images.", "error");
+      setStatus(`Uploading ${pictures.length}…`);
+      if (kind === "image") {
+        for (const file of pictures) {
+          try {
+            await api<StoredImage>("PUT", `/projects/${id}/images/${slugify(file.name.replace(/\.[^.]+$/, ""))}`, file);
+          } catch (error) {
+            toast(`${file.name}: ${errorText(error)}`, "error");
+          }
+        }
+        setStatus("");
+        await save();
+        return void (await queryClient.invalidateQueries({ queryKey: detailQuery(id).queryKey }));
+      }
       const uploaded: Shot[] = [];
-      for (const file of images) {
+      for (const file of pictures) {
         try {
           uploaded.push(await api<Shot>("PUT", `/projects/${id}/shots/${slugify(file.name.replace(/\.[^.]+$/, ""))}`, file));
         } catch (error) {
@@ -277,9 +377,34 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     [id, queryClient, save, setStatus, update],
   );
   useEffect(() => {
-    dropTarget.upload = (files) => void upload(files);
+    dropTarget.upload = (files, kind) => void upload(files, kind);
     return () => void (dropTarget.upload = null);
   }, [upload]);
+
+  // ---------------------------------------------------------------- logos and images
+
+  /** A click puts an image on the selected slide, each new one in another spot, or makes it the logo of the selected asset. */
+  const placeImage = (image: StoredImage) => {
+    if (placement != null) return update((project) => void (project.creatives[placement]!.logo = { ...project.creatives[placement]!.logo, image: image.name }), true);
+    if (slideIndex == null) return toast("Select a slide first, then click an image to place it there.");
+    const count = draft.slides[slideIndex]!.images?.length ?? 0;
+    if (count >= 10) return toast("A slide takes up to ten images.");
+    const [x, y, rotate] = PLACED_SPOTS.scattered![count % PLACED_SPOTS.scattered!.length]!;
+    update((project) => {
+      const slide = project.slides[slideIndex]!;
+      slide.images = [...(slide.images ?? []), { image: image.name, x, y, size: 24, rotate }];
+    }, true);
+  };
+
+  const removeImage = async (image: StoredImage) => {
+    if (!confirm(`Delete the image "${image.name}"? Slides that show it will leave it out.`)) return;
+    try {
+      await api("DELETE", `/projects/${id}/images/${image.file}`);
+      await reload();
+    } catch (error) {
+      toast(errorText(error), "error");
+    }
+  };
 
   // ---------------------------------------------------------------- slides and assets
 
@@ -345,21 +470,21 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     queryClient.setQueryData(projectsQuery.queryKey, (list) => list?.map((entry) => (entry.id === id ? { ...entry, name } : entry)));
   };
 
-  const deleteProject = async () => {
-    if (!confirm(`Delete "${draft.name}" with its screenshots and renders? This cannot be undone.`)) return;
-    try {
+  // The rename and delete dialogs reach the open project through here, whichever button opened them.
+  useEffect(() => {
+    openProject.id = id;
+    openProject.rename = rename;
+    openProject.quiesce = async () => {
       if (saveTimer.current !== null) clearTimeout(saveTimer.current);
       saveTimer.current = null;
       await inflight.current;
-      await api("DELETE", `/projects/${id}`);
       deleted.current = true;
-      await queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey });
-      await navigate({ to: "/" });
-      queryClient.removeQueries({ queryKey: detailQuery(id).queryKey });
-    } catch (error) {
-      toast(errorText(error), "error");
-    }
-  };
+      return () => void (deleted.current = false);
+    };
+    return () => void (openProject.id = null);
+  });
+
+  const deleteProject = () => openDialog({ remove: { id, name: draft.name } });
 
   const exportZip = async () => {
     setExporting(true);
@@ -390,7 +515,11 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   const size = meta.targets[target];
   const slideScale = SLIDE_HEIGHT / size.height;
   const used = new Set([...draft.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]), ...placements.flatMap((where) => draft.creatives[where]?.screenshots ?? [])]);
-  const look = [saved.theme, saved.locales[0], locale, shotsKey(shots)];
+  const usedImages = new Set([
+    ...draft.slides.flatMap((slide) => [slide.logo?.image, ...(slide.images ?? []).map((placed) => placed.image)]),
+    ...placements.map((where) => draft.creatives[where]?.logo?.image),
+  ]);
+  const look = [saved.theme, saved.locales[0], locale, shotsKey(shots), shotsKey(images)];
   const changeSlide: Change<Project["slides"][number]> = (recipe) => update((project) => recipe(project.slides[slideIndex!]!));
   const changeCreative: Change<Creative> = (recipe) => update((project) => recipe(project.creatives[placement!]!));
 
@@ -425,22 +554,41 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
       <div className="content">
         <div className="workspace">
           <div className="page-head">
-            <input
-              className="title"
-              type="text"
-              maxLength={80}
-              placeholder="Untitled"
-              aria-label="Project name"
-              spellCheck={false}
-              value={title ?? draft.name}
-              onChange={(event) => {
-                setTitle(event.target.value);
-                const name = event.target.value.trim();
-                if (name) rename(name);
-              }}
-              onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
-              onBlur={() => setTitle(null)}
-            />
+            <div className="title-row">
+              <input
+                className="title"
+                ref={titleField}
+                type="text"
+                maxLength={80}
+                placeholder="Untitled"
+                aria-label="Project name"
+                title="Click to rename"
+                spellCheck={false}
+                value={title ?? draft.name}
+                onChange={(event) => {
+                  setTitle(event.target.value);
+                  const name = event.target.value.trim();
+                  if (name) rename(name);
+                }}
+                onKeyDown={(event) => (event.key === "Enter" || event.key === "Escape") && event.currentTarget.blur()}
+                onBlur={() => setTitle(null)}
+              />
+              <button
+                className="btn small quiet"
+                type="button"
+                onClick={() => {
+                  titleField.current?.focus();
+                  titleField.current?.select();
+                }}
+              >
+                <Icon path={PENCIL} />
+                Rename
+              </button>
+              <button className="btn small quiet danger" type="button" onClick={deleteProject}>
+                <Icon path={TRASH} />
+                Delete
+              </button>
+            </div>
             <div className="page-meta">{[plural(draft.slides.length, "slide"), plural(shots.length, "screenshot"), draft.locales.join(", ")].join(" · ")}</div>
           </div>
 
@@ -505,6 +653,58 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
                     </button>
                   </div>
                 )}
+              </div>
+            </div>
+          </section>
+
+          <section className="block">
+            <div className="section-head">
+              <h2>Logos and images</h2>
+              <span className="hint">{images.length ? "Click one to place it on the selected slide. A slide's logo is picked in its settings." : ""}</span>
+              <span className="spacer" />
+              <label className="btn small">
+                Upload
+                <input
+                  type="file"
+                  multiple
+                  accept="image/png,image/svg+xml,image/jpeg,image/webp"
+                  hidden
+                  onChange={(event) => {
+                    void upload([...(event.target.files ?? [])], "image");
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            <div className="shots art" data-drop="images">
+              {images.map((image) => (
+                <div
+                  key={image.file}
+                  className={`shot${usedImages.has(image.name) ? " used" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  title={`${image.name} · ${image.width}×${image.height}`}
+                  onClick={() => placeImage(image)}
+                  onKeyDown={(event) => event.key === "Enter" && event.target === event.currentTarget && placeImage(image)}
+                >
+                  <img src={`/files/${id}/images/${image.file}?v=${image.version}`} alt="" loading="lazy" />
+                  <button
+                    className="remove"
+                    type="button"
+                    title="Delete image"
+                    aria-label={`Delete ${image.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void removeImage(image);
+                    }}
+                  >
+                    ×
+                  </button>
+                  <span className="name">{image.name}</span>
+                </div>
+              ))}
+              <div className="dropzone">
+                <div>{images.length ? "Drop more here" : "Drop your logo, app icon, stickers or characters here. A PNG or SVG with a transparent background works best."}</div>
               </div>
             </div>
           </section>
@@ -619,19 +819,35 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
           <div className="panel-body">
             {focused ? (
               <div className="focus">
-                <Stage
-                  src={`/render/${id}/${slideIndex}?${new URLSearchParams({ target, locale })}`}
-                  frameKey={JSON.stringify([slideIndex, saved.slides[slideIndex], target, focusScale.toFixed(3), ...look])}
-                  width={size.width}
-                  height={size.height}
-                  scale={focusScale}
-                />
+                <div className="focus-stage">
+                  <Stage
+                    src={`/render/${id}/${slideIndex}?${new URLSearchParams({ target, locale })}`}
+                    frameKey={JSON.stringify([slideIndex, saved.slides[slideIndex], target, focusScale.toFixed(3), ...look])}
+                    width={size.width}
+                    height={size.height}
+                    scale={focusScale}
+                  />
+                  {tab === "item" && draft.slides[slideIndex]?.images?.length ? (
+                    <PlacedHandles
+                      placed={draft.slides[slideIndex]!.images!}
+                      shown={saved.slides[slideIndex]?.images ?? []}
+                      images={images}
+                      projectId={id}
+                      onMove={(at, x, y) =>
+                        changeSlide((slide) => {
+                          const placed = slide.images?.[at];
+                          if (placed) Object.assign(placed, { x, y });
+                        })
+                      }
+                    />
+                  ) : null}
+                </div>
               </div>
             ) : null}
             <div className="panel-fields">
-              <Scope.Provider value={{ meta, projectId: id, shots, target, locale, primary: draft.locales[0]!, guides }}>
+              <Scope.Provider value={{ meta, projectId: id, shots, images, target, locale, primary: draft.locales[0]!, guides, dragging: focused }}>
                 {tab === "project" ? (
-                  <ProjectEditor project={draft} change={update} remove={() => void deleteProject()} />
+                  <ProjectEditor project={draft} change={update} rename={rename} remove={deleteProject} />
                 ) : placement ? (
                   <CreativeEditor key={placement} project={draft} placement={placement} change={changeCreative} remove={() => removeCreative(placement)} />
                 ) : slideIndex != null ? (

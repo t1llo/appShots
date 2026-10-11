@@ -23,8 +23,15 @@
   --shadow-card: rgb(15 15 15 / 0.1) 0 0 0 1px, rgb(15 15 15 / 0.1) 0 2px 4px;
   --shadow-menu: rgb(15 15 15 / 0.05) 0 0 0 1px, rgb(15 15 15 / 0.1) 0 3px 6px, rgb(15 15 15 / 0.2) 0 9px 24px;
 }
+/* Dark, when the device asks for it and Light is not chosen, or when Dark is chosen (see theme.ts). */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #191919;
     --soft: #202020;
     --popover: #252525;
@@ -45,9 +52,26 @@
     --shadow-menu: rgb(255 255 255 / 0.07) 0 0 0 1px, rgb(0 0 0 / 0.2) 0 3px 6px, rgb(0 0 0 / 0.4) 0 9px 24px;
   }
 }
-
-* {
-  box-sizing: border-box;
+/* The same values again; keep the two lists in step. */
+:root[data-theme="dark"] {
+  --bg: #191919;
+  --soft: #202020;
+  --popover: #252525;
+  --text: rgb(255 255 255 / 0.81);
+  --text-2: rgb(255 255 255 / 0.56);
+  --text-3: rgb(255 255 255 / 0.4);
+  --line: rgb(255 255 255 / 0.094);
+  --line-strong: rgb(255 255 255 / 0.16);
+  --hover: rgb(255 255 255 / 0.055);
+  --active: rgb(255 255 255 / 0.1);
+  --input: rgb(255 255 255 / 0.055);
+  --accent-soft: rgb(35 131 226 / 0.2);
+  --danger: #ff7369;
+  --danger-soft: rgb(255 115 105 / 0.12);
+  --warn: #ffc56b;
+  --toast: #373737;
+  --shadow-card: rgb(255 255 255 / 0.094) 0 0 0 1px, rgb(0 0 0 / 0.25) 0 2px 4px;
+  --shadow-menu: rgb(255 255 255 / 0.07) 0 0 0 1px, rgb(0 0 0 / 0.2) 0 3px 6px, rgb(0 0 0 / 0.4) 0 9px 24px;
 }
 [hidden] {
   display: none !important;
@@ -215,6 +239,18 @@ input[type="color"] {
 .btn.danger:hover {
   background: var(--danger-soft);
 }
+.btn.danger.solid {
+  background: var(--danger);
+  box-shadow: none;
+  color: #fff;
+}
+.btn.danger.solid:hover {
+  filter: brightness(0.94);
+}
+.btn .icon {
+  width: 14px;
+  height: 14px;
+}
 .btn.small {
   height: 28px;
   padding: 0 8px;
@@ -321,6 +357,7 @@ select.ghost:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+  box-sizing: border-box;
   width: 100%;
   min-height: 30px;
   padding: 4px 8px;
@@ -347,6 +384,103 @@ select.ghost:hover {
 }
 .nav-item.quiet {
   color: var(--text-3);
+}
+/* A project and its menu button, which shows on the open project and under the pointer. */
+.nav-row {
+  position: relative;
+}
+.nav-row .nav-item {
+  padding-right: 32px;
+}
+.nav-row .more {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+}
+.nav-row:hover .more,
+.nav-row:has(.nav-item.on) .more,
+.nav-row .more:focus-visible,
+.nav-row .more[aria-expanded="true"] {
+  opacity: 1;
+}
+.nav-row .more:hover,
+.nav-row .more[aria-expanded="true"] {
+  background: var(--active);
+}
+.menu {
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  min-width: 150px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--popover);
+  box-shadow: var(--shadow-menu);
+}
+.menu-item {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+  outline: 0;
+  background: var(--hover);
+}
+.menu-item.danger {
+  color: var(--danger);
+}
+.menu-item.danger:hover {
+  background: var(--danger-soft);
+}
+/* Auto, light or dark, at the foot of the sidebar. */
+.appearance {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  margin: 8px 4px 0;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--hover);
+}
+.appearance button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.appearance button:hover {
+  color: var(--text);
+}
+.appearance button.on {
+  background: var(--bg);
+  box-shadow: var(--shadow-card);
+  color: var(--text);
+}
+.appearance .icon {
+  width: 13px;
+  height: 13px;
 }
 .icon {
   width: 16px;
@@ -432,6 +566,23 @@ select.ghost:hover {
 }
 .page-head {
   margin-bottom: 28px;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.title-row input.title {
+  flex: 1;
+  min-width: 0;
+  margin-left: -8px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  cursor: text;
+}
+.title-row input.title:hover,
+.title-row input.title:focus-visible {
+  background: var(--hover);
 }
 input.title {
   display: block;
@@ -575,6 +726,24 @@ input.title:focus-visible {
 .shot:hover .remove,
 .shot .remove:focus-visible {
   opacity: 1;
+}
+/* Logos and other artwork: shown whole, on a chequered ground that both a white and a black logo stand out from. */
+.shots.art .shot img {
+  height: 92px;
+  padding: 8px;
+  object-fit: contain;
+  object-position: center;
+}
+.shots.art .shot img,
+.art-cell {
+  background: repeating-conic-gradient(#a9a9a9 0% 25%, #969696 0% 50%) 50% / 14px 14px;
+}
+.shots.art .dropzone {
+  min-height: 92px;
+  line-height: 1.5;
+}
+.shots.art .dropzone div {
+  max-width: 46ch;
 }
 .dropzone {
   flex: 1;
@@ -735,6 +904,7 @@ input.title:focus-visible {
 .cols {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: start;
   gap: 10px;
 }
 .actions {
@@ -867,6 +1037,119 @@ input.title:focus-visible {
 }
 .group-head .spacer {
   flex: 1;
+}
+/* Uploaded artwork to pick from, in the logo and image groups. */
+.art-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 6px;
+}
+.art-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 48px;
+  padding: 5px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.art-cell img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+}
+.art-cell.none {
+  background: var(--soft);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--text-2);
+}
+.art-cell:hover {
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.art-cell.on {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.art-cell.add::after {
+  content: "+";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+.art-cell:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.art-cell.still {
+  width: 32px;
+  height: 32px;
+  padding: 3px;
+  border-radius: 6px;
+  cursor: default;
+  box-shadow: none;
+}
+.badge-edit .top.placed {
+  grid-template-columns: 32px 1fr 24px 24px 24px;
+  gap: 4px;
+}
+.badge-edit .top.placed .icon-btn {
+  width: 24px;
+}
+.badge-edit .trio {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+.badge-edit .trio .check {
+  margin-left: 2px;
+}
+/* The handles that lie over the large preview: one per placed image, dragged to move it. */
+.focus-stage {
+  position: relative;
+}
+.handles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 10px;
+}
+.handle {
+  position: absolute;
+  border-radius: 4px;
+  cursor: grab;
+  touch-action: none;
+}
+.handle:hover,
+.handle.dragging {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: var(--accent-soft);
+}
+.handle.dragging {
+  cursor: grabbing;
+}
+.handle img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 .group-head .label {
   flex: none;
@@ -1421,6 +1704,33 @@ dialog .foot {
   align-items: center;
   justify-content: space-between;
   height: 60px;
+}
+.home-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.home-actions .icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+}
+/* The sun shows while the page is dark, the moon while it is light: each is what a click turns on. */
+.home-actions .to-dark,
+:root[data-theme="dark"] .home-actions .to-light {
+  display: block;
+}
+.home-actions .to-light,
+:root[data-theme="dark"] .home-actions .to-dark {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .home-actions .to-light {
+    display: block;
+  }
+  :root:not([data-theme="light"]) .home-actions .to-dark {
+    display: none;
+  }
 }
 .home-brand {
   display: flex;

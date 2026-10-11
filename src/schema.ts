@@ -12,6 +12,8 @@ import {
   ICON_ROW_STYLE_IDS,
   ICON_ROW_TONE_IDS,
   LAYOUT_IDS,
+  LOGO_SHAPE_IDS,
+  LOGO_SIZE_IDS,
 } from "./design.ts";
 
 /** Ids and screenshot names end up in file paths and URLs, so they stay strictly slug-shaped. */
@@ -49,6 +51,24 @@ export const iconRowSchema = z.object({
   tone: z.enum(ICON_ROW_TONE_IDS).optional().describe("Default brand"),
   size: z.enum(ICON_ROW_SIZE_IDS).optional().describe("Default medium"),
   position: z.enum(["top", "bottom"]).optional().describe("Above the headline or below the subheadline. Default bottom"),
+});
+
+export const logoSchema = z.object({
+  image: slug.describe("Name of an uploaded image, such as the app's logo or icon"),
+  size: z.enum(LOGO_SIZE_IDS).optional().describe("Default medium"),
+  shape: z.enum(LOGO_SHAPE_IDS).optional().describe("Default plain"),
+});
+
+export const placedImageSchema = z.object({
+  image: slug.describe("Name of an uploaded image"),
+  x: z.number().min(-30).max(130).optional().describe("Where its centre is, in % of the canvas width from the left. Default 50"),
+  y: z.number().min(-30).max(130).optional().describe("Where its centre is, in % of the canvas height from the top. Default 50"),
+  size: z.number().min(2).max(200).optional().describe("Its width in % of the canvas width. Default 30"),
+  rotate: z.number().min(-180).max(180).optional().describe("Rotation in degrees"),
+  layer: z.enum(["front", "behind"]).optional().describe("front lies over the device and the copy; behind lies on the background, under both. Default front"),
+  opacity: z.number().min(0.05).max(1).optional(),
+  shadow: z.enum(["none", "soft", "strong"]).optional().describe("A shadow that follows the image's outline. Default none"),
+  flip: z.boolean().optional().describe("Mirrored left to right"),
 });
 
 const backgroundPreset = z.enum(["auto", ...(Object.keys(BACKGROUNDS) as [string, ...string[]])]);
@@ -103,6 +123,8 @@ export const slideSchema = z.object({
   features: z.array(featureSchema).max(8).optional().describe("Most important first. The cards of the features layout; on every other layout a short list of feature points with the copy"),
   featureStyle: z.enum(FEATURE_STYLE_IDS).optional().describe("bento, grid, cards or list on the features layout (default bento); list, cards, grid or chips for feature points (default list)"),
   iconRow: iconRowSchema.optional().describe("A row of icons or brand logos with the copy, such as the services the app works with"),
+  logo: logoSchema.optional().describe("An uploaded image at the top of the copy, above the eyebrow and headline: the app's logo or icon"),
+  images: z.array(placedImageSchema).max(10).optional().describe("Uploaded images placed freely on the slide: stickers, characters, shapes. Later ones lie over earlier ones"),
   ...styleFields,
 });
 
@@ -118,6 +140,7 @@ export const creativeSchema = z.object({
   screenshots: z.array(slug).max(6).optional().describe("Names of uploaded raw screenshots, most important first. Without any, the asset is copy on the background."),
   badges: z.array(badgeSchema).max(3).optional(),
   badgePosition: z.enum(["top", "bottom"]).optional().describe("Above the headline or below the subheadline"),
+  logo: logoSchema.optional().describe("An uploaded image at the top of the copy: the app's own logo or icon, never another company's"),
   background: backgroundSchema.optional(),
   textColor: styleFields.textColor,
   accentColor: styleFields.accentColor,
@@ -147,6 +170,8 @@ export type Text = z.infer<typeof text>;
 export type Badge = z.infer<typeof badgeSchema>;
 export type Feature = z.infer<typeof featureSchema>;
 export type IconRow = z.infer<typeof iconRowSchema>;
+export type Logo = z.infer<typeof logoSchema>;
+export type PlacedImage = z.infer<typeof placedImageSchema>;
 export type Background = z.infer<typeof backgroundSchema>;
 export type DeviceStyle = z.infer<typeof deviceSchema>;
 export type Theme = z.infer<typeof themeSchema>;

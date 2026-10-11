@@ -1,10 +1,10 @@
 import path from "node:path";
-import { type BackgroundDef, type CreativeLayoutId, type FontId, FONTS } from "./design.ts";
+import { type BackgroundDef, bodyFont, type CreativeLayoutId, FONT_CSS_URL, type FontId, FONTS } from "./design.ts";
 import { hasBakedIsland } from "./palette.ts";
 import type { DeviceStyle, Project } from "./schema.ts";
 import { PLACEMENTS, type PlacementId } from "./sizes.ts";
-import { findShot, type Shot, shotsDir, type Space } from "./store.ts";
-import { backgroundCss, backgroundLuminance, badgeHtml, CSS, DEFS, deviceHtml, deviceShape, esc, FIT_SCRIPT, pick, resolveBackground, rich, round } from "./template.ts";
+import { findShot, listImages, type Shot, shotsDir, type Space } from "./store.ts";
+import { backgroundCss, backgroundLuminance, badgeHtml, CSS, DEFS, deviceHtml, deviceShape, esc, FIT_SCRIPT, logoHtml, pick, resolveBackground, rich, round } from "./template.ts";
 
 export interface CreativeContext {
   space: Space;
@@ -165,8 +165,7 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
   const accent = creative.accentColor ?? theme.accentColor;
   const fontId: FontId = creative.font ?? theme.font ?? "inter";
   const font = FONTS[fontId];
-  // A display serif makes poor small print, so pair it with a neutral body face.
-  const body = fontId === "instrument-serif" ? FONTS.inter : font;
+  const body = bodyFont(fontId);
   const textScale = creative.textScale ?? theme.textScale ?? 1;
 
   const eyebrow = pick(creative.eyebrow, locale, fallback);
@@ -180,6 +179,7 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
   const headlineHtml = rich(headline);
   const twoTone = !accent && headlineHtml.includes("<em>");
   const copyParts = [
+    creative.logo ? logoHtml(creative.logo, await listImages(ctx.space, project.id), project.id) : "",
     badgePosition === "top" ? badgesHtml : "",
     eyebrow ? `<div class="eyebrow${accent ? "" : " muted"}">${esc(eyebrow)}</div>` : "",
     headline ? `<h1 class="headline${twoTone ? " two-tone" : ""}">${headlineHtml}</h1>` : "",
@@ -267,7 +267,7 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
 <head>
 <meta charset="utf-8">
 <title>${esc(project.name)} · ${esc(placement.label)}</title>
-<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="${FONT_CSS_URL}">
 <style>${CSS}${CREATIVE_CSS}</style>
 </head>
 <body>

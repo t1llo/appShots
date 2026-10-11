@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
     <title>appShots Studio</title>
+    <script>
+      // A kept choice of light or dark is applied before the first paint; without one the page follows the device.
+      try {
+        var kept = localStorage.getItem("appshots.theme");
+        if (kept === "light" || kept === "dark") document.documentElement.dataset.theme = kept;
+      } catch (error) {}
+    </script>
     <script async src="/analytics.js?page=studio" vite-ignore></script>
     <link
       rel="icon"
