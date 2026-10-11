@@ -218,6 +218,30 @@ export const DEVICE_COLORS = {
 export type DeviceColorId = keyof typeof DEVICE_COLORS;
 export const DEVICE_COLOR_IDS = Object.keys(DEVICE_COLORS) as [DeviceColorId, ...DeviceColorId[]];
 
+/** How a device frame is drawn. */
+export const DEVICE_STYLES = {
+  real: "The device as it looks: a metal band, a black bezel and its buttons. The default.",
+  clay: "One matte colour all over, like a clay model. Calm, and it leaves the attention on the screen.",
+  outline: "A thin line drawing of the device around the screenshot. The line takes the text colour, or the device colour when one is set.",
+  sketch: "The line drawing with the wobble of a pen, as if drawn by hand.",
+} as const;
+
+export type DeviceStyleId = keyof typeof DEVICE_STYLES;
+export const DEVICE_STYLE_IDS = Object.keys(DEVICE_STYLES) as [DeviceStyleId, ...DeviceStyleId[]];
+
+/** Whether a clean status bar is drawn at the top of a screenshot: the time, the signal, Wi-Fi and a full battery. */
+export const STATUS_BARS = {
+  none: "The screenshot as it is. The default.",
+  cover: "Painted over the status bar the screenshot came with, in the colour of the screenshot's top edge. For a screenshot from a real device, with its odd time and half-empty battery.",
+  overlay: "Drawn straight onto the screenshot, nothing covered. For a screenshot that has no status bar.",
+} as const;
+
+export type StatusBarId = keyof typeof STATUS_BARS;
+export const STATUS_BAR_IDS = Object.keys(STATUS_BARS) as [StatusBarId, ...StatusBarId[]];
+
+/** The angle between the devices of a layout with several, in degrees, before a slide sets its own. */
+export const LAYOUT_SPREAD: Partial<Record<LayoutId, number>> = { duo: 11, "side-by-side": 0, trio: 14 };
+
 export const BADGE_TYPES = {
   laurel: "Laurel wreath around a title and subtitle. Add `stars` or `icon` for a top line. The award look.",
   stars: "A row of stars over a title and subtitle, no wreath.",

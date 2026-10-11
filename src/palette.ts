@@ -23,6 +23,49 @@ export async function hasBakedIsland(file: string, version: number, width: numbe
   return baked;
 }
 
+/**
+ * Where the status bar of each device leaves the screenshot bare: a band at the height of the clock, and the
+ * stretches of it that hold neither the clock nor the icons nor the Dynamic Island. All as fractions of the width.
+ */
+const STATUS_PATCHES = {
+  iphone: { top: 0.055, bottom: 0.095, spans: [[0.025, 0.06], [0.26, 0.33], [0.67, 0.74], [0.94, 0.975]] },
+  duo: { top: 0.012, bottom: 0.045, spans: [[0.3, 0.45], [0.55, 0.7]] },
+  ipad: { top: 0.004, bottom: 0.02, spans: [[0.3, 0.45], [0.55, 0.7]] },
+} as const;
+
+export interface StatusBarLook {
+  /** What to paint over the screenshot's own status bar: its colour beside the clock and the icons, left to right. */
+  fill: string;
+  /** True where that colour is dark, so the bar is drawn in white. */
+  light: boolean;
+}
+
+const statusCache = new Map<string, StatusBarLook>();
+
+/** Reads the colour behind a screenshot's status bar off the spots where the bar shows nothing. */
+export async function statusBarLook(file: string, version: number, device: keyof typeof STATUS_PATCHES, width: number): Promise<StatusBarLook> {
+  const key = `${file}:${version}:${device}`;
+  const cached = statusCache.get(key);
+  if (cached) return cached;
+  const { top, bottom, spans } = STATUS_PATCHES[device];
+  const columns = 200;
+  const band = { left: 0, top: Math.round(width * top), width, height: Math.max(1, Math.round(width * (bottom - top))) };
+  const { data } = await sharp(file).extract(band).resize(columns, 1, { fit: "fill" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  let brightness = 0;
+  const stops = spans.map(([from, to]) => {
+    const sum = [0, 0, 0];
+    const first = Math.round(from * columns);
+    const last = Math.max(first + 1, Math.round(to * columns));
+    for (let x = first; x < last; x++) for (let c = 0; c < 3; c++) sum[c]! += data[x * 3 + c]!;
+    const rgb = sum.map((value) => Math.round(value / (last - first)));
+    brightness += (0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]!) / 255 / spans.length;
+    return `rgb(${rgb.join(" ")}) ${Math.round(((from + to) / 2) * 100)}%`;
+  });
+  const look = { fill: `linear-gradient(90deg,${stops.join(",")})`, light: brightness < 0.55 };
+  statusCache.set(key, look);
+  return look;
+}
+
 function hslToHex(h: number, s: number, l: number): string {
   const hue = ((h % 360) + 360) % 360;
   const a = s * Math.min(l, 1 - l);

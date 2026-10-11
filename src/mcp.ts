@@ -11,6 +11,7 @@ import {
   BADGE_TYPES,
   CREATIVE_LAYOUTS,
   DEVICE_COLOR_IDS,
+  DEVICE_STYLES,
   FEATURE_STYLES,
   POINT_STYLES,
   FONT_GROUPS,
@@ -22,7 +23,9 @@ import {
   LAYOUTS,
   LOGO_SHAPES,
   LOGO_SIZE_IDS,
+  STATUS_BARS,
 } from "./design.ts";
+import { rendersLeft } from "./accounts.ts";
 import { defaultTargets, renderProject } from "./render.ts";
 import { creativeSchema, localeSchema, type Project, slideSchema, slugSchema, targetsSchema, themeSchema } from "./schema.ts";
 import { PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, type Target, TARGET_IDS, TARGETS } from "./sizes.ts";
@@ -39,7 +42,14 @@ function uploadHelp(base: string, id: string): string {
   ].join("\n");
 }
 
-function designGuide(base: string): string {
+/** On an account whose renders are counted, how to spend them. Nothing where they are not. */
+function renderBudget(space: Space): string {
+  const left = rendersLeft(space.id);
+  if (left == null) return "";
+  return `\nRenders are counted on this account: every call to \`render\` uses one, whatever it draws, and ${left === 0 ? "none are left" : `${left} ${left === 1 ? "is" : "are"} left`}. So write the whole set before the first render, render everything in one call, fix all you see in one go and render once more. Do not render slide by slide. When none are left, say so: the person who runs the server can give the account more.`;
+}
+
+function designGuide(base: string, space: Space): string {
   const list = (entries: Record<string, string>) =>
     Object.entries(entries)
       .map(([key, value]) => `- \`${key}\`: ${value}`)
@@ -52,7 +62,7 @@ function designGuide(base: string): string {
 3. \`set_slides\` with the copy and design for the whole set. Put shared styling in \`theme\`; slides override it.
 4. \`render\`. It returns a contact sheet image: look at it, fix what is off with \`update_slide\`, render again.
 5. Optionally \`set_creative_assets\` for the product page header and the search results asset (see below), and \`render\` again.
-6. The user downloads the PNGs from ${base}/#/<project> or with \`appshots pull <project>\`.
+6. The user downloads the PNGs from ${base}/#/<project> or with \`appshots pull <project>\`.${renderBudget(space)}
 
 ## Uploading
 ${uploadHelp(base, "<project>")}
@@ -111,6 +121,16 @@ Where the device stands and how large it is can be set per slide, in the slide's
 - \`rotate\`: a tilt in degrees, -45 to 45. \`perspective\`: \`left\` or \`right\` turns it in 3D.
 Example: \`{"layout":"device-right","headline":"See the *whole week*","screenshot":"stats","device":{"scale":1.2,"offsetY":8,"rotate":-5}}\`
 Move in small steps and render to look: the device is cut off at the canvas edge, and nothing stops it from covering the copy.
+On the layouts with several devices (duo, side-by-side, trio):
+- \`spread\`: the angle between the devices in degrees, 0 to 60. 0 stands them parallel; a larger angle fans them out. Default 11 for duo, 14 for trio, 0 for side-by-side.
+- \`gap\`: pushes them apart (positive) or together (negative), in percent of the canvas width, -30 to 30.
+- \`rotate\` turns the whole group. Example: \`"device":{"spread":24,"gap":4}\`
+\`style\` is how the frame is drawn. Set it once in the theme so the whole set matches:
+${list(DEVICE_STYLES)}
+An outline or sketch frame casts no shadow unless \`shadow\` asks for one.
+\`statusBar\` draws a clean status bar at the top of the screenshot, with the time, the signal, Wi-Fi and a full battery:
+${list(STATUS_BARS)}
+\`statusBarTime\` is the time it shows (default \`9:41\`), and \`statusBarColor\` is \`auto\` (read off the screenshot), \`light\` (white) or \`dark\` (black). Use \`cover\` when the raw screenshots come from a real device and show an odd time or a low battery. Screenshots taken with \`appshots capture --clean\` are clean already.
 
 ## Badges
 ${list(BADGE_TYPES)}
@@ -163,7 +183,7 @@ ${Object.entries(PLACEMENTS)
   .map(([id, p]) => `- \`${id}\`: ${p.label}, ${p.width}×${p.height} (${p.ratio}). ${p.note} Safe area ${p.safe.width}×${p.safe.height} at ${p.safe.x},${p.safe.y}.`)
   .join("\n")}
 The store crops these images differently per device and orientation, and only the safe area is always shown. So the copy is always centred and kept inside it, and everything outside it has to work as decoration that may be cut off. A header and a search asset can be made separately, or one \`universal\` asset serves both (App Store Connect's "Use header asset in search results" switch needs the universal file).
-Each asset takes \`layout\`, \`eyebrow\`, \`headline\`, \`subheadline\`, \`screenshots\` (a list of names, most important first), \`badges\` (up to 3), \`background\`, \`font\`, \`textColor\`, \`accentColor\`, \`textScale\` and \`device\` (\`frame\`, \`color\`, \`scale\`, \`shadow\`). What an asset leaves out comes from the project theme. Layouts:
+Each asset takes \`layout\`, \`eyebrow\`, \`headline\`, \`subheadline\`, \`screenshots\` (a list of names, most important first), \`badges\` (up to 3), \`background\`, \`font\`, \`textColor\`, \`accentColor\`, \`textScale\` and \`device\` (\`frame\`, \`style\`, \`color\`, \`scale\`, \`shadow\`, \`statusBar\`). What an asset leaves out comes from the project theme. Layouts:
 ${Object.entries(CREATIVE_LAYOUTS)
   .map(([id, note]) => `- \`${id}\`: ${note}`)
   .join("\n")}
@@ -270,7 +290,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
         "How to use this server: the workflow, how screenshots get uploaded, every layout, background, font, device option and badge, and the rules for header and search results assets. Read this before building a set.",
       annotations: { readOnlyHint: true },
     },
-    () => guard(async () => text(designGuide(base))),
+    () => guard(async () => text(designGuide(base, space))),
   );
 
   server.registerTool(
@@ -446,6 +466,8 @@ export function createMcpServer(base: string, space: Space): McpServer {
           for (const file of result.creatives) lines.push(`  ${file.placement} (${file.width}×${file.height}), ${file.locale}  ${base}/files/${id}/out/${file.path}`);
         }
         lines.push("", `Studio: ${base}/#/${id}`, `ZIP of everything: ${base}/api/projects/${id}/export.zip (or \`appshots pull ${id}\`)`);
+        const left = rendersLeft(space.id);
+        if (left != null) lines.push("", left === 0 ? "That was this account's last render. The person who runs the server can give it more." : `Renders left on this account: ${left}.`);
         if (result.warnings.length) lines.push("", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`));
 
         const content: CallToolResult["content"] = [{ type: "text", text: lines.join("\n") }];

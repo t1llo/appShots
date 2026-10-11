@@ -13,7 +13,7 @@ This page says what this appShots server stores about you and what happens to it
 - Your projects, screenshots and renders are stored so you can work on them. No other account can see them.
 - Nothing is sold, and nothing is used for advertising.
 - The server calls no AI service.
-- Deleting your account deletes all of it at once.
+- Deleting your account deletes all of it at once. Only a count of the renders it used stays, with no name or address beside it.
 
 ## Who is responsible
 
@@ -30,7 +30,7 @@ For anything about your data, contact whoever gave you access to this server.
 
 ## What is stored
 
-**Your account.** From Google: your email address, your name and Google's id for your account. Also the day the account was created.
+**Your account.** From Google: your email address, your name and Google's id for your account. Also the day the account was created and the number of renders you made.
 
 **Your API tokens.** For each token: a fingerprint (a SHA-256 hash), its last four characters, the day it was created and the day it was last used. The token itself is not stored.
 
@@ -44,7 +44,7 @@ That is all the server keeps. It writes no log of the pages you open or the requ
 
 | Name | Kind | What it is for | How long |
 | --- | --- | --- | --- |
-| `appshots_session` | Cookie | Keeps you signed in. Scripts on the page cannot read it | 30 days |
+| `appshots_session` | Cookie | Keeps you signed in. Scripts on the page cannot read it | 30 days after your last visit |
 | `appshots_oauth` | Cookie | Protects the sign-in while you are on Google's page | 10 minutes |
 | `appshots.theme` | Local storage | Your choice of light or dark | Until you clear it |
 | `appshots.guides` | Local storage | Whether the safe area guides are shown | Until you clear it |
@@ -99,6 +99,7 @@ Until you delete it.
 
 - Deleting a screenshot, an image or a project removes it at once.
 - Deleting your account removes the account, every project, every file and every token at once.
+- One thing stays after that: the number of renders the account used, next to a SHA-256 hash of Google's id for it. It holds no name and no address, and it only serves to give you the same count back if you sign up again.
 - If the person running the server keeps backups of its disk, deleted data can remain in those until they are overwritten.
 
 ## Your rights

@@ -19,7 +19,6 @@ import {
   plural,
   type Project,
   projectsQuery,
-  type RenderResponse,
   type Shot,
   shotIn,
   slugify,
@@ -29,6 +28,7 @@ import {
 import { openProject, useOpenDialog } from "./dialogs.tsx";
 import { type Change, CreativeEditor, PLACED_SPOTS, ProjectEditor, Scope, SlideEditor } from "./editor.tsx";
 import { languageName, LanguageSwitch } from "./languages.tsx";
+import { rendersQuery, startRender, working } from "./renders.tsx";
 import { Icon, toast } from "./ui.tsx";
 
 const PENCIL = "M10.6 2.6l2.8 2.8M2.5 13.5l.6-3.1 7.9-7.9 2.5 2.5-7.9 7.9z";
@@ -528,23 +528,19 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
 
   const deleteProject = () => openDialog({ remove: { id, name: draft.name } });
 
+  // The render of this project that is waiting or under way, wherever it was started.
+  const rendering = useQuery(rendersQuery).data?.jobs.find((job) => job.project === id && working(job));
+
+  /**
+   * Renders every size of the project on the server: one design per device, and each display of App Store Connect
+   * gets its own folder. The run works in the background, the sidebar follows it, and the ZIP downloads when it is done.
+   */
   const exportZip = async () => {
     setExporting(true);
     try {
       await save();
-      // Every size of the project: one design per device, and each display of App Store Connect gets its own folder.
-      const result = await api<RenderResponse>("POST", `/projects/${id}/render`, {});
-      queryClient.setQueryData(detailQuery(id).queryKey, (current) => current && { ...current, outputs: result.outputs, creativeOutputs: result.creativeOutputs });
-      if (result.warnings.length) toast(result.warnings.join("\n"), "warn", 9000);
-      const assets = result.creatives.length ? ` and ${plural(result.creatives.length, "header and search results asset")}` : "";
-      const sizes = new Set(result.files.map((file) => file.target)).size;
-      toast(`Rendered ${plural(result.files.length, "screenshot")}${sizes > 1 ? ` in ${sizes} sizes` : ""}${assets}. The download starts now.`);
-      const link = document.createElement("a");
-      link.href = `/api/projects/${id}/export.zip`;
-      link.download = "";
-      document.body.append(link);
-      link.click();
-      link.remove();
+      await startRender(queryClient, id);
+      toast("Rendering in the background. Keep working: the ZIP downloads when it is done.", "", 6000);
     } catch (error) {
       toast(errorText(error), "error", 8000);
     } finally {
@@ -591,8 +587,8 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
         <span className={`status${status.error ? " error" : ""}`} role="status">
           {status.text}
         </span>
-        <button className="btn primary" type="button" disabled={exporting} onClick={() => void exportZip()}>
-          {exporting ? "Rendering…" : "Export ZIP"}
+        <button className="btn primary export" type="button" disabled={exporting || rendering != null} onClick={() => void exportZip()}>
+          {rendering ? (rendering.state === "running" && rendering.total ? `Rendering ${rendering.done} of ${rendering.total}` : "Rendering…") : exporting ? "Starting…" : "Export ZIP"}
         </button>
       </header>
 

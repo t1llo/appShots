@@ -15,6 +15,7 @@ import {
   BADGE_TYPES,
   CREATIVE_LAYOUTS,
   DEVICE_COLOR_IDS,
+  DEVICE_STYLES,
   FEATURE_STYLES,
   FONT_GROUPS,
   FONTS,
@@ -26,6 +27,7 @@ import {
   LAYOUTS,
   LOGO_SHAPES,
   POINT_STYLES,
+  STATUS_BARS,
 } from "./design.ts";
 import { PLACEMENTS, TARGETS } from "./sizes.ts";
 
@@ -65,6 +67,7 @@ const fonts = Object.entries(FONTS as Record<string, { family: string; group: st
 const VALUES: Record<string, string> = {
   MAX_PROJECTS: String(config.limits.projects),
   MAX_SHOTS: String(config.limits.shots),
+  RENDERS: String(config.limits.renders),
   // A name is plain text, whatever characters it has.
   OPERATOR: config.operator.name.replace(/[\\`*_{}[\]<>()#+!|~-]/g, "\\$&"),
   CONTACT: config.operator.email,
@@ -80,6 +83,8 @@ const VALUES: Record<string, string> = {
   CREATIVE_LAYOUTS: described(CREATIVE_LAYOUTS, "Layout"),
   BACKGROUNDS: codes(Object.keys(BACKGROUNDS)),
   DEVICE_COLORS: codes(DEVICE_COLOR_IDS),
+  DEVICE_STYLES: described(DEVICE_STYLES, "Look"),
+  STATUS_BARS: described(STATUS_BARS),
   FONT_COUNT: String(fonts.length),
   FONTS: FONT_GROUPS.map((group) => `- **${group}:** ${fonts.filter(([, font]) => font.group === group).map(([id, font]) => `${font.family.replace(/ Variable$/, "")} (\`${id}\`)`).join(", ")}`).join("\n"),
   ICON_COUNT: String(ICON_IDS.length),

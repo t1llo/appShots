@@ -13,12 +13,13 @@ import {
   ICON_ROW_SIZES,
   type IconId,
   LAYOUT_SHOTS,
+  LAYOUT_SPREAD,
   type LayoutId,
   type PointStyleId,
   SIDE_LAYOUTS,
 } from "./design.ts";
 import { ICONS } from "./icons.ts";
-import { hasBakedIsland, paletteFor } from "./palette.ts";
+import { hasBakedIsland, paletteFor, type StatusBarLook, statusBarLook } from "./palette.ts";
 import type { Background, Badge, DeviceStyle, Feature, IconRow, Logo, PlacedImage, Project, Text } from "./schema.ts";
 import { type DeviceKind, isDeviceKind, TARGETS, type TargetId } from "./sizes.ts";
 import { findShot, listImages, type Shot, shotsDir, type Space, type StoredImage } from "./store.ts";
@@ -418,7 +419,8 @@ const COPY_MAX: Record<LayoutId, number> = {
 };
 
 const SHADOWS = {
-  none: "none",
+  // Not "none": the value stands in lists beside other shadows.
+  none: "0 0 0 transparent",
   soft: "0 calc(var(--dw)*.045) calc(var(--dw)*.1) rgba(0,0,0,.28),0 calc(var(--dw)*.012) calc(var(--dw)*.026) rgba(0,0,0,.2)",
   strong: "0 calc(var(--dw)*.07) calc(var(--dw)*.14) rgba(0,0,0,.5),0 calc(var(--dw)*.02) calc(var(--dw)*.04) rgba(0,0,0,.32)",
 };
@@ -437,6 +439,8 @@ interface DeviceOptions {
   fit: "width" | "contain";
   /** False when the screenshot already shows the Dynamic Island. */
   island: boolean;
+  /** The colour behind the screenshot's status bar, where a clean one is to be drawn. */
+  status?: StatusBarLook;
   extraCss?: string;
   defaults?: Partial<DeviceStyle>;
 }
@@ -458,6 +462,13 @@ export function deviceShape(shot: Shot | undefined, style: DeviceStyle, fallback
   return { kind, frame, geometry, aspect: `${aw}/${ah}`, ratio: (1 - rim) * (ah / aw) + rim };
 }
 
+/** The colour behind a screenshot's status bar, where the device style asks for a clean one to be drawn. */
+export async function statusLook(shot: Shot | undefined, style: DeviceStyle, shotsPath: string): Promise<StatusBarLook | undefined> {
+  if (!shot || !style.statusBar || style.statusBar === "none") return undefined;
+  const kind = isDeviceKind(style.frame) ? style.frame : shot.device;
+  return statusBarLook(path.join(shotsPath, shot.file), shot.version, kind, shot.width);
+}
+
 export function deviceHtml(options: DeviceOptions): string {
   const { shot, style, canvas } = options;
   const merged = { ...options.defaults, ...style };
@@ -474,16 +485,22 @@ export function deviceHtml(options: DeviceOptions): string {
   }
   if (merged.rotate) transforms.push(`rotate(${merged.rotate}deg)`);
 
+  const look = frame === "none" ? "real" : (merged.style ?? "real");
+  const drawn = look === "outline" || look === "sketch";
   const colors = DEVICE_COLORS[merged.color ?? "black"];
+  const rim = frame === "none" ? 0 : (geometry.band + geometry.bezel) * 2;
   const vars = [
     `--dw:${dw}px`,
+    `--sw:calc(var(--dw)*${round4(1 - rim)})`,
     `--ar:${aspect}`,
     `--ro:${geometry.outer}`,
     `--band:${geometry.band}`,
     `--bez:${geometry.bezel}`,
     `--ri:${frame === "none" ? geometry.bare : geometry.inner}`,
-    `--shadow:${SHADOWS[merged.shadow ?? "soft"]}`,
+    // A line drawing lies flat on the slide unless it is asked to cast a shadow.
+    `--shadow:${SHADOWS[merged.shadow ?? (drawn ? "none" : "soft")]}`,
     ...colors.map((color, i) => `--f${i + 1}:${color}`),
+    drawn ? `--line:${merged.color ? colors[2] : "var(--text)"}` : "",
     transforms.length ? `transform:${transforms.join(" ")}` : "",
     options.extraCss ?? "",
   ].filter(Boolean);
@@ -491,15 +508,41 @@ export function deviceHtml(options: DeviceOptions): string {
   const screen = options.url
     ? `<img src="${esc(options.url)}" alt="">`
     : `<div class="placeholder"><span>${options.wanted ? `Upload a screenshot named<br><b>${esc(options.wanted)}</b>` : "No screenshot"}</span></div>`;
-  const island = frame === "iphone" && options.island ? '<div class="island"></div>' : "";
-  const attrs = `class="device ${frame}" data-fit="${options.fit}" data-scale="${merged.scale ?? 1}" style="${vars.join(";")}"`;
+  const bar = options.url && options.status ? statusBarHtml(kind, options.status, merged) : "";
+  // A status bar painted over the screenshot's own covers an island the screenshot shows, so that one is drawn again.
+  const island = kind === "iphone" && ((frame === "iphone" && options.island) || (!options.island && bar && merged.statusBar === "cover")) ? '<div class="island"></div>' : "";
+  const attrs = `class="device ${frame}${look === "real" ? "" : ` ${drawn ? "drawn " : ""}${look}`}" data-fit="${options.fit}" data-scale="${merged.scale ?? 1}" style="${vars.join(";")}"`;
 
-  if (frame === "none") return `<div ${attrs}><div class="screen bare">${screen}</div></div>`;
+  if (frame === "none") return `<div ${attrs}><div class="screen bare">${screen}${bar}${island}</div></div>`;
   const buttons =
     frame === "iphone"
       ? '<i class="btn l" style="top:17.5%;height:3.2%"></i><i class="btn l" style="top:24.5%;height:6.2%"></i><i class="btn l" style="top:32.5%;height:6.2%"></i><i class="btn r" style="top:28%;height:10%"></i>'
       : "";
-  return `<div ${attrs}>${buttons}<div class="frame"><div class="bezel"><div class="screen">${screen}${island}</div></div></div></div>`;
+  // The wobble of a pen is a filter over the line alone. Its grain follows the size of the device, so a small one is not smudged.
+  const pen =
+    look === "sketch"
+      ? `<svg class="defs" aria-hidden="true"><filter id="pen-${++pens}" x="-4%" y="-2%" width="108%" height="104%"><feTurbulence type="fractalNoise" baseFrequency="${round4(9 / dw)}" numOctaves="2" seed="${pens % 7}"/><feDisplacementMap in="SourceGraphic" scale="${round(dw * 0.014)}" xChannelSelector="R" yChannelSelector="G"/></filter></svg>`
+      : "";
+  const frameStyle = pen ? ` style="--pen:url(#pen-${pens})"` : "";
+  return `<div ${attrs}>${pen}${buttons}<div class="frame"${frameStyle}><div class="bezel"><div class="screen">${screen}${bar}${island}</div></div></div></div>`;
+}
+
+let pens = 0;
+const round4 = (value: number) => Math.round(value * 10000) / 10000;
+
+const STATUS_ICONS = {
+  signal: '<svg class="sb-signal" viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx=".8"/><rect x="5" y="5.4" width="3" height="6.6" rx=".8"/><rect x="10" y="2.7" width="3" height="9.3" rx=".8"/><rect x="15" y="0" width="3" height="12" rx=".8"/></svg>',
+  wifi: '<svg class="sb-wifi" viewBox="0 0 17 12"><path d="M8.5 11.6 6.2 9.1a3.2 3.2 0 0 1 4.6 0z"/><path d="M4.12 6.82a6.2 6.2 0 0 1 8.76 0M1.71 4.41a9.6 9.6 0 0 1 13.58 0" fill="none" stroke="currentColor" stroke-width="2.1"/></svg>',
+  battery:
+    '<svg class="sb-battery" viewBox="0 0 27 13"><rect x=".5" y=".5" width="23" height="12" rx="3.7" fill="none" stroke="currentColor" stroke-opacity=".42"/><rect x="2" y="2" width="20" height="9" rx="2.3"/><path d="M25 4.3c.9.4 1.5 1.2 1.5 2.2s-.6 1.8-1.5 2.2z" opacity=".45"/></svg>',
+};
+
+/** The status bar of a device: the time on the left, and what the device shows on the right. */
+function statusBarHtml(kind: DeviceKind, look: StatusBarLook, style: DeviceStyle): string {
+  const light = style.statusBarColor === "light" || (style.statusBarColor !== "dark" && look.light);
+  const fill = style.statusBar === "cover" ? `<i class="sb-fill" style="background:${look.fill}"></i>` : "";
+  const icons = (kind === "iphone" ? STATUS_ICONS.signal : "") + STATUS_ICONS.wifi + STATUS_ICONS.battery;
+  return `<div class="sb sb-${kind} ${light ? "light" : "dark"}">${fill}<span class="sb-time">${esc(style.statusBarTime ?? "9:41")}</span><span class="sb-icons">${icons}</span></div>`;
 }
 
 // ---------------------------------------------------------------- page
@@ -583,7 +626,42 @@ html,body{background:#000;overflow:hidden}
 .screen img{display:block;width:100%;height:100%;object-fit:cover;object-position:top center}
 .placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;background:linear-gradient(160deg,#2a2a31,#17171b);color:rgba(255,255,255,.55);font:500 calc(var(--dw)*.045)/1.35 var(--body)}
 .placeholder b{color:#fff;font-weight:700}
-.island{position:absolute;left:50%;top:calc(var(--dw)*.029);width:calc(var(--dw)*.266);height:calc(var(--dw)*.082);margin-left:calc(var(--dw)*-.133);border-radius:999px;background:#000}
+.island{position:absolute;left:50%;top:calc(var(--sw)*.0311);width:calc(var(--sw)*.2854);height:calc(var(--sw)*.088);margin-left:calc(var(--sw)*-.1427);border-radius:999px;background:#000}
+.sb{position:absolute;left:0;top:0;width:100%;height:calc(var(--sw)*.141);--mid:calc(var(--sw)*.0751);--pad:calc(var(--sw)*.012);font:600 calc(var(--sw)*.0395)/1 'Inter Variable',system-ui,sans-serif;letter-spacing:-.015em;font-variant-numeric:tabular-nums}
+.sb.light{color:#fff}
+.sb.dark{color:#000}
+.sb-fill{position:absolute;inset:0;-webkit-mask-image:linear-gradient(#000 84%,transparent);mask-image:linear-gradient(#000 84%,transparent)}
+.sb-time,.sb-icons{position:absolute;top:var(--mid);transform:translateY(-50%);width:35.7%;display:flex;align-items:center;justify-content:center}
+.sb-time{left:0;padding-left:var(--pad)}
+.sb-icons{right:0;padding-right:var(--pad);gap:calc(var(--sw)*.0145)}
+.sb svg{display:block;flex:none;width:auto;fill:currentColor}
+.sb-signal,.sb-wifi{height:calc(var(--sw)*.0273)}
+.sb-battery{height:calc(var(--sw)*.0295)}
+.sb-ipad,.sb-duo{height:calc(var(--sw)*.027);--mid:calc(var(--sw)*.0118);--pad:calc(var(--sw)*.0195);font-size:calc(var(--sw)*.0122)}
+.sb-duo{height:calc(var(--sw)*.058);--mid:calc(var(--sw)*.028);--pad:calc(var(--sw)*.045);font-size:calc(var(--sw)*.0235)}
+.sb-ipad .sb-time,.sb-ipad .sb-icons,.sb-duo .sb-time,.sb-duo .sb-icons{width:auto;padding:0}
+.sb-ipad .sb-time,.sb-duo .sb-time{left:var(--pad)}
+.sb-ipad .sb-icons,.sb-duo .sb-icons{right:var(--pad);gap:calc(var(--sw)*.0062)}
+.sb-ipad .sb-wifi{height:calc(var(--sw)*.0108)}
+.sb-ipad .sb-battery{height:calc(var(--sw)*.0116)}
+.sb-duo .sb-icons{gap:calc(var(--sw)*.011)}
+.sb-duo .sb-wifi{height:calc(var(--sw)*.019)}
+.sb-duo .sb-battery{height:calc(var(--sw)*.0205)}
+.device.clay .frame{background:var(--f3);box-shadow:var(--shadow),inset 0 calc(var(--dw)*.005) calc(var(--dw)*.008) rgba(255,255,255,.3),inset 0 calc(var(--dw)*-.006) calc(var(--dw)*.01) rgba(0,0,0,.2)}
+.device.clay .frame::after{display:none}
+.device.clay .bezel{background:var(--f3)}
+.device.clay .screen{box-shadow:0 0 0 calc(var(--dw)*.0035) color-mix(in srgb,var(--f3) 80%,#000)}
+.device.clay .btn{background:color-mix(in srgb,var(--f3) 86%,#000)}
+.device.drawn .frame{padding:calc(var(--dw)*(var(--band) + var(--bez)));background:none;box-shadow:none}
+.device.drawn .frame::after{border:calc(var(--dw)*.0085) solid var(--line);box-shadow:none}
+.device.drawn .bezel{padding:0;background:none}
+.device.drawn .screen{box-shadow:var(--shadow),0 0 0 calc(var(--dw)*.003) color-mix(in srgb,var(--line) 45%,transparent)}
+.device.drawn .btn{background:var(--line);left:auto;right:auto}
+.device.drawn .btn.l{left:calc(var(--dw)*-.011)}
+.device.drawn .btn.r{right:calc(var(--dw)*-.011)}
+.device.sketch .frame::after{filter:var(--pen)}
+.device.sketch .frame::before{content:"";position:absolute;inset:calc(var(--dw)*-.004);border-radius:calc(var(--dw)*var(--ro));border:calc(var(--dw)*.004) solid var(--line);opacity:.55;transform:rotate(.35deg);filter:var(--pen);pointer-events:none}
+.device.sketch .btn{filter:var(--pen)}
 .btn{position:absolute;width:calc(var(--dw)*.014);background:linear-gradient(90deg,var(--f2),var(--f3));border-radius:calc(var(--dw)*.004)}
 .btn.l{left:calc(var(--dw)*-.006)}
 .btn.r{right:calc(var(--dw)*-.006)}
@@ -762,6 +840,8 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const shotUrl = (s: Shot | undefined) => (s ? `/files/${project.id}/shots/${s.file}?v=${s.version}` : undefined);
   const needsIsland = async (s: Shot | undefined) =>
     !s || s.device !== "iphone" || !(await hasBakedIsland(path.join(shotsPath, s.file), s.version, s.width));
+  /** What a device needs to know about its screenshot: whether to draw the island, and the colour behind its status bar. */
+  const dress = async (s: Shot | undefined) => ({ island: await needsIsland(s), status: await statusLook(s, deviceStyle, shotsPath) });
 
   const background = await resolveBackground(slide.background ?? theme.background, shotsPath, shot);
   const dark = backgroundLuminance(background) < 0.32;
@@ -819,22 +899,27 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
     const common = { style: deviceStyle, targetDevice: target.device, canvas, width: LAYOUT_WIDTH[layout] };
     const gap = unit * 6.5;
     /** One device of a layout that places several: its centre in device widths from the middle, how far down it starts, and what is in front. */
-    const placed = async (s: Shot | undefined, wanted: string | undefined, x: number, top: number, z: number, rotate: number) => {
+    // Several devices fan out around the slide's own tilt: the left one leans left by half the angle between them, the right one right.
+    const spread = (deviceStyle.spread ?? LAYOUT_SPREAD[layout] ?? 0) / 2;
+    const apart = ((deviceStyle.gap ?? 0) / 100) * canvas.width;
+    const fanned = (side: number): DeviceStyle => ({ ...deviceStyle, rotate: round((deviceStyle.rotate ?? 0) + side * spread) });
+    /** One device of a layout that places several: which side of the middle it is on, its centre in device widths from there, how far down it starts, and what is in front. */
+    const placed = async (s: Shot | undefined, wanted: string | undefined, side: number, x: number, top: number, z: number) => {
       // Phones are drawn small on a tablet-shaped canvas; a group of them has the room to be larger.
       const boost = target.device !== "iphone" && deviceShape(s, deviceStyle, target.device).kind === "iphone" ? 1.45 : 1;
-      const extraCss = `margin-left:calc(var(--dw)*${round(x - 0.5)});top:${round(gap + top * unit)}px;z-index:${z}`;
-      return deviceHtml({ ...common, width: common.width * boost, shot: s, wanted, url: shotUrl(s), island: await needsIsland(s), fit: "width", defaults: { rotate }, extraCss });
+      const extraCss = `margin-left:calc(var(--dw)*${round(x - 0.5)} + ${round(side * apart)}px);top:${round(gap + top * unit)}px;z-index:${z}`;
+      return deviceHtml({ ...common, style: fanned(side), width: common.width * boost, shot: s, wanted, url: shotUrl(s), ...(await dress(s)), fit: "width", extraCss });
     };
     if (layout === "duo") {
-      const place = (x: number, top: number, z: number) => `margin-left:calc(var(--dw)*-.5 + ${round(x * canvas.width)}px);top:${round(top)}px;z-index:${z}`;
+      const place = (side: number, x: number, top: number, z: number) => `margin-left:calc(var(--dw)*-.5 + ${round(x * canvas.width + side * apart)}px);top:${round(top)}px;z-index:${z}`;
       stageHtml =
-        deviceHtml({ ...common, shot: shot2, wanted: slide.screenshot2, url: shotUrl(shot2), island: await needsIsland(shot2), fit: "width", defaults: { rotate: -6 }, extraCss: place(-0.19, gap + unit * 10, 1) }) +
-        deviceHtml({ ...common, shot, wanted: slide.screenshot, url: shotUrl(shot), island: await needsIsland(shot), fit: "width", defaults: { rotate: 5 }, extraCss: place(0.17, gap, 2) });
+        deviceHtml({ ...common, style: fanned(-1), shot: shot2, wanted: slide.screenshot2, url: shotUrl(shot2), ...(await dress(shot2)), fit: "width", extraCss: place(-1, -0.19, gap + unit * 10, 1) }) +
+        deviceHtml({ ...common, style: fanned(1), shot, wanted: slide.screenshot, url: shotUrl(shot), ...(await dress(shot)), fit: "width", extraCss: place(1, 0.17, gap, 2) });
     } else if (layout === "side-by-side") {
-      stageHtml = (await placed(shot, slide.screenshot, -0.53, 0, 2, 0)) + (await placed(shot2, slide.screenshot2, 0.53, 9, 1, 0));
+      stageHtml = (await placed(shot, slide.screenshot, -1, -0.53, 0, 2)) + (await placed(shot2, slide.screenshot2, 1, 0.53, 9, 1));
     } else if (layout === "trio") {
       stageHtml =
-        (await placed(shot2, slide.screenshot2, -0.5, 11, 1, -7)) + (await placed(shot3, slide.screenshot3, 0.5, 11, 1, 7)) + (await placed(shot, slide.screenshot, 0, 0, 2, 0));
+        (await placed(shot2, slide.screenshot2, -1, -0.5, 11, 1)) + (await placed(shot3, slide.screenshot3, 1, 0.5, 11, 1)) + (await placed(shot, slide.screenshot, 0, 0, 0, 2));
     } else {
       // A phone beside the copy on a tablet-shaped canvas has the room to be larger, like a group of them has.
       const boost = side && target.device !== "iphone" && deviceShape(shot, deviceStyle, target.device).kind === "iphone" ? 1.45 : 1;
@@ -844,7 +929,7 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
         shot,
         wanted: slide.screenshot,
         url: shotUrl(shot),
-        island: await needsIsland(shot),
+        ...(await dress(shot)),
         fit: layout === "device-center" || layout === "floating" ? "contain" : "width",
         defaults: layout === "tilted" ? { rotate: -8, offsetX: 5 } : layout === "floating" ? { perspective: "left", shadow: "strong" } : undefined,
       });

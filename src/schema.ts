@@ -5,6 +5,7 @@ import {
   BADGE_TYPE_IDS,
   CREATIVE_LAYOUT_IDS,
   DEVICE_COLOR_IDS,
+  DEVICE_STYLE_IDS,
   FEATURE_STYLE_IDS,
   FONT_IDS,
   ICON_IDS,
@@ -14,6 +15,7 @@ import {
   LAYOUT_IDS,
   LOGO_SHAPE_IDS,
   LOGO_SIZE_IDS,
+  STATUS_BAR_IDS,
 } from "./design.ts";
 import { TARGET_IDS } from "./sizes.ts";
 
@@ -89,13 +91,19 @@ export const backgroundSchema = z
 
 export const deviceSchema = z.object({
   frame: z.enum(["auto", "iphone", "duo", "ipad", "none"]).optional().describe("auto picks the frame matching the screenshot; duo is the unfolded iPhone Duo; none shows the bare rounded screenshot"),
+  style: z.enum(DEVICE_STYLE_IDS).optional().describe("How the frame is drawn: real (default), clay (one matte colour), outline (a line drawing) or sketch (the line drawing, hand-drawn)"),
   color: z.enum(DEVICE_COLOR_IDS).optional(),
   scale: z.number().min(0.4).max(1.6).optional().describe("Size multiplier, default 1"),
-  rotate: z.number().min(-45).max(45).optional().describe("Rotation in degrees"),
+  rotate: z.number().min(-45).max(45).optional().describe("Rotation in degrees. On a layout with several devices it turns them all"),
+  spread: z.number().min(0).max(60).optional().describe("The angle between the devices of duo, side-by-side and trio, in degrees. 0 stands them parallel. Default 11 for duo, 14 for trio, 0 for side-by-side"),
+  gap: z.number().min(-30).max(30).optional().describe("Pushes the devices of duo, side-by-side and trio apart (positive) or together (negative), in % of canvas width"),
   perspective: z.enum(["none", "left", "right"]).optional().describe("3D turn towards one side"),
   offsetX: z.number().min(-60).max(60).optional().describe("Horizontal shift in % of canvas width"),
   offsetY: z.number().min(-60).max(60).optional().describe("Vertical shift in % of canvas height"),
   shadow: z.enum(["none", "soft", "strong"]).optional(),
+  statusBar: z.enum(STATUS_BAR_IDS).optional().describe("A clean status bar at the top of the screenshot: cover paints it over the screenshot's own, overlay draws it on a screenshot that has none. Default none"),
+  statusBarTime: z.string().regex(/^\d{1,2}[:.]\d{2}$/, "a time like 9:41").optional().describe("The time the status bar shows, default 9:41"),
+  statusBarColor: z.enum(["auto", "light", "dark"]).optional().describe("White (light) or black (dark) status bar. auto reads it off the screenshot"),
 });
 
 /** Style fields a project sets once in its theme and any slide can override. */
@@ -147,7 +155,7 @@ export const creativeSchema = z.object({
   accentColor: styleFields.accentColor,
   font: styleFields.font,
   textScale: styleFields.textScale,
-  device: deviceSchema.pick({ frame: true, color: true, scale: true, shadow: true }).optional(),
+  device: deviceSchema.pick({ frame: true, style: true, color: true, scale: true, shadow: true, statusBar: true }).optional(),
 });
 
 export const creativesSchema = z.object({

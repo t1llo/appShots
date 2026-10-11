@@ -71,7 +71,10 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/render \
 
 | Request | What it does |
 | --- | --- |
-| `POST /api/projects/:id/render` | Renders. Body, all optional: `targets`, `locales`, `slides`, `creatives`. Without `targets`, every size the project exports |
+| `POST /api/projects/:id/render` | Renders and answers when it is done. Body, all optional: `targets`, `locales`, `slides`, `creatives`, `background`. Without `targets`, every size the project exports |
+| `GET /api/renders` | Your renders that are waiting, running or ended in the last hour, newest first, and `rendersLeft` |
+| `GET /api/renders/:job` | One of them |
+| `DELETE /api/renders/:job` | Cancels one that is waiting or running |
 | `GET /api/projects/:id/export.zip` | The files of the last render as a ZIP. `?render=1` renders everything first |
 | `GET /files/:id/out/<language>/<size>/<number>.png` | One rendered file |
 
@@ -85,6 +88,27 @@ curl -s -o streaks.zip "{{SERVER}}/api/projects/streaks/export.zip?render=1" \
 ```
 
 Rendering takes a while, so give the request a generous timeout. See [Render and export](/docs/export) for the layout of the ZIP.
+
+### Without waiting
+
+With `"background": true` the request answers at once, with status 202 and the render as a job:
+
+```bash
+curl -s -X POST {{SERVER}}/api/projects/streaks/render \
+  -H "Authorization: Bearer $APPSHOTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"background":true}'
+```
+
+```json
+{ "job": { "id": "5f0c…", "project": "streaks", "name": "Streaks", "state": "queued", "done": 0, "total": 0 }, "rendersLeft": 6 }
+```
+
+Ask `GET /api/renders/<id>` until `state` is no longer `queued` or `running`. It ends as `done`, `failed` (with `error`) or `cancelled`. `done` of `total` is how many pictures are drawn so far. Then fetch `export.zip`. The render draws the project as it was when you asked, so changes made while it runs are not in it.
+
+### Counted renders
+
+Every answer to a render carries `rendersLeft`: how many the account has left, or `null` where they are not counted. Each render uses one, and one that fails or is cancelled uses none. At zero a render is refused with status 400. See [Render and export](/docs/export#how-many-renders).
 
 ## What a token cannot do
 

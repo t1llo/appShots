@@ -6,6 +6,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { createContext, type FormEvent, type ReactNode, useContext, useState } from "react";
 import { api, day, detailQuery, errorText, type Meta, plural, type Project, projectsQuery } from "./api.ts";
 import { LanguageList } from "./languages.tsx";
+import { rendersQuery } from "./renders.tsx";
 import { CopyBlock, Dialog, Field, Select, toast } from "./ui.tsx";
 
 type Named = { id: string; name: string };
@@ -477,6 +478,7 @@ function Account({ meta, close }: { meta: Meta; close: () => void }) {
   const account = meta.account!;
   const queryClient = useQueryClient();
   const tokens = useQuery({ queryKey: tokensKey, queryFn: () => api<TokenEntry[]>("GET", "/account/tokens") });
+  const rendersLeft = useQuery(rendersQuery).data?.rendersLeft ?? meta.rendersLeft;
   const [fresh, setFresh] = useState<FreshToken | null>(null);
   const [tokenName, setTokenName] = useState("");
   const [proof, setProof] = useState("");
@@ -509,7 +511,7 @@ function Account({ meta, close }: { meta: Meta; close: () => void }) {
       <div className="steps">
         <div>
           <div className="list">
-            <Row title={account.name} sub={`${account.email} · signs in with Google${account.admin ? " · admin of this server" : ""}`} />
+            <Row title={account.name} sub={`${account.email} · signs in with Google${account.admin ? " · admin of this server" : ""}${rendersLeft == null ? "" : ` · ${plural(rendersLeft, "render")} left`}`} />
           </div>
         </div>
         <div>
@@ -571,10 +573,12 @@ interface Person {
   admin: boolean;
   /** False for an account whose address is not on the list while sign-in is by list. */
   access: boolean;
-  /** These three are there once the person has signed in. */
+  /** These are there once the person has signed in. */
   name?: string;
   joinedAt?: string;
   projects?: number;
+  /** How many renders the account has made and has left. `left` is null for the admin, whose renders are not counted. */
+  renders?: { made: number; left: number | null };
 }
 
 interface PeopleData {
@@ -623,6 +627,15 @@ function PeopleLists({ data }: { data: PeopleData }) {
       setEmail("");
       await refresh();
     });
+  const setRenders = (person: Person) =>
+    attempt(async () => {
+      const typed = prompt(`How many renders should ${person.name ?? person.email} have left?`, String(person.renders?.left ?? 0))?.trim();
+      if (!typed) return;
+      const left = Number(typed);
+      if (!Number.isInteger(left) || left < 0) return toast("Type a whole number, 0 or more.", "error");
+      await api("PUT", "/admin/renders", { email: person.email, left });
+      await refresh();
+    });
   const remove = (person: Person) =>
     attempt(async () => {
       if (person.joinedAt && !confirm(`Remove ${person.email} with all of their projects? This cannot be undone.`)) return;
@@ -634,7 +647,10 @@ function PeopleLists({ data }: { data: PeopleData }) {
     <>
       <div>
         <h3>Who can sign in</h3>
-        <p>Everybody signs in with Google and gets a private space: their own projects, screenshots and tokens. Nobody sees anybody else's work.</p>
+        <p>
+          Everybody signs in with Google and gets a private space: their own projects, screenshots and tokens. Nobody sees anybody else's work. Each account gets a number of renders, and every export uses one. Yours are
+          not counted.
+        </p>
         <Field label="Sign-in is open to" hint={byList ? "Add the Google address of everyone you want to let in." : "Anybody who finds this address can sign in, make projects and render on your server."}>
           <Select
             options={[
@@ -670,6 +686,11 @@ function PeopleLists({ data }: { data: PeopleData }) {
                   Allow
                 </button>
               )}
+              {person.renders?.left != null ? (
+                <button className="btn small" type="button" title={`${plural(person.renders.made, "render")} made so far. Change how many this account has left.`} onClick={setRenders(person)}>
+                  {plural(person.renders.left, "render")} left
+                </button>
+              ) : null}
               {person.admin ? null : (
                 <button className="btn small danger" type="button" onClick={remove(person)}>
                   Remove

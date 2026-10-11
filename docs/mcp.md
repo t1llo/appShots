@@ -25,7 +25,9 @@ A token reaches the projects of the account it belongs to and nothing else. See 
 3. Upload the raw screenshots. This goes through the [command line](/docs/cli) or the [HTTP API](/docs/api), because MCP has no way to send files. A project in several languages can hold each screenshot once per language.
 4. `set_slides`.
 5. `render`, and look at the pictures it returns.
-6. `update_slide` and `render` with `slides` for single fixes.
+6. `update_slide` for the fixes, then `render` again.
+
+Every `render` uses one of the account's renders, whatever it draws. So an agent writes the whole set first, renders it in one call, fixes everything it sees in one go and renders once more. The design guide tells it how many are left, and so does every `render`. See [Render and export](/docs/export#how-many-renders).
 
 ## Tools
 
@@ -92,7 +94,7 @@ Sets `header`, `search` or `universal` of `project`. Each one given replaces tha
 | `targets` | Sizes for this render only. Left out: every size the project exports, which is the standard sizes of each device it has screenshots of. See [Sizes](/docs/sizes) |
 | `locales` | Languages. Default: all of the project's |
 
-Returns a contact sheet per device as a picture, a preview of each wide image with its safe area marked, a link to every PNG, a link to the ZIP, and warnings such as a missing screenshot.
+Returns a contact sheet per device as a picture, a preview of each wide image with its safe area marked, a link to every PNG, a link to the ZIP, warnings such as a missing screenshot, and how many renders the account has left.
 
 ## Try it without an agent
 

@@ -1,5 +1,5 @@
 // The public home page is plain HTML (web/home.html). This adds what depends on the visit or needs a script:
-// why a sign-in just failed, who may sign in, and the motion.
+// why a sign-in just failed, who may sign in or is signed in already, and the motion.
 
 import { setAppearance, shownAppearance } from "./theme.ts";
 
@@ -25,9 +25,11 @@ if (code) {
 
 fetch("/auth/config")
   .then((response) => response.json())
-  .then((config: { signIn: boolean; signup: "list" | "open" }) => {
+  .then((config: { signIn: boolean; signup: "list" | "open"; account: { name: string } | null }) => {
     const note = document.getElementById("signin-note")!;
     if (!config.signIn) note.textContent = "No sign-in needed on this server.";
+    // Somebody who is signed in and looks at this page is told so: the buttons take them straight to their projects.
+    else if (config.account) note.textContent = `You are signed in as ${config.account.name}. Your projects are one click away.`;
     else if (config.signup === "list") note.textContent = "Free. By invitation for now: sign in with a Google address on the list.";
   })
   .catch(() => {});

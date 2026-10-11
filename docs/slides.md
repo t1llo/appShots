@@ -75,13 +75,41 @@ These fields can be set once in the project's **theme** and again on any slide. 
 | Field | Values | Default |
 | --- | --- | --- |
 | `frame` | `auto`, `iphone`, `duo`, `ipad`, `none`. `auto` matches the screenshot, `duo` is the unfolded iPhone Duo, and `none` shows the bare rounded screen | `auto` |
+| `style` | `real`, `clay`, `outline`, `sketch`. How the frame is drawn. See [Device look](#device-look) | `real` |
 | `color` | {{DEVICE_COLORS}} | `black` |
 | `scale` | 0.4 to 1.6 | 1 |
-| `rotate` | -45 to 45 degrees | 0 |
+| `rotate` | -45 to 45 degrees. On a layout with several devices it turns them all | 0 |
+| `spread` | 0 to 60 degrees. The angle between the devices of `duo`, `side-by-side` and `trio` | 11 for `duo`, 14 for `trio`, 0 for `side-by-side` |
+| `gap` | -30 to 30, in % of the canvas width. Pushes those devices apart, or together when negative | 0 |
 | `perspective` | `none`, `left`, `right`. A 3D turn towards one side | `none` |
 | `offsetX` | -60 to 60, in % of the canvas width | 0 |
 | `offsetY` | -60 to 60, in % of the canvas height | 0 |
-| `shadow` | `none`, `soft`, `strong` | `soft` |
+| `shadow` | `none`, `soft`, `strong` | `soft`, and `none` for an outline or a sketch |
+| `statusBar` | `none`, `cover`, `overlay`. See [Status bar](#status-bar) | `none` |
+| `statusBarTime` | The time the status bar shows, such as `9:41` | `9:41` |
+| `statusBarColor` | `auto`, `light` (white), `dark` (black) | `auto` |
+
+### Device look
+
+`style` is how the frame is drawn. Set it once in the theme, so the whole set matches.
+
+{{DEVICE_STYLES}}
+
+### Two or three devices
+
+On `duo`, `side-by-side` and `trio`, `spread` is the angle between the devices. At 0 they stand parallel, and a larger angle fans them out. `gap` moves them apart or together, and `rotate` turns the whole group.
+
+```json
+{ "layout": "duo", "screenshot": "home", "screenshot2": "stats", "device": { "spread": 24, "gap": 4 } }
+```
+
+### Status bar
+
+A screenshot from a real device shows whatever the device showed: an odd time, a low battery, one bar of signal. `statusBar` draws a clean one instead, with the time, full signal, Wi-Fi and a full battery.
+
+{{STATUS_BARS}}
+
+`statusBarColor` is read off the screenshot unless you set it. Screenshots taken with `appshots capture --clean` in the simulator are clean already and need none of this.
 
 ## Badges
 

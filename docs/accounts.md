@@ -9,7 +9,7 @@ Sign in with a Google account on the [home page](/home). There is no password to
 
 Your projects are yours alone. No account can see another's.
 
-You stay signed in on that browser for 30 days. **Sign out** in the sidebar ends it sooner.
+You stay signed in on that browser for 30 days after your last visit, so you are not signed out while you keep coming back. The [home page](/home) knows you too and takes you straight to your projects. **Sign out** in the sidebar ends it.
 
 ## Who can sign in
 
@@ -48,16 +48,27 @@ Good to know:
 | Languages per project | 40 |
 | A screenshot file | 40 MB |
 | An image file | 20 MB |
+| Renders | {{RENDERS}} per account. See below |
 | Renders at once | One running and one waiting per account |
 
-The person who runs the server has no limit on projects, screenshots and images.
+The person who runs the server has no limit on projects, screenshots, images and renders.
+
+## Renders
+
+An account gets {{RENDERS}} renders. Every export uses one, whether it comes from **Export ZIP**, from `appshots pull --render` or from an agent's `render` tool, and whatever it draws. Previews in the Studio are free, and a render that fails or is cancelled uses none. See [Render and export](/docs/export#how-many-renders).
+
+The Studio shows how many are left beside **Renders** in the sidebar and under **Account**.
+
+**To get more**, ask the person who runs the server. Under **People**, the button with the number of renders an account has left sets a new number for that account.
 
 ## Delete your account
 
 **Account → Delete account**, then type your email address to confirm. It deletes your account, every project, every screenshot, image and render, and every token, at once and for good. There is no undo and no backup to restore from.
 
+One number outlives the account: how many renders it used, kept with a scrambled form of Google's id for you and nothing else. It is there so that deleting an account and signing up again does not hand out a fresh set of renders.
+
 To leave one project only, delete the project. See [The Studio](/docs/studio#projects).
 
 ## What is stored about you
 
-Your email address, your name, and the fingerprints of your tokens, besides the projects you make. The [privacy policy](/privacy) has the full list.
+Your email address, your name, the fingerprints of your tokens and the number of renders you made, besides the projects you make. The [privacy policy](/privacy) has the full list.

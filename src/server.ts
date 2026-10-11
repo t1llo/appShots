@@ -19,11 +19,15 @@ import {
   logInWithGoogle,
   mainSpace,
   removePerson,
+  rendersLeft,
+  rendersOf,
+  renewedSession,
   revokeToken,
   safeEqual,
   seal,
   SESSION_TTL,
   sessionHolder,
+  setRendersLeft,
   setSignupMode,
   signupMode,
   spaceById,
@@ -35,10 +39,10 @@ import {
 } from "./accounts.ts";
 import { config } from "./config.ts";
 import { CREATIVE_CAPACITY, creativeHtml } from "./creative.ts";
-import { BACKGROUNDS, BADGE_TONES, BADGE_TYPES, CREATIVE_LAYOUTS, DEVICE_COLOR_IDS, FEATURE_STYLES, POINT_STYLES, ICON_ROW_SIZE_IDS, ICON_ROW_STYLES, ICON_ROW_TONES, FONT_IDS, FONTS, ICON_GROUPS, ICON_IDS, LAYOUT_SHOTS, LAYOUTS, LOGO_SHAPES, LOGO_SIZE_IDS } from "./design.ts";
+import { BACKGROUNDS, BADGE_TONES, BADGE_TYPES, CREATIVE_LAYOUTS, DEVICE_COLOR_IDS, DEVICE_STYLES, FEATURE_STYLES, LAYOUT_SPREAD, STATUS_BARS, POINT_STYLES, ICON_ROW_SIZE_IDS, ICON_ROW_STYLES, ICON_ROW_TONES, FONT_IDS, FONTS, ICON_GROUPS, ICON_IDS, LAYOUT_SHOTS, LAYOUTS, LOGO_SHAPES, LOGO_SIZE_IDS } from "./design.ts";
 import { ICONS } from "./icons.ts";
 import { createMcpServer } from "./mcp.ts";
-import { closeBrowser, defaultTargets, renderProject } from "./render.ts";
+import { cancelRender, closeBrowser, defaultTargets, frozenFor, getRender, listRenders, renderProject, startRender } from "./render.ts";
 import { creativesSchema, localeSchema, slideSchema, targetsSchema, themeSchema } from "./schema.ts";
 import { homePage, siteRoutes } from "./site.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, isDeviceKind, isPlacementId, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, sourceOf, TARGET_IDS, type TargetId, TARGETS } from "./sizes.ts";
@@ -177,6 +181,15 @@ app.use((_req, res, next) => {
 
 const baseUrl = (req: Request) => config.publicUrl || `${req.protocol}://${req.get("host")}`;
 
+// A session lasts 30 days from the last visit: a cookie more than a day old is swapped for a fresh one.
+app.use((req, res, next) => {
+  if (config.auth && req.method === "GET") {
+    const fresh = renewedSession(cookie(req, SESSION_COOKIE));
+    if (fresh) setSession(req, res, fresh);
+  }
+  next();
+});
+
 app.get("/healthz", (_req, res) => {
   res.type("text").send("ok");
 });
@@ -262,8 +275,10 @@ app.get(["/login", "/signup", "/reset"], (_req, res) => res.redirect("/"));
 
 const auth = express.Router();
 
-auth.get("/config", (_req, res) => {
-  res.json({ signIn: config.auth, signup: signupMode() });
+// What the public pages ask to know what to show: how sign-in works here, and whether this browser is signed in already.
+auth.get("/config", (req, res) => {
+  const holder = config.auth ? sessionHolder(cookie(req, SESSION_COOKIE)) : null;
+  res.set("Cache-Control", "no-store").json({ signIn: config.auth, signup: signupMode(), account: holder ? { name: holder.name } : null });
 });
 
 const googleRedirect = (req: Request) => `${baseUrl(req)}/auth/google/callback`;
@@ -378,6 +393,8 @@ const renderBody = z.object({
   locales: z.array(localeSchema).optional(),
   slides: z.array(z.number().int().min(0)).optional(),
   creatives: z.array(z.enum(PLACEMENT_IDS)).optional(),
+  /** Answer at once with the run instead of waiting for it. */
+  background: z.boolean().optional(),
 });
 
 /** Renders of assets the project no longer defines stay on disk until the next full render, but are not offered. */
@@ -392,7 +409,7 @@ async function projectDetail(space: Space, id: string) {
 }
 
 api.get("/meta", (_req, res) => {
-  const { user } = identityOf(res);
+  const { user, space } = identityOf(res);
   res.json({
     targets: TARGETS,
     devices: DEVICE_KINDS.map((id) => ({ id, label: DEVICE_LABELS[id] })),
@@ -404,6 +421,9 @@ api.get("/meta", (_req, res) => {
     fontList: Object.entries(FONTS).map(([id, font]) => ({ id, family: font.family, group: font.group, note: font.note, weight: font.weight })),
     backgrounds: ["auto", ...Object.keys(BACKGROUNDS)],
     deviceColors: DEVICE_COLOR_IDS,
+    deviceStyles: DEVICE_STYLES,
+    statusBars: STATUS_BARS,
+    layoutSpread: LAYOUT_SPREAD,
     badgeTypes: BADGE_TYPES,
     badgeTones: BADGE_TONES,
     featureStyles: FEATURE_STYLES,
@@ -418,6 +438,8 @@ api.get("/meta", (_req, res) => {
     authEnabled: config.auth,
     /** Null only while sign-in is off. */
     account: user ? { email: user.email, name: user.name, admin: isAdmin(user) } : null,
+    /** How many renders the account has left. Null where they are not counted: for the admin, and while sign-in is off. */
+    rendersLeft: rendersLeft(space.id),
   });
 });
 
@@ -471,8 +493,31 @@ api.delete("/projects/:id/images/:file", async (req, res) => {
 });
 
 api.post("/projects/:id/render", async (req, res) => {
-  const result = await renderProject(spaceOf(res), req.params.id, renderBody.parse(req.body ?? {}));
-  res.json({ ...result, outputs: await listOutputs(spaceOf(res), req.params.id), creativeOutputs: await creativeOutputs(spaceOf(res), req.params.id) });
+  const space = spaceOf(res);
+  const { id } = req.params;
+  const { background, ...request } = renderBody.parse(req.body ?? {});
+  if (background) {
+    // A project that does not exist is answered here, not by a run that fails a moment later.
+    const { name } = await getProject(space, id);
+    const { job, finished } = startRender(space, id, request, name);
+    finished.catch((error: unknown) => {
+      if (!(error instanceof InputError || error instanceof NotFoundError)) console.error(error);
+    });
+    return void res.status(202).json({ job, rendersLeft: rendersLeft(space.id) });
+  }
+  const result = await renderProject(space, id, request);
+  res.json({ ...result, outputs: await listOutputs(space, id), creativeOutputs: await creativeOutputs(space, id), rendersLeft: rendersLeft(space.id) });
+});
+
+// The account's renders: the ones waiting or under way, and the finished ones of the last hour.
+api.get("/renders", (_req, res) => {
+  res.json({ jobs: listRenders(spaceOf(res)), rendersLeft: rendersLeft(spaceOf(res).id) });
+});
+api.get("/renders/:job", (req, res) => {
+  res.json(getRender(spaceOf(res), req.params.job));
+});
+api.delete("/renders/:job", (req, res) => {
+  res.json(cancelRender(spaceOf(res), req.params.job));
 });
 
 /** The note at the top of the ZIP: which folder goes onto which screenshot slot of App Store Connect. */
@@ -565,6 +610,7 @@ admin.get("/people", async (_req, res) => {
       joinedAt: user.createdAt,
       projects: await countProjects(spaceOfUser(user)),
       access: hasAccess(user),
+      renders: rendersOf(user),
     })),
   );
   const known = new Set(users.map((user) => user.email));
@@ -577,6 +623,11 @@ admin.put("/signup", async (req, res) => {
 });
 admin.post("/people", async (req, res) => {
   await allowEmail(req.body?.email);
+  res.status(204).end();
+});
+admin.put("/renders", async (req, res) => {
+  const { email, left } = z.object({ email: z.string(), left: z.number().int().min(0).max(100_000) }).parse(req.body);
+  await setRendersLeft(email, left);
   res.status(204).end();
 });
 // The address travels in the body, like everything else here, so it stays out of access logs.
@@ -604,20 +655,26 @@ app.get("/files/:id/out/*file", async (req, res) => {
   res.set("Cache-Control", "private, no-cache").sendFile(safeJoin(outDir(spaceOf(res), req.params.id), relative));
 });
 
+/** What a slide page draws: the project as it is, or, for a page of a running render, as it was when the render was asked for. */
+async function drawn(space: Space, req: Request<{ id: string }>) {
+  const frozen = frozenFor(space, req.query.job);
+  if (frozen?.project.id === req.params.id) return frozen;
+  const project = await getProject(space, req.params.id);
+  return { project, shots: await listShots(space, project.id) };
+}
+
 app.get("/render/:id/creative/:placement", async (req, res) => {
   const space = spaceOf(res);
-  const project = await getProject(space, req.params.id);
+  const { project, shots } = await drawn(space, req);
   const { placement } = req.params;
   if (!isPlacementId(placement) || !project.creatives[placement]) throw new NotFoundError(`This project has no "${placement}" asset`);
-  const shots = await listShots(space, project.id);
   const locale = localeSchema.safeParse(req.query.locale).data ?? project.locales[0]!;
   res.set("Cache-Control", "no-store").type("html").send(await creativeHtml({ space, project, shots, placement, locale, guides: req.query.guides === "1" }));
 });
 
 app.get("/render/:id/:index", async (req, res) => {
   const space = spaceOf(res);
-  const project = await getProject(space, req.params.id);
-  const shots = await listShots(space, project.id);
+  const { project, shots } = await drawn(space, req);
   const index = Number(req.params.index);
   if (!Number.isInteger(index) || index < 0 || index >= project.slides.length) throw new NotFoundError(`Slide ${req.params.index} does not exist`);
   const wanted = String(req.query.target ?? "");

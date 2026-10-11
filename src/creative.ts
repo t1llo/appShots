@@ -4,7 +4,7 @@ import { hasBakedIsland } from "./palette.ts";
 import type { DeviceStyle, Project } from "./schema.ts";
 import { isDeviceKind, PLACEMENTS, type PlacementId } from "./sizes.ts";
 import { findShot, listImages, type Shot, shotsDir, type Space } from "./store.ts";
-import { backgroundCss, backgroundLuminance, badgeHtml, CSS, DEFS, deviceHtml, deviceShape, esc, FIT_SCRIPT, logoHtml, pick, resolveBackground, rich, round } from "./template.ts";
+import { backgroundCss, backgroundLuminance, badgeHtml, CSS, DEFS, deviceHtml, deviceShape, esc, FIT_SCRIPT, logoHtml, pick, resolveBackground, rich, round, statusLook } from "./template.ts";
 
 export interface CreativeContext {
   space: Space;
@@ -150,8 +150,12 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
   // These assets are not tied to one device, so a name with several variants shows the iPhone one unless another frame is asked for.
   const deviceStyle: DeviceStyle = {
     frame: creative.device?.frame ?? theme.device?.frame,
+    style: creative.device?.style ?? theme.device?.style,
     color: creative.device?.color ?? theme.device?.color,
     shadow: creative.device?.shadow ?? theme.device?.shadow,
+    statusBar: creative.device?.statusBar ?? theme.device?.statusBar,
+    statusBarTime: theme.device?.statusBarTime,
+    statusBarColor: theme.device?.statusBarColor,
   };
   const scale = creative.device?.scale ?? 1;
   const prefer = isDeviceKind(deviceStyle.frame) ? deviceStyle.frame : "iphone";
@@ -218,6 +222,7 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
           canvas,
           fit: "width",
           island: !baked,
+          status: await statusLook(shot, deviceStyle, shotsPath),
           defaults: { rotate: slot.rotate },
           extraCss: `left:${round(slot.x - slot.width / 2)}px;top:${round(slot.top)}px;z-index:${slot.z}`,
         });

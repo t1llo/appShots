@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { detailQuery, errorText, metaQuery, projectsQuery } from "./api.ts";
 import { DialogHost, type DialogKind, OpenDialog, useOpenDialog } from "./dialogs.tsx";
 import { dropTarget, ProjectPage } from "./project.tsx";
+import { RenderList, useRenderNotes, useRenders } from "./renders.tsx";
 import { type Appearance, readAppearance, setAppearance } from "./theme.ts";
 import { Icon, Menu, Toasts } from "./ui.tsx";
 
@@ -80,6 +81,8 @@ function Shell() {
   const meta = useQuery(metaQuery);
   // Polled, so projects that an agent creates through MCP show up without a reload.
   const projects = useQuery({ ...projectsQuery, refetchInterval: 3000 });
+  const renders = useRenders();
+  useRenderNotes(renders.data?.jobs);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
 
   if (!meta.data || !projects.data) {
@@ -133,6 +136,8 @@ function Shell() {
             <span className="nav-text">New project</span>
           </button>
         </div>
+
+        {renders.data ? <RenderList renders={renders.data} /> : null}
 
         <div className="nav-group">
           <button className="nav-item" type="button" onClick={() => setDialog("connect")}>

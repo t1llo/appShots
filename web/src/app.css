@@ -385,6 +385,101 @@ select.ghost:hover {
 .nav-item.quiet {
   color: var(--text-3);
 }
+/* The renders under way and the ones that just ended. */
+.renders .nav-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.renders-left {
+  font-variant-numeric: tabular-nums;
+}
+.renders-left.none {
+  color: var(--danger);
+}
+.render {
+  display: grid;
+  gap: 5px;
+  padding: 5px 4px 6px 8px;
+  border-radius: 6px;
+}
+.render-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+.render-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.render-name:hover {
+  text-decoration: underline;
+}
+.render-state {
+  flex: none;
+  color: var(--text-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.render.failed .render-state {
+  color: var(--danger);
+}
+.render .icon-btn {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  font-size: 14px;
+}
+.render-bar {
+  height: 3px;
+  margin-right: 4px;
+  border-radius: 2px;
+  background: var(--active);
+  overflow: hidden;
+}
+.render-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.render.queued .render-bar i {
+  background: var(--text-3);
+}
+.render-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.renders > .render-link {
+  padding: 2px 8px 4px;
+}
+.render-link:hover {
+  text-decoration: underline;
+}
+.render-error {
+  margin-right: 4px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.btn.export {
+  font-variant-numeric: tabular-nums;
+}
 /* A project and its menu button, which shows on the open project and under the pointer. */
 .nav-row {
   position: relative;
@@ -1820,6 +1915,20 @@ dialog .foot {
   font-size: 13px;
   font-weight: 500;
   white-space: pre-wrap;
+}
+.toast-action {
+  margin: -3px -6px -3px 12px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: rgb(255 255 255 / 0.16);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.toast-action:hover {
+  background: rgb(255 255 255 / 0.26);
 }
 .toast.error {
   box-shadow:

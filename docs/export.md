@@ -7,7 +7,7 @@ Rendering turns the slides into PNG files at the exact pixel sizes App Store Con
 
 ## Three ways
 
-**In the Studio.** Press **Export ZIP** on the project page. It renders everything and downloads `<project>-screenshots.zip`.
+**In the Studio.** Press **Export ZIP** on the project page. It renders everything in the background and downloads `<project>-screenshots.zip` when it is done. You can keep working meanwhile. See [In the background](#in-the-background).
 
 **From the Mac.**
 
@@ -18,11 +18,13 @@ appshots pull streaks --render --out ~/Desktop/streaks
 
 The files land in `./store-screenshots/streaks`, or in the folder after `--out`. Without `--render` you get the files of the last render.
 
-**Through an agent.** The `render` tool renders, shows the agent a contact sheet to check, and returns a link to every file. To iterate, it renders single slides:
+**Through an agent.** The `render` tool renders, shows the agent a contact sheet to check, and returns a link to every file. It can render single slides too:
 
 ```json
 { "project": "streaks", "slides": [3] }
 ```
+
+Every call uses one of the account's renders, whatever it draws. See [How many renders](#how-many-renders).
 
 ## What is in the ZIP
 
@@ -59,7 +61,30 @@ Sizes of the same shape are the same picture scaled, so they look alike on every
 
 Every language and every device is a full pass over the set. A set in three languages takes about three times as long as the same set in one. The extra sizes of a device cost next to nothing, because they are the same picture scaled.
 
-The server renders one job at a time. Yours waits its turn if somebody else's is running. One account can have one render running and one waiting. A third is refused with "A render is already running for this account", so wait for the first to finish.
+The server renders one job at a time. Yours waits its turn if somebody else's is running. One account can have one render running and one waiting. A third is refused with "Two renders are already under way for this account", so wait for one to finish.
+
+## In the background
+
+A render started in the Studio runs on the server and does not need the page. Keep editing, open another project, switch to another tab or close the laptop lid: the render goes on.
+
+- **It draws the project as it was when you pressed the button.** What you change while it runs is in the next render, not in this one.
+- **Renders** in the sidebar shows the progress, and the × beside a running render cancels it.
+- When it is done, the ZIP downloads by itself. If the tab was in the background, its title says the render is done and the download starts when you look at it again.
+- **Notify me when it is done** lets your browser show a notification. It asks for permission once.
+- A finished render stays in the list for ten minutes, and **Download ZIP** fetches the files again. They are kept until the next render replaces them.
+
+A render stops if the server restarts, for instance for an update. The Studio says so, and you start it again. It has not used a render.
+
+## How many renders
+
+An account gets {{RENDERS}} renders. One render is one press of **Export ZIP**, one `appshots pull --render`, or one call of the `render` tool, whatever it draws: a single slide counts the same as the whole set in every language.
+
+- Previews in the Studio are free. You only use a render when you export.
+- A render that fails or that you cancel uses none.
+- The Studio shows how many are left beside **Renders** in the sidebar, and the `render` tool tells the agent after each call.
+- Downloading the ZIP of the last render again uses none.
+
+When none are left, ask the person who runs the server for more. Their own renders are not counted.
 
 ## Upload to App Store Connect
 

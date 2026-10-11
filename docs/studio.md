@@ -30,13 +30,13 @@ In the editor, from top to bottom:
 | Layout | One of thirteen, shown as small sketches. See [Slides](/docs/slides#layouts) |
 | Copy | Eyebrow, headline and subheadline. `*Asterisks*` tint a word with the accent colour, and Return forces a line break |
 | Screenshot | Click a thumbnail. Layouts with two or three devices take two or three |
-| Device | Size, position, tilt, 3D turn, frame colour and shadow |
+| Device | Size, position, tilt, 3D turn, frame colour and shadow. With two or three devices also the angle between them and their distance |
 | Features | Cards on a feature slide, or short points beside the headline |
 | Badges | Up to four: wreath, stars, rating, review, icon or pill |
 | Icon row | Up to eight icons or logos with a label such as "Works with" |
 | Your logo | An uploaded image over the headline |
 | Images | Uploaded artwork placed anywhere on the slide. Drag it in the large preview |
-| Look | Background, font, colours, alignment and headline size for this slide only |
+| Look | Background, font, colours, alignment and headline size for this slide only. Also the device look, from realistic to a hand-drawn sketch, and a clean status bar |
 
 ## The theme
 
@@ -64,10 +64,19 @@ With a language other than the first picked, **Screenshots** shows that language
 
 **Export ZIP** renders the whole set and downloads it: every slide for every language and every display of App Store Connect, plus the header and search results images. **Project → Export sizes** lists the sizes and lets you add the older ones. See [Render and export](/docs/export).
 
+The render runs on the server, in the background. You can keep editing, open another project or switch to another tab while it works. What you change after pressing the button is not in that render.
+
+- **Renders** in the sidebar shows each render with its progress. The × beside a running one cancels it.
+- When it is done, the ZIP downloads by itself. If you were on another tab, the tab's title says so and the download starts when you come back. **Download ZIP** in the list fetches it again.
+- **Notify me when it is done** asks your browser for permission to show a notification, for when the tab is in the background.
+- A render an agent starts shows up in the same list.
+- The number beside **Renders** is how many your account has left. See [Accounts, tokens and limits](/docs/accounts#renders).
+
 ## The sidebar
 
 | Item | What it does |
 | --- | --- |
+| Renders | The renders under way and the ones that just finished, and how many your account has left |
 | Connect an agent | The setup command for your agent, with a token. See [Connect an agent](/docs/connect) |
 | Docs | These pages |
 | Account | Your API tokens, and deleting your account. See [Accounts, tokens and limits](/docs/accounts) |

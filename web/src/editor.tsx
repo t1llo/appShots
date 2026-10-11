@@ -168,6 +168,30 @@ function StyleFields({ owner, change, inherits, asset = false, placed = false }:
       <Select options={[["", base], ["none", "None"], ["soft", "Soft"], ["strong", "Strong"]]} value={device.shadow ?? ""} onChange={(value) => setDevice("shadow", value)} />
     </Field>
   );
+  const look = (
+    <Field label="Device look">
+      <select value={device.style ?? ""} title={meta.deviceStyles[device.style ?? "real"]} onChange={(event) => setDevice("style", event.target.value)}>
+        <option value="">{base}</option>
+        {Object.entries(meta.deviceStyles).map(([id, note]) => (
+          <option key={id} value={id} title={note}>
+            {DEVICE_LOOKS[id] ?? label(id)}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+  const statusBar = (
+    <Field label="Status bar">
+      <select value={device.statusBar ?? ""} title={meta.statusBars[device.statusBar ?? "none"]} onChange={(event) => setDevice("statusBar", event.target.value)}>
+        <option value="">{base}</option>
+        {Object.entries(meta.statusBars).map(([id, note]) => (
+          <option key={id} value={id} title={note}>
+            {STATUS_BARS[id] ?? label(id)}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
 
   return (
     <>
@@ -198,6 +222,21 @@ function StyleFields({ owner, change, inherits, asset = false, placed = false }:
           />
         </Field>
       </div>
+      <div className="cols">
+        {look}
+        {statusBar}
+      </div>
+      {/* The time and the colour of a drawn status bar. An asset takes them from the project. */}
+      {!asset && (device.statusBar === "cover" || device.statusBar === "overlay") ? (
+        <div className="cols">
+          <Field label="Time shown">
+            <TimeInput value={device.statusBarTime} onChange={(value) => setDevice("statusBarTime", value)} />
+          </Field>
+          <Field label="Time and icons">
+            <Select options={[["", "Auto"], ["light", "White"], ["dark", "Black"]]} value={device.statusBarColor === "auto" ? "" : (device.statusBarColor ?? "")} onChange={(value) => setDevice("statusBarColor", value)} />
+          </Field>
+        </div>
+      ) : null}
       {/* A slide sets these with the sliders of its Device group. */}
       {placed ? null : (
         <div className="cols">
@@ -218,6 +257,37 @@ function StyleFields({ owner, change, inherits, asset = false, placed = false }:
         </div>
       )}
     </>
+  );
+}
+
+const DEVICE_LOOKS: Record<string, string> = { real: "Realistic", clay: "Clay", outline: "Outline", sketch: "Sketch" };
+const STATUS_BARS: Record<string, string> = { none: "As in the screenshot", cover: "Clean, over the old one", overlay: "Clean, drawn on top" };
+
+/** The time of a drawn status bar. What is typed counts once it reads as a time; until then the last good one stays. */
+function TimeInput({ value, onChange }: { value: string | undefined; onChange: (value: string | undefined) => void }) {
+  const [text, setText] = useState(value ?? "");
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setText(value ?? "");
+  }, [value]);
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      maxLength={5}
+      placeholder="9:41"
+      value={text}
+      onFocus={() => (focused.current = true)}
+      onBlur={() => {
+        focused.current = false;
+        setText(value ?? "");
+      }}
+      onChange={(event) => {
+        const typed = event.target.value.trim();
+        setText(event.target.value);
+        if (typed === "" || /^\d{1,2}[:.]\d{2}$/.test(typed)) onChange(typed || undefined);
+      }}
+    />
   );
 }
 
@@ -522,9 +592,11 @@ function Slider(props: { label: string; value: number | undefined; base: number;
 
 /** Where a slide's device stands and how large it is, on top of what the layout and the project say. */
 function DeviceEditor({ slide, theme, change, single }: { slide: Slide; theme: Theme; change: Change<Slide>; single: boolean }) {
+  const { meta } = useScope();
   const device = slide.device ?? {};
-  const base = { scale: 1, offsetX: 0, offsetY: 0, rotate: 0, ...LAYOUT_DEVICE[slide.layout ?? "device-bottom"], ...theme.device };
-  const keys = ["scale", "offsetX", "offsetY", "rotate", "perspective"] as const;
+  const layout = slide.layout ?? "device-bottom";
+  const base = { scale: 1, offsetX: 0, offsetY: 0, rotate: 0, gap: 0, spread: meta.layoutSpread[layout] ?? 0, ...LAYOUT_DEVICE[layout], ...theme.device };
+  const keys = ["scale", "offsetX", "offsetY", "rotate", "perspective", "spread", "gap"] as const;
   const setDevice = (recipe: (device: DeviceStyle) => void) =>
     change((item) => {
       const next = { ...item.device };
@@ -538,7 +610,7 @@ function DeviceEditor({ slide, theme, change, single }: { slide: Slide; theme: T
     <>
       <div className="group-head">
         <span className="label">Device</span>
-        <span className="hint">Its size and place on this slide.</span>
+        <span className="hint">{single ? "Its size and place on this slide." : "Their size and place on this slide, and how they stand to each other."}</span>
         <span className="spacer" />
         {keys.some((key) => device[key] != null) ? (
           <button className="btn small quiet" type="button" onClick={() => setDevice((next) => keys.forEach((key) => delete next[key]))}>
@@ -550,7 +622,13 @@ function DeviceEditor({ slide, theme, change, single }: { slide: Slide; theme: T
         <Slider label="Size" value={device.scale} base={base.scale} min={0.4} max={1.6} step={0.02} show={(value) => `${Math.round(value * 100)}%`} onChange={set("scale")} />
         <Slider label="Left · right" value={device.offsetX} base={base.offsetX} min={-60} max={60} step={1} show={signed} onChange={set("offsetX")} />
         <Slider label="Up · down" value={device.offsetY} base={base.offsetY} min={-60} max={60} step={1} show={signed} onChange={set("offsetY")} />
-        {single ? <Slider label="Tilt" value={device.rotate} base={base.rotate} min={-45} max={45} step={1} show={(value) => `${value}°`} onChange={set("rotate")} /> : null}
+        <Slider label={single ? "Tilt" : "Tilt, all"} value={device.rotate} base={base.rotate} min={-45} max={45} step={1} show={(value) => `${value}°`} onChange={set("rotate")} />
+        {single ? null : (
+          <>
+            <Slider label="Angle between" value={device.spread} base={base.spread} min={0} max={60} step={1} show={(value) => `${value}°`} onChange={set("spread")} />
+            <Slider label="Distance" value={device.gap} base={base.gap} min={-30} max={30} step={1} show={signed} onChange={set("gap")} />
+          </>
+        )}
       </div>
       {single ? (
         <Field label="Turn in 3D">

@@ -30,6 +30,16 @@ export interface User {
   /** Bumped to end every session. */
   epoch: number;
   tokens: ApiToken[];
+  /** Renders this account has made. */
+  renders?: number;
+  /** How many it may make in all, once the admin has set that for this account. Otherwise USER_RENDER_CREDITS. */
+  renderAllowance?: number;
+}
+
+/** What is kept of a deleted account, so deleting it and signing in again does not hand out the renders anew. */
+interface Spent {
+  renders: number;
+  renderAllowance?: number;
 }
 
 interface State {
@@ -39,6 +49,8 @@ interface State {
   /** The addresses that may sign in while `signup` is "list". The admin is not on it and does not need to be. */
   allowed: string[];
   users: User[];
+  /** By the SHA-256 of the Google id an account was signed in with. Nothing else of the account stays. */
+  spent: Record<string, Spent>;
 }
 
 /** A sign-in that is refused; `code` names the case for the home page. */
@@ -61,6 +73,7 @@ const state: State = {
   signupChosen,
   allowed: Array.isArray(saved.allowed) ? saved.allowed : [],
   users: Array.isArray(saved.users) ? saved.users : [],
+  spent: saved.spent && typeof saved.spent === "object" ? saved.spent : {},
 };
 // Passwords are gone; their hashes have no business staying in the file.
 for (const user of state.users) delete (user as { password?: string }).password;
@@ -174,6 +187,17 @@ export const SESSION_TTL = 30 * 24 * 3600 * 1000;
 
 export const userSession = (user: User) => seal("session", { u: user.id, k: user.epoch }, SESSION_TTL);
 
+/**
+ * A session lasts 30 days from the last visit, not from the sign-in. Returns the cookie to replace a good one
+ * with once it is more than a day old, so somebody who keeps coming back is never signed out.
+ */
+export function renewedSession(cookie: string | undefined): string | null {
+  const session = unseal<{ _e: number }>("session", cookie);
+  if (!session || session._e - Date.now() > SESSION_TTL - 24 * 3600 * 1000) return null;
+  const holder = sessionHolder(cookie);
+  return holder && userSession(holder);
+}
+
 /** Who a session cookie belongs to, if it is still good. */
 export function sessionHolder(cookie: string | undefined): User | null {
   const session = unseal<{ u: string; k: number }>("session", cookie);
@@ -229,6 +253,13 @@ export async function logInWithGoogle(profile: { sub: string; email: string; nam
     return sameAddress;
   }
   const user: User = { id: randomId("u"), email, name: cleanName(profile.name, email), googleSub: profile.sub, createdAt: new Date().toISOString(), epoch: 1, tokens: [] };
+  // Somebody who deleted their account comes back to the renders they had left, not to a fresh set.
+  const before = state.spent[sha256(profile.sub)];
+  if (before) {
+    user.renders = before.renders;
+    if (before.renderAllowance != null) user.renderAllowance = before.renderAllowance;
+    delete state.spent[sha256(profile.sub)];
+  }
   state.users.push(user);
   await save();
   return user;
@@ -241,6 +272,9 @@ export async function deleteUser(id: string): Promise<void> {
   // The admin's projects are the server's own space, which no button should be able to wipe.
   if (isAdmin(user)) throw new InputError(ADMIN_STAYS);
   state.users = state.users.filter((entry) => entry !== user);
+  if (user.googleSub && (user.renders || user.renderAllowance != null)) {
+    state.spent[sha256(user.googleSub)] = { renders: user.renders ?? 0, ...(user.renderAllowance != null ? { renderAllowance: user.renderAllowance } : {}) };
+  }
   await save();
   await rm(userRoot(user.id), { recursive: true, force: true });
 }
@@ -251,6 +285,62 @@ export async function confirmDelete(user: User, confirmation: unknown): Promise<
 }
 
 export const listUsers = () => state.users;
+
+// ---------------------------------------------------------------- render credits
+
+// Every account but the admin's gets a number of renders. One run of the renderer uses one, whatever it draws.
+// A run that fails or is cancelled uses none.
+
+/** Renders set aside for runs that are waiting or under way, by account. */
+const held = new Map<string, number>();
+
+const allowanceOf = (user: User) => user.renderAllowance ?? config.limits.renders;
+
+/** The account whose renders are counted in a space. The admin's are not, and neither is anybody's while sign-in is off. */
+const counted = (spaceId: string) => (config.auth ? state.users.find((user) => user.id === spaceId && !isAdmin(user)) : undefined);
+
+/** How many renders a space has left. Null where they are not counted. */
+export function rendersLeft(spaceId: string): number | null {
+  const user = counted(spaceId);
+  return user ? Math.max(0, allowanceOf(user) - (user.renders ?? 0) - (held.get(user.id) ?? 0)) : null;
+}
+
+/** The same for one account, with how many it has made. */
+export const rendersOf = (user: User) => ({ made: user.renders ?? 0, left: rendersLeft(user.id) });
+
+/**
+ * Sets one render aside for a run that is about to be queued, and refuses when none is left. Call what it returns
+ * when the run has ended: with true the render is used up, with false it goes back.
+ */
+export function holdRender(spaceId: string): (used: boolean) => Promise<void> {
+  const user = counted(spaceId);
+  if (!user) return async () => {};
+  if (rendersLeft(spaceId) === 0) {
+    const ask = config.operator.email ? `Write to ${config.operator.email} to get more.` : "The person who runs this server can give it more.";
+    throw new InputError(`This account has used all of its ${plural(allowanceOf(user))}. ${ask}`);
+  }
+  held.set(user.id, (held.get(user.id) ?? 0) + 1);
+  return async (used) => {
+    const still = (held.get(user.id) ?? 1) - 1;
+    if (still > 0) held.set(user.id, still);
+    else held.delete(user.id);
+    if (!used) return;
+    user.renders = (user.renders ?? 0) + 1;
+    await save();
+  };
+}
+
+const plural = (count: number) => `${count} ${count === 1 ? "render" : "renders"}`;
+
+/** The admin gives an account a number of renders to go, on top of the ones it has made. */
+export async function setRendersLeft(input: unknown, left: number): Promise<void> {
+  const email = normalizeEmail(input);
+  const user = byEmail(email);
+  if (!user) throw new NotFoundError("Nobody has signed in with that address yet.");
+  if (isAdmin(user)) throw new InputError("The admin's renders are not counted.");
+  user.renderAllowance = (user.renders ?? 0) + left;
+  await save();
+}
 
 // ---------------------------------------------------------------- API tokens
 

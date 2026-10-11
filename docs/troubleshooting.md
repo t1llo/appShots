@@ -69,7 +69,13 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ## Rendering and exporting
 
-**"A render is already running for this account".** One render runs and one waits per account. Wait for the first to finish.
+**"Two renders are already under way for this account".** One render runs and one waits per account. Wait for one to finish, or cancel one with the × beside it under **Renders** in the sidebar.
+
+**"This account has used all of its renders".** Every export uses one render, and the account has none left. Ask the person who runs the server for more. See [Accounts, tokens and limits](/docs/accounts#renders).
+
+**"The render stopped because the server restarted".** The server was updated or restarted while it was drawing. Press **Export ZIP** again. The stopped render was not counted.
+
+**The ZIP did not download when the render was done.** It downloads by itself in the tab that started the render. Press **Download ZIP** under **Renders** in the sidebar. Some browsers block a download that starts in a background tab.
 
 **"Nothing has been rendered yet".** `appshots pull` downloads the last render. Add `--render`.
 

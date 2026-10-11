@@ -80,6 +80,8 @@ Visitors who are not signed in see the public home page. Its **Open Studio** but
 
 People manage their own tokens, or delete their account, under **Account**. Accounts other than the admin are capped at 20 projects and 40 screenshots per project and language (`USER_MAX_PROJECTS`, `USER_MAX_SHOTS`), and one account renders one set at a time.
 
+**Renders are counted.** Every account other than the admin's gets 10 renders (`USER_RENDER_CREDITS`). One render is one export, whatever it draws; previews in the Studio are free, and a render that fails or is cancelled uses none. Each person sees how many are left in the sidebar. Under **People**, the button with that number sets a new one for an account. Deleting an account does not reset the count: the number of renders used is kept beside a hash of the Google account id, so signing up again gives the same count back.
+
 ### Sign in with Google
 
 In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create an OAuth client of type "Web application" with:
@@ -97,7 +99,7 @@ The server makes no paid calls. The agent runs on each person's own subscription
 
 - **CPU and memory.** A render drives a headless Chromium: about a second per slide on a recent Mac, more on a small server, and a few hundred megabytes of memory while it runs. Renders are queued one at a time for the whole server, so many people at once means waiting, not a bigger bill.
 - **Disk.** This is what grows. An account can hold 20 projects of 40 screenshots per language, each up to 40 MB when uploaded, plus the rendered sets. A handful of people is nothing; a few hundred accounts filled to the cap would not fit on a small disk. Lower `USER_MAX_PROJECTS` and `USER_MAX_SHOTS` if the disk is small, and keep an eye on the volume.
-- **Abuse.** Anyone can sign in, so somebody may script uploads or renders. The caps and the render queue bound the damage, and **Remove** under People deletes an account with everything in it.
+- **Abuse.** Anyone can sign in, so somebody may script uploads or renders. The caps, the counted renders and the render queue bound the damage, and **Remove** under People deletes an account with everything in it.
 
 If that is more than you want to carry, switch to **Only the people listed here** under People.
 
@@ -265,7 +267,9 @@ A project has a theme and up to ten slides. Every style field can be set on the 
   - Mono: JetBrains Mono, Space Mono
 
   Faces that only work large, such as the handwritten ones, set the headline; the small print beside them is set in a plain face that goes with them
-- **Device:** frame (`auto`, `iphone`, `duo`, `ipad`, `none`), colour and shadow, and per slide its size (`scale`), place (`offsetX`, `offsetY`), tilt (`rotate`) and turn in 3D (`perspective`)
+- **Device:** frame (`auto`, `iphone`, `duo`, `ipad`, `none`), colour and shadow, and per slide its size (`scale`), place (`offsetX`, `offsetY`), tilt (`rotate`) and turn in 3D (`perspective`). With two or three devices, `spread` is the angle between them and `gap` their distance
+- **Device look:** `style` draws the frame as the device looks (`real`), in one matte colour (`clay`), as a line drawing (`outline`) or as one drawn by hand (`sketch`)
+- **Status bar:** `statusBar` draws a clean one, with the time, full signal, Wi-Fi and a full battery, over the one a screenshot came with (`cover`) or onto a screenshot that has none (`overlay`); `statusBarTime` and `statusBarColor` set what it shows
 - **Text:** `*asterisks*` tint words with the accent colour, a newline forces a break, and any text can be a `{ "en-US": "...", "de-DE": "..." }` map for localized sets
 
 ### Output sizes
@@ -304,7 +308,7 @@ A project can hold one of each, built from the same screenshots and theme as its
 The store crops these images differently on each device and orientation, and only the safe area is always visible. appShots therefore centres the copy and shrinks it until it fits inside that area, and treats everything around it as decoration that may be cut off. The previews an agent gets draw the safe area as a dashed frame, and the Studio does when **Show safe area** is ticked; the exported PNG never contains it.
 
 - **Layouts:** `fan` (copy above up to five fanned devices), `sides` (copy between up to four devices), `wall` (copy over a dimmed wall of bare screenshots). Without screenshots an asset is copy on the background, without copy it is the devices alone.
-- **Per asset:** eyebrow, headline, subheadline, up to six screenshots in order of importance, up to three badges, the app's own logo over the headline, background, font, colours, headline size, and the device frame, colour, size and shadow. What an asset leaves out comes from the project theme.
+- **Per asset:** eyebrow, headline, subheadline, up to six screenshots in order of importance, up to three badges, the app's own logo over the headline, background, font, colours, headline size, and the device frame, look, colour, size, shadow and status bar. What an asset leaves out comes from the project theme.
 - **Output:** opaque PNGs at `<locale>/creative-assets/header.png`, `search.png` and `universal.png`, rendered with the slides and included in the ZIP.
 
 Apple reviews these images and asks for more restraint than in screenshots: one clear idea, a short phrase at most, no prices, discounts, web addresses or copyright symbols, no logos of other platforms, no claims or awards that cannot be verified and no Apple accolades (Editors' Choice, App of the Day, Apple Design Award), and text translated for every language it is uploaded for. See Apple's [creative asset specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications/).
@@ -327,11 +331,17 @@ PATCH  /api/projects/:id/shots/:file       {device?, locale?} files it under ano
 DELETE /api/projects/:id/shots/:file
 PUT    /api/projects/:id/images/:name      upload a logo or other artwork (raw PNG, SVG, JPEG or WebP body)
 DELETE /api/projects/:id/images/:file
-POST   /api/projects/:id/render            {targets?, locales?, slides?, creatives?}; without targets, every size the project exports
+POST   /api/projects/:id/render            {targets?, locales?, slides?, creatives?, background?}; without targets, every size the
+                                           project exports. background: true answers 202 with a job instead of waiting
+GET    /api/renders                        the account's renders of the last hour, and rendersLeft
+GET    /api/renders/:job                   one of them: state, done, total
+DELETE /api/renders/:job                   cancels one that is waiting or running
 GET    /api/projects/:id/export.zip        ?render=1 renders first
 ```
 
 A render without `slides` and `creatives` produces everything. `slides` (zero-based indexes) or `creatives` (`header`, `search`, `universal`) narrow it to those, and `"creatives": []` renders the slides alone.
+
+The Studio renders in the background: **Export ZIP** starts a job, the sidebar shows its progress, and the ZIP downloads when it is done, so the page stays free meanwhile. A job draws the project as it was when it was asked for. Jobs live in memory, so one that is cut off by a restart has to be started again; it is not counted.
 
 Account settings and the People page need a browser sign-in; an API token cannot create more tokens or manage people.
 
@@ -342,4 +352,4 @@ Account settings and the People page need a browser sign-in; an API token cannot
 - Logos are other companies' trademarks. Show them only for services the app really works with, and none in the header and search results assets, where Apple does not allow them. The same goes for images you upload: your own logo and artwork, not somebody else's.
 - Uploaded images are kept as PNGs of at most 2048 pixels a side; an SVG is drawn once when it is uploaded.
 - The device frames are drawn in CSS, not Apple's product images.
-- Put the server behind HTTPS. No passwords are stored. `accounts.json` on the data volume holds each person's name, email address and Google account id, the list of allowed addresses, and API tokens as SHA-256 hashes; a token is shown once when it is created.
+- Put the server behind HTTPS. No passwords are stored. `accounts.json` on the data volume holds each person's name, email address, Google account id and number of renders, the list of allowed addresses, and API tokens as SHA-256 hashes; a token is shown once when it is created.

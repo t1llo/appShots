@@ -22,6 +22,11 @@ export interface Meta {
   logoSizes: string[];
   backgrounds: string[];
   deviceColors: string[];
+  /** How a device is drawn, each with a line on what it looks like. */
+  deviceStyles: Record<string, string>;
+  statusBars: Record<string, string>;
+  /** The angle between the devices of the layouts that show several, where the slide sets none. */
+  layoutSpread: Record<string, number>;
   badgeTypes: Record<string, string>;
   badgeTones: Record<string, string>;
   featureStyles: Record<string, string>;
@@ -35,6 +40,8 @@ export interface Meta {
   authEnabled: boolean;
   /** Who is signed in. Null only while the server runs without sign-in. */
   account: { email: string; name: string; admin: boolean } | null;
+  /** How many renders the account has left. Null where they are not counted. */
+  rendersLeft: number | null;
 }
 
 export interface ProjectEntry {
@@ -87,10 +94,28 @@ export function exportSizes(meta: Meta, project: Pick<Project, "targets">, shots
   return ids.filter((id) => meta.targets[id].standard && devices.has(meta.targets[id].device));
 }
 
-export interface RenderResponse extends Pick<Detail, "outputs" | "creativeOutputs"> {
-  files: { target: TargetId }[];
-  creatives: unknown[];
-  warnings: string[];
+/** One run of the renderer, as the server reports it while it works and for an hour after. */
+export interface RenderJob {
+  id: string;
+  /** The project's id and its name. */
+  project: string;
+  name: string;
+  state: "queued" | "running" | "done" | "failed" | "cancelled";
+  /** Pictures drawn so far, and how many the run draws. */
+  done: number;
+  total: number;
+  createdAt: string;
+  finishedAt?: string;
+  /** What a finished run wrote. */
+  files?: number;
+  warnings?: string[];
+  error?: string;
+}
+
+export interface Renders {
+  jobs: RenderJob[];
+  /** Null where renders are not counted. */
+  rendersLeft: number | null;
 }
 
 export const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));

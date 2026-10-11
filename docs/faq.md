@@ -84,6 +84,14 @@ No. The agent reads your code on your Mac. What reaches the server is the screen
 
 Yes. Everything is editable in the Studio, and the agent can keep working on it afterwards. Both edit the same project.
 
+### How many sets can I export?
+
+An account gets {{RENDERS}} renders, and every export uses one. Working in the Studio and looking at the previews uses none. When they are used up, the person who runs the server can give you more. See [Render and export](/docs/export#how-many-renders).
+
+### Do I have to wait while it renders?
+
+No. **Export ZIP** renders in the background. Keep working or switch to another tab, and the ZIP downloads when it is done.
+
 ### Can two people work on one project?
 
 Not yet. A project belongs to one account.

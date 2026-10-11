@@ -1,12 +1,14 @@
+import { randomBytes } from "node:crypto";
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type Browser, chromium } from "playwright";
 import sharp from "sharp";
+import { holdRender } from "./accounts.ts";
 import { config } from "./config.ts";
 import { CREATIVE_CAPACITY } from "./creative.ts";
-import { LOCALE } from "./schema.ts";
+import { LOCALE, type Project } from "./schema.ts";
 import { DEVICE_LABELS, type DeviceKind, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, standardTargets, TARGETS, type TargetId } from "./sizes.ts";
-import { CREATIVE_DIR, findShot, getProject, InputError, listImages, listShots, outDir, type Shot, type Space } from "./store.ts";
+import { CREATIVE_DIR, findShot, getProject, InputError, listImages, listShots, NotFoundError, outDir, type Shot, type Space } from "./store.ts";
 
 export interface RenderRequest {
   targets?: TargetId[];
@@ -55,6 +57,48 @@ export interface RenderResult {
   warnings: string[];
 }
 
+export type RenderState = "queued" | "running" | "done" | "failed" | "cancelled";
+
+/** One run of the renderer, as GET /api/renders and the Studio's render list show it. */
+export interface RenderJob {
+  id: string;
+  /** The project's id and its name. */
+  project: string;
+  name: string;
+  state: RenderState;
+  /** Pictures drawn so far, and how many the run draws. Both are zero while it waits. */
+  done: number;
+  total: number;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  /** What a finished run wrote. */
+  files?: number;
+  warnings?: string[];
+  /** Why a run stopped short. */
+  error?: string;
+}
+
+/** The project as it was when its render was asked for. A run draws that, whatever is edited while it works. */
+interface Frozen {
+  project: Project;
+  shots: Shot[];
+}
+
+interface Run {
+  job: RenderJob;
+  space: string;
+  cancelled: boolean;
+  frozen?: Frozen;
+  finished: Promise<RenderResult>;
+}
+
+class Cancelled extends InputError {
+  constructor() {
+    super("The render was cancelled.");
+  }
+}
+
 let browser: Promise<Browser> | undefined;
 
 function getBrowser(): Promise<Browser> {
@@ -100,24 +144,122 @@ const waiting = new Map<string, number>();
 /** One running plus one queued per account, so nobody can fill the shared queue. */
 const MAX_WAITING = 2;
 
-export function renderProject(space: Space, id: string, request: RenderRequest = {}): Promise<RenderResult> {
+
+/** Every run that waits or works, and the finished ones of the last hour. */
+const runs = new Map<string, Run>();
+const KEPT_MS = 3600_000;
+const KEPT_PER_SPACE = 8;
+
+const ended = (run: Run) => run.job.finishedAt != null;
+
+function forget(): void {
+  const old = Date.now() - KEPT_MS;
+  const kept = new Map<string, number>();
+  // Newest first, so the cap drops the oldest finished runs of an account.
+  for (const run of [...runs.values()].reverse()) {
+    if (!ended(run)) continue;
+    const count = (kept.get(run.space) ?? 0) + 1;
+    kept.set(run.space, count);
+    if (count > KEPT_PER_SPACE || Date.parse(run.job.finishedAt!) < old) runs.delete(run.job.id);
+  }
+}
+
+/** The runs of one account, newest first. */
+export function listRenders(space: Space): RenderJob[] {
+  forget();
+  return [...runs.values()]
+    .filter((run) => run.space === space.id)
+    .map((run) => run.job)
+    .reverse();
+}
+
+export function getRender(space: Space, job: string): RenderJob {
+  const run = runs.get(job);
+  if (!run || run.space !== space.id) throw new NotFoundError("No such render. A finished one is listed for an hour.");
+  return run.job;
+}
+
+/** Stops a run before its next picture. What it has drawn so far stays, and it uses no render. */
+export function cancelRender(space: Space, job: string): RenderJob {
+  const run = runs.get(job);
+  if (!run || run.space !== space.id) throw new NotFoundError("No such render. A finished one is listed for an hour.");
+  if (!ended(run)) run.cancelled = true;
+  return run.job;
+}
+
+/** What a page of a running render draws: the project as it was when the render was asked for. */
+export function frozenFor(space: Space, job: unknown): Frozen | undefined {
+  const run = typeof job === "string" ? runs.get(job) : undefined;
+  return run && run.space === space.id ? run.frozen : undefined;
+}
+
+/**
+ * Queues a render and returns at once with the run. Refuses when the account has two waiting already or no
+ * renders left. `finished` settles when the run does, and somebody has to catch what it throws. `name` is what
+ * the run is called until the project has been read.
+ */
+export function startRender(space: Space, id: string, request: RenderRequest = {}, name = id): { job: RenderJob; finished: Promise<RenderResult> } {
   const count = waiting.get(space.id) ?? 0;
-  if (count >= MAX_WAITING) return Promise.reject(new InputError("A render is already running for this account. Try again when it has finished."));
+  if (count >= MAX_WAITING) throw new InputError("Two renders are already under way for this account. Try again when one has finished.");
+  const settle = holdRender(space.id);
   waiting.set(space.id, count + 1);
-  const run = queue
-    .then(() => renderNow(space, id, request))
+
+  const job: RenderJob = { id: randomBytes(8).toString("hex"), project: id, name, state: "queued", done: 0, total: 0, createdAt: new Date().toISOString() };
+  // Read now, not when the queue gets here, so the run draws what was there when it was asked for.
+  const loaded = Promise.all([getProject(space, id), listShots(space, id)]);
+  loaded.then(
+    ([project]) => {
+      job.name = project.name;
+    },
+    () => {},
+  );
+  const run: Run = { job, space: space.id, cancelled: false, finished: undefined as never };
+  run.finished = queue
+    .then(async () => {
+      if (run.cancelled) throw new Cancelled();
+      const [project, shots] = await loaded;
+      run.frozen = { project, shots };
+      job.state = "running";
+      job.startedAt = new Date().toISOString();
+      return renderNow(run, space, request);
+    })
+    .then(
+      async (result) => {
+        job.state = "done";
+        job.files = result.files.length + result.creatives.length;
+        job.warnings = result.warnings;
+        await settle(true);
+        return result;
+      },
+      async (error: unknown) => {
+        job.state = run.cancelled ? "cancelled" : "failed";
+        // Only what is meant for whoever asked; anything else is the server's own trouble and goes to its log.
+        if (!run.cancelled) job.error = error instanceof InputError || error instanceof NotFoundError ? error.message : "The render stopped with an error on the server.";
+        await settle(false);
+        throw run.cancelled ? new Cancelled() : error;
+      },
+    )
     .finally(() => {
+      job.finishedAt = new Date().toISOString();
+      run.frozen = undefined;
       const left = (waiting.get(space.id) ?? 1) - 1;
       if (left > 0) waiting.set(space.id, left);
       else waiting.delete(space.id);
     });
-  queue = run.catch(() => {});
-  return run;
+  queue = run.finished.catch(() => {});
+  runs.set(job.id, run);
+  forget();
+  return { job, finished: run.finished };
 }
 
-async function renderNow(space: Space, id: string, request: RenderRequest): Promise<RenderResult> {
-  const project = await getProject(space, id);
-  const shots = await listShots(space, id);
+/** Renders and waits for it. */
+export async function renderProject(space: Space, id: string, request: RenderRequest = {}): Promise<RenderResult> {
+  return startRender(space, id, request).finished;
+}
+
+async function renderNow(run: Run, space: Space, request: RenderRequest): Promise<RenderResult> {
+  const { project, shots } = run.frozen!;
+  const { id } = project;
   const defined = PLACEMENT_IDS.filter((placement) => project.creatives[placement]);
   const everything = !request.slides?.length && request.creatives === undefined;
   const placements = everything ? defined : [...new Set(request.creatives ?? [])];
@@ -141,6 +283,7 @@ async function renderNow(space: Space, id: string, request: RenderRequest): Prom
     throw new InputError("This project has nothing to render yet. Add slides with set_slides, or a header or search results asset.");
   }
   const full = indexes.length === project.slides.length;
+  run.job.total = locales.length * (indexes.length * passes.size + placements.length);
 
   const warnings = new Set<string>();
   const images = new Set((await listImages(space, id)).map((image) => image.name));
@@ -194,11 +337,13 @@ async function renderNow(space: Space, id: string, request: RenderRequest): Prom
     try {
       const page = await context.newPage();
       for (const [i, url] of urls.entries()) {
+        if (run.cancelled) throw new Cancelled();
         await page.goto(url, { waitUntil: "load" });
         await page.waitForFunction(() => document.body.dataset.ready === "1", undefined, { timeout: 20_000 });
         const raw = await page.screenshot({ type: "png", clip: { x: 0, y: 0, width: size.width, height: size.height } });
         // App Store Connect rejects PNGs that carry an alpha channel, even a fully opaque one.
         await each(await sharp(raw).removeAlpha().png({ compressionLevel: 9 }).toBuffer(), i);
+        run.job.done++;
       }
     } finally {
       await context.close();
@@ -220,7 +365,7 @@ async function renderNow(space: Space, id: string, request: RenderRequest): Prom
   }
 
   for (const locale of locales) {
-    const query = `locale=${encodeURIComponent(locale)}`;
+    const query = `locale=${encodeURIComponent(locale)}&job=${run.job.id}`;
     for (const [source, wanted] of indexes.length ? passes : []) {
       for (const target of wanted) {
         const dir = path.join(root, locale, target);
