@@ -859,6 +859,80 @@ details > .stack {
 .steps p {
   color: var(--text-2);
 }
+/* Connect: the choice of how to work, then that way as numbered steps. */
+.choices {
+  display: grid;
+  gap: 8px;
+}
+.choice {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.choice:hover {
+  background: var(--hover);
+}
+.choice b {
+  font-weight: 600;
+}
+.choice span {
+  color: var(--text-2);
+}
+.guide {
+  display: grid;
+  gap: 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.guide > li {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding-left: 36px;
+  counter-increment: step;
+}
+.guide > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: -2px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+}
+.guide > li.waiting {
+  opacity: 0.45;
+}
+.guide h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.guide p {
+  color: var(--text-2);
+}
+.guide-note {
+  margin: 20px 0 0 36px;
+}
+dialog :is(.guide, .guide-note) + .foot {
+  margin-top: 24px;
+}
 .copy {
   position: relative;
 }
@@ -1229,6 +1303,10 @@ dialog .foot {
 }
 .home-ways span {
   color: var(--text-2);
+}
+.home-ways + .home-note {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 .home code {
   color: inherit;

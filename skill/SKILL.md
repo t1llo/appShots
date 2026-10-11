@@ -11,11 +11,20 @@ Work through the steps in order. Say in a line or two what you decided at each s
 
 ## 1. Check the setup
 
-Three things have to be there. If one is missing, tell the user the exact command and stop.
+Check these three before anything else.
 
-- **The MCP server `appshots`.** Its tools are `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets` and `render`. If they are missing: `claude mcp add --transport http appshots {{SERVER}}/mcp --header "Authorization: Bearer <token>"`, with a token from **Connect** in the Studio at {{SERVER}}, then a new Claude session.
-- **The `appshots` CLI**, which captures the screen and uploads it. Try `appshots projects`. If the command does not exist, the user downloads `appshots.mjs` from **Connect** in the Studio; it also runs as `node appshots.mjs`. If it is not logged in: `appshots login {{SERVER}}`.
+- **The MCP server `appshots`.** Its tools are `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets` and `render`. Call `list_projects` to see that it answers.
+- **The `appshots` CLI**, which captures the screen and uploads it. It sits next to this skill: `node ~/.claude/skills/appshots/appshots.mjs`. The rest of this skill writes `appshots` for short; use the long form when `appshots` is not a command. Run `appshots projects` to see that it is there and signed in.
 - **Xcode**, for the simulator. If `xcrun simctl` fails because `xcode-select` points at the Command Line Tools, prefix commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
+
+If the MCP tools are missing or answer 401, or the CLI is missing or not signed in, the setup has not been run on this Mac. One command does all of it, and only the user can get it, because it carries their token. Do not hand them separate commands to piece together. Tell them exactly this, as numbered steps, and stop:
+
+1. Open {{SERVER}}, sign in, and click **Connect Claude** in the sidebar.
+2. Choose **Let Claude do everything** and click **Create token**.
+3. Copy the command that appears and paste it into Terminal. It installs this skill and the CLI and connects Claude Code.
+4. Start a new Claude session in this folder and type `/appshots` again.
+
+If the tools still answer 401 in a session started after that setup, an older connection saved for this folder is in the way. Run `claude mcp remove appshots -s local` yourself, then ask for one more new session.
 
 Then call `get_design_guide` and read it. It is the current reference for layouts, backgrounds, fonts, badges, copy and the header and search results assets, and it wins over anything remembered.
 

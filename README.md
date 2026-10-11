@@ -86,17 +86,44 @@ If that is more than you want to carry, switch to **Only the people listed here*
 ### Upgrading from a version with `APPSHOTS_TOKEN`
 
 - `APPSHOTS_TOKEN` is no longer read. The projects it reached are the server's own space, which now belongs to the admin.
-- Claude and the CLI need a personal token instead: sign in, open **Connect**, create one, and run `claude mcp add` and `appshots login` again.
+- Claude and the CLI need a personal token instead: sign in, open **Connect Claude**, create one, and run the command it shows.
 - Accounts made with an email and a password, or through an invite link, are kept: the account and its projects come back on the first Google sign-in with the same address. Their old passwords and tokens are discarded.
 - Sign-in is open to anyone with a Google account unless you picked the list under People or put somebody on it. A server that was invite-only is open after the upgrade; choose **Only the people listed here** to close it again.
 
 ## Connect Claude
 
+**Connect Claude** in the Studio's sidebar asks how you want to work and then gives the steps, with your token already filled in:
+
+| Way | What you do | What it sets up |
+| --- | --- | --- |
+| Let Claude do everything | Paste one command, then type `/appshots` in your app's folder | The skill, the CLI and the MCP connection |
+| Tell Claude what you want | Paste one command, then describe the set to Claude | The MCP connection |
+| Make it by hand | Nothing | Nothing: you work in the Studio |
+
+### One command for everything
+
 ```bash
-claude mcp add --transport http appshots https://appshots.example.com/mcp --header "Authorization: Bearer <token>"
+curl -fsS https://appshots.example.com/install.sh | APPSHOTS_TOKEN=<token> sh
 ```
 
-Claude cannot sign in with Google, so it uses a personal token: **Connect** in the sidebar creates one and fills in the command. Then ask in plain words, for example:
+Connect shows this with a real token in place of `<token>`. It needs Node and Claude Code on the Mac, and does four things:
+
+1. Checks the token against the server and saves it in `~/.config/appshots`.
+2. Puts the CLI in `~/.claude/skills/appshots/appshots.mjs` and links it as `appshots` in `~/.local/bin`, `~/bin` or next to `claude`, whichever is on your PATH.
+3. Installs the `/appshots` skill in `~/.claude/skills/appshots`.
+4. Connects Claude Code to the server's MCP endpoint for every folder (`claude mcp add --scope user`), replacing an older `appshots` entry.
+
+Run it again whenever the server has been updated or the token replaced. `install.sh`, the skill and the CLI hold no secrets, so the server hands them out without sign-in; the token is the only thing that opens anything.
+
+Then open Claude Code in an app's repository, start a new session and type `/appshots`, or just ask for App Store screenshots. Claude reads the code to learn what the app does, builds and runs it in the iOS Simulator (or uses a plugged-in, unlocked iPhone or iPad), fills it with believable content, captures the screens worth showing, writes the headlines, builds the set through the MCP tools, looks at the render and fixes what is off. The skill's source is [skill/SKILL.md](skill/SKILL.md).
+
+### Only the MCP connection
+
+```bash
+claude mcp add --transport http --scope user appshots https://appshots.example.com/mcp --header "Authorization: Bearer <token>"
+```
+
+Then ask in plain words, for example:
 
 > Make App Store screenshots for my habit tracker in project "streaks". Six slides, dark purple look, open with a hero slide with a laurel badge "4.8 · App Store rating" and one for "50K+ downloads", then one slide per feature using the screenshots home, stats and widgets.
 
@@ -104,30 +131,18 @@ Claude answers with a contact sheet of the rendered set, a link to the Studio an
 
 The endpoint authenticates with a bearer header, so it works with clients that can send one (Claude Code, the Agent SDK, `mcp-remote`). It does not implement OAuth.
 
-## Let Claude do the whole set
-
-The server hands out a Claude Code skill at `/skill.md`, with its own address filled in. Install it once:
-
-```bash
-mkdir -p ~/.claude/skills/appshots && curl -fsS https://appshots.example.com/skill.md -o ~/.claude/skills/appshots/SKILL.md
-```
-
-Then open Claude Code in an app's repository and type `/appshots`, or just ask for App Store screenshots. Claude reads the code to learn what the app does, builds and runs it in the iOS Simulator (or uses a plugged-in, unlocked iPhone or iPad), fills it with believable content, captures the screens worth showing, writes the headlines, builds the set through the MCP tools, looks at the render and fixes what is off. It needs the MCP endpoint and the CLI from the two sections around this one, and tells you the command if either is missing.
-
-The skill is plain text with no secrets in it, which is why `/skill.md` needs no sign-in. Its source is [skill/SKILL.md](skill/SKILL.md); **Connect** in the Studio shows the install command with the right address.
-
 ## Capture from your Mac
 
-The CLI is one file with no dependencies. In a checkout, run it as `node cli/appshots.mjs`, or `npm link` once to get an `appshots` command. People without the repository download the same file from **Connect** in the Studio.
+The setup command above installs the CLI. It is one file with no dependencies, so in a checkout it also runs as `node cli/appshots.mjs`, or as `appshots` after `npm link`; `appshots setup <url>` does what the setup command does.
 
 ```bash
-appshots login https://appshots.example.com       # asks for the token, stores it in ~/.config/appshots
 appshots devices                                  # booted simulators and connected devices
 appshots capture --name home --project streaks    # from the booted simulator, uploaded straight away
 appshots capture --name home --device --project streaks   # from the plugged-in, unlocked iPhone or iPad
 appshots capture --name home --clean              # simulator only: 9:41, full battery and signal
 appshots pull streaks --render                    # render everything and unpack it into ./store-screenshots/streaks,
                                                   # header and search results assets included
+appshots login https://appshots.example.com       # only the token, without the skill or the MCP connection
 ```
 
 The `--name` is what slides refer to (`"screenshot": "home"`). Capturing the same name again replaces the screenshot, and every slide using it updates. An iPhone and an iPad screenshot can share a name; each target size picks the matching one.

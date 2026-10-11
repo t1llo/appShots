@@ -94,7 +94,7 @@ function Shell() {
         <div className="nav-group">
           <button className="nav-item" type="button" onClick={() => setDialog("connect")}>
             <Icon path={BOLT} />
-            <span className="nav-text">Connect Claude and the CLI</span>
+            <span className="nav-text">Connect Claude</span>
           </button>
           {account?.admin ? (
             <button className="nav-item" type="button" onClick={() => setDialog("people")}>
@@ -185,7 +185,7 @@ function Home() {
         New project
       </button>
       <button className="btn" type="button" onClick={() => open("connect")}>
-        Connect Claude and the CLI
+        Connect Claude
       </button>
     </Message>
   );

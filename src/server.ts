@@ -171,11 +171,22 @@ app.get("/healthz", (_req, res) => {
   res.type("text").send("ok");
 });
 
-// The Claude skill that runs the whole flow, from the simulator to the rendered set. It holds no secrets,
-// so it is public and one curl installs it. The server fills in its own address.
+// What a Mac needs to work with this server: the Claude skill that runs the whole flow, the CLI that captures
+// and uploads, and the script that installs both and connects Claude Code (`curl <server>/install.sh | sh`).
+// None of them holds a secret, so they are public. The server fills in its own address.
 const skill = await readFile(path.join(root, "skill", "SKILL.md"), "utf8");
+const installer = await readFile(path.join(root, "cli", "install.sh"), "utf8");
 app.get("/skill.md", (req, res) => {
   res.type("text/markdown").set("Cache-Control", "no-cache").send(skill.replaceAll("{{SERVER}}", baseUrl(req)));
+});
+app.get("/install.sh", (req, res) => {
+  const server = baseUrl(req);
+  // The address ends up inside a shell script, and without PUBLIC_URL it is whatever Host the request claimed.
+  if (!/^https?:\/\/[\w.:[\]-]+(\/[\w./~-]*)?$/.test(server)) return void res.status(400).type("text").send("Set PUBLIC_URL to use the installer.\n");
+  res.type("text/plain").set("Cache-Control", "no-cache").send(installer.replaceAll("{{SERVER}}", server));
+});
+app.get("/cli/appshots.mjs", (_req, res) => {
+  res.set("Content-Disposition", 'attachment; filename="appshots.mjs"').sendFile(path.join(root, "cli", "appshots.mjs"));
 });
 
 const fontCss = await buildFontCss();
@@ -290,11 +301,6 @@ app.post("/logout", (req, res) => {
 });
 
 app.use(requireAuth);
-
-// The CLI is one dependency-free file, so people without access to the repository can fetch it here.
-app.get("/cli/appshots.mjs", (_req, res) => {
-  res.set("Content-Disposition", 'attachment; filename="appshots.mjs"').sendFile(path.join(root, "cli", "appshots.mjs"));
-});
 
 // ---------------------------------------------------------------- MCP
 

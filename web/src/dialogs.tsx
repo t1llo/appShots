@@ -1,4 +1,4 @@
-// The four dialogs behind the sidebar: new project, connecting Claude and the CLI, the account, and (for the admin) people.
+// The four dialogs behind the sidebar: new project, connecting Claude, the account, and (for the admin) people.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
@@ -116,70 +116,141 @@ type FreshToken = TokenEntry & { token: string };
 
 const tokensKey = ["account", "tokens"];
 
+/** The three ways to get a set made, most automatic first. Connect asks which one, then walks through it. */
+type Way = "auto" | "ask" | "hand";
+
+const WAYS: { id: Way; title: string; text: string }[] = [
+  { id: "auto", title: "Let Claude do everything", text: "Claude runs your app, captures the screens, writes the headlines and builds the set. One command to set up." },
+  { id: "ask", title: "Tell Claude what you want", text: "Describe the set in a sentence and Claude builds it here. You add the screenshots. One command to connect." },
+  { id: "hand", title: "Make it by hand", text: "Build the set yourself, here in the Studio. Nothing to set up." },
+];
+
 function Connect({ meta, close }: { meta: Meta; close: () => void }) {
   const queryClient = useQueryClient();
-  const { projectId = "<project>" } = useParams({ strict: false });
+  const openDialog = useOpenDialog();
+  const { projectId } = useParams({ strict: false });
+  const [way, setWay] = useState<Way | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const origin = location.origin;
-  const header = meta.authEnabled ? ` --header "Authorization: Bearer ${token ?? "<your token>"}"` : "";
+  // Without sign-in there is no token, and nothing to wait for.
+  const ready = !meta.authEnabled || token != null;
 
   const create = attempt(async () => {
-    setToken((await api<FreshToken>("POST", "/account/tokens", { name: "Claude and CLI" })).token);
+    setToken((await api<FreshToken>("POST", "/account/tokens", { name: "Claude" })).token);
     await queryClient.invalidateQueries({ queryKey: tokensKey });
   });
 
+  if (way == null) {
+    return (
+      <>
+        <h1>Connect Claude</h1>
+        <div className="steps">
+          <p>How do you want to make your screenshots?</p>
+          <div className="choices">
+            {WAYS.map((option) => (
+              <button className="choice" type="button" key={option.id} onClick={() => setWay(option.id)}>
+                <b>{option.title}</b>
+                <span>{option.text}</span>
+              </button>
+            ))}
+          </div>
+          <Done close={close} />
+        </div>
+      </>
+    );
+  }
+
+  // The token comes first on purpose: a command copied with a placeholder in it connects nothing.
+  const tokenStep = !meta.authEnabled ? null : (
+    <li>
+      <h3>Create your token</h3>
+      {token ? (
+        <p>Done. It is in the command below, and shown this once. You can revoke it under Account.</p>
+      ) : (
+        <>
+          <p>Claude cannot sign in with Google, so it uses a token of yours. It reaches your projects only.</p>
+          <div>
+            <button className="btn primary" type="button" data-autofocus onClick={create}>
+              Create token
+            </button>
+          </div>
+        </>
+      )}
+    </li>
+  );
+  const command = (text: string) => (ready ? <CopyBlock text={text} /> : <p className="hint">The command appears here once the token is created.</p>);
+
   return (
     <>
-      <h1>Connect</h1>
-      <div className="steps">
-        {!meta.authEnabled ? null : (
-          <div>
-            <h3>Your token</h3>
-            {token ? (
-              <>
-                <p>Copy it now: it is shown this once. You can revoke it under Account.</p>
-                <CopyBlock text={token} />
-              </>
-            ) : (
-              <>
-                <p>Claude and the CLI cannot sign in with Google, so they use a personal token. It reaches your projects only.</p>
+      <h1>{WAYS.find((option) => option.id === way)!.title}</h1>
+      <ol className="guide">
+        {way === "auto" ? (
+          <>
+            {tokenStep}
+            <li className={ready ? undefined : "waiting"}>
+              <h3>Paste this into Terminal</h3>
+              <p>
+                It installs the <code>/appshots</code> skill and the capture tool, and connects Claude Code to this server. Your Mac needs Claude Code and Node.
+              </p>
+              {command(`curl -fsS ${origin}/install.sh | ${meta.authEnabled ? `APPSHOTS_TOKEN=${token} ` : ""}sh`)}
+            </li>
+            <li className={ready ? undefined : "waiting"}>
+              <h3>Open Claude Code in your app's folder and type</h3>
+              <CopyBlock text="/appshots" />
+              <p>Start a new session so it sees the connection. Claude takes it from there, and the set shows up here.</p>
+            </li>
+          </>
+        ) : way === "ask" ? (
+          <>
+            {tokenStep}
+            <li className={ready ? undefined : "waiting"}>
+              <h3>Paste this into Terminal</h3>
+              <p>It connects Claude Code to this server, for every folder you work in.</p>
+              {command(`claude mcp add --transport http --scope user appshots ${origin}/mcp${meta.authEnabled ? ` --header "Authorization: Bearer ${token}"` : ""}`)}
+            </li>
+            <li className={ready ? undefined : "waiting"}>
+              <h3>Start a new Claude session and ask</h3>
+              <CopyBlock text={`Make App Store screenshots for my habit tracker${projectId ? ` in project "${projectId}"` : ""}: six slides, dark look, one benefit per slide.`} />
+              <p>Drop your screenshots on the project here, before or after. Claude does the layout, the copy and the look.</p>
+            </li>
+          </>
+        ) : (
+          <>
+            <li>
+              <h3>Create a project</h3>
+              {projectId ? (
+                <p>You are in one already.</p>
+              ) : (
                 <div>
-                  <button className="btn primary" type="button" onClick={create}>
-                    Create a token
+                  <button className="btn primary" type="button" onClick={() => openDialog("new")}>
+                    New project
                   </button>
                 </div>
-              </>
-            )}
-          </div>
+              )}
+            </li>
+            <li>
+              <h3>Add your screenshots</h3>
+              <p>Drag them from Finder onto Screenshots at the bottom of the project. In the simulator, ⌘S saves one to the desktop.</p>
+            </li>
+            <li>
+              <h3>Write the headlines and export</h3>
+              <p>Pick a layout for each slide, set the look once for the whole set, then Export ZIP.</p>
+            </li>
+          </>
         )}
-        <div>
-          <h3>Claude</h3>
-          <p>Add the MCP endpoint to Claude Code, then ask for screenshots in plain words: the copy, the look, the badges.</p>
-          <CopyBlock text={`claude mcp add --transport http appshots ${origin}/mcp${header}`} />
-        </div>
-        <div>
-          <h3>Capture from your Mac</h3>
-          <p>
-            The CLI grabs the running simulator, or a plugged-in iPhone or iPad with --device, and uploads the result. It is one file that needs Node and nothing else: run it as <code>node appshots.mjs</code>, or put it on your PATH as{" "}
-            <code>appshots</code>.
-          </p>
-          <div>
-            <a className="btn small" href="/cli/appshots.mjs" download="appshots.mjs">
-              Download appshots.mjs
-            </a>
-          </div>
-          <CopyBlock text={`appshots login ${origin}`} />
-          <CopyBlock text={`appshots capture --name home --project ${projectId}`} />
-        </div>
-        <div>
-          <h3>Let Claude do the whole set</h3>
-          <p>
-            With this skill Claude runs your app in the simulator, or uses your plugged-in iPhone, captures the screens worth showing, writes the headlines and builds the set here. Install it once, then type <code>/appshots</code> in your
-            app's repository.
-          </p>
-          <CopyBlock text={`mkdir -p ~/.claude/skills/appshots && curl -fsS ${origin}/skill.md -o ~/.claude/skills/appshots/SKILL.md`} />
-        </div>
-        <Done close={close} />
+      </ol>
+      {way === "auto" ? (
+        <p className="hint guide-note">
+          The same setup gives you <code>appshots</code> in Terminal, to capture the simulator yourself: <code>appshots capture --name home --project {projectId ?? "<project>"} --clean</code>
+        </p>
+      ) : null}
+      <div className="foot">
+        <button className="btn" type="button" onClick={() => setWay(null)}>
+          Back
+        </button>
+        <button className="btn primary" type="button" data-autofocus={ready ? true : undefined} onClick={close}>
+          Done
+        </button>
       </div>
     </>
   );
