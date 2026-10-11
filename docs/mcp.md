@@ -22,7 +22,7 @@ A token reaches the projects of the account it belongs to and nothing else. See 
 
 1. `get_design_guide`, once, before anything else.
 2. `create_project`, or `list_projects` and `get_project` to continue one.
-3. Upload the raw screenshots. This goes through the [command line](/docs/cli) or the [HTTP API](/docs/api), because MCP has no way to send files.
+3. Upload the raw screenshots. This goes through the [command line](/docs/cli) or the [HTTP API](/docs/api), because MCP has no way to send files. A project in several languages can hold each screenshot once per language.
 4. `set_slides`.
 5. `render`, and look at the pictures it returns.
 6. `update_slide` and `render` with `slides` for single fixes.
@@ -49,7 +49,7 @@ Returns the project's id and how to upload screenshots into it.
 
 ### get_project
 
-`project` is the id. Returns the theme, the slides, the header and search results images, the screenshots and images uploaded so far, and `exportSizes`, the sizes a render writes.
+`project` is the id. Returns the theme, the slides, the header and search results images, the screenshots and images uploaded so far, and `exportSizes`, the sizes a render writes. Each screenshot is listed with its `device`, and with its `locale` when it was uploaded for one language only. See [Languages](/docs/languages#screenshots-per-language).
 
 ### update_project
 

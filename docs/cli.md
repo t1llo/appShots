@@ -39,7 +39,7 @@ appshots run --capture home --to streaks
 | `--duo` | On the iPhone Duo instead. Needs an Xcode that has its simulator |
 | `--sim <name or udid>` | On this simulator instead. It is booted if need be |
 | `--dark`, `--light` | Sets the simulator's appearance first |
-| `--lang <code>` | Starts the app in this language, such as `de` or `pt-BR` |
+| `--lang <code>` | Starts the app in this language, such as `de` or `pt-BR`. A screenshot taken with `--capture` is filed under that language in the project |
 | `--capture <name>` | Takes the screenshot as well, with a clean status bar |
 | `--to <project>` | Uploads that screenshot to this project |
 | `--wait <seconds>` | How long the app gets to settle before the capture. Default 2 |
@@ -71,12 +71,14 @@ Options of `capture`, which `shoot` takes too:
 | `--clean` | Simulator only: shows 9:41, full battery and full signal |
 | `--project <id>` | Uploads it to this project straight away. `--to` works too |
 | `--as <iphone, duo or ipad>` | Files it under this device. Only needed when the server cannot tell from the size. `upload`, `run` and `launch` take it too |
+| `--lang <code>` | The language the screenshot shows the app in, one the project has. Left out, it is for the project's first language. See [Languages](/docs/languages#screenshots-per-language) |
 | `--out <dir>` | Where the PNG is saved. Default `./raw-shots` |
 
 ## Upload and download
 
 ```bash
 appshots upload streaks ./screens
+appshots upload streaks ./screens-de --lang de-DE
 appshots upload streaks logo.svg --image
 appshots pull streaks --render
 ```
@@ -84,7 +86,7 @@ appshots pull streaks --render
 | Command | What it does |
 | --- | --- |
 | `appshots projects` | Lists your projects |
-| `appshots upload <project> <files or folders…>` | Uploads screenshots. The name is the file name, or `--name` for a single file. `--as duo` files them under the iPhone Duo. `--image` uploads logos and artwork instead |
+| `appshots upload <project> <files or folders…>` | Uploads screenshots. The name is the file name, or `--name` for a single file. `--as duo` files them under the iPhone Duo. `--lang de-DE` files them under that language. `--image` uploads logos and artwork instead |
 | `appshots pull <project> [--out <dir>]` | Downloads the rendered set into `./store-screenshots/<project>`, one folder per display of App Store Connect. `--render` renders first |
 | `appshots open [project]` | Opens the Studio in the browser |
 

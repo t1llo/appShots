@@ -48,6 +48,8 @@ export interface ProjectEntry {
 export interface Shot {
   name: string;
   device: DeviceKind;
+  /** The language it was made for. Without one it is the first language's, which every other language shows until it has its own. */
+  locale?: string;
   file: string;
   width: number;
   height: number;
@@ -140,10 +142,14 @@ export const slugify = (value: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 48) || "shot";
 
-export function parseLocales(value: string): string[] {
-  const list = [...new Set(value.split(/[\s,]+/).filter(Boolean))];
-  if (list.length === 0 || list.some((code) => !LOCALE.test(code))) throw new Error("Languages are codes like en-US or de-DE, separated by commas.");
-  return list;
+/** Of the screenshots of one name, the one a language shows, picked as the renderer picks it: its own, else the first language's. */
+export const shotIn = (shots: Shot[], locale: string): Shot | undefined =>
+  shots.find((shot) => shot.locale?.toLowerCase() === locale.toLowerCase()) ?? shots.find((shot) => !shot.locale) ?? shots[0];
+
+/** The screenshot a device shows under a name in a language. Another device's stands in when it has none. */
+export function shotFor(shots: Shot[], name: string, device: DeviceKind, locale: string): Shot | undefined {
+  const named = shots.filter((shot) => shot.name === name);
+  return shotIn(named.filter((shot) => shot.device === device), locale) ?? shotIn(named, locale);
 }
 
 export function readText(value: Text | undefined, locale: string): string {

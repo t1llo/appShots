@@ -45,11 +45,13 @@ curl -s -X PUT {{SERVER}}/api/projects/streaks/shots/home \
 
 | Request | What it does |
 | --- | --- |
-| `PUT /api/projects/:id/shots/:name` | Uploads a raw screenshot under that name. PNG, JPEG or WebP, up to 40 MB. An existing one with that name and device kind is replaced |
-| `PATCH /api/projects/:id/shots/:file` | Files one under another device. Body: `{ "device": "iphone" }`, `"duo"` or `"ipad"`. Replaces what that device had under the name |
+| `PUT /api/projects/:id/shots/:name` | Uploads a raw screenshot under that name. PNG, JPEG or WebP, up to 40 MB. An existing one with that name, device and language is replaced |
+| `PATCH /api/projects/:id/shots/:file` | Files one under another device, another language, or both. Body: `{ "device": "ipad" }`, `{ "locale": "de-DE" }`, or `{ "locale": null }` for the first language. Replaces what was there under the name |
 | `DELETE /api/projects/:id/shots/:file` | Deletes one. `:file` is the `file` value from the project's `shots` list |
 
 iPhone, iPhone Duo or iPad is read from the size of the image. Add `?device=iphone`, `?device=duo` or `?device=ipad` to the upload to say it yourself. See [Sizes](/docs/sizes#iphone-iphone-duo-or-ipad).
+
+A screenshot is for the project's first language unless you add `?locale=de-DE`. The language has to be one of the project's `locales`, and `de` finds `de-DE`. Each entry of the project's `shots` list says which `locale` it is for; the first language's have none. See [Languages](/docs/languages#screenshots-per-language).
 
 ## Logos and images
 

@@ -444,12 +444,15 @@ api.delete("/projects/:id", async (req, res) => {
 api.put("/projects/:id/shots/:name", express.raw({ type: () => true, limit: "40mb" }), async (req, res) => {
   if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new InputError("Send the image file as the request body.");
   const device = isDeviceKind(req.query.device) ? req.query.device : undefined;
-  res.status(201).json(await saveShot(spaceOf(res), req.params.id, req.params.name, req.body, device));
+  const locale = req.query.locale == null || req.query.locale === "" ? undefined : localeSchema.parse(req.query.locale);
+  res.status(201).json(await saveShot(spaceOf(res), req.params.id, req.params.name, req.body, device, locale));
 });
 api.patch("/projects/:id/shots/:file", async (req, res) => {
-  await getProject(spaceOf(res), req.params.id);
-  const { device } = z.object({ device: z.enum(DEVICE_KINDS) }).parse(req.body);
-  res.json(await moveShot(spaceOf(res), req.params.id, req.params.file, device));
+  const to = z
+    .object({ device: z.enum(DEVICE_KINDS).optional(), locale: localeSchema.nullable().optional() })
+    .refine((body) => body.device !== undefined || body.locale !== undefined, "Send device, locale or both.")
+    .parse(req.body);
+  res.json(await moveShot(spaceOf(res), req.params.id, req.params.file, to));
 });
 api.delete("/projects/:id/shots/:file", async (req, res) => {
   await getProject(spaceOf(res), req.params.id);

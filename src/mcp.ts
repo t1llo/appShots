@@ -34,6 +34,7 @@ function uploadHelp(base: string, id: string): string {
     `- With the bundled CLI: \`appshots upload ${id} <files or folders>\` sends screenshots that exist already. \`appshots capture --name home --project ${id} --clean\` grabs the booted simulator; add \`--device\` for a connected iPhone or iPad. \`appshots launch <bundle id> --capture home --to ${id} -- <launch arguments>\` starts an installed app on one screen and captures it in one go. \`appshots check\` reports what there is to work with.`,
     `- With curl: \`curl -fsS -X PUT -H "Authorization: Bearer $APPSHOTS_TOKEN" -H "Content-Type: image/png" --data-binary @home.png "${base}/api/projects/${id}/shots/home"\` (the token is the one this MCP connection uses)`,
     "The last path segment is the screenshot name slides refer to. iPhone, iPhone Duo or iPad is told from the size of the picture, and one name can hold a variant for each. `get_project` lists what each one was filed under; when that is wrong, upload it again with `--as iphone`, `--as duo` or `--as ipad` (`?device=` with curl).",
+    "A project in several languages can hold each screenshot once per language, under the same name. Upload the first language's as above: every other language shows those until it has its own. Then start the app in the next language and upload under the same names with `--lang de-DE` (`?locale=de-DE` with curl); `appshots launch <bundle id> --lang de-DE --capture home --to " + id + "` does both in one go. The language has to be one of the project's `locales`, and slides keep naming the screenshot as before: the render picks the variant of the language it draws.",
     `A logo or other artwork for the slides (see Logo and images) goes up the same way: \`appshots upload ${id} logo.png --image\`, or with curl to \`${base}/api/projects/${id}/images/<name>\`. PNG, SVG, JPEG and WebP are taken, and transparency is kept.`,
   ].join("\n");
 }
@@ -153,7 +154,7 @@ The Brands group holds the logos of other companies, as simplified marks that an
 ## Copy
 - Headline: two to five words, one benefit per slide, verb first where it fits. It is set large so it still reads at the small size the store shows screenshots in search results; a longer one shrinks to fit, so shorten the words before reaching for \`textScale\`. Wrap a word in *asterisks* to tint it with \`accentColor\` (with no accent set, the rest of the headline dims instead). \`\\n\` forces a line break.
 - Subheadline: one short sentence, or leave it out.
-- Any text field also accepts \`{"en":"…","de":"…"}\`; list the locales on the project and every one is rendered.
+- Any text field also accepts \`{"en":"…","de":"…"}\`; list the locales on the project and every one is rendered. The first locale is the fallback, for text and for screenshots alike: a language without its own screenshot of a name shows the first language's (\`get_project\` lists what there is, and Uploading above says how to add one per language).
 - Slide 1 does the selling: lead with the main benefit, or use the \`hero\` layout with real social proof. Vary layouts across the set so it does not read as one template repeated.
 
 ## Header and search results assets
@@ -183,7 +184,7 @@ function describe(project: Project, shots: Shot[], images: StoredImage[], base: 
     theme: project.theme,
     slides: project.slides.map((slide, i) => ({ slide: i + 1, ...slide })),
     creativeAssets: project.creatives,
-    screenshots: shots.map((shot) => ({ name: shot.name, device: shot.device, size: `${shot.width}×${shot.height}` })),
+    screenshots: shots.map((shot) => ({ name: shot.name, device: shot.device, ...(shot.locale ? { locale: shot.locale } : {}), size: `${shot.width}×${shot.height}` })),
     images: images.map((image) => ({ name: image.name, size: `${image.width}×${image.height}` })),
     exportSizes: defaultTargets(shots, project.targets),
     studio: `${base}/#/${project.id}`,

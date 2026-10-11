@@ -4,7 +4,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { createContext, type FormEvent, type ReactNode, useContext, useState } from "react";
-import { api, day, detailQuery, errorText, type Meta, parseLocales, plural, type Project, projectsQuery } from "./api.ts";
+import { api, day, detailQuery, errorText, type Meta, plural, type Project, projectsQuery } from "./api.ts";
+import { LanguageList } from "./languages.tsx";
 import { CopyBlock, Dialog, Field, Select, toast } from "./ui.tsx";
 
 type Named = { id: string; name: string };
@@ -85,7 +86,7 @@ function NewProject({ close }: { close: () => void }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [name, setName] = useState("");
-  const [locales, setLocales] = useState("en-US");
+  const [locales, setLocales] = useState(["en-US"]);
   const [error, setError] = useState("");
 
   const submit = async (event: FormEvent) => {
@@ -93,7 +94,7 @@ function NewProject({ close }: { close: () => void }) {
     try {
       const project = await api<Project>("POST", "/projects", {
         name: name.trim(),
-        locales: parseLocales(locales),
+        locales,
         slides: [{ layout: "device-bottom", headline: "Say what your app does", subheadline: "One short supporting line" }],
       });
       await queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey });
@@ -111,9 +112,11 @@ function NewProject({ close }: { close: () => void }) {
         <Field label="Name">
           <input type="text" required maxLength={80} placeholder="My App" data-autofocus value={name} onChange={(event) => setName(event.target.value)} />
         </Field>
-        <Field label="Languages" hint="Store locales, comma-separated. You can add more later.">
-          <input type="text" spellCheck={false} value={locales} onChange={(event) => setLocales(event.target.value)} />
-        </Field>
+        <div className="field">
+          <span className="label">Languages</span>
+          <LanguageList locales={locales} onChange={setLocales} />
+          <span className="hint">The languages your App Store page is in. The set is made once for each, and you can add more later.</span>
+        </div>
         {error ? <div className="inline-error">{error}</div> : null}
         <div className="foot">
           <button className="btn" type="button" onClick={close}>

@@ -156,7 +156,7 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
   const scale = creative.device?.scale ?? 1;
   const prefer = isDeviceKind(deviceStyle.frame) ? deviceStyle.frame : "iphone";
   const names = (creative.screenshots ?? []).slice(0, CREATIVE_CAPACITY[layout]);
-  const placed = names.map((name) => ({ name, shot: findShot(shots, name, prefer) }));
+  const placed = names.map((name) => ({ name, shot: findShot(shots, name, prefer, locale) }));
   const shotUrl = (shot: Shot) => `/files/${project.id}/shots/${shot.file}?v=${shot.version}`;
 
   const background = await resolveBackground(creative.background ?? theme.background, shotsPath, placed[0]?.shot);

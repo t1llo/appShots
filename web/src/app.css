@@ -740,6 +740,20 @@ input.title:focus-visible {
 .shot .remove:focus-visible {
   opacity: 1;
 }
+/* A screenshot of the first language, shown where the language picked has none of its own yet. */
+.shot.borrowed img {
+  opacity: 0.45;
+}
+.shot .tag.from {
+  top: 104px;
+}
+.shot .remove.add {
+  opacity: 1;
+}
+.shot .remove.add .icon {
+  width: 13px;
+  height: 13px;
+}
 /* Logos and other artwork: shown whole, on a chequered ground that both a white and a black logo stand out from. */
 .shots.art .shot img {
   height: 92px;
@@ -1279,6 +1293,74 @@ input.title:focus-visible {
   background: var(--bg);
   box-shadow: var(--shadow-card);
   color: var(--text);
+}
+/* The language switch, and the menu beside it that adds one. */
+.language-pick {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+/* What a section's heading holds at its right: a switch, an upload button. */
+.head-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+/* Beside the slides it leads the device switch. The hint before them takes the room, so both sit at the right. */
+.section-head.wrap .language-pick + .device-pick {
+  margin-left: 0;
+}
+.language-pick > select:not(.add-language) {
+  width: auto;
+  max-width: 200px;
+  min-height: 28px;
+  font-size: 13px;
+}
+select.add-language {
+  width: auto;
+  min-height: 28px;
+  padding: 0 10px;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+select.add-language:hover:not(:disabled) {
+  background-color: var(--hover);
+  color: var(--text);
+}
+/* The languages of a project, one row each. */
+.languages {
+  display: grid;
+  gap: 2px;
+}
+.language {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font-size: 13px;
+}
+.language .icon-btn {
+  flex: none;
+  height: 28px;
+}
+.languages select.add-language {
+  justify-self: start;
+  margin-left: -10px;
+}
+.pill {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
 }
 /* The sizes a project exports, one column of boxes per device. */
 .sizes {

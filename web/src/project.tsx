@@ -21,16 +21,19 @@ import {
   projectsQuery,
   type RenderResponse,
   type Shot,
+  shotIn,
   slugify,
   type StoredImage,
   type TargetId,
 } from "./api.ts";
 import { openProject, useOpenDialog } from "./dialogs.tsx";
 import { type Change, CreativeEditor, PLACED_SPOTS, ProjectEditor, Scope, SlideEditor } from "./editor.tsx";
+import { languageName, LanguageSwitch } from "./languages.tsx";
 import { Icon, toast } from "./ui.tsx";
 
 const PENCIL = "M10.6 2.6l2.8 2.8M2.5 13.5l.6-3.1 7.9-7.9 2.5 2.5-7.9 7.9z";
 const TRASH = "M2.8 4.2h10.4M6.3 4.2V2.6h3.4v1.6M4.1 4.2l.6 9.2h6.6l.6-9.2M6.7 6.8v4.2M9.3 6.8v4.2";
+const UPLOAD = "M8 10.6V2.8M4.9 5.7L8 2.6l3.1 3.1M2.8 10.4v2.8h10.4v-2.8";
 
 const SLIDE_HEIGHT = 440;
 const ASSET_HEIGHT = 190;
@@ -302,7 +305,16 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     return () => void (document.title = "appShots Studio");
   }, [draft.name]);
 
-  const locale = draft.locales.includes(chosenLocale) ? chosenLocale : draft.locales[0]!;
+  /** The first language is the one whose texts and screenshots the others show until they have their own. */
+  const first = draft.locales[0]!;
+  const locale = draft.locales.includes(chosenLocale) ? chosenLocale : first;
+  const addLanguage = (code: string) => {
+    update((project) => void project.locales.push(code), true);
+    setLocale(code);
+    toast(`${languageName(code)} added. It shows the ${languageName(first)} texts and screenshots until it has its own.`, "", 7000);
+  };
+  /** Whether a screenshot was made for the language shown. Those without a language are the first language's. */
+  const own = (shot: Shot) => (shot.locale ?? first).toLowerCase() === locale.toLowerCase();
   const slideIndex = selection?.kind === "slide" && selection.index < draft.slides.length ? selection.index : null;
   const placement = selection?.kind === "creative" && draft.creatives[selection.placement] ? selection.placement : null;
   const placements = Object.keys(meta.placements) as PlacementId[];
@@ -336,7 +348,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   /** Files a screenshot under another device, for one whose size did not give it away. */
   const moveShot = async (shot: Shot, device: DeviceKind) => {
     const label = meta.devices.find((entry) => entry.id === device)!.label;
-    if (shots.some((other) => other.name === shot.name && other.device === device) && !confirm(`"${shot.name}" already has a screenshot for the ${label}. Replace it?`)) return;
+    if (shots.some((other) => other.name === shot.name && other.device === device && other.locale === shot.locale) && !confirm(`"${shot.name}" already has a screenshot for the ${label}. Replace it?`)) return;
     try {
       await api("PATCH", `/projects/${id}/shots/${shot.file}`, { device });
       await reload();
@@ -346,7 +358,8 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   };
 
   const removeShot = async (shot: Shot) => {
-    if (!confirm(`Delete the screenshot "${shot.name}"?`)) return;
+    const others = shots.some((other) => other !== shot && other.name === shot.name && other.device === shot.device);
+    if (!confirm(shot.locale && others ? `Delete the ${languageName(shot.locale)} screenshot "${shot.name}"? ${languageName(shot.locale)} then shows the ${languageName(first)} one again.` : `Delete the screenshot "${shot.name}"?`)) return;
     try {
       await api("DELETE", `/projects/${id}/shots/${shot.file}`);
       await reload();
@@ -356,7 +369,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   };
 
   const upload = useCallback(
-    async (files: File[], kind: "shot" | "image" = "shot") => {
+    async (files: File[], kind: "shot" | "image" = "shot", as?: string) => {
       const pictures = files.filter((file) => file.type.startsWith("image/"));
       if (pictures.length === 0) return toast("Those are not images.", "error");
       setStatus(`Uploading ${pictures.length}…`);
@@ -372,13 +385,26 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
         await save();
         return void (await queryClient.invalidateQueries({ queryKey: detailQuery(id).queryKey }));
       }
+      // A language added a moment ago has to be the project's before a screenshot can be filed under it.
+      await save();
+      const known = new Set(shots.map((shot) => shot.name));
+      const language = locale === first ? "" : `?locale=${encodeURIComponent(locale)}`;
       const uploaded: Shot[] = [];
       for (const file of pictures) {
         try {
-          uploaded.push(await api<Shot>("PUT", `/projects/${id}/shots/${slugify(file.name.replace(/\.[^.]+$/, ""))}`, file));
+          uploaded.push(await api<Shot>("PUT", `/projects/${id}/shots/${as ?? slugify(file.name.replace(/\.[^.]+$/, ""))}${language}`, file));
         } catch (error) {
           toast(`${file.name}: ${errorText(error)}`, "error");
         }
+      }
+      // In another language, a screenshot takes the place of the first language's only under the same name.
+      const fresh = [...new Set(uploaded.filter((shot) => shot.locale && !known.has(shot.name)).map((shot) => `"${shot.name}"`))];
+      if (fresh.length && known.size) {
+        toast(
+          `${fresh.join(", ")} ${fresh.length === 1 ? "is a new name" : "are new names"}, so every language shows ${fresh.length === 1 ? "it" : "them"}. To give ${languageName(locale)} its own version of a screenshot, name the file like it, or use the arrow on that screenshot.`,
+          "warn",
+          10000,
+        );
       }
       // Fresh uploads fill slides that are still waiting for a screenshot, so a new project comes alive on the first drop.
       const { slides } = latest.current;
@@ -390,7 +416,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
       await save();
       await queryClient.invalidateQueries({ queryKey: detailQuery(id).queryKey });
     },
-    [id, queryClient, save, setStatus, update],
+    [id, queryClient, save, setStatus, update, shots, locale, first],
   );
   useEffect(() => {
     dropTarget.upload = (files, kind) => void upload(files, kind);
@@ -538,7 +564,8 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   };
   const shapes = shapesOf(device).includes(target) ? shapesOf(device) : [target, ...shapesOf(device)];
   const deviceOrder = meta.devices.map((entry) => entry.id);
-  const orderedShots = [...shots].sort((a, b) => deviceOrder.indexOf(a.device) - deviceOrder.indexOf(b.device));
+  // One tile per name and device: what the language shown has there, which is the first language's until it gets its own.
+  const shownShots = deviceOrder.flatMap((kind) => shotNames.flatMap((name) => shotIn(shots.filter((shot) => shot.device === kind && shot.name === name), locale) ?? []));
   const mixed = new Set(shots.map((shot) => shot.device)).size > 1;
   const slideScale = SLIDE_HEIGHT / size.height;
   const used = new Set([...draft.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]), ...placements.flatMap((where) => draft.creatives[where]?.screenshots ?? [])]);
@@ -564,15 +591,6 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
         <span className={`status${status.error ? " error" : ""}`} role="status">
           {status.text}
         </span>
-        {draft.locales.length > 1 ? (
-          <select className="ghost" aria-label="Preview language" title="Preview language" value={locale} onChange={(event) => setLocale(event.target.value)}>
-            {draft.locales.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
-        ) : null}
         <button className="btn primary" type="button" disabled={exporting} onClick={() => void exportZip()}>
           {exporting ? "Rendering…" : "Export ZIP"}
         </button>
@@ -620,32 +638,40 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
           </div>
 
           <section>
-            <div className="section-head">
+            <div className="section-head wrap">
               <h2>Screenshots</h2>
-              <span className="hint">{shots.length ? "Click one to put it in the selected slide or asset." : ""}</span>
-              <span className="spacer" />
-              <label className="btn small">
-                Upload
-                <input
-                  type="file"
-                  multiple
-                  accept="image/png,image/jpeg,image/webp"
-                  hidden
-                  onChange={(event) => {
-                    void upload([...(event.target.files ?? [])]);
-                    event.target.value = "";
-                  }}
-                />
-              </label>
+              <span className="hint">
+                {!shots.length
+                  ? ""
+                  : locale === first
+                    ? "Click one to put it in the selected slide or asset."
+                    : `The dimmed ones are ${languageName(first)}. Upload the ${languageName(locale)} ones under the same names.`}
+              </span>
+              <div className="head-actions">
+                {draft.locales.length > 1 ? <LanguageSwitch locales={draft.locales} value={locale} onChange={setLocale} /> : null}
+                <label className="btn small">
+                  Upload
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/png,image/jpeg,image/webp"
+                    hidden
+                    onChange={(event) => {
+                      void upload([...(event.target.files ?? [])]);
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
             </div>
             <div className="shots">
-              {orderedShots.map((shot) => (
+              {shownShots.map((shot) => (
                 <div
                   key={shot.file}
-                  className={`shot${used.has(shot.name) ? " used" : ""}`}
+                  className={`shot${used.has(shot.name) ? " used" : ""}${own(shot) ? "" : " borrowed"}`}
                   role="button"
                   tabIndex={0}
-                  title={`${shot.name} · ${shot.width}×${shot.height}`}
+                  title={`${shot.name} · ${shot.width}×${shot.height}${own(shot) ? "" : ` · the ${languageName(shot.locale ?? first)} one, until ${languageName(locale)} has its own`}`}
                   onClick={() => assignShot(shot)}
                   onKeyDown={(event) => event.key === "Enter" && event.target === event.currentTarget && assignShot(shot)}
                 >
@@ -667,24 +693,43 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
                       ))}
                     </select>
                   ) : null}
-                  <button
-                    className="remove"
-                    type="button"
-                    title="Delete screenshot"
-                    aria-label={`Delete ${shot.name}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void removeShot(shot);
-                    }}
-                  >
-                    ×
-                  </button>
+                  {own(shot) ? (
+                    <button
+                      className="remove"
+                      type="button"
+                      title="Delete screenshot"
+                      aria-label={`Delete ${shot.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void removeShot(shot);
+                      }}
+                    >
+                      ×
+                    </button>
+                  ) : (
+                    <>
+                      <span className="tag from">{shot.locale ?? first}</span>
+                      <label className="remove add" title={`Upload the ${languageName(locale)} screenshot of "${shot.name}"`} onClick={(event) => event.stopPropagation()}>
+                        <Icon path={UPLOAD} />
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          hidden
+                          aria-label={`Upload the ${languageName(locale)} screenshot of ${shot.name}`}
+                          onChange={(event) => {
+                            void upload([...(event.target.files ?? [])].slice(0, 1), "shot", shot.name);
+                            event.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </>
+                  )}
                   <span className="name">{shot.name}</span>
                 </div>
               ))}
               <div className="dropzone">
                 {shots.length ? (
-                  <div>Drop more screenshots here</div>
+                  <div>{locale === first ? "Drop more screenshots here" : `Drop the ${languageName(locale)} screenshots here`}</div>
                 ) : (
                   <div>
                     Drop screenshots here, or capture one from your Mac:
@@ -755,7 +800,8 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
           <section className="block">
             <div className="section-head wrap">
               <h2>Slides</h2>
-              <span className="hint">One design per device, exported at every size.</span>
+              <span className="hint">{draft.locales.length > 1 ? "One design per device, exported at every size and in every language." : "One design per device, exported at every size."}</span>
+              <LanguageSwitch locales={draft.locales} value={locale} onChange={setLocale} onAdd={addLanguage} />
               <div className="device-pick">
                 <div className="segmented" role="radiogroup" aria-label="Device the slides are shown for">
                   {meta.devices.map((entry) => (

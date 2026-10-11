@@ -173,6 +173,15 @@ appshots capture --name home --project <project> --device          # the plugged
 
 For the iPad or the Duo set, capture the same names on that simulator. One name holds one screenshot of each device, and every slide picks the one of the device it is drawn for.
 
+For another language, when the user asked for it and the app itself is translated: list the language in the project's `locales` first, then capture the same names again with `--lang`, which starts the app in that language and files the screenshot under it:
+
+```bash
+appshots launch <bundle id> --lang de-DE --capture stats --to <project> -- <launch arguments>
+appshots upload <project> <folder> --lang de-DE      # or files the user already has in that language
+```
+
+The slides stay as they are: each language's set shows its own screenshot of a name, and the first language's where it has none. So an app that is not translated needs no second round of captures, only translated copy.
+
 The PNGs are also saved in `./raw-shots`. Open each one and look at it before moving on; capture again under the same name to replace it. Do not commit `raw-shots/`.
 
 ### A logo and other artwork
@@ -195,7 +204,7 @@ appshots upload <project> <the 1024 px icon in the asset catalogue> --image --na
 - Badges only with the real figures and reviews the user gave you in step 2. Without any, leave badges out. Invented ones get the app rejected.
 - A row of logos only for services the app really works with, as the user named them in step 2.
 - The app's logo belongs on the first slide, not on every one. Other artwork: one to three images on a slide, clear of the headline and of the part of the screen the slide is about.
-- Write in the app's main language. Add other languages only when asked, as `{"en-US": "...", "de-DE": "..."}` maps, with the locales listed on the project.
+- Write in the app's main language. Add other languages only when asked, as `{"en-US": "...", "de-DE": "..."}` maps, with the locales listed on the project. The first locale is the one the others fall back to, for texts and screenshots alike.
 
 ## 8. Build and render
 

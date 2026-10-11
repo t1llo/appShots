@@ -756,9 +756,9 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const theme = project.theme;
   const layout: LayoutId = slide.layout ?? "device-bottom";
 
-  const shot = findShot(shots, slide.screenshot, target.device);
-  const shot2 = findShot(shots, slide.screenshot2, target.device);
-  const shot3 = findShot(shots, slide.screenshot3, target.device);
+  const shot = findShot(shots, slide.screenshot, target.device, locale);
+  const shot2 = findShot(shots, slide.screenshot2, target.device, locale);
+  const shot3 = findShot(shots, slide.screenshot3, target.device, locale);
   const shotUrl = (s: Shot | undefined) => (s ? `/files/${project.id}/shots/${s.file}?v=${s.version}` : undefined);
   const needsIsland = async (s: Shot | undefined) =>
     !s || s.device !== "iphone" || !(await hasBakedIsland(path.join(shotsPath, s.file), s.version, s.width));

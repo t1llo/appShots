@@ -78,7 +78,7 @@ Visitors who are not signed in see the public home page. Its **Open Studio** but
 - **Only the people listed here** closes it. Add the Google address of each person you want to let in; anyone else is turned away after choosing their Google account.
 - **Remove** deletes a person's account with all of its projects, and takes them off the list. Their sessions and tokens stop working at once.
 
-People manage their own tokens, or delete their account, under **Account**. Accounts other than the admin are capped at 20 projects and 40 screenshots per project (`USER_MAX_PROJECTS`, `USER_MAX_SHOTS`), and one account renders one set at a time.
+People manage their own tokens, or delete their account, under **Account**. Accounts other than the admin are capped at 20 projects and 40 screenshots per project and language (`USER_MAX_PROJECTS`, `USER_MAX_SHOTS`), and one account renders one set at a time.
 
 ### Sign in with Google
 
@@ -96,7 +96,7 @@ While the OAuth consent screen is in "Testing", Google itself only lets in the t
 The server makes no paid calls. The agent runs on each person's own subscription, on their own machine, so more people cost nothing per use. What they use is this one machine:
 
 - **CPU and memory.** A render drives a headless Chromium: about a second per slide on a recent Mac, more on a small server, and a few hundred megabytes of memory while it runs. Renders are queued one at a time for the whole server, so many people at once means waiting, not a bigger bill.
-- **Disk.** This is what grows. An account can hold 20 projects of 40 screenshots, each up to 40 MB when uploaded, plus the rendered sets. A handful of people is nothing; a few hundred accounts filled to the cap would not fit on a small disk. Lower `USER_MAX_PROJECTS` and `USER_MAX_SHOTS` if the disk is small, and keep an eye on the volume.
+- **Disk.** This is what grows. An account can hold 20 projects of 40 screenshots per language, each up to 40 MB when uploaded, plus the rendered sets. A handful of people is nothing; a few hundred accounts filled to the cap would not fit on a small disk. Lower `USER_MAX_PROJECTS` and `USER_MAX_SHOTS` if the disk is small, and keep an eye on the volume.
 - **Abuse.** Anyone can sign in, so somebody may script uploads or renders. The caps and the render queue bound the damage, and **Remove** under People deletes an account with everything in it.
 
 If that is more than you want to carry, switch to **Only the people listed here** under People.
@@ -203,6 +203,9 @@ appshots upload streaks ./screens                 # screenshots you already have
 appshots upload streaks logo.svg mascot.png --image   # a logo and other artwork for the slides, not screenshots
 appshots run                                      # build the app in this folder and launch it in a simulator
 appshots run --ipad --dark --lang de              # on the 13-inch iPad Pro, dark, in German
+appshots launch com.example.streaks --lang de-DE --capture stats --to streaks -- -appshots stats
+                                                  # the same screen in German, filed as the German "stats"
+appshots upload streaks ./screens-de --lang de-DE # screenshots you already have in another language
 appshots run --duo                                # on the iPhone Duo
 appshots launch com.example.streaks --capture stats --to streaks -- -appshots stats
                                                   # start an installed app again with launch arguments,
@@ -221,6 +224,8 @@ appshots login https://appshots.example.com       # only the token, without the 
 
 The `--name` is what slides refer to (`"screenshot": "home"`). Capturing the same name again replaces the screenshot, and every slide using it updates. An iPhone and an iPad screenshot can share a name; each target size picks the matching one.
 
+A project in several languages holds each screenshot once per language under the same name: `--lang <code>` on `capture`, `upload`, `run` and `launch` says which one it is, and has to name one of the project's languages. Without it a screenshot is for the first language, and every other language shows that one until it has its own.
+
 `appshots run` finds the workspace or project and its scheme, boots the simulator the store sizes ask for (iPhone Pro Max, the 13-inch iPad Pro with `--ipad`, or the iPhone Duo with `--duo`), and builds in Xcode's own build folder, so a project Xcode has built already starts in seconds. `--fresh` builds in a folder of its own instead. What follows a lone `--` goes to the app as launch arguments.
 
 Simulator capture uses `simctl`. Device capture uses `devicectl device capture screenshot`, which needs Xcode 27 or newer and a device that is unlocked and trusts the Mac. If `xcode-select` points at the Command Line Tools, the CLI switches to `/Applications/Xcode.app` by itself.
@@ -231,7 +236,8 @@ Open the server in a browser and sign in to see every slide as a live preview at
 
 - **Projects** sit in the sidebar. **Rename** and **Delete** are beside the project's title, which can also be clicked and typed over, and under the three dots next to every project in the sidebar. Renaming keeps the project's address, so links to it go on working.
 
-- **Slides.** The heading of the section switches between iPhone and iPad. Click a slide to edit it: the editor opens beside a large preview of that slide, with the layouts as small sketches, the screenshots as thumbnails to pick from (two or three for the layouts that take several), sliders for the device's size, position and tilt, and editors for feature cards or points, badges, and the row of icons or logos.
+- **Languages.** A new project asks for its languages. The switch beside the slides picks the one the page shows, which is also the one you type and upload for, and **+ Language** adds another. A language shows the first one's texts and screenshots until it has its own; **Project → Languages** removes one or makes another the first.
+- **Slides.** The heading of the section switches between iPhone, iPhone Duo and iPad. Click a slide to edit it: the editor opens beside a large preview of that slide, with the layouts as small sketches, the screenshots as thumbnails to pick from (two or three for the layouts that take several), sliders for the device's size, position and tilt, and editors for feature cards or points, badges, and the row of icons or logos.
 - **Screenshots.** Drop files anywhere on the page, or use the upload button.
 - **Logos and images.** Everything else a slide can show: your logo or app icon, a mascot, stickers, shapes. Upload PNG, SVG, JPEG or WebP files there, or drop them on that section. Click one to place it on the selected slide, then drag it in the large preview; size, turn, opacity, shadow, mirroring and whether it lies over or under the device are in the slide's editor, with ready arrangements for several images at once. A slide's logo is picked under **Your logo**.
 - **Header and search results.** Adds, previews and edits the three store assets. **Show safe area** draws the part every device shows as a dashed frame; it is off until you tick it and never in the exported file.
@@ -315,8 +321,9 @@ POST   /api/projects                       create {name, locales?, targets?, the
 GET    /api/projects/:id                   project, screenshots, images, rendered files
 PUT    /api/projects/:id                   update {name?, locales?, targets?, theme?, slides?, creatives?: {header?, search?, universal?}}
 DELETE /api/projects/:id
-PUT    /api/projects/:id/shots/:name       upload a screenshot (raw image body, ?device=iphone|duo|ipad to override detection)
-PATCH  /api/projects/:id/shots/:file       {device} files it under another device
+PUT    /api/projects/:id/shots/:name       upload a screenshot (raw image body, ?device=iphone|duo|ipad to override detection,
+                                           ?locale=de-DE for one language only)
+PATCH  /api/projects/:id/shots/:file       {device?, locale?} files it under another device or language (locale null: the first)
 DELETE /api/projects/:id/shots/:file
 PUT    /api/projects/:id/images/:name      upload a logo or other artwork (raw PNG, SVG, JPEG or WebP body)
 DELETE /api/projects/:id/images/:file

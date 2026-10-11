@@ -70,6 +70,16 @@ appshots run --dark --lang de
 appshots launch com.example.streaks --light --lang pt-BR
 ```
 
+`--dark` and `--light` set the simulator's appearance. `--lang` starts the app in that language.
+
+A project in several languages holds each screen once per language, under the same name. Add `--lang` to the capture and the screenshot goes to that language:
+
+```bash
+appshots launch com.example.streaks --lang de-DE --capture home --to streaks -- -appshots home
+```
+
+A language shows the first language's screenshots until it has its own. See [Languages](/docs/languages#screenshots-per-language).
+
 ## What you need on the Mac
 
 | For | You need |
@@ -90,5 +100,5 @@ If `xcode-select` points at the Command Line Tools, the command switches to `/Ap
 ## Limits
 
 - PNG, JPEG or WebP, up to 40 MB a file and at least 300 pixels on the short side.
-- {{MAX_SHOTS}} screenshots per project.
+- {{MAX_SHOTS}} screenshots per project, and as many again for each further language.
 - Captures are also saved in `./raw-shots`, in the folder you ran the command in. Do not commit that folder.

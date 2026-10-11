@@ -10,6 +10,8 @@ export class InputError extends Error {}
 export interface Shot {
   name: string;
   device: DeviceKind;
+  /** The language this one is for. Without it, it is the screenshot every language shows that has none of its own. */
+  locale?: string;
   /** File name inside the project's shots directory. */
   file: string;
   width: number;
@@ -132,6 +134,7 @@ export async function updateProject(
   // An empty choice of sizes means the standard ones again.
   if (defined.targets === null || (Array.isArray(defined.targets) && defined.targets.length === 0)) defined.targets = undefined;
   const next = projectSchema.parse({ ...current, ...defined, updatedAt: new Date().toISOString() });
+  if (next.locales[0] !== current.locales[0]) await refileShots(space, id, current.locales[0]!, next.locales);
   await writeProject(space, next);
   return next;
 }
@@ -141,7 +144,37 @@ export async function deleteProject(space: Space, id: string): Promise<void> {
   await rm(projectDir(space, id), { recursive: true, force: true });
 }
 
-const SHOT_FILE = /^([a-z0-9][a-z0-9_-]{0,63})\.(iphone|duo|ipad)\.png$/;
+const SHOT_FILE = /^([a-z0-9][a-z0-9_-]{0,63})\.(iphone|duo|ipad)(?:\.([a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*))?\.png$/;
+const shotFile = (name: string, device: DeviceKind, locale?: string) => `${name}.${device}${locale ? `.${locale}` : ""}.png`;
+
+/**
+ * Keeps every language's screenshots its own when another language becomes the first: the old first language's
+ * move under its code, provided the project still has it, and the new first language's become the ones without one.
+ */
+async function refileShots(space: Space, id: string, was: string, locales: string[]): Promise<void> {
+  const dir = shotsDir(space, id);
+  const files = (await readdir(dir).catch(() => [])).map((file) => SHOT_FILE.exec(file)).filter((match) => match != null);
+  const first = locales[0]!.toLowerCase();
+  const move = (match: RegExpExecArray, locale?: string) => rename(path.join(dir, match[0]), path.join(dir, shotFile(match[1]!, match[2] as DeviceKind, locale)));
+  if (locales.includes(was)) for (const match of files) if (!match[3]) await move(match, was);
+  for (const match of files) if (match[3]?.toLowerCase() === first) await move(match);
+}
+
+/**
+ * The language a screenshot is filed under. The project's first language has none: its screenshots are the ones
+ * every other language shows until it gets its own. A bare language such as "de" finds the project's "de-DE".
+ */
+export function shotLocale(project: Project, wanted: string | null | undefined): string | undefined {
+  if (!wanted) return undefined;
+  const lower = wanted.toLowerCase();
+  const language = (code: string) => code.toLowerCase().split("-")[0];
+  const found =
+    project.locales.find((code) => code.toLowerCase() === lower) ??
+    project.locales.find((code) => language(code) === lower) ??
+    project.locales.find((code) => code.toLowerCase() === language(wanted));
+  if (!found) throw new InputError(`This project has no language "${wanted}". Its languages are ${project.locales.join(", ")}. Add "${wanted}" to the project first.`);
+  return found === project.locales[0] ? undefined : found;
+}
 
 export async function listShots(space: Space, id: string): Promise<Shot[]> {
   const dir = shotsDir(space, id);
@@ -155,6 +188,7 @@ export async function listShots(space: Space, id: string): Promise<Shot[]> {
     shots.push({
       name: match[1]!,
       device: match[2] as DeviceKind,
+      ...(match[3] ? { locale: match[3] } : {}),
       file,
       width: meta.width,
       height: meta.height,
@@ -165,9 +199,10 @@ export async function listShots(space: Space, id: string): Promise<Shot[]> {
   return shots;
 }
 
-/** Stores a raw screenshot as PNG. One name can hold an iPhone, an iPhone Duo and an iPad variant side by side. */
-export async function saveShot(space: Space, id: string, name: string, data: Buffer, device?: DeviceKind): Promise<Shot> {
-  await getProject(space, id);
+/** Stores a raw screenshot as PNG. One name can hold an iPhone, an iPhone Duo and an iPad variant side by side, and each of them once per language. */
+export async function saveShot(space: Space, id: string, name: string, data: Buffer, device?: DeviceKind, language?: string): Promise<Shot> {
+  const project = await getProject(space, id);
+  const locale = shotLocale(project, language);
   assertSlug(name, "screenshot name");
   let png: Buffer;
   let width: number;
@@ -182,16 +217,19 @@ export async function saveShot(space: Space, id: string, name: string, data: Buf
   }
   if (Math.min(width, height) < 300) throw new InputError(`Image is only ${width}×${height}; that is too small for a screenshot.`);
   const kind = device ?? deviceKindOf(width, height);
-  const file = `${name}.${kind}.png`;
+  const file = shotFile(name, kind, locale);
   const dir = shotsDir(space, id);
   await mkdir(dir, { recursive: true });
   if (space.limits && !(await exists(path.join(dir, file)))) {
-    const count = (await readdir(dir)).filter((entry) => SHOT_FILE.test(entry)).length;
-    if (count >= space.limits.shots) throw new InputError(`A project is limited to ${space.limits.shots} screenshots. Delete some to make room.`);
+    // Counted per language, so that a project in many languages has room for each.
+    const count = (await readdir(dir)).map((entry) => SHOT_FILE.exec(entry)).filter((match) => match && match[3] === locale).length;
+    if (count >= space.limits.shots) throw new InputError(`A project is limited to ${space.limits.shots} screenshots${locale ? ` per language, and ${locale} has that many` : ""}. Delete some to make room.`);
   }
   await writeFile(path.join(dir, file), png);
+  // One filed under the first language while that was not the first yet would otherwise keep hiding this one.
+  if (!locale) await rm(path.join(dir, shotFile(name, kind, project.locales[0])), { force: true });
   const info = await stat(path.join(dir, file));
-  return { name, device: kind, file, width, height, bytes: info.size, version: Math.round(info.mtimeMs) };
+  return { name, device: kind, ...(locale ? { locale } : {}), file, width, height, bytes: info.size, version: Math.round(info.mtimeMs) };
 }
 
 export async function deleteShot(space: Space, id: string, file: string): Promise<void> {
@@ -199,16 +237,22 @@ export async function deleteShot(space: Space, id: string, file: string): Promis
   await rm(path.join(shotsDir(space, id), file), { force: true });
 }
 
-/** Files a screenshot under another device, for one whose size did not give it away. It replaces what that device had under the name. */
-export async function moveShot(space: Space, id: string, file: string, device: DeviceKind): Promise<Shot> {
+/**
+ * Files a screenshot under another device, for one whose size did not give it away, or under another language
+ * (null: every language). It replaces what was there under the name.
+ */
+export async function moveShot(space: Space, id: string, file: string, to: { device?: DeviceKind; locale?: string | null }): Promise<Shot> {
+  const project = await getProject(space, id);
   const match = SHOT_FILE.exec(file);
   if (!match) throw new InputError(`Invalid screenshot file "${file}"`);
   const dir = shotsDir(space, id);
-  const moved = `${match[1]}.${device}.png`;
+  const device = to.device ?? (match[2] as DeviceKind);
+  const locale = to.locale === undefined ? match[3] : shotLocale(project, to.locale);
+  const moved = shotFile(match[1]!, device, locale);
   if (!(await exists(path.join(dir, file)))) throw new NotFoundError(`No screenshot "${file}"`);
   if (moved !== file) await rename(path.join(dir, file), path.join(dir, moved));
   const [info, meta] = await Promise.all([stat(path.join(dir, moved)), sharp(path.join(dir, moved)).metadata()]);
-  return { name: match[1]!, device, file: moved, width: meta.width, height: meta.height, bytes: info.size, version: Math.round(info.mtimeMs) };
+  return { name: match[1]!, device, ...(locale ? { locale } : {}), file: moved, width: meta.width, height: meta.height, bytes: info.size, version: Math.round(info.mtimeMs) };
 }
 
 /** An uploaded image that is not a screenshot: a logo, a sticker, a character. Slides place it by name. */
@@ -344,12 +388,17 @@ const STAND_INS: Record<DeviceKind, DeviceKind[]> = {
   ipad: ["ipad", "duo", "iphone"],
 };
 
-/** Picks the variant for the target's device, falling back to another device's. */
-export function findShot(shots: Shot[], name: string | undefined, device: DeviceKind): Shot | undefined {
+/**
+ * Picks the variant for the target's device and the language: that language's own screenshot, else the one for
+ * every language, else another language's. Only then another device's stands in, because the shape matters most.
+ */
+export function findShot(shots: Shot[], name: string | undefined, device: DeviceKind, locale?: string): Shot | undefined {
   if (!name) return undefined;
   const named = shots.filter((shot) => shot.name === name);
+  const lower = locale?.toLowerCase();
   for (const kind of STAND_INS[device]) {
-    const found = named.find((shot) => shot.device === kind);
+    const ofKind = named.filter((shot) => shot.device === kind);
+    const found = ofKind.find((shot) => lower != null && shot.locale?.toLowerCase() === lower) ?? ofKind.find((shot) => !shot.locale) ?? ofKind[0];
     if (found) return found;
   }
   return undefined;

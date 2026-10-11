@@ -53,7 +53,8 @@ const HELP = `appshots: run an app in a simulator, capture its screens and sync 
       --duo                                On the iPhone Duo instead
       --sim <name|udid>                    On this simulator instead; it is booted if need be
       --dark, --light                      Set the simulator's appearance before launching
-      --lang <code>                        Launch in this language, such as de or pt-BR
+      --lang <code>                        Launch in this language, such as de or pt-BR. A screenshot
+                                           taken with --capture is filed under it in the project
       --capture <name>                     Then take the screenshot as well, as capture --clean does
       --to <project>                       Upload that screenshot to this project. It is --to here and
                                            on launch, because run's --project is the Xcode one
@@ -74,14 +75,18 @@ const HELP = `appshots: run an app in a simulator, capture its screens and sync 
       --project <id>                       Upload it to this project straight away (--to works too)
       --as <iphone|duo|ipad>               File it under this device. Only needed when the server
                                            cannot tell from the size; upload, run and launch take it too
+      --lang <code>                        It shows the app in this language, one the project has.
+                                           Left out, it is for the project's first language, which
+                                           every other language shows until it has its own
       --out <dir>                          Where to save the PNG (default: ./raw-shots)
   appshots shoot <project> <names...>    For a person at the Terminal: names each screen in turn, waits
                                          for Return while you open it, then captures and uploads it.
-                                         Options as for capture: --sim, --device, --clean, --out
+                                         Options as for capture: --sim, --device, --clean, --out, --lang
   appshots upload <project> <files or folders...>
                                          Upload screenshots that exist already. A folder stands for the
                                          PNG and JPEG files in it. The name is the file name, or --name
                                          for a single file
+      --lang <code>                        They show the app in this language, as for capture
       --image                              They are not screenshots but a logo or other artwork for the
                                            slides: PNG, SVG, JPEG or WebP, transparency kept
   appshots pull <project> [--out <dir>]  Download the rendered screenshots and header and search
@@ -742,13 +747,13 @@ function build(project, scheme, simulator, fresh) {
  */
 function launchPlan(flags, launchArguments) {
   if (flags.dark && flags.light) fail("Use --dark or --light, not both.");
-  if (flags.lang !== undefined && typeof flags.lang !== "string") fail("--lang needs a language code, such as de or pt-BR.");
+  const lang = shotLanguage(flags);
   if (flags.capture !== undefined && typeof flags.capture !== "string") fail("--capture needs the name of the screenshot, as in: --capture stats");
   if (flags.to !== undefined && typeof flags.to !== "string") fail("--to needs the id of a project. 'appshots projects' lists them.");
   if (flags.to && !flags.capture) fail("--to says where a screenshot goes, so it needs --capture <name> as well.");
   const wait = flags.wait === undefined ? 2 : typeof flags.wait === "string" ? Number(flags.wait) : NaN;
   if (!(wait >= 0 && wait <= 600)) fail("--wait needs a number of seconds, as in: --wait 5");
-  const language = typeof flags.lang === "string" ? ["-AppleLanguages", `(${flags.lang})`, "-AppleLocale", flags.lang.replaceAll("-", "_")] : [];
+  const language = lang ? ["-AppleLanguages", `(${lang})`, "-AppleLocale", lang.replaceAll("-", "_")] : [];
   return {
     appearance: flags.dark ? "dark" : flags.light ? "light" : null,
     launchArguments: [...launchArguments, ...language],
@@ -757,6 +762,7 @@ function launchPlan(flags, launchArguments) {
     out: flags.out,
     to: flags.to,
     device: shotDevice(flags),
+    language: lang,
     // Read now, so a missing setup is said before the build and not after it.
     config: flags.to ? loadConfig() : null,
   };
@@ -779,12 +785,13 @@ async function startApp(simulator, bundleId, plan) {
   // The launch animation, the first data arriving: the screen has to come to rest first.
   spawnSync("sleep", [String(plan.wait)]);
   const shot = capture({ name: plan.capture, out: plan.out, sim: simulator.udid, clean: true });
-  if (plan.config) await upload(plan.config, plan.to, shot.file, shot.name, plan.device);
+  if (plan.config) await upload(plan.config, plan.to, shot.file, shot.name, plan.device, plan.language);
   console.log(`Next: appshots launch ${bundleId} --capture <name> --to ${plan.to ?? "<project>"}${which} -- <launch arguments>`);
 }
 
 async function run(flags, launchArguments) {
   const plan = launchPlan(flags, launchArguments);
+  if (plan.config) await hasLanguage(plan.config, plan.to, plan.language);
   const project = findXcodeProject(flags.project);
   const scheme = pickScheme(project, flags.scheme);
   const simulator = runSimulator(flags);
@@ -801,6 +808,7 @@ async function launch(bundleId, flags, launchArguments) {
   // An easy slip after capture, where --project is the place to upload to; here it would do nothing at all.
   if (flags.project !== undefined) fail("launch has no --project. The project a screenshot goes to is --to <project>, together with --capture <name>.");
   const plan = launchPlan(flags, launchArguments);
+  if (plan.config) await hasLanguage(plan.config, plan.to, plan.language);
   await startApp(choose(bootedSimulators(), flags.sim, "simulator", "--sim"), bundleId, plan);
 }
 
@@ -826,13 +834,29 @@ function shotDevice(flags) {
   return device;
 }
 
-async function upload(config, project, file, name, device) {
-  const response = await request(config, "PUT", `/api/projects/${project}/shots/${name}${device ? `?device=${device}` : ""}`, {
+/** The language a screenshot shows the app in, from --lang. Left out, it is for the project's first language. */
+function shotLanguage(flags) {
+  if (flags.lang !== undefined && (typeof flags.lang !== "string" || !/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(flags.lang))) fail("--lang needs a language code, such as de or pt-BR.");
+  return flags.lang;
+}
+
+/** Says that a project has no such language before anything slow starts, and not after it. The server decides the same way. */
+async function hasLanguage(config, project, language) {
+  if (!language) return;
+  const { locales } = (await (await request(config, "GET", `/api/projects/${project}`)).json()).project;
+  const bare = (code) => code.toLowerCase().split("-")[0];
+  if (locales.some((code) => code.toLowerCase() === language.toLowerCase() || bare(code) === language.toLowerCase() || code.toLowerCase() === bare(language))) return;
+  fail(`Project ${project} has no language "${language}". Its languages are ${locales.join(", ")}. Add it first: in the Studio under Languages, or with the update_project tool.`);
+}
+
+async function upload(config, project, file, name, device, language) {
+  const query = new URLSearchParams({ ...(device ? { device } : {}), ...(language ? { locale: language } : {}) }).toString();
+  const response = await request(config, "PUT", `/api/projects/${project}/shots/${name}${query ? `?${query}` : ""}`, {
     body: readFileSync(file),
     headers: { "content-type": "application/octet-stream" },
   });
   const shot = await response.json();
-  console.log(`Uploaded ${shot.name} (${shot.device}, ${shot.width}x${shot.height}) to ${project}`);
+  console.log(`Uploaded ${shot.name} (${[shot.device, shot.locale, `${shot.width}x${shot.height}`].filter(Boolean).join(", ")}) to ${project}`);
   return shot;
 }
 
@@ -871,9 +895,10 @@ async function uploadAll(config, project, sources, flags) {
   }
   // The server tells an iPhone, an iPhone Duo and an iPad screenshot apart, so one name can stand for one of each.
   const device = shotDevice(flags);
+  const language = shotLanguage(flags);
   const sent = new Map();
   for (const file of files) {
-    const shot = await upload(config, project, file, slugify(typeof flags.name === "string" ? flags.name : path.parse(file).name), device);
+    const shot = await upload(config, project, file, slugify(typeof flags.name === "string" ? flags.name : path.parse(file).name), device, language);
     const earlier = sent.get(`${shot.name} ${shot.device}`);
     if (earlier) console.log(`  ! ${path.basename(file)} replaced ${path.basename(earlier)}: both come out as "${shot.name}". Rename one and upload it again.`);
     sent.set(`${shot.name} ${shot.device}`, file);
@@ -889,7 +914,9 @@ async function shoot(project, names, flags) {
   if (!process.stdin.isTTY) fail("'appshots shoot' is for a person at the Terminal: it waits for a key before each screenshot. An agent takes them with 'appshots capture'.");
   const config = loadConfig();
   const device = shotDevice(flags);
-  await request(config, "GET", `/api/projects/${project}`);
+  const language = shotLanguage(flags);
+  await hasLanguage(config, project, language);
+  if (!language) await request(config, "GET", `/api/projects/${project}`);
   // Settled once and up front, so a missing or unclear source is said before the first screen, not after it.
   const source = flags.device ? { device: choose(connectedDevices(), flags.device, "device", "--device").udid } : { sim: choose(bootedSimulators(), flags.sim, "simulator", "--sim").udid };
   const taken = [];
@@ -912,7 +939,7 @@ async function shoot(project, names, flags) {
     }
     if (key !== "\r" && key !== "\n") break;
     const shot = capture({ ...flags, ...source, name: names[at] });
-    await upload(config, project, shot.file, shot.name, device);
+    await upload(config, project, shot.file, shot.name, device, language);
     taken.push(shot.name);
   }
   process.stdin.setRawMode(false);
@@ -1121,8 +1148,9 @@ async function main() {
       const project = typeof flags.to === "string" ? flags.to : flags.project;
       const config = typeof project === "string" ? loadConfig() : null;
       const device = shotDevice(flags);
+      const language = shotLanguage(flags);
       const shot = capture(flags);
-      if (config) await upload(config, project, shot.file, shot.name, device);
+      if (config) await upload(config, project, shot.file, shot.name, device, language);
       return;
     }
     case "shoot": {
@@ -1132,7 +1160,7 @@ async function main() {
     }
     case "upload": {
       const [project, ...sources] = positional;
-      if (!project || sources.length === 0) fail("Usage: appshots upload <project> <files or folders...> [--name <name>] [--image]");
+      if (!project || sources.length === 0) fail("Usage: appshots upload <project> <files or folders...> [--name <name>] [--lang <code>] [--image]");
       return uploadAll(loadConfig(), project, sources, flags);
     }
     case "pull":

@@ -56,7 +56,9 @@ Adds, previews and edits the wide images for the Header and Search Results tab o
 
 ## Languages
 
-The language picker in the top bar sets which language the previews show and which one you are typing. Add languages under **Project**. See [Languages](/docs/languages).
+The language switch beside the slides sets what the page shows: the texts, and each language's own screenshots. It is also the language you are typing and uploading for. **+ Language** next to it adds one, and **Project → Languages** lists them, removes one or makes another the first.
+
+With a language other than the first picked, **Screenshots** shows that language's own. The dimmed ones are the first language's, standing in until you upload this language's version: drop the files under the same names, or use the arrow on a dimmed one. See [Languages](/docs/languages).
 
 ## Export ZIP
 

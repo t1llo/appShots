@@ -14,7 +14,7 @@ import {
   label,
   type Logo,
   type Meta,
-  parseLocales,
+  shotFor,
   type PlacedImage,
   type PlacementId,
   type Project,
@@ -28,6 +28,7 @@ import {
   type Theme,
   withText,
 } from "./api.ts";
+import { LanguageList } from "./languages.tsx";
 import { Field, NumberInput, type Option, Select, toast } from "./ui.tsx";
 
 /** Applies a mutation to one part of a fresh copy of the project, which then becomes the draft. */
@@ -982,10 +983,10 @@ function LayoutPicker({ value, onChange }: { value: string; onChange: (id: strin
  * with a single place it swaps the one that is there. The numbers are the order the layout fills its devices in.
  */
 function ShotGrid({ chosen, capacity, max, hint, onChange }: { chosen: string[]; capacity: number; max: number; hint: string; onChange: (next: string[]) => void }) {
-  const { shots, projectId, meta, target } = useScope();
+  const { shots, projectId, meta, target, locale } = useScope();
   const device = meta.targets[target].device;
   const names = [...new Set([...shots.map((shot) => shot.name), ...chosen])];
-  const fileOf = (name: string) => shots.find((shot) => shot.name === name && shot.device === device) ?? shots.find((shot) => shot.name === name);
+  const fileOf = (name: string) => shotFor(shots, name, device, locale);
   const toggle = (name: string) => {
     if (chosen.includes(name)) return onChange(chosen.filter((other) => other !== name));
     onChange(chosen.length < max ? [...chosen, name] : [...chosen.slice(0, max - 1), name]);
@@ -1189,19 +1190,6 @@ export function ProjectEditor({ project, change, rename, remove }: { project: Pr
       else delete item.targets;
     });
   const [name, setName] = useState<string | null>(null);
-  const joined = project.locales.join(", ");
-  const [locales, setLocales] = useState(joined);
-  useEffect(() => setLocales(joined), [joined]);
-  const commit = () => {
-    if (locales === joined) return;
-    try {
-      const list = parseLocales(locales);
-      change((item) => void (item.locales = list));
-    } catch (failure) {
-      toast(errorText(failure), "error");
-      setLocales(joined);
-    }
-  };
   return (
     <div className="form">
       <Field label="Name">
@@ -1218,9 +1206,15 @@ export function ProjectEditor({ project, change, rename, remove }: { project: Pr
           onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
         />
       </Field>
-      <Field label="Languages" hint="The first is the fallback. Pick a language in the top bar, then type its translations into the slide fields.">
-        <input type="text" spellCheck={false} value={locales} onChange={(event) => setLocales(event.target.value)} onBlur={commit} onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()} />
-      </Field>
+      <div className="group-head">
+        <span className="label">Languages</span>
+        <span className="hint">The set is exported once for each.</span>
+      </div>
+      <LanguageList locales={project.locales} onChange={(next) => change((item) => void (item.locales = next))} />
+      <span className="hint">
+        A language shows the first one's texts and screenshots until it has its own. Switch language beside the slides, then type its texts and upload its screenshots. A language you remove keeps what it had and
+        has it again when you add it back.
+      </span>
       <div className="group-head">
         <span className="label">Export sizes</span>
         <span className="hint">

@@ -42,7 +42,7 @@ Good to know:
 | | Limit |
 | --- | --- |
 | Projects per account | {{MAX_PROJECTS}} |
-| Screenshots per project | {{MAX_SHOTS}} |
+| Screenshots per project | {{MAX_SHOTS}} for each language |
 | Logos and images per project | {{MAX_SHOTS}} |
 | Slides per set | 10 |
 | Languages per project | 40 |
