@@ -1,7 +1,22 @@
 import path from "node:path";
-import { BACKGROUNDS, type BackgroundDef, DEVICE_COLORS, type FontId, FONTS, type IconId, type LayoutId } from "./design.ts";
+import {
+  BACKGROUNDS,
+  type BackgroundDef,
+  BRAND_COLORS,
+  DEVICE_COLORS,
+  type FeatureStyleId,
+  type FontId,
+  FONTS,
+  ICON_ROW_SIZES,
+  type IconId,
+  LAYOUT_SHOTS,
+  type LayoutId,
+  type PointStyleId,
+  SIDE_LAYOUTS,
+} from "./design.ts";
+import { ICONS } from "./icons.ts";
 import { hasBakedIsland, paletteFor } from "./palette.ts";
-import type { Background, Badge, DeviceStyle, Project, Text } from "./schema.ts";
+import type { Background, Badge, DeviceStyle, Feature, IconRow, Project, Text } from "./schema.ts";
 import { type DeviceKind, TARGETS, type TargetId } from "./sizes.ts";
 import { findShot, type Shot, shotsDir, type Space } from "./store.ts";
 
@@ -132,40 +147,183 @@ function starsHtml(value: number): string {
   return `<div class="stars" style="--fill:${round((value / 5) * 100)}%"><div class="s-bg">${STAR_ROW}</div><div class="s-fg">${STAR_ROW}</div></div>`;
 }
 
-const ICONS: Record<IconId, string> = {
-  trophy:
-    '<path d="M7 3h10v4.6a5 5 0 0 1-10 0z"/><path d="M7 4.9H4.4v1.2a3.4 3.4 0 0 0 3.2 3.4M17 4.9h2.6v1.2a3.4 3.4 0 0 1-3.2 3.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M11 12.2h2v4h-2z"/><path d="M8.3 16h7.4a1.3 1.3 0 0 1 1.3 1.3V20a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1v-2.7A1.3 1.3 0 0 1 8.3 16z"/>',
-  crown: '<path d="M2.6 7.4l4.9 3.9L12 4.2l4.5 7.1 4.9-3.9-1.7 9.4H4.3z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><rect x="4.3" y="18.4" width="15.4" height="2.4" rx="1.2"/>',
-  medal:
-    '<path d="M6.2 2h4.1l2.5 5.6-3.4 1.5z" opacity=".7"/><path d="M17.8 2h-4.1l-2.5 5.6 3.4 1.5z" opacity=".7"/><circle cx="12" cy="14.8" r="6.7"/><polygon points="' +
-    starPoints(12, 14.9, 3.5, 1.5) +
-    '" fill="var(--medal-star,rgba(0,0,0,.35))"/>',
-  star: `<polygon points="${starPoints(12, 12.6, 10, 4.5)}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>`,
-  heart: '<path d="M12 20.8S3.6 15.9 3.6 9.7A4.7 4.7 0 0 1 12 7a4.7 4.7 0 0 1 8.4 2.7c0 6.2-8.4 11.1-8.4 11.1z"/>',
-  download: '<path d="M10.7 3h2.6v8.6l3-3 1.9 1.9L12 16.7l-6.2-6.2 1.9-1.9 3 3z"/><rect x="4" y="18.4" width="16" height="2.6" rx="1.3"/>',
-  bolt: '<path d="M13.6 2L4.8 13.6h5.6L9.4 22l9.8-12.3h-5.9z" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>',
-  shield: '<path d="M12 2.2l8 3v6.1c0 5-3.3 9-8 10.6-4.7-1.600-8-5.600-8-10.600V5.200z"/>',
-  check: '<path fill-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.500 14.300l-4.100-4.100 1.700-1.700 2.400 2.400 5.400-5.400 1.700 1.700z"/>',
-};
+const iconSvg = (id: IconId, className = "icon") => `<svg class="${className}" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true">${ICONS[id]}</svg>`;
 
-const iconSvg = (id: IconId) => `<svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ICONS[id]}</svg>`;
+/** Gradients the badges and feature cards fill their artwork with. They sit inside the canvas so they see its colours. */
+export const DEFS = `<svg class="defs" aria-hidden="true"><defs><linearGradient id="b-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFE7A0"/><stop offset=".45" stop-color="#EDBD54"/><stop offset="1" stop-color="#BB862C"/></linearGradient><linearGradient id="f-tint" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:color-mix(in srgb,var(--accent) 60%,var(--text))"/><stop offset="1" style="stop-color:var(--accent)"/></linearGradient></defs></svg>`;
+
+/** A slide's row of icons and brand logos. It stays on one line: the icons shrink until all of them fit between the margins. */
+function iconRowHtml(row: IconRow, canvas: { width: number }, unit: number, dark: boolean, locale: string, fallback: string): string {
+  const style = row.style ?? "tiles";
+  const tone = row.tone ?? "brand";
+  const count = row.icons.length;
+  const gap = style === "plain" ? 0.46 : 0.24;
+  const size = Math.min(ICON_ROW_SIZES[row.size ?? "medium"], (canvas.width / unit - 18) / (count + (count - 1) * gap));
+  const items = row.icons.map((id) => {
+    const brand = tone === "brand" ? BRAND_COLORS[id] : undefined;
+    if (!brand) return `<span class="ir-item">${iconSvg(id)}</span>`;
+    if (style === "plain") {
+      // A mark as dark or as light as the background would vanish, so there it takes the text colour.
+      const ink = brand.ink ?? brand.fill[0]!;
+      const lost = dark ? luminance(ink) < 0.1 : luminance(ink) > 0.8;
+      return `<span class="ir-item"${lost ? ' style="color:var(--text)"' : ` style="color:${ink}"`}>${iconSvg(id)}</span>`;
+    }
+    const fill = brand.fill.length > 1 ? `linear-gradient(45deg,${brand.fill.join(",")})` : brand.fill[0];
+    return `<span class="ir-item brand" style="background:${fill};color:${brand.mark}">${iconSvg(id)}</span>`;
+  });
+  const label = pick(row.label, locale, fallback);
+  const classes = `icon-row ir-${style} tone-${tone} ${row.position === "top" ? "top" : "bottom"}`;
+  return `<div class="${classes}" style="--i:calc(var(--u)*${round(size)});--ig:${gap}">${label ? `<div class="ir-label">${esc(label)}</div>` : ""}<div class="ir-items">${items.join("")}</div></div>`;
+}
 
 export function badgeHtml(badge: Badge, locale: string, fallback: string): string {
   const title = pick(badge.title, locale, fallback);
   const subtitle = pick(badge.subtitle, locale, fallback);
   const titleHtml = title ? `<div class="b-title">${esc(title)}</div>` : "";
   const subHtml = subtitle ? `<div class="b-sub">${esc(subtitle)}</div>` : "";
+  const tone = badge.tone === "gold" ? " gold" : "";
 
   if (badge.type === "pill") {
-    return `<div class="badge pill">${badge.icon ? iconSvg(badge.icon) : ""}<span>${esc(title || subtitle)}</span></div>`;
+    return `<div class="badge pill${tone}">${badge.icon ? iconSvg(badge.icon) : ""}<span>${esc(title || subtitle)}</span></div>`;
   }
   if (badge.type === "icon") {
-    return `<div class="badge with-icon">${iconSvg(badge.icon ?? "trophy")}<div class="b-body">${titleHtml}${subHtml}</div></div>`;
+    return `<div class="badge with-icon${tone}">${iconSvg(badge.icon ?? "trophy")}<div class="b-body">${titleHtml}${subHtml}</div></div>`;
+  }
+  if (badge.type === "rating") {
+    // Without a star count the score fills the row itself, the way the store draws it.
+    const score = Number.parseFloat(title.replace(",", "."));
+    const stars = badge.stars ?? (score >= 0 && score <= 5 ? score : 5);
+    return `<div class="badge card rating${tone}">${titleHtml}<div class="b-body">${starsHtml(stars)}${subHtml}</div></div>`;
+  }
+  if (badge.type === "review") {
+    const quote = title && !/^["'“”„«»‹‘]/.test(title) ? `“${title}”` : title;
+    return `<div class="badge card review${tone}">${starsHtml(badge.stars ?? 5)}${quote ? `<div class="b-quote">${esc(quote)}</div>` : ""}${subHtml}</div>`;
   }
   const top = badge.stars !== undefined ? starsHtml(badge.stars) : badge.icon ? iconSvg(badge.icon) : badge.type === "stars" ? starsHtml(5) : "";
   const body = `<div class="b-body">${top}${titleHtml}${subHtml}</div>`;
-  if (badge.type === "stars") return `<div class="badge plain">${body}</div>`;
-  return `<div class="badge laurel">${laurelSvg("l")}${body}${laurelSvg("r")}</div>`;
+  if (badge.type === "stars") return `<div class="badge plain${tone}">${body}</div>`;
+  return `<div class="badge laurel${tone}">${laurelSvg("l")}${body}${laurelSvg("r")}</div>`;
+}
+
+// ---------------------------------------------------------------- feature cards
+
+/** Where one card sits in the grid, as CSS grid lines. */
+interface Cell {
+  column: string;
+  row: string;
+  kind?: "hero" | "wide" | "tall";
+}
+
+const cell = (column: number, span: number, row: number, rows = 1, kind?: Cell["kind"]): Cell => ({ column: `${column}/span ${span}`, row: `${row}/span ${rows}`, kind });
+
+/** Row heights of the bento grid, per unit of column width. */
+const BENTO = { hero: 0.92, row: 0.74, wide: 0.5 };
+
+/** Two columns: a hero across the top, then a tall card beside two stacked ones, the tall one changing sides each time. */
+function bentoCells(count: number): { cells: Cell[]; rows: number[] } {
+  const cells = [cell(1, 2, 1, 1, "hero")];
+  const rows = [BENTO.hero];
+  let left = count - 1;
+  let tall = 1;
+  while (left > 0) {
+    const row = rows.length + 1;
+    if (left === 1) {
+      cells.push(cell(1, 2, row, 1, "wide"));
+      rows.push(BENTO.wide);
+      left -= 1;
+    } else if (left === 2) {
+      cells.push(cell(1, 1, row), cell(2, 1, row));
+      rows.push(BENTO.row);
+      left -= 2;
+    } else {
+      const other = 3 - tall;
+      cells.push(cell(tall, 1, row, 2, "tall"), cell(other, 1, row), cell(other, 1, row + 1));
+      rows.push(BENTO.row, BENTO.row);
+      left -= 3;
+      tall = other;
+    }
+  }
+  return { cells, rows };
+}
+
+/** Even cards in rows; the cards of a last, shorter row widen to fill it. */
+function gridCells(count: number, columns: number): { cells: Cell[]; rows: number } {
+  const rest = count % columns;
+  const cells = Array.from({ length: count }, (_, i) => {
+    const row = Math.floor(i / columns) + 1;
+    if (i < count - rest) return cell((i % columns) * 6 + 1, 6, row);
+    const span = (columns * 6) / rest;
+    return cell((i - (count - rest)) * span + 1, span, row, 1, "wide");
+  });
+  return { cells, rows: Math.ceil(count / columns) };
+}
+
+/** The cards of a features slide, and the height they would like to have. They give some of it up when the copy needs the room. */
+function featuresHtml(features: Feature[], style: FeatureStyleId, canvas: { width: number; height: number }, unit: number, locale: string, fallback: string, alone: boolean) {
+  const count = features.length;
+  const inner = canvas.width - unit * 14;
+  let gap = unit * 2.4;
+  let tracks = 1;
+  let cells: Cell[];
+  let rows: number[];
+  let stretch = 1.3;
+  // A tablet canvas is wide enough for three tiles in a row, and for larger rows.
+  const tablet = canvas.width / canvas.height > 0.6;
+  // Type is sized for a card as wide as half a phone canvas, and follows the card from there.
+  let column = unit * 41.8;
+  if (style === "bento") {
+    const bento = bentoCells(count);
+    column = (inner - gap) / 2;
+    cells = bento.cells;
+    rows = bento.rows.map((factor) => factor * column);
+    tracks = 2;
+    stretch = 1.4;
+  } else if (style === "grid") {
+    const columns = tablet ? 3 : 2;
+    const grid = gridCells(count, columns);
+    column = (inner - gap * (columns - 1)) / columns;
+    cells = grid.cells;
+    rows = Array.from({ length: grid.rows }, () => column * 0.8);
+    tracks = columns * 6;
+  } else {
+    if (style === "list") gap = unit * 1.2;
+    const size = tablet ? 1.15 : 1;
+    column *= size * size;
+    cells = features.map((_, i) => cell(1, 1, i + 1));
+    rows = features.map(() => unit * (style === "cards" ? 19 : 15.5) * size);
+  }
+
+  // A few cards may grow to carry the slide; many keep their size and give way in the page if they must.
+  const gaps = gap * (rows.length - 1);
+  const natural = rows.reduce((sum, row) => sum + row, 0);
+  const grow = Math.min(stretch, Math.max(1, (canvas.height * (alone ? 0.7 : 0.56) - gaps) / natural));
+  const height = natural * grow + gaps + (alone ? 0 : unit * 6.5);
+  const scale = Math.min(1.7, Math.sqrt(column / (unit * 41.8)) * Math.min(1.3, grow));
+
+  const tiles = features.map((feature, i) => {
+    const { column, row, kind } = cells[i]!;
+    const title = pick(feature.title, locale, fallback);
+    const detail = pick(feature.text, locale, fallback);
+    const value = pick(feature.value, locale, fallback);
+    const lead = value ? `<div class="f-lead"><span class="f-value">${esc(value)}</span></div>` : feature.icon ? `<div class="f-lead">${iconSvg(feature.icon, "f-icon")}</div>` : "";
+    const text = `<div class="f-text"><div class="f-title">${rich(title)}</div>${detail ? `<div class="f-detail">${rich(detail)}</div>` : ""}</div>`;
+    return `<div class="f-tile${kind ? ` ${kind}` : ""}${tracks === 1 ? " row" : ""}" style="grid-column:${column};grid-row:${row}">${lead}${text}</div>`;
+  });
+  const grid = [`--fz:${round(scale)}`, `gap:${round(gap)}px`, `grid-template-columns:repeat(${tracks},minmax(0,1fr))`, `grid-template-rows:${rows.map((row) => `minmax(0,${round(row)}fr)`).join(" ")}`];
+  return `<div class="features fs-${style}${alone ? " alone" : ""}" style="flex-basis:${round(height)}px"><div class="f-grid" style="${grid.join(";")}">${tiles.join("")}</div></div>`;
+}
+
+/** The feature points a slide shows with its copy: a short list above, below or beside the device. */
+function pointsHtml(features: Feature[], style: PointStyleId, wide: boolean, locale: string, fallback: string): string {
+  const columns = style === "grid" && wide && features.length > 1 ? 2 : 1;
+  const items = features.map((feature) => {
+    const title = pick(feature.title, locale, fallback);
+    const detail = style === "chips" ? "" : pick(feature.text, locale, fallback);
+    const value = pick(feature.value, locale, fallback);
+    const lead = value ? `<span class="p-lead"><span class="p-value">${esc(value)}</span></span>` : feature.icon ? `<span class="p-lead">${iconSvg(feature.icon)}</span>` : "";
+    return `<div class="point">${lead}<div class="p-text"><div class="p-title">${rich(title)}</div>${detail ? `<div class="p-detail">${rich(detail)}</div>` : ""}</div></div>`;
+  });
+  return `<div class="points ps-${style === "grid" ? "cards" : style}${columns > 1 ? " two" : ""}" style="--pc:${columns}">${items.join("")}</div>`;
 }
 
 // ---------------------------------------------------------------- devices
@@ -187,17 +345,31 @@ const LAYOUT_WIDTH: Record<LayoutId, number> = {
   "device-top": 1,
   "device-center": 1,
   tilted: 1.04,
+  closeup: 1.42,
+  floating: 0.92,
   duo: 0.7,
+  "side-by-side": 0.52,
+  trio: 0.6,
+  "device-right": 0.7,
+  "device-left": 0.7,
   hero: 0.9,
+  features: 1,
 };
 
 /** Share of the canvas height the copy block may take before the text starts shrinking. */
 const COPY_MAX: Record<LayoutId, number> = {
+  features: 0.3,
   "device-bottom": 0.34,
   "device-top": 0.34,
   "device-center": 0.36,
   tilted: 0.34,
+  closeup: 0.34,
+  floating: 0.36,
   duo: 0.32,
+  "side-by-side": 0.32,
+  trio: 0.32,
+  "device-right": 0.84,
+  "device-left": 0.84,
   hero: 0.48,
 };
 
@@ -312,10 +484,52 @@ html,body{background:#000;overflow:hidden}
 .layout-device-top .copy{padding-top:0;padding-bottom:calc(var(--u)*11.5)}
 .layout-device-top .stage{align-items:flex-end;padding:0 0 calc(var(--u)*6.5)}
 .layout-device-top .stage.fits{align-items:center;padding-top:calc(var(--u)*6.5)}
-.layout-device-center .stage{align-items:center;padding:calc(var(--u)*5.5) 0 calc(var(--u)*9)}
-.layout-duo .stage{display:block}
-.layout-duo .device{position:absolute;left:50%}
-.no-device .copy{flex:1;justify-content:center;padding-top:0}
+.layout-device-center .stage,.layout-floating .stage{align-items:center;padding:calc(var(--u)*5.5) 0 calc(var(--u)*9)}
+.stage.multi{display:block}
+.stage.multi .device{position:absolute;left:50%}
+.no-device{justify-content:center}
+.no-device .copy{padding-top:0;padding-bottom:0}
+.defs{position:absolute;width:0;height:0}
+.dark{--card:color-mix(in srgb,#fff 9%,transparent);--card-line:rgba(255,255,255,.13);--card-shadow:0 0 0 transparent}
+.light{--card:rgba(255,255,255,.66);--card-line:rgba(255,255,255,.7);--card-shadow:0 calc(var(--u)*.9) calc(var(--u)*3.2) rgba(20,20,40,.08)}
+.layout-features{justify-content:center;padding:calc(var(--u)*11) 0}
+.layout-features .copy{padding-top:0}
+.features{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;display:flex;justify-content:center;padding:calc(var(--u)*6.5) calc(var(--u)*7) 0}
+.features.alone{padding-top:0}
+.align-left .features{padding-left:calc(var(--u)*8);padding-right:calc(var(--u)*8)}
+.f-grid{--f:calc(var(--u)*var(--fz));flex:1;min-width:0;min-height:0;display:grid}
+.fs-cards .f-grid,.fs-list .f-grid{max-width:calc(var(--u)*98)}
+.fs-list .f-grid{flex:0 1 auto}
+.align-left .features{justify-content:flex-start}
+.f-tile{position:relative;overflow:hidden;min-width:0;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:calc(var(--f)*2.3);padding:calc(var(--f)*3.2);border-radius:calc(var(--u)*4.4);background:var(--card);box-shadow:inset 0 0 0 calc(var(--u)*.14) var(--card-line),var(--card-shadow)}
+.f-tile.hero{gap:calc(var(--f)*3);background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 30%,transparent),color-mix(in srgb,var(--accent) 7%,transparent) 72%),var(--card)}
+.align-left .f-tile{align-items:flex-start;justify-content:space-between;text-align:left}
+.f-tile.row{flex-direction:row;align-items:center;justify-content:center;text-align:left;gap:calc(var(--f)*3.2)}
+.align-left .f-tile.row,.fs-cards .f-tile,.fs-list .f-tile{justify-content:flex-start}
+.f-lead{flex:none;display:flex;align-items:center;justify-content:center;line-height:0}
+.f-icon{display:block;height:calc(var(--f)*10.4);width:auto;fill:url(#f-tint)}
+.f-value{font-family:var(--font);font-size:calc(var(--f)*10.6*var(--fs));font-weight:var(--hw);line-height:.95;letter-spacing:-.04em;white-space:nowrap;color:transparent;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 60%,var(--text)),var(--accent));-webkit-background-clip:text;background-clip:text}
+.f-text{min-width:0;display:flex;flex-direction:column;gap:calc(var(--f)*.9)}
+.f-title{font-family:var(--font);font-size:calc(var(--f)*4.1*var(--fs));font-weight:var(--hw);line-height:1.08;letter-spacing:var(--track);text-wrap:balance}
+.f-title em{font-style:normal;color:var(--accent)}
+.f-detail{font-size:calc(var(--f)*2.7);font-weight:500;line-height:1.26;letter-spacing:-.005em;opacity:.72;text-wrap:balance}
+.f-tile.hero .f-icon{height:calc(var(--f)*15)}
+.f-tile.hero .f-value{font-size:calc(var(--f)*17*var(--fs))}
+.f-tile.hero .f-title{font-size:calc(var(--f)*5.8*var(--fs))}
+.f-tile.hero .f-detail{font-size:calc(var(--f)*3.2)}
+.f-tile.tall .f-icon{height:calc(var(--f)*13)}
+.f-tile.tall .f-value{font-size:calc(var(--f)*13.5*var(--fs))}
+.f-tile.tall .f-title{font-size:calc(var(--f)*4.5*var(--fs))}
+.fs-cards .f-tile{padding:calc(var(--f)*2.6) calc(var(--f)*3.2);border-radius:calc(var(--u)*4)}
+.fs-cards .f-lead{min-width:calc(var(--f)*11.6);height:calc(var(--f)*11.6);padding:0 calc(var(--f)*2);border-radius:calc(var(--f)*3.1);background:color-mix(in srgb,var(--accent) 17%,transparent)}
+.fs-cards .f-icon{height:calc(var(--f)*6.4)}
+.fs-cards .f-value{font-size:calc(var(--f)*4.8*var(--fs))}
+.fs-cards .f-title,.fs-list .f-title{font-size:calc(var(--f)*3.9*var(--fs))}
+.fs-cards .f-detail,.fs-list .f-detail{font-size:calc(var(--f)*2.75)}
+.fs-list .f-tile{overflow:visible;padding:0;border-radius:0;background:none;box-shadow:none;gap:calc(var(--f)*3.6)}
+.fs-list .f-lead{min-width:calc(var(--f)*10)}
+.fs-list .f-icon{height:calc(var(--f)*9.4)}
+.fs-list .f-value{font-size:calc(var(--f)*6.2*var(--fs))}
 .device{position:relative;flex:none;width:var(--dw);transform-origin:50% 35%}
 .frame{position:relative;z-index:1;border-radius:calc(var(--dw)*var(--ro));padding:calc(var(--dw)*var(--band));background:linear-gradient(135deg,var(--f1),var(--f2) 28%,var(--f3) 62%,var(--f4));box-shadow:var(--shadow)}
 .frame::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 calc(var(--dw)*.0018) rgba(255,255,255,.3),inset 0 0 calc(var(--dw)*.006) rgba(0,0,0,.45);pointer-events:none}
@@ -329,6 +543,45 @@ html,body{background:#000;overflow:hidden}
 .btn{position:absolute;width:calc(var(--dw)*.014);background:linear-gradient(90deg,var(--f2),var(--f3));border-radius:calc(var(--dw)*.004)}
 .btn.l{left:calc(var(--dw)*-.006)}
 .btn.r{right:calc(var(--dw)*-.006)}
+.points{--p:calc(var(--u)*var(--ts));display:grid;grid-template-columns:repeat(var(--pc),minmax(0,1fr));gap:calc(var(--p)*3) calc(var(--p)*2);max-width:100%;margin-top:calc(var(--u)*5.5);text-align:left}
+.points.two{width:100%}
+.point{display:flex;align-items:center;gap:calc(var(--p)*2.6);min-width:0}
+.p-lead{flex:none;display:grid;place-items:center;min-width:calc(var(--p)*8);height:calc(var(--p)*8);padding:0 calc(var(--p)*1.4);border-radius:calc(var(--p)*2.3);background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.p-lead .icon{display:block;height:calc(var(--p)*4.5);width:auto}
+.p-value{font-family:var(--font);font-size:calc(var(--p)*3.2*var(--fs));font-weight:var(--hw);line-height:1;letter-spacing:-.03em;white-space:nowrap}
+.p-text{min-width:0;display:flex;flex-direction:column;gap:calc(var(--p)*.6)}
+.p-title{font-family:var(--font);font-size:calc(var(--p)*4*var(--fs));font-weight:var(--hw);line-height:1.1;letter-spacing:var(--track)}
+.p-title em{font-style:normal;color:var(--accent)}
+.p-detail{font-size:calc(var(--p)*3);font-weight:500;line-height:1.26;letter-spacing:-.005em;opacity:.74}
+.ps-cards{gap:calc(var(--p)*1.7)}
+.ps-cards .point{padding:calc(var(--p)*2.1) calc(var(--p)*2.8) calc(var(--p)*2.1) calc(var(--p)*2.1);border-radius:calc(var(--p)*3.4);background:var(--card);box-shadow:inset 0 0 0 calc(var(--u)*.14) var(--card-line),var(--card-shadow)}
+.ps-chips{display:flex;flex-wrap:wrap;justify-content:center;gap:calc(var(--p)*1.6)}
+.align-left .ps-chips{justify-content:flex-start}
+.ps-chips .point{gap:calc(var(--p)*1.3);padding:calc(var(--p)*1.5) calc(var(--p)*2.8) calc(var(--p)*1.5) calc(var(--p)*2.1);border-radius:999px;background:color-mix(in srgb,var(--text) 12%,transparent);box-shadow:inset 0 0 0 calc(var(--u)*.14) color-mix(in srgb,var(--text) 18%,transparent)}
+.ps-chips .p-lead{min-width:0;height:auto;padding:0;border-radius:0;background:none}
+.ps-chips .p-lead .icon{height:calc(var(--p)*3.7)}
+.ps-chips .p-title{font-size:calc(var(--p)*3.2*var(--fs));white-space:nowrap}
+.side{flex-direction:row;align-items:center}
+.side.layout-device-left{flex-direction:row-reverse}
+.side .copy{flex:0 0 56%;width:auto;padding:0 0 0 calc(var(--u)*8)}
+.side.layout-device-left .copy{padding:0 calc(var(--u)*7) 0 calc(var(--u)*1)}
+.side .headline{font-size:calc(var(--u)*8.2*var(--ts)*var(--fs))}
+.side .stage,.side .stage.fits{flex:1 1 0;width:auto;min-width:0;align-self:stretch;align-items:center;justify-content:flex-start;padding:0 0 0 calc(var(--u)*5)}
+.side.layout-device-left .stage,.side.layout-device-left .stage.fits{justify-content:flex-end;padding:0 calc(var(--u)*5) 0 0}
+.icon-row{display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*2.4);max-width:100%}
+.align-left .icon-row{align-items:flex-start}
+.icon-row.top{margin-bottom:calc(var(--u)*5.5)}
+.icon-row.bottom{margin-top:calc(var(--u)*5.5)}
+.ir-label{font-size:calc(var(--u)*2.7);font-weight:700;letter-spacing:.14em;text-transform:uppercase;opacity:.62}
+.ir-items{display:flex;align-items:center;gap:calc(var(--i)*var(--ig))}
+.ir-item{flex:none;display:grid;place-items:center;width:var(--i);height:var(--i);border-radius:calc(var(--i)*.235);background:color-mix(in srgb,var(--text) 11%,transparent);color:var(--accent);box-shadow:inset 0 0 0 calc(var(--i)*.012) color-mix(in srgb,var(--text) 14%,transparent)}
+.ir-item .icon{display:block;width:58%;height:58%}
+.ir-item.brand{box-shadow:0 calc(var(--i)*.07) calc(var(--i)*.18) rgba(0,0,0,.24),inset 0 0 0 calc(var(--i)*.012) rgba(128,128,128,.28)}
+.ir-circles .ir-item{border-radius:50%}
+.ir-circles .ir-item .icon{width:54%;height:54%}
+.ir-plain .ir-item{width:auto;background:none;box-shadow:none}
+.ir-plain .ir-item .icon{width:auto;height:100%}
+.tone-text .ir-item{color:var(--text)}
 .badges{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;max-width:100%;gap:calc(var(--u)*3) calc(var(--u)*5*var(--bs))}
 .align-left .badges{justify-content:flex-start}
 .badges.top{margin-bottom:calc(var(--u)*5.5)}
@@ -351,6 +604,18 @@ html,body{background:#000;overflow:hidden}
 .badge.with-icon .b-title{font-size:calc(var(--b)*4.4)}
 .badge.pill{gap:calc(var(--b)*1.1);padding:calc(var(--b)*1.5) calc(var(--b)*3.2);border-radius:999px;background:color-mix(in srgb,var(--text) 13%,transparent);box-shadow:inset 0 0 0 calc(var(--b)*.14) color-mix(in srgb,var(--text) 20%,transparent);font-size:calc(var(--b)*2.9);font-weight:700;letter-spacing:-.005em;white-space:nowrap}
 .badge.pill .icon{height:calc(var(--b)*3.2);width:auto;color:var(--star)}
+.badge.card{padding:calc(var(--b)*2.5) calc(var(--b)*3.3);border-radius:calc(var(--b)*3.6);background:var(--card);box-shadow:inset 0 0 0 calc(var(--b)*.14) var(--card-line),var(--card-shadow)}
+.badge.rating{gap:calc(var(--b)*2.3)}
+.badge.rating .b-title{font-size:calc(var(--b)*8.4);letter-spacing:-.04em}
+.badge.rating .b-body{align-items:flex-start;text-align:left;gap:calc(var(--b)*1)}
+.badge.rating .stars{height:calc(var(--b)*3.1)}
+.badge.review{flex-direction:column;align-items:flex-start;text-align:left;gap:calc(var(--b)*1.5);max-width:calc(var(--b)*46)}
+.badge.review .stars{height:calc(var(--b)*2.8)}
+.b-quote{font-family:var(--font);font-size:calc(var(--b)*3.5);font-weight:600;line-height:1.22;letter-spacing:-.012em;text-wrap:pretty}
+.badge.review .b-sub{opacity:.62}
+.badge.gold .wreath{opacity:1;color:#D9A845}
+.badge.gold .wreath path[fill=currentColor],.badge.gold .icon{fill:url(#b-gold)}
+.badge.gold .s-fg polygon{fill:url(#b-gold);stroke:url(#b-gold)}
 `;
 
 /** Runs in the page: waits for fonts and images, then shrinks badges and copy until they fit. */
@@ -391,6 +656,18 @@ export const FIT_SCRIPT = `(async () => {
     }
   }
 
+  const grid = canvas.querySelector('.f-grid');
+  if (grid) {
+    const tiles = [...grid.querySelectorAll('.f-tile')];
+    // A card much wider than it is tall reads better with its icon beside the text.
+    for (const tile of tiles) {
+      if (!tile.classList.contains('row') && tile.clientWidth > tile.clientHeight * (tile.classList.contains('hero') ? 2.7 : 2.05)) tile.classList.add('row');
+    }
+    let fz = parseFloat(grid.style.getPropertyValue('--fz'));
+    const spills = () => tiles.some((tile) => tile.scrollHeight > tile.clientHeight + 1 || tile.scrollWidth > tile.clientWidth + 1);
+    while (spills() && fz > 0.45) grid.style.setProperty('--fz', (fz -= 0.03));
+  }
+
   if (stage) {
     const style = getComputedStyle(stage);
     const room = stage.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
@@ -399,10 +676,16 @@ export const FIT_SCRIPT = `(async () => {
       if (device.dataset.fit === 'contain') {
         const perWidth = device.offsetHeight / width;
         device.style.setProperty('--dw', Math.min(width, room / perWidth) * parseFloat(device.dataset.scale) + 'px');
-      } else if (!canvas.classList.contains('layout-duo') && room - device.offsetHeight > u * 4) {
+      } else if (!stage.classList.contains('multi') && room - device.offsetHeight > u * 4) {
         // A device that fits whole would leave a dead band at the edge it was meant to bleed off.
         stage.classList.add('fits');
       }
+    }
+    if (stage.classList.contains('multi')) {
+      // Devices that all end above the bottom edge sit in the middle of the room under the copy, not against it.
+      const devices = [...stage.querySelectorAll('.device')];
+      const spare = stage.clientHeight - Math.max(...devices.map((device) => device.offsetTop + device.offsetHeight)) - Math.min(...devices.map((device) => device.offsetTop));
+      if (spare > u * 4) for (const device of devices) device.style.top = device.offsetTop + spare / 2 + 'px';
     }
   }
   document.body.dataset.ready = '1';
@@ -420,6 +703,7 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
 
   const shot = findShot(shots, slide.screenshot, target.device);
   const shot2 = findShot(shots, slide.screenshot2, target.device);
+  const shot3 = findShot(shots, slide.screenshot3, target.device);
   const shotUrl = (s: Shot | undefined) => (s ? `/files/${project.id}/shots/${s.file}?v=${s.version}` : undefined);
   const needsIsland = async (s: Shot | undefined) =>
     !s || s.device !== "iphone" || !(await hasBakedIsland(path.join(shotsPath, s.file), s.version, s.width));
@@ -432,7 +716,10 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const font = FONTS[fontId];
   // A display serif makes poor small print, so pair it with a neutral body face.
   const body = fontId === "instrument-serif" ? FONTS.inter : font;
-  const align = slide.align ?? theme.align ?? "center";
+  const hasDevice = [slide.screenshot, slide.screenshot2, slide.screenshot3].slice(0, LAYOUT_SHOTS[layout]).some(Boolean);
+  // A column beside the device reads from its left edge whatever the set's alignment is.
+  const side = hasDevice && SIDE_LAYOUTS.includes(layout);
+  const align = side ? "left" : (slide.align ?? theme.align ?? "center");
   const textScale = slide.textScale ?? theme.textScale ?? 1;
   const deviceStyle: DeviceStyle = { ...theme.device, ...slide.device };
 
@@ -441,22 +728,31 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const sub = pick(slide.subheadline, locale, fallback);
   const badges = slide.badges ?? [];
   const badgePosition = slide.badgePosition ?? (layout === "hero" ? "top" : "bottom");
-  const hasDevice = Boolean(slide.screenshot) || (layout === "duo" && Boolean(slide.screenshot2));
+  // The features layout shows them as its cards. Any other slide lists them with the copy.
+  const features = layout === "features" ? (slide.features ?? []) : [];
+  const points = layout === "features" ? [] : (slide.features ?? []);
+  const cardStyle: FeatureStyleId = slide.featureStyle === "chips" ? "list" : (slide.featureStyle ?? "bento");
+  const pointStyle: PointStyleId = !slide.featureStyle || slide.featureStyle === "bento" ? "list" : slide.featureStyle;
 
   const unit = Math.min(target.width, target.height / 2) / 100;
   const canvas = { width: target.width, height: target.height };
-  const badgeScale = (layout === "hero" ? 1.25 : 1) * (badges.length >= 3 ? 0.78 : 1);
 
   const badgesHtml = badges.length
     ? `<div class="badges ${badgePosition}">${badges.map((badge) => badgeHtml(badge, locale, fallback)).join("")}</div>`
     : "";
   const headlineHtml = rich(headline);
   const twoTone = !accent && headlineHtml.includes("<em>");
+  // The copy column of a side layout is 56% of the canvas with one margin; the row is sized for what that leaves.
+  const rowHtml = slide.iconRow ? iconRowHtml(slide.iconRow, side ? { width: canvas.width * 0.56 + unit * 9 } : canvas, unit, dark, locale, fallback) : "";
+  const rowOnTop = slide.iconRow?.position === "top";
   const copyParts = [
     badgePosition === "top" ? badgesHtml : "",
+    rowOnTop ? rowHtml : "",
     eyebrow ? `<div class="eyebrow${accent ? "" : " muted"}">${esc(eyebrow)}</div>` : "",
     headline ? `<h1 class="headline${twoTone ? " two-tone" : ""}">${headlineHtml}</h1>` : "",
     sub ? `<p class="sub">${rich(sub)}</p>` : "",
+    points.length ? pointsHtml(points, pointStyle, !side, locale, fallback) : "",
+    rowOnTop ? "" : rowHtml,
     badgePosition === "bottom" ? badgesHtml : "",
   ].join("");
   const copyHtml = copyParts ? `<div class="copy">${copyParts}</div>` : "";
@@ -464,32 +760,56 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   let stageHtml = "";
   if (hasDevice) {
     const common = { style: deviceStyle, targetDevice: target.device, canvas, width: LAYOUT_WIDTH[layout] };
+    const gap = unit * 6.5;
+    /** One device of a layout that places several: its centre in device widths from the middle, how far down it starts, and what is in front. */
+    const placed = async (s: Shot | undefined, wanted: string | undefined, x: number, top: number, z: number, rotate: number) => {
+      // Phones are drawn small on an iPad canvas; a group of them has the room to be larger.
+      const boost = target.device === "ipad" && deviceShape(s, deviceStyle, target.device).kind === "iphone" ? 1.45 : 1;
+      const extraCss = `margin-left:calc(var(--dw)*${round(x - 0.5)});top:${round(gap + top * unit)}px;z-index:${z}`;
+      return deviceHtml({ ...common, width: common.width * boost, shot: s, wanted, url: shotUrl(s), island: await needsIsland(s), fit: "width", defaults: { rotate }, extraCss });
+    };
     if (layout === "duo") {
-      const gap = unit * 6.5;
       const place = (x: number, top: number, z: number) => `margin-left:calc(var(--dw)*-.5 + ${round(x * canvas.width)}px);top:${round(top)}px;z-index:${z}`;
       stageHtml =
         deviceHtml({ ...common, shot: shot2, wanted: slide.screenshot2, url: shotUrl(shot2), island: await needsIsland(shot2), fit: "width", defaults: { rotate: -6 }, extraCss: place(-0.19, gap + unit * 10, 1) }) +
         deviceHtml({ ...common, shot, wanted: slide.screenshot, url: shotUrl(shot), island: await needsIsland(shot), fit: "width", defaults: { rotate: 5 }, extraCss: place(0.17, gap, 2) });
+    } else if (layout === "side-by-side") {
+      stageHtml = (await placed(shot, slide.screenshot, -0.53, 0, 2, 0)) + (await placed(shot2, slide.screenshot2, 0.53, 9, 1, 0));
+    } else if (layout === "trio") {
+      stageHtml =
+        (await placed(shot2, slide.screenshot2, -0.5, 11, 1, -7)) + (await placed(shot3, slide.screenshot3, 0.5, 11, 1, 7)) + (await placed(shot, slide.screenshot, 0, 0, 2, 0));
     } else {
+      // A phone beside the copy on an iPad canvas has the room to be larger, like a group of them has.
+      const boost = side && target.device === "ipad" && deviceShape(shot, deviceStyle, target.device).kind === "iphone" ? 1.45 : 1;
       stageHtml = deviceHtml({
         ...common,
+        width: common.width * boost,
         shot,
         wanted: slide.screenshot,
         url: shotUrl(shot),
         island: await needsIsland(shot),
-        fit: layout === "device-center" ? "contain" : "width",
-        defaults: layout === "tilted" ? { rotate: -8, offsetX: 5 } : undefined,
+        fit: layout === "device-center" || layout === "floating" ? "contain" : "width",
+        defaults: layout === "tilted" ? { rotate: -8, offsetX: 5 } : layout === "floating" ? { perspective: "left", shadow: "strong" } : undefined,
       });
     }
-    stageHtml = `<div class="stage">${stageHtml}</div>`;
+    stageHtml = `<div class="stage${LAYOUT_SHOTS[layout] > 1 ? " multi" : ""}">${stageHtml}</div>`;
+  } else if (features.length) {
+    stageHtml = featuresHtml(features, cardStyle, canvas, unit, locale, fallback, !copyHtml);
   }
 
-  const classes = ["canvas", `layout-${layout}`, `align-${align}`, dark ? "dark" : "light", hasDevice ? "" : "no-device"].filter(Boolean).join(" ");
+  const filled = hasDevice || features.length > 0;
+  // Badges on a slide with nothing but copy have the room to be the picture.
+  const badgeScale = (layout === "hero" ? 1.3 : 1.1) * (badges.length >= 3 ? 0.78 : 1) * (filled ? 1 : 1.3);
+  const classes = ["canvas", `layout-${layout}`, `align-${align}`, dark ? "dark" : "light", side ? "side" : "", filled ? "" : "no-device"].filter(Boolean).join(" ");
+  // Feature points need room of their own: each row lets the copy take a little more of the slide before the text shrinks.
+  const pointRows = pointStyle === "chips" ? Math.ceil(points.length / 2) * 0.6 : pointStyle === "grid" && !side ? Math.ceil(points.length / 2) : points.length;
+  const copyMax = !filled ? 0.92 : side ? COPY_MAX[layout] : Math.min(0.6, COPY_MAX[layout] + (points.length ? 0.03 + pointRows * 0.045 : 0));
   const vars = [
     `width:${target.width}px`,
     `height:${target.height}px`,
     `--u:${round(unit)}px`,
-    `--ts:${textScale}`,
+    // The copy column on a tablet canvas is as wide as a whole phone slide, so its type grows with it.
+    `--ts:${round(textScale * (side && target.width / target.height > 0.6 ? 1.3 : 1))}`,
     `--bs:${round(badgeScale)}`,
     `--fs:${font.scale}`,
     `--hw:${font.weight}`,
@@ -512,8 +832,8 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
 <style>${CSS}</style>
 </head>
 <body>
-<div class="${classes}" style="${vars}" data-copy-max="${hasDevice ? COPY_MAX[layout] : 0.92}" data-fonts="${esc(fonts)}">
-<div class="bg" style="${backgroundCss(background)}"></div>${noise}
+<div class="${classes}" style="${vars}" data-copy-max="${round(copyMax)}" data-fonts="${esc(fonts)}">
+<div class="bg" style="${backgroundCss(background)}"></div>${noise}${DEFS}
 ${copyHtml}
 ${stageHtml}
 </div>

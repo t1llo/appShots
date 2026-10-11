@@ -1,6 +1,6 @@
 // The panel on the right: one editor each for a slide, a header or search results asset, and the project.
 
-import { type ChangeEvent, createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, createContext, Fragment, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import {
   type Background,
   type Badge,
@@ -8,6 +8,8 @@ import {
   type CreativeLayoutId,
   type DeviceStyle,
   errorText,
+  type Feature,
+  type IconRow,
   label,
   type Meta,
   parseLocales,
@@ -35,6 +37,8 @@ export interface EditorScope {
   /** The language whose text the fields show, and the one a plain string belongs to. */
   locale: string;
   primary: string;
+  /** Whether asset previews draw the safe area. */
+  guides: boolean;
 }
 
 export const Scope = createContext<EditorScope>(null as never);
@@ -108,7 +112,7 @@ function ColorField({ label: text, value, onChange }: { label: string; value: st
  * Style controls shared by the project theme, per-slide overrides and assets. An asset has no alignment
  * or tilt: its copy is always centred and its layout places the devices.
  */
-function StyleFields({ owner, change, inherits, asset = false }: { owner: Theme; change: Change<Theme>; inherits: boolean; asset?: boolean }) {
+function StyleFields({ owner, change, inherits, asset = false, placed = false }: { owner: Theme; change: Change<Theme>; inherits: boolean; asset?: boolean; placed?: boolean }) {
   const { meta } = useScope();
   const base = inherits ? "Project default" : "Default";
   const set = (key: keyof Theme, value: unknown) => change((style) => put(style, key, value));
@@ -167,16 +171,19 @@ function StyleFields({ owner, change, inherits, asset = false }: { owner: Theme;
           />
         </Field>
       </div>
-      <div className="cols">
-        {size}
-        {asset ? (
-          headline
-        ) : (
-          <Field label="Tilt in degrees">
-            <NumberInput value={device.rotate} onChange={(value) => setDevice("rotate", value)} min={-45} max={45} step={1} placeholder="0" />
-          </Field>
-        )}
-      </div>
+      {/* A slide sets these with the sliders of its Device group. */}
+      {placed ? null : (
+        <div className="cols">
+          {size}
+          {asset ? (
+            headline
+          ) : (
+            <Field label="Tilt in degrees">
+              <NumberInput value={device.rotate} onChange={(value) => setDevice("rotate", value)} min={-45} max={45} step={1} placeholder="0" />
+            </Field>
+          )}
+        </div>
+      )}
       {asset ? null : (
         <div className="cols">
           {headline}
@@ -184,6 +191,82 @@ function StyleFields({ owner, change, inherits, asset = false }: { owner: Theme;
         </div>
       )}
     </>
+  );
+}
+
+/** Names that plain capitalising gets wrong. */
+const ICON_NAMES: Record<string, string> = {
+  youtube: "YouTube",
+  tiktok: "TikTok",
+  whatsapp: "WhatsApp",
+  linkedin: "LinkedIn",
+  github: "GitHub",
+  wechat: "WeChat",
+  soundcloud: "SoundCloud",
+  paypal: "PayPal",
+  openai: "OpenAI",
+  teams: "Microsoft Teams",
+  "apple-podcasts": "Apple Podcasts",
+  "app-store": "App Store",
+  "google-play": "Google Play",
+  "google-drive": "Google Drive",
+};
+const iconName = (id: string) => ICON_NAMES[id] ?? label(id);
+
+function Glyph({ id }: { id: string }) {
+  // The sprite is cached for a day; the count in its address fetches a new one when icons are added.
+  const { meta } = useScope();
+  return (
+    <svg className="glyph" viewBox="0 0 256 256" aria-hidden="true">
+      <use href={`/icons.svg?n=${meta.icons.length}#${id}`} />
+    </svg>
+  );
+}
+
+/** A button showing the chosen icon. It opens a searchable grid of all of them underneath. */
+function IconPicker({ label: text, value, onChange }: { label: string; value: string | undefined; onChange: (next: string | undefined) => void }) {
+  const { meta } = useScope();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const wanted = search.trim().toLowerCase();
+  const groups = Object.entries(meta.iconGroups)
+    .map(([group, list]) => [group, wanted && !group.toLowerCase().includes(wanted) ? list.filter((id) => id.includes(wanted)) : list] as const)
+    .filter(([, list]) => list.length > 0);
+  const pick = (id: string | undefined) => {
+    onChange(id);
+    setOpen(false);
+    setSearch("");
+  };
+  return (
+    <div className="icon-picker" onKeyDown={(event) => event.key === "Escape" && setOpen(false)}>
+      <button className="icon-pick" type="button" aria-label={text} aria-expanded={open} onClick={() => setOpen(!open)}>
+        {value ? <Glyph id={value} /> : null}
+        <span>{value ? iconName(value) : "No icon"}</span>
+      </button>
+      {open ? (
+        <div className="icon-panel">
+          <input type="text" autoFocus spellCheck={false} placeholder="Search icons" aria-label="Search icons" value={search} onChange={(event) => setSearch(event.target.value)} />
+          <div className="icon-grid">
+            {wanted ? null : (
+              <button className={`icon-cell none${value ? "" : " on"}`} type="button" onClick={() => pick(undefined)}>
+                No icon
+              </button>
+            )}
+            {groups.map(([group, list]) => (
+              <Fragment key={group}>
+                <span className="icon-group">{group}</span>
+                {list.map((id) => (
+                  <button key={id} className={`icon-cell${id === value ? " on" : ""}`} type="button" title={iconName(id)} aria-label={iconName(id)} onClick={() => pick(id)}>
+                    <Glyph id={id} />
+                  </button>
+                ))}
+              </Fragment>
+            ))}
+            {groups.length === 0 ? <span className="hint">No icon by that name.</span> : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -246,6 +329,13 @@ interface Badged {
   badgePosition?: "top" | "bottom";
 }
 
+/** What the two lines of a badge hold, by badge style. */
+const BADGE_PLACEHOLDERS: Record<string, [big: string, small: string]> = {
+  laurel: ["Big line, e.g. 4.9", "Small line, e.g. App Store rating"],
+  rating: ["The score, e.g. 4.9", "Small line, e.g. 12K ratings"],
+  review: ["What they wrote, in a few words", "Who wrote it, e.g. Maya, App Store review"],
+};
+
 function BadgesEditor({ owner, change, max, hint, byDefault }: { owner: Badged; change: Change<Badged>; max: number; hint: string; byDefault: string }) {
   const { meta } = useScope();
   const badges = owner.badges ?? [];
@@ -257,12 +347,18 @@ function BadgesEditor({ owner, change, max, hint, byDefault }: { owner: Badged; 
       </div>
       {badges.map((badge, index) => {
         const edit: Change<Badge> = (recipe) => change((item) => recipe(item.badges![index]!));
+        const type = badge.type ?? "laurel";
+        const [big, small] = BADGE_PLACEHOLDERS[type] ?? BADGE_PLACEHOLDERS.laurel!;
         return (
           <div className="badge-edit" key={index}>
             <div className="top">
-              <Select label="Badge style" options={ids(Object.keys(meta.badgeTypes))} value={badge.type ?? "laurel"} onChange={(value) => edit((item) => put(item, "type", value))} />
-              <Select label="Badge icon" options={[["", "No icon"], ...ids(meta.icons)]} value={badge.icon ?? ""} onChange={(value) => edit((item) => put(item, "icon", value))} />
-              <NumberInput label="Stars" value={badge.stars} onChange={(value) => edit((item) => put(item, "stars", value))} min={0} max={5} step={0.1} placeholder="★" />
+              <Select label="Badge style" options={ids(Object.keys(meta.badgeTypes))} value={type} onChange={(value) => edit((item) => put(item, "type", value))} />
+              <Select
+                label="Badge colour"
+                options={Object.keys(meta.badgeTones).map((id): Option => [id, id === "plain" ? "Slide colours" : label(id)])}
+                value={badge.tone ?? "plain"}
+                onChange={(value) => edit((item) => put(item, "tone", value === "plain" ? undefined : value))}
+              />
               <button
                 className="icon-btn"
                 type="button"
@@ -278,8 +374,12 @@ function BadgesEditor({ owner, change, max, hint, byDefault }: { owner: Badged; 
                 ×
               </button>
             </div>
-            <TextInput value={badge.title} onChange={(value) => edit((item) => put(item, "title", value))} placeholder="Big line, e.g. 4.9" />
-            <TextInput value={badge.subtitle} onChange={(value) => edit((item) => put(item, "subtitle", value))} placeholder="Small line, e.g. App Store rating" />
+            <div className="pair">
+              <IconPicker label="Badge icon" value={badge.icon} onChange={(value) => edit((item) => put(item, "icon", value))} />
+              <NumberInput label="Stars" value={badge.stars} onChange={(value) => edit((item) => put(item, "stars", value))} min={0} max={5} step={0.1} placeholder="★" />
+            </div>
+            <TextInput value={badge.title} onChange={(value) => edit((item) => put(item, "title", value))} placeholder={big} />
+            <TextInput value={badge.subtitle} onChange={(value) => edit((item) => put(item, "subtitle", value))} placeholder={small} />
           </div>
         );
       })}
@@ -304,6 +404,421 @@ function BadgesEditor({ owner, change, max, hint, byDefault }: { owner: Badged; 
 
 // ---------------------------------------------------------------- slide
 
+function FeaturesEditor({ slide, change, points }: { slide: Slide; change: Change<Slide>; points: boolean }) {
+  const { meta } = useScope();
+  const features = slide.features ?? [];
+  // One field holds either kind of style; each kind reads the other's own ones as its plainest.
+  const styles = points ? meta.pointStyles : meta.featureStyles;
+  const style = slide.featureStyle && styles[slide.featureStyle] ? slide.featureStyle : points ? "list" : slide.featureStyle === "chips" ? "list" : "bento";
+  const swap = (from: number, to: number) =>
+    change((item) => {
+      const list = item.features!;
+      [list[from], list[to]] = [list[to]!, list[from]!];
+    });
+  return (
+    <>
+      <div className="group-head">
+        <span className="label">{points ? "Feature points" : "Features"}</span>
+        <span className="hint">{points ? "A short list with the copy, each with an icon. Two to four read best." : "Most important first. Each gets an icon, or a figure such as 24h in its place."}</span>
+      </div>
+      {points && features.length === 0 ? null : (
+        <Field label={points ? "Point style" : "Card style"} hint={styles[style]}>
+          <Select options={ids(Object.keys(styles))} value={style} onChange={(value) => change((item) => put(item, "featureStyle", value))} />
+        </Field>
+      )}
+      {features.map((feature, index) => {
+        const edit: Change<Feature> = (recipe) => change((item) => recipe(item.features![index]!));
+        return (
+          <div className="badge-edit" key={index}>
+            <div className="top feature">
+              <IconPicker label="Feature icon" value={feature.icon} onChange={(value) => edit((item) => put(item, "icon", value))} />
+              <TextInput value={feature.value} onChange={(value) => edit((item) => put(item, "value", value))} placeholder="or 24h" />
+              <button className="icon-btn plain" type="button" disabled={index === 0} title="Move up" aria-label="Move feature up" onClick={() => swap(index, index - 1)}>
+                ↑
+              </button>
+              <button className="icon-btn plain" type="button" disabled={index === features.length - 1} title="Move down" aria-label="Move feature down" onClick={() => swap(index, index + 1)}>
+                ↓
+              </button>
+              <button
+                className="icon-btn"
+                type="button"
+                title="Remove feature"
+                aria-label="Remove feature"
+                onClick={() =>
+                  change((item) => {
+                    item.features!.splice(index, 1);
+                    if (item.features!.length === 0) delete item.features;
+                  })
+                }
+              >
+                ×
+              </button>
+            </div>
+            <TextInput value={feature.title} onChange={(value) => edit((item) => void (item.title = value ?? ""))} placeholder="The feature, e.g. Daily limits" />
+            <TextInput value={feature.text} onChange={(value) => edit((item) => put(item, "text", value))} placeholder="One short line under it, or nothing" />
+          </div>
+        );
+      })}
+      {features.length < 8 ? (
+        <div className="row">
+          <button className="btn small" type="button" onClick={() => change((item) => void (item.features = [...(item.features ?? []), { icon: "sparkle", title: "" }]))}>
+            {points ? "Add feature point" : "Add feature"}
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** What a layout does to its device before the slide's own settings. */
+const LAYOUT_DEVICE: Record<string, { rotate?: number; offsetX?: number }> = { tilted: { rotate: -8, offsetX: 5 } };
+
+/** One device setting as a slider. `base` is where it stands when the slide does not set it; a double click goes back there. */
+function Slider(props: { label: string; value: number | undefined; base: number; min: number; max: number; step: number; show: (value: number) => string; onChange: (value: number | null) => void }) {
+  const { value, base, onChange } = props;
+  return (
+    <label className={`slider${value == null ? "" : " set"}`} title="Double-click to reset">
+      <span className="label">{props.label}</span>
+      <input
+        type="range"
+        min={props.min}
+        max={props.max}
+        step={props.step}
+        value={value ?? base}
+        onChange={(event) => onChange(Number(event.target.value) === base ? null : Number(event.target.value))}
+        onDoubleClick={() => onChange(null)}
+      />
+      <output>{props.show(value ?? base)}</output>
+    </label>
+  );
+}
+
+/** Where a slide's device stands and how large it is, on top of what the layout and the project say. */
+function DeviceEditor({ slide, theme, change, single }: { slide: Slide; theme: Theme; change: Change<Slide>; single: boolean }) {
+  const device = slide.device ?? {};
+  const base = { scale: 1, offsetX: 0, offsetY: 0, rotate: 0, ...LAYOUT_DEVICE[slide.layout ?? "device-bottom"], ...theme.device };
+  const keys = ["scale", "offsetX", "offsetY", "rotate", "perspective"] as const;
+  const setDevice = (recipe: (device: DeviceStyle) => void) =>
+    change((item) => {
+      const next = { ...item.device };
+      recipe(next);
+      if (Object.keys(next).length) item.device = next;
+      else delete item.device;
+    });
+  const set = (key: keyof DeviceStyle) => (value: unknown) => setDevice((next) => put(next, key, value));
+  const signed = (value: number) => `${value > 0 ? "+" : ""}${value}%`;
+  return (
+    <>
+      <div className="group-head">
+        <span className="label">Device</span>
+        <span className="hint">Its size and place on this slide.</span>
+        <span className="spacer" />
+        {keys.some((key) => device[key] != null) ? (
+          <button className="btn small quiet" type="button" onClick={() => setDevice((next) => keys.forEach((key) => delete next[key]))}>
+            Reset
+          </button>
+        ) : null}
+      </div>
+      <div className="sliders">
+        <Slider label="Size" value={device.scale} base={base.scale} min={0.4} max={1.6} step={0.02} show={(value) => `${Math.round(value * 100)}%`} onChange={set("scale")} />
+        <Slider label="Left · right" value={device.offsetX} base={base.offsetX} min={-60} max={60} step={1} show={signed} onChange={set("offsetX")} />
+        <Slider label="Up · down" value={device.offsetY} base={base.offsetY} min={-60} max={60} step={1} show={signed} onChange={set("offsetY")} />
+        {single ? <Slider label="Tilt" value={device.rotate} base={base.rotate} min={-45} max={45} step={1} show={(value) => `${value}°`} onChange={set("rotate")} /> : null}
+      </div>
+      {single ? (
+        <Field label="Turn in 3D">
+          <Select options={[["", "By layout"], ["none", "None"], ["left", "To the left"], ["right", "To the right"]]} value={device.perspective ?? ""} onChange={set("perspective")} />
+        </Field>
+      ) : null}
+    </>
+  );
+}
+
+const ROW_TONES: Record<string, string> = { brand: "Brand colours", accent: "Accent colour", text: "Text colour" };
+
+/** The row of icons and brand logos a slide shows with its copy. */
+function IconRowEditor({ slide, change }: { slide: Slide; change: Change<Slide> }) {
+  const { meta } = useScope();
+  const row = slide.iconRow;
+  const icons: string[] = row?.icons ?? [];
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const wanted = search.trim().toLowerCase();
+  // Logos are what the row is mostly used for, so they come first here.
+  const groups = Object.entries(meta.iconGroups)
+    .sort(([a], [b]) => Number(b === "Brands") - Number(a === "Brands"))
+    .map(([group, list]) => [group, wanted && !group.toLowerCase().includes(wanted) ? list.filter((id) => id.includes(wanted)) : list] as const)
+    .filter(([, list]) => list.length > 0);
+  const full = icons.length >= 8;
+  const setIcons = (next: string[]) =>
+    change((item) => {
+      if (next.length === 0) delete item.iconRow;
+      else item.iconRow = { ...item.iconRow, icons: next as IconRow["icons"] };
+    });
+  const edit: Change<IconRow> = (recipe) => change((item) => recipe(item.iconRow!));
+  const style = row?.style ?? "tiles";
+  return (
+    <>
+      <div className="group-head">
+        <span className="label">Icons and logos</span>
+        <span className="hint">A row with the copy, such as the services the app works with.</span>
+      </div>
+      <div className="row-icons">
+        {icons.map((id, index) => (
+          <button key={`${id}-${index}`} className="row-icon" type="button" title={`Remove ${iconName(id)}`} aria-label={`Remove ${iconName(id)}`} onClick={() => setIcons(icons.filter((_, at) => at !== index))}>
+            <Glyph id={id} />
+          </button>
+        ))}
+        <button className="btn small" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "Done" : icons.length ? "Add or remove" : "Add icons or logos"}
+        </button>
+      </div>
+      {open ? (
+        <div className="icon-panel inline" onKeyDown={(event) => event.key === "Escape" && setOpen(false)}>
+          <input type="text" autoFocus spellCheck={false} placeholder="Search icons and logos" aria-label="Search icons and logos" value={search} onChange={(event) => setSearch(event.target.value)} />
+          <div className="icon-grid">
+            {groups.map(([group, list]) => (
+              <Fragment key={group}>
+                <span className="icon-group">{group === "Brands" ? "Logos" : group}</span>
+                {list.map((id) => {
+                  const on = icons.includes(id);
+                  return (
+                    <button
+                      key={id}
+                      className={`icon-cell${on ? " on" : ""}`}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={on}
+                      disabled={full && !on}
+                      title={iconName(id)}
+                      aria-label={iconName(id)}
+                      onClick={() => setIcons(on ? icons.filter((other) => other !== id) : [...icons, id])}
+                    >
+                      <Glyph id={id} />
+                    </button>
+                  );
+                })}
+              </Fragment>
+            ))}
+            {groups.length === 0 ? <span className="hint">Nothing by that name.</span> : null}
+          </div>
+          <span className="hint">
+            {full ? "Eight is the most a row holds. " : ""}Show a logo only where the app really works with that service; it must not look like an endorsement.
+          </span>
+        </div>
+      ) : null}
+      {row ? (
+        <div className="badge-edit">
+          <TextInput value={row.label} onChange={(value) => edit((item) => put(item, "label", value))} placeholder="Line over the row, e.g. Works with" />
+          <div className="quad">
+            <Select label="Row style" options={ids(Object.keys(meta.iconRowStyles))} value={style} onChange={(value) => edit((item) => put(item, "style", value === "tiles" ? undefined : value))} />
+            <Select
+              label="Row colours"
+              options={Object.keys(meta.iconRowTones).map((id): Option => [id, ROW_TONES[id] ?? label(id)])}
+              value={row.tone ?? "brand"}
+              onChange={(value) => edit((item) => put(item, "tone", value === "brand" ? undefined : value))}
+            />
+            <Select label="Row size" options={ids(meta.iconRowSizes)} value={row.size ?? "medium"} onChange={(value) => edit((item) => put(item, "size", value === "medium" ? undefined : value))} />
+            <Select
+              label="Row position"
+              options={[["bottom", "Below the copy"], ["top", "Above the headline"]]}
+              value={row.position ?? "bottom"}
+              onChange={(value) => edit((item) => put(item, "position", value === "bottom" ? undefined : value))}
+            />
+          </div>
+          <span className="hint">
+            {meta.iconRowStyles[style]} {meta.iconRowTones[row.tone ?? "brand"]}
+          </span>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- layout and screenshot pickers
+
+const line = (y: number, width = 16) => <rect className="t" x={(30 - width) / 2} y={y} width={width} height={2.2} rx={1.1} />;
+const copy = (y = 5) => (
+  <>
+    {line(y)}
+    {line(y + 4, 10)}
+  </>
+);
+const phone = (x: number, y: number, width: number, height: number, rotate = 0, back = false) => (
+  <rect className={back ? "d back" : "d"} x={x} y={y} width={width} height={height} rx={width * 0.2} transform={rotate ? `rotate(${rotate} ${x + width / 2} ${y + height / 2})` : undefined} />
+);
+const tile = (x: number, y: number, width: number, height: number) => <rect className="d" x={x} y={y} width={width} height={height} rx={2} />;
+
+/** A sketch of each slide layout, drawn on a 30×44 canvas: bars for the copy, rounded shapes for devices and cards. */
+const LAYOUT_ART: Record<string, ReactNode> = {
+  "device-bottom": (
+    <>
+      {copy()}
+      {phone(7, 15, 16, 34)}
+    </>
+  ),
+  "device-top": (
+    <>
+      {phone(7, -5, 16, 34)}
+      {copy(34)}
+    </>
+  ),
+  "device-center": (
+    <>
+      {copy()}
+      {phone(9, 15, 12, 25)}
+    </>
+  ),
+  tilted: (
+    <>
+      {copy()}
+      {phone(8, 17, 16, 34, -9)}
+    </>
+  ),
+  closeup: (
+    <>
+      {copy()}
+      {phone(2, 15, 26, 52)}
+    </>
+  ),
+  floating: (
+    <>
+      {copy()}
+      <g transform="translate(15 28) skewY(-9) rotate(4) translate(-15 -28)">{phone(9, 16, 12, 25)}</g>
+    </>
+  ),
+  duo: (
+    <>
+      {copy()}
+      {phone(4, 20, 13, 28, -6, true)}
+      {phone(13, 16, 13, 28, 5)}
+    </>
+  ),
+  "side-by-side": (
+    <>
+      {copy()}
+      {phone(3, 16, 11, 23)}
+      {phone(16, 20, 11, 23)}
+    </>
+  ),
+  trio: (
+    <>
+      {copy()}
+      {phone(2, 21, 11, 23, -7, true)}
+      {phone(17, 21, 11, 23, 7, true)}
+      {phone(9, 17, 12, 25)}
+    </>
+  ),
+  "device-right": (
+    <>
+      <rect className="t" x={3} y={13} width={11} height={2.2} rx={1.1} />
+      <rect className="t" x={3} y={17} width={8} height={2.2} rx={1.1} />
+      {[23, 27, 31].map((y) => (
+        <rect key={y} className="t" x={3} y={y} width={10} height={1.6} rx={0.8} />
+      ))}
+      {phone(17, 9, 15, 27)}
+    </>
+  ),
+  "device-left": (
+    <>
+      {phone(-2, 9, 15, 27)}
+      <rect className="t" x={16} y={13} width={11} height={2.2} rx={1.1} />
+      <rect className="t" x={16} y={17} width={8} height={2.2} rx={1.1} />
+      {[23, 27, 31].map((y) => (
+        <rect key={y} className="t" x={16} y={y} width={10} height={1.6} rx={0.8} />
+      ))}
+    </>
+  ),
+  hero: (
+    <>
+      {tile(6, 4, 8, 4)}
+      {tile(16, 4, 8, 4)}
+      {copy(12)}
+      {phone(7, 26, 16, 30)}
+    </>
+  ),
+  features: (
+    <>
+      {copy()}
+      {tile(4, 15, 22, 10)}
+      {tile(4, 27, 10, 10)}
+      {tile(16, 27, 10, 10)}
+    </>
+  ),
+};
+
+function LayoutPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const { meta } = useScope();
+  return (
+    <div className="field">
+      <span className="label">Layout</span>
+      <div className="layout-grid" role="radiogroup" aria-label="Layout">
+        {Object.keys(meta.layouts).map((id) => (
+          <button key={id} className={`layout-cell${id === value ? " on" : ""}`} type="button" role="radio" aria-checked={id === value} aria-label={label(id)} title={label(id)} onClick={() => onChange(id)}>
+            <svg viewBox="0 0 30 44" aria-hidden="true">
+              {LAYOUT_ART[id] ?? LAYOUT_ART["device-bottom"]}
+            </svg>
+          </button>
+        ))}
+      </div>
+      <span className="hint">
+        <b>{label(value)}.</b> {meta.layouts[value]}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The project's screenshots as thumbnails. A click puts one in the next free place or takes it out again;
+ * with a single place it swaps the one that is there. The numbers are the order the layout fills its devices in.
+ */
+function ShotGrid({ chosen, capacity, max, hint, onChange }: { chosen: string[]; capacity: number; max: number; hint: string; onChange: (next: string[]) => void }) {
+  const { shots, projectId, meta, target } = useScope();
+  const device = meta.targets[target].device;
+  const names = [...new Set([...shots.map((shot) => shot.name), ...chosen])];
+  const fileOf = (name: string) => shots.find((shot) => shot.name === name && shot.device === device) ?? shots.find((shot) => shot.name === name);
+  const toggle = (name: string) => {
+    if (chosen.includes(name)) return onChange(chosen.filter((other) => other !== name));
+    onChange(chosen.length < max ? [...chosen, name] : [...chosen.slice(0, max - 1), name]);
+  };
+  return (
+    <div className="field">
+      <span className="label">{max === 1 ? "Screenshot" : "Screenshots"}</span>
+      {names.length ? (
+        <div className="shot-grid">
+          {names.map((name) => {
+            const shot = fileOf(name);
+            const at = chosen.indexOf(name);
+            return (
+              <button
+                key={name}
+                className={`shot-cell${at >= 0 ? " on" : ""}${at >= capacity ? " over" : ""}`}
+                type="button"
+                aria-pressed={at >= 0}
+                aria-label={at >= 0 ? `${name}, in place ${at + 1}` : name}
+                title={shot ? name : `${name} (not uploaded)`}
+                onClick={() => toggle(name)}
+              >
+                {shot ? <img src={`/files/${projectId}/shots/${shot.file}?v=${shot.version}`} alt="" loading="lazy" /> : <span className="shot-missing">?</span>}
+                {at >= 0 && max > 1 ? <span className="shot-order">{at + 1}</span> : null}
+                <span className="shot-name">{name}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+      <span className="hint">{names.length ? hint : "Upload screenshots first, or drop them anywhere in the window."}</span>
+    </div>
+  );
+}
+
+const SHOT_HINTS: Record<string, string> = {
+  duo: "Pick two: 1 is in front, 2 behind it. Click one again to take it out.",
+  "side-by-side": "Pick two: 1 is on the left, 2 on the right. Click one again to take it out.",
+  trio: "Pick three: 1 is in front, 2 and 3 behind it left and right. Click one again to take it out.",
+  hero: "Optional. Without one, the slide is the copy and its badges alone.",
+};
+
 export interface SlideActions {
   move: (delta: number) => void;
   duplicate: () => void;
@@ -311,11 +826,11 @@ export interface SlideActions {
 }
 
 export function SlideEditor({ project, index, change, actions }: { project: Project; index: number; change: Change<Slide>; actions: SlideActions }) {
-  const { meta, shots, target, locale } = useScope();
+  const { meta, target, locale } = useScope();
   const slide = project.slides[index]!;
   const layout = slide.layout ?? "device-bottom";
-  const names = [...new Set(shots.map((shot) => shot.name))];
-  const shotOptions = (current: string | undefined): Option[] => [["", "None"], ...names.map((name): Option => [name, name]), ...(current && !names.includes(current) ? [[current, `${current} (not uploaded)`] as const] : [])];
+  const places = meta.layoutShots[layout] ?? 1;
+  const chosen = [slide.screenshot, slide.screenshot2, slide.screenshot3].slice(0, places).filter((name): name is string => Boolean(name));
   const query = new URLSearchParams({ target, locale });
 
   return (
@@ -338,19 +853,22 @@ export function SlideEditor({ project, index, change, actions }: { project: Proj
           Full size ↗
         </a>
       </div>
-      <Field label="Layout" hint={meta.layouts[layout]}>
-        <Select options={ids(Object.keys(meta.layouts))} value={layout} onChange={(value) => change((item) => put(item, "layout", value))} />
-      </Field>
-      <div className={layout === "duo" ? "cols" : ""}>
-        <Field label="Screenshot">
-          <Select options={shotOptions(slide.screenshot)} value={slide.screenshot ?? ""} onChange={(value) => change((item) => put(item, "screenshot", value))} />
-        </Field>
-        {layout === "duo" ? (
-          <Field label="Behind it">
-            <Select options={shotOptions(slide.screenshot2)} value={slide.screenshot2 ?? ""} onChange={(value) => change((item) => put(item, "screenshot2", value))} />
-          </Field>
-        ) : null}
-      </div>
+      <LayoutPicker value={layout} onChange={(value) => change((item) => put(item, "layout", value))} />
+      {places === 0 ? null : (
+        <ShotGrid
+          chosen={chosen}
+          capacity={places}
+          max={places}
+          hint={SHOT_HINTS[layout] ?? "Click a screenshot to show it on this slide."}
+          onChange={(next) =>
+            change((item) => {
+              put(item, "screenshot", next[0]);
+              if (places > 1) put(item, "screenshot2", next[1]);
+              if (places > 2) put(item, "screenshot3", next[2]);
+            })
+          }
+        />
+      )}
       <Field label="Eyebrow">
         <TextInput value={slide.eyebrow} onChange={(value) => change((item) => put(item, "eyebrow", value))} placeholder="Small line above the headline" />
       </Field>
@@ -360,9 +878,12 @@ export function SlideEditor({ project, index, change, actions }: { project: Proj
       <Field label="Subheadline">
         <TextInput value={slide.subheadline} onChange={(value) => change((item) => put(item, "subheadline", value))} rows={2} />
       </Field>
-      <BadgesEditor owner={slide} change={change} max={4} hint="Real figures only; App Review rejects invented ones." byDefault="by layout" />
+      {chosen.length ? <DeviceEditor slide={slide} theme={project.theme} change={change} single={places === 1} /> : null}
+      <FeaturesEditor slide={slide} change={change} points={layout !== "features"} />
+      <BadgesEditor owner={slide} change={change} max={4} hint="Real figures and reviews only; App Review rejects invented ones." byDefault="by layout" />
+      <IconRowEditor slide={slide} change={change} />
       <Section id="style" title="Style for this slide">
-        <StyleFields owner={slide} change={change} inherits />
+        <StyleFields owner={slide} change={change} inherits placed />
       </Section>
       <JsonSection
         value={slide}
@@ -380,65 +901,14 @@ export function SlideEditor({ project, index, change, actions }: { project: Proj
 
 // ---------------------------------------------------------------- header and search results assets
 
-function ShotPicker({ chosen, capacity, layout, onChange }: { chosen: string[]; capacity: number; layout: string; onChange: (next: string[]) => void }) {
-  const { shots, projectId } = useScope();
-  const names = [...new Set(shots.map((shot) => shot.name))];
-  const fileOf = (name: string) => shots.find((shot) => shot.name === name && shot.device === "iphone") ?? shots.find((shot) => shot.name === name);
-  const swap = (from: number, to: number) => {
-    const next = [...chosen];
-    [next[from], next[to]] = [next[to]!, next[from]!];
-    onChange(next);
-  };
-  return (
-    <div className="field">
-      <span className="label">Screenshots</span>
-      {chosen.length > 0 ? (
-        <div className="picks">
-          {chosen.map((name, index) => {
-            const shot = fileOf(name);
-            return (
-              <div className={`pick${index >= capacity ? " over" : ""}`} key={index}>
-                {shot ? <img src={`/files/${projectId}/shots/${shot.file}?v=${shot.version}`} alt="" /> : <span className="pick-missing" />}
-                <span className="pick-name">{shot ? name : `${name} (not uploaded)`}</span>
-                <button className="icon-btn plain" type="button" disabled={index === 0} title="Move up" aria-label={`Move ${name} up`} onClick={() => swap(index, index - 1)}>
-                  ↑
-                </button>
-                <button className="icon-btn plain" type="button" disabled={index === chosen.length - 1} title="Move down" aria-label={`Move ${name} down`} onClick={() => swap(index, index + 1)}>
-                  ↓
-                </button>
-                <button className="icon-btn" type="button" title="Remove" aria-label={`Remove ${name}`} onClick={() => onChange(chosen.filter((_, at) => at !== index))}>
-                  ×
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-      {chosen.length < 6 && names.length > 0 ? (
-        <Select
-          label="Add a screenshot"
-          options={[["", chosen.length ? "Add another…" : "Add a screenshot…"], ...names.map((name): Option => [name, name])]}
-          value=""
-          onChange={(name) => name && onChange([...chosen, name])}
-        />
-      ) : null}
-      <span className="hint">
-        {names.length === 0
-          ? "Upload screenshots first. Without any, the asset is copy on the background."
-          : chosen.length > capacity
-            ? `The ${layout} layout shows ${capacity}; the dimmed ones are left out.`
-            : `The ${layout} layout shows up to ${capacity}. The first one gets the most prominent spot.`}
-      </span>
-    </div>
-  );
-}
-
 export function CreativeEditor({ project, placement, change, remove }: { project: Project; placement: PlacementId; change: Change<Creative>; remove: () => void }) {
-  const { meta, locale } = useScope();
+  const { meta, locale, guides } = useScope();
   const creative = project.creatives[placement]!;
   const spec = meta.placements[placement];
   const layout: CreativeLayoutId = creative.layout ?? "fan";
-  const query = new URLSearchParams({ locale, guides: "1" });
+  const capacity = meta.creativeLayouts[layout].screenshots;
+  const picked = creative.screenshots ?? [];
+  const query = new URLSearchParams(guides ? { locale, guides: "1" } : { locale });
 
   return (
     <div className="form">
@@ -452,12 +922,22 @@ export function CreativeEditor({ project, placement, change, remove }: { project
         </a>
       </div>
       <span className="hint">
-        {spec.width}×{spec.height} ({spec.ratio}). {spec.note} The store crops it differently on each device, so the copy stays inside the dashed safe area, which is not exported.
+        {spec.width}×{spec.height} ({spec.ratio}). {spec.note} The store crops it differently on each device, so the copy is kept inside the safe area, the part every device shows.
       </span>
       <Field label="Layout" hint={meta.creativeLayouts[layout].note}>
         <Select options={ids(Object.keys(meta.creativeLayouts))} value={layout} onChange={(value) => change((item) => put(item, "layout", value))} />
       </Field>
-      <ShotPicker chosen={creative.screenshots ?? []} capacity={meta.creativeLayouts[layout].screenshots} layout={layout} onChange={(next) => change((item) => put(item, "screenshots", next.length ? next : undefined))} />
+      <ShotGrid
+        chosen={picked}
+        capacity={capacity}
+        max={6}
+        hint={
+          picked.length > capacity
+            ? `The ${layout} layout shows ${capacity}; the dimmed ones are left out.`
+            : `The ${layout} layout shows up to ${capacity}, in the order of the numbers; 1 gets the most prominent spot. Without any, the asset is copy on the background.`
+        }
+        onChange={(next) => change((item) => put(item, "screenshots", next.length ? next : undefined))}
+      />
       <Field label="Eyebrow">
         <TextInput value={creative.eyebrow} onChange={(value) => change((item) => put(item, "eyebrow", value))} placeholder="Small line above the headline" />
       </Field>

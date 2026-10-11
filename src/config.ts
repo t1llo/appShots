@@ -44,6 +44,21 @@ function signIn() {
 
 const { enabled, values } = signIn();
 
+/**
+ * Page analytics with PostHog: the project token, which is the public, write-only one, and the host it reports
+ * to. Without a token the pages load nothing. A value that is no token turns them off rather than stopping the server.
+ */
+function analytics() {
+  const key = (process.env.POSTHOG_KEY ?? "").trim();
+  const host = (process.env.POSTHOG_HOST ?? "").trim().replace(/\/+$/, "") || "https://us.i.posthog.com";
+  if (!key || key === "off") return null;
+  if (!/^phc_[A-Za-z0-9]+$/.test(key) || !/^https:\/\/[a-z0-9.-]+$/.test(host)) {
+    console.warn("Analytics are off: POSTHOG_KEY has to be a PostHog project token (phc_…) and POSTHOG_HOST an https origin.");
+    return null;
+  }
+  return { key, host };
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   dataDir,
@@ -63,6 +78,7 @@ export const config = {
     authUrl: process.env.GOOGLE_AUTH_URL ?? "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: process.env.GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
   },
+  posthog: analytics(),
   /** Caps for accounts other than the admin. */
   limits: {
     projects: positive(process.env.USER_MAX_PROJECTS, 20),

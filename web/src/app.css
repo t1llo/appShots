@@ -397,10 +397,38 @@ select.ghost:hover {
   padding: 28px 48px 72px;
 }
 .panel {
-  width: 360px;
+  width: 400px;
   flex: none;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: inset 1px 0 0 var(--line);
+}
+.panel.with-focus {
+  width: auto;
+}
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.panel-fields {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+.panel.with-focus .panel-fields {
+  flex: none;
+  width: 384px;
+}
+/* The selected slide, large, beside its fields. */
+.focus {
+  flex: none;
+  padding: 16px 4px 16px 20px;
+}
+.content:has(.panel.with-focus) .workspace {
+  padding-right: 28px;
+  padding-left: 28px;
 }
 .page-head {
   margin-bottom: 28px;
@@ -435,6 +463,13 @@ input.title:focus-visible {
 .section-head h2 {
   flex: none;
 }
+.section-head.wrap {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.section-head.wrap .hint {
+  flex: 1 1 220px;
+}
 .block {
   margin-top: 32px;
 }
@@ -460,8 +495,13 @@ input.title:focus-visible {
     padding: 20px 16px 40px;
   }
   .panel {
+    display: block;
     width: auto;
+    overflow: visible;
     box-shadow: inset 0 1px 0 var(--line);
+  }
+  .panel-fields {
+    overflow: visible;
   }
 }
 
@@ -715,10 +755,211 @@ input.title:focus-visible {
   border-radius: 8px;
   background: var(--soft);
 }
-.badge-edit .top {
+.badge-edit .top,
+.badge-edit .pair {
   display: grid;
-  grid-template-columns: 1.1fr 1.1fr 64px 28px;
+  grid-template-columns: 1fr 1fr 28px;
   gap: 6px;
+}
+.badge-edit .pair {
+  grid-template-columns: 1fr 72px;
+}
+.badge-edit .top.feature {
+  grid-template-columns: 1fr 68px 24px 24px 24px;
+  gap: 4px;
+}
+.badge-edit .top.feature .icon-btn {
+  width: 24px;
+}
+
+/* The picker's button and its panel are both cells of the row they sit in, so the panel can span it. */
+.icon-picker {
+  display: contents;
+}
+.icon-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--input);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--text-3);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.icon-pick span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icon-pick[aria-expanded="true"] {
+  box-shadow:
+    inset 0 0 0 1px var(--accent),
+    0 0 0 2px var(--accent-ring);
+}
+.glyph {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+.icon-pick .glyph {
+  color: var(--text);
+}
+.icon-panel {
+  order: 9;
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+}
+.icon-panel.inline {
+  order: 0;
+}
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
+  gap: 2px;
+  max-height: 232px;
+  padding: 4px;
+  overflow-y: auto;
+  border-radius: 6px;
+  background: var(--input);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.icon-group,
+.icon-grid .hint,
+.icon-cell.none {
+  grid-column: 1 / -1;
+}
+.icon-group {
+  padding: 8px 4px 2px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.icon-cell {
+  display: grid;
+  place-items: center;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.icon-cell:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.icon-cell.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.group-head .spacer {
+  flex: 1;
+}
+.group-head .label {
+  flex: none;
+}
+.sliders {
+  display: grid;
+  gap: 6px;
+}
+.slider {
+  display: grid;
+  grid-template-columns: 76px 1fr 44px;
+  align-items: center;
+  gap: 10px;
+}
+.slider .label {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+.slider input {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.slider output {
+  color: var(--text-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.slider.set output {
+  color: var(--text);
+}
+.badge-edit .quad {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.row-icons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.row-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--text);
+  cursor: pointer;
+}
+.row-icon:hover {
+  background: var(--danger-soft, var(--hover));
+  color: var(--danger, var(--text));
+}
+.icon-cell:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.device-pick {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.device-pick select {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  min-height: 28px;
+  color: var(--text);
+  font-size: 13px;
+}
+.check {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
 }
 .icon-btn {
   width: 28px;
@@ -743,36 +984,118 @@ input.title:focus-visible {
   opacity: 0.4;
   cursor: default;
 }
-.picks {
+.layout-grid {
   display: grid;
-  gap: 2px;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 6px;
 }
-.pick {
+.layout-cell {
   display: grid;
-  grid-template-columns: 20px 1fr repeat(3, 28px);
-  align-items: center;
-  gap: 2px;
+  place-items: center;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--input);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--text-3);
+  cursor: pointer;
 }
-.pick img,
-.pick-missing {
-  width: 20px;
-  height: 28px;
-  border-radius: 3px;
+.layout-cell:hover {
+  background: var(--hover);
+  color: var(--text-2);
+}
+.layout-cell.on {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--accent);
+}
+.layout-cell svg {
+  display: block;
+  width: 30px;
+  height: 44px;
+}
+.layout-cell .t {
+  fill: currentColor;
+  opacity: 0.5;
+}
+.layout-cell .d {
+  fill: currentColor;
+  opacity: 0.85;
+}
+.layout-cell .d.back {
+  opacity: 0.45;
+}
+.shot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(54px, 1fr));
+  gap: 10px 8px;
+  max-height: 290px;
+  margin: 0 -4px;
+  padding: 4px;
+  overflow: auto;
+}
+.shot-cell {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 10px;
+  text-align: center;
+  cursor: pointer;
+}
+.shot-cell img,
+.shot-missing {
+  display: block;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  border-radius: 6px;
   background: var(--soft);
   box-shadow: 0 0 0 1px var(--line);
   object-fit: cover;
+  object-position: top;
 }
-.pick-name {
-  min-width: 0;
-  padding-left: 6px;
+.shot-missing {
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+}
+.shot-cell:hover img {
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+.shot-cell.on {
+  color: var(--text);
+}
+.shot-cell.on img,
+.shot-cell.on .shot-missing {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 0 4px var(--accent-ring);
+}
+.shot-cell.over img {
+  opacity: 0.4;
+}
+.shot-order {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  line-height: 16px;
+}
+.shot-name {
   overflow: hidden;
-  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.pick.over img,
-.pick.over .pick-name {
-  opacity: 0.4;
 }
 details {
   padding-top: 10px;

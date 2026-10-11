@@ -5,7 +5,21 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import sharp from "sharp";
 import { CREATIVE_CAPACITY } from "./creative.ts";
-import { BACKGROUNDS, BADGE_TYPES, CREATIVE_LAYOUTS, DEVICE_COLOR_IDS, FONTS, ICON_IDS, LAYOUTS } from "./design.ts";
+import {
+  BACKGROUNDS,
+  BADGE_TONES,
+  BADGE_TYPES,
+  CREATIVE_LAYOUTS,
+  DEVICE_COLOR_IDS,
+  FEATURE_STYLES,
+  POINT_STYLES,
+  FONTS,
+  ICON_GROUPS,
+  ICON_ROW_SIZE_IDS,
+  ICON_ROW_STYLES,
+  ICON_ROW_TONES,
+  LAYOUTS,
+} from "./design.ts";
 import { defaultTargets, renderProject } from "./render.ts";
 import { creativeSchema, localeSchema, type Project, slideSchema, slugSchema, themeSchema } from "./schema.ts";
 import { PLACEMENT_IDS, PLACEMENTS, type PlacementId, TARGET_IDS, TARGETS } from "./sizes.ts";
@@ -14,7 +28,7 @@ import { createProject, getProject, listProjects, listShots, outDir, type Shot, 
 function uploadHelp(base: string, id: string): string {
   return [
     "This server cannot see the user's devices, so raw screenshots are captured on their Mac and uploaded:",
-    `- With the bundled CLI: \`appshots capture --name home --project ${id}\` grabs the booted simulator; add \`--device\` for a connected iPhone or iPad. \`appshots upload ${id} path/to/*.png\` sends existing files.`,
+    `- With the bundled CLI: \`appshots upload ${id} <files or folders>\` sends screenshots that exist already. \`appshots capture --name home --project ${id} --clean\` grabs the booted simulator; add \`--device\` for a connected iPhone or iPad. \`appshots launch <bundle id> --capture home --to ${id} -- <launch arguments>\` starts an installed app on one screen and captures it in one go. \`appshots check\` reports what there is to work with.`,
     `- With curl: \`curl -fsS -X PUT -H "Authorization: Bearer $APPSHOTS_TOKEN" -H "Content-Type: image/png" --data-binary @home.png "${base}/api/projects/${id}/shots/home"\` (the token is the one this MCP connection uses)`,
     "The last path segment is the screenshot name slides refer to. iPhone or iPad is detected from the aspect ratio, and one name can hold both variants.",
   ].join("\n");
@@ -46,6 +60,25 @@ Default is \`iphone-6.9\`, plus \`ipad-13\` once the project has iPad screenshot
 
 ## Layouts
 ${list(LAYOUTS)}
+\`duo\` and \`side-by-side\` take \`screenshot\` and \`screenshot2\`; \`trio\` takes \`screenshot3\` as well. A name with nothing uploaded under it is drawn as a labelled placeholder. Slides with several devices suit two steps of one flow, light next to dark, or an overview; keep the headline to one line there.
+\`device-right\` and \`device-left\` are the layouts for a slide that says more: the copy stands in a column beside the device, always left-aligned, with room for a headline, a subheadline and three or four feature points (see below).
+
+## Feature slides
+A slide with \`"layout":"features"\` shows no screenshot. It lists what the app does as cards, the way a keynote sums up a release, and suits a "what's new" or "everything you get" slide, or an app whose screens say little on their own. One or two per set is plenty; the rest should show the app.
+\`features\` holds up to 8 entries, most important first. Each has a \`title\` of two to four words, an \`icon\` (see Icons) or a \`value\` (a big figure or word in its place, such as \`"0"\`, \`"24h"\` or \`"100%"\`), and optionally one short line of \`text\`. \`featureStyle\` picks the look:
+${list(FEATURE_STYLES)}
+- \`bento\` and \`grid\` read best with 3 to 6 features and little or no \`text\`; \`cards\` with 2 to 5, each with a line of \`text\`; \`list\` with 4 to 8.
+- The type shrinks until every card fits, so shorter titles come out larger. With \`"align":"left"\` the cards go left-aligned too.
+- The headline sits above the cards and stays short. Badges work here as on any slide.
+Example: \`{"layout":"features","headline":"Everything you *need*","featureStyle":"bento","features":[{"icon":"video-off","title":"No short videos","text":"Reels and Shorts are gone."},{"value":"100%","title":"On your device"},{"icon":"timer","title":"Daily limits"}]}\`
+
+## Feature points
+On every other layout, \`features\` is a short list with the copy, under the subheadline: what this screen does, in two to four points, each with an \`icon\` or a \`value\`, a \`title\` and optionally one line of \`text\`. The device gives up room for them, so use them where the slide is meant to explain; a slide that should hit hard keeps to its headline. \`featureStyle\` picks the look, default \`list\`:
+${list(POINT_STYLES)}
+- \`chips\` under a centred headline is the lightest; \`list\` and \`cards\` belong in the column of \`device-right\` or \`device-left\`, or under the headline of a slide whose device is made smaller.
+- The points shrink together with the headline when the copy grows too tall.
+Example: \`{"layout":"device-right","headline":"Everything that *keeps you* on track","screenshot":"home","features":[{"icon":"timer","title":"Daily limits","text":"Set a cap for every app"},{"icon":"bell","title":"Gentle nudges","text":"A reminder before time is up"},{"icon":"chart-bar","title":"Weekly report"}]}\`
+Take them off again with \`update_slide\` and \`"remove":["features"]\`.
 
 ## Backgrounds
 Presets: ${Object.entries(BACKGROUNDS)
@@ -60,15 +93,42 @@ ${Object.entries(FONTS)
   .join("\n")}
 
 ## Device
-\`frame\`: auto, iphone, ipad or none (bare rounded screenshot). \`color\`: ${DEVICE_COLOR_IDS.join(", ")}. Also \`scale\`, \`rotate\`, \`perspective\` (left/right), \`offsetX\`/\`offsetY\` (percent of the canvas) and \`shadow\` (none/soft/strong).
+\`frame\`: auto, iphone, ipad or none (bare rounded screenshot). \`color\`: ${DEVICE_COLOR_IDS.join(", ")}. \`shadow\`: none, soft or strong.
+Where the device stands and how large it is can be set per slide, in the slide's own \`device\`, on top of what the layout does:
+- \`scale\`: 0.4 to 1.6, default 1. Smaller leaves the copy more room; larger turns the screen into a detail shot.
+- \`offsetX\`, \`offsetY\`: a shift in percent of the canvas width and height, -60 to 60. Positive is right and down. \`"offsetY":8\` lets a device bleed further off the bottom; \`"offsetX":-12\` moves it left to make room on the right.
+- \`rotate\`: a tilt in degrees, -45 to 45. \`perspective\`: \`left\` or \`right\` turns it in 3D.
+Example: \`{"layout":"device-right","headline":"See the *whole week*","screenshot":"stats","device":{"scale":1.2,"offsetY":8,"rotate":-5}}\`
+Move in small steps and render to look: the device is cut off at the canvas edge, and nothing stops it from covering the copy.
 
 ## Badges
 ${list(BADGE_TYPES)}
-Icons: ${ICON_IDS.join(", ")}. Up to 4 per slide; they shrink to stay on one row. Examples:
+\`tone\` sets the colour of the wreath, stars and icon:
+${list(BADGE_TONES)}
+Up to 4 per slide; they shrink to stay on one row. On a slide without a device or cards they are drawn larger. Examples:
+- \`{"type":"rating","title":"4.9","subtitle":"12K ratings","tone":"gold"}\`
+- \`{"type":"laurel","icon":"trophy","title":"App of the Day","subtitle":"App Store","tone":"gold"}\`
 - \`{"type":"laurel","title":"10K+","subtitle":"Downloads"}\`
-- \`{"type":"laurel","stars":5,"title":"4.9","subtitle":"App Store rating"}\`
+- \`{"type":"review","stars":5,"title":"I got two hours of my day back.","subtitle":"Maya, App Store review"}\`
 - \`{"type":"icon","icon":"shield","title":"Private","subtitle":"No account needed"}\`
-Only use figures and awards the app really has: App Review rejects screenshots with invented ratings, download counts or accolades.
+A \`rating\` fills its stars from the score. A \`review\` is a card of its own: one per slide reads best, two at most, and the quote stays under about eight words.
+Only use figures, awards and reviews the app really has, and quote a review as it was written: App Review rejects screenshots with invented ratings, download counts, accolades or testimonials. Ask the user for them; never make them up.
+
+## Icon and logo rows
+\`iconRow\` puts up to 8 icons or brand logos in one row with the copy: the services the app works with, the apps it blocks, the places it shares to. \`icons\` lists them in order (see Icons; the Brands group holds the logos). Optional fields: \`label\`, a short line over the row such as "Works with"; \`position\`, \`bottom\` (below the subheadline, the default) or \`top\` (above the headline); \`size\`, ${ICON_ROW_SIZE_IDS.join(", ")} (default medium). \`style\`, default tiles:
+${list(ICON_ROW_STYLES)}
+\`tone\`, default brand:
+${list(ICON_ROW_TONES)}
+The row stays on one line, so with many icons they come out smaller; three to five read best. On a slide with nothing but copy, a \`large\` row is the picture. A black logo on a dark background, or a white one on a light background, is drawn in the text colour in the \`plain\` style so it stays visible.
+Example: \`{"layout":"device-bottom","headline":"Social apps without *short videos*","screenshot":"home","iconRow":{"icons":["instagram","youtube","tiktok"],"label":"Works with"}}\`
+Take a row off again with \`update_slide\` and \`"remove":["iconRow"]\`.
+
+## Icons
+For the \`icon\` of a badge or a feature, and the \`icons\` of an icon row. In a badge or a feature each is one colour: the accent colour, or gold on a gold badge.
+${Object.entries(ICON_GROUPS)
+  .map(([group, ids]) => `- ${group}: ${ids.join(", ")}`)
+  .join("\n")}
+The Brands group holds the logos of other companies, as simplified marks that an icon row can show in each company's own colours. They are trademarks, so use one only where the app really works with that service ("Works with Instagram", "Blocks Shorts on YouTube"), and never to suggest a partnership or an endorsement: App Review turns down screenshots that lean on another company's brand, and so can the company. Header and search results assets take no icon rows at all, because Apple allows no other company's logo there. A logo that is not in the list cannot be added; say so and leave it out, or name the service in the copy.
 
 ## Copy
 - Headline: two to five words, one benefit per slide, verb first where it fits. Wrap a word in *asterisks* to tint it with \`accentColor\` (with no accent set, the rest of the headline dims instead). \`\\n\` forces a line break.
@@ -125,7 +185,7 @@ async function guard(run: () => Promise<CallToolResult>): Promise<CallToolResult
 function unknownScreenshots(project: Project, shots: Shot[]): string[] {
   const known = new Set(shots.map((shot) => shot.name));
   const missing = new Set<string>();
-  const named = [...project.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2]), ...Object.values(project.creatives).flatMap((creative) => creative?.screenshots ?? [])];
+  const named = [...project.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]), ...Object.values(project.creatives).flatMap((creative) => creative?.screenshots ?? [])];
   for (const name of named) if (name && !known.has(name)) missing.add(name);
   return [...missing];
 }

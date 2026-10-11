@@ -135,7 +135,7 @@ async function renderNow(space: Space, id: string, request: RenderRequest): Prom
   const warnings = new Set<string>();
   for (const index of indexes) {
     const slide = project.slides[index]!;
-    for (const name of [slide.screenshot, slide.screenshot2]) {
+    for (const name of [slide.screenshot, slide.screenshot2, slide.screenshot3]) {
       if (!name) continue;
       for (const target of targets) {
         const kind = TARGETS[target].device;

@@ -4,7 +4,7 @@ import { hasBakedIsland } from "./palette.ts";
 import type { DeviceStyle, Project } from "./schema.ts";
 import { PLACEMENTS, type PlacementId } from "./sizes.ts";
 import { findShot, type Shot, shotsDir, type Space } from "./store.ts";
-import { backgroundCss, backgroundLuminance, badgeHtml, CSS, deviceHtml, deviceShape, esc, FIT_SCRIPT, pick, resolveBackground, rich, round } from "./template.ts";
+import { backgroundCss, backgroundLuminance, badgeHtml, CSS, DEFS, deviceHtml, deviceShape, esc, FIT_SCRIPT, pick, resolveBackground, rich, round } from "./template.ts";
 
 export interface CreativeContext {
   space: Space;
@@ -272,7 +272,7 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
 </head>
 <body>
 <div class="canvas creative creative-${layout} ${dark ? "dark" : "light"}" style="${vars}" data-copy-max="${(box.height / canvas.height).toFixed(4)}" data-shrink="together" data-fonts="${esc(fonts)}">
-<div class="bg" style="${backgroundCss(background)}"></div>${noise}
+<div class="bg" style="${backgroundCss(background)}"></div>${noise}${DEFS}
 ${artHtml}
 ${copyHtml}
 ${guide}

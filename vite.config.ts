@@ -27,6 +27,6 @@ export default defineConfig({
     rollupOptions: { input: { index: path.join(web, "index.html"), home: path.join(web, "home.html") } },
   },
   server: {
-    proxy: Object.fromEntries(["^/api/", "^/auth/", "^/logout", "^/render/", "^/files/", "^/fonts/", "^/mcp", "^/cli/", "^/skill\\.md"].map((route) => [route, server])),
+    proxy: Object.fromEntries(["^/api/", "^/auth/", "^/logout", "^/render/", "^/files/", "^/fonts/", "^/mcp", "^/cli/", "^/skill\\.md", "^/analytics\\.js"].map((route) => [route, server])),
   },
 });

@@ -47,6 +47,12 @@ The compose file always asks for the sign-in settings. For a local container, ad
 
 Everything lives in the `appshots-data` volume: projects, uploaded screenshots, renders, accounts and the key that signs sessions.
 
+### Analytics
+
+With `POSTHOG_KEY` set to a PostHog project token (`phc_…`), the home page and the Studio load PostHog and report page views and clicks. `POSTHOG_HOST` is the host it reports to, `https://us.i.posthog.com` unless set. The token is the public, write-only one that sits in the page source of any site using PostHog. The Studio shows people's unreleased apps, so session recording is switched off there whatever the PostHog project says, and nobody's name or email address is sent along.
+
+`docker-compose.yaml` carries a default token for the author's own server. Running your own, set `POSTHOG_KEY` to your project's token, or to `off` for no analytics. Without the variable, as with `npm start`, the pages load nothing. Sign-in is open to others, so say in your privacy notice that the site counts visits.
+
 ## People and accounts
 
 Everybody signs in with Google. There are no passwords.
@@ -123,9 +129,19 @@ Connect shows this with a real token in place of `<token>` and your agent at the
 3. Installs the skill where that agent looks for skills.
 4. Connects the agent to the server's MCP endpoint for every folder, with the agent's own command, replacing an older `appshots` entry.
 
-Run it again whenever the server has been updated or the token replaced, and once per agent if you use several; a copy set up for another agent is brought up to date at the same time. `install.sh`, the skill and the CLI hold no secrets, so the server hands them out without sign-in; the token is the only thing that opens anything.
+Run it again whenever the token has been replaced, and once per agent if you use several; a copy set up for another agent is brought up to date at the same time. `install.sh`, the skill and the CLI hold no secrets, so the server hands them out without sign-in; the token is the only thing that opens anything.
 
-Then open the agent in an app's repository, start a new session and start the skill, or just ask for App Store screenshots. The agent reads the code to learn what the app does, builds and runs it in the iOS Simulator (or uses a plugged-in, unlocked iPhone or iPad), fills it with believable content, captures the screens worth showing, writes the headlines, builds the set, looks at the render and fixes what is off. The skill's source is [skill/SKILL.md](skill/SKILL.md).
+The server hands out the skill and the CLI it was deployed with, so a deploy changes what a new setup installs. A Mac that was set up before catches up with one command, which needs no token and leaves the agent's connection alone:
+
+```bash
+appshots update
+```
+
+`appshots check` says when the server has a newer skill, and the skill tells the agent to run the update and read itself again. Installs from before `update` existed need the setup command once more.
+
+Then open the agent in an app's repository, start a new session and start the skill, or just ask for App Store screenshots. The agent works the same way every time: it checks the setup, asks a handful of questions first (iPhone or iPad, where the screens come from, where the app runs, the look, any real ratings or logos to show), reads a little of the code to learn what the app does, gets the screens, writes the headlines, builds the set, looks at the render and fixes what is off. The skill's source is [skill/SKILL.md](skill/SKILL.md).
+
+The screens come one of three ways, and the skill asks which: screenshots you already have (`appshots upload`), you open each screen and it is captured (`appshots shoot`, the quickest way to real content), or the agent starts the app on each screen itself (`appshots run` and `appshots launch`). It uses these commands for everything on the Mac and writes no scripts or UI tests of its own, which is what keeps a set to ten or twenty minutes.
 
 ### Only the MCP connection
 
@@ -169,32 +185,53 @@ The skill uses these by itself when the session has no working `appshots` MCP se
 The setup command above installs the CLI. It is one file with no dependencies, so in a checkout it also runs as `node cli/appshots.mjs`, or as `appshots` after `npm link`; `appshots setup <url> --agent <agent>` does what the setup command does.
 
 ```bash
-appshots devices                                  # booted simulators and connected devices
+appshots check                                    # the server, the skill, Xcode, the project here, simulators,
+                                                  # installed apps and devices, each with what to do next
+appshots upload streaks ./screens                 # screenshots you already have: files, or a folder of them
+appshots run                                      # build the app in this folder and launch it in a simulator
+appshots run --ipad --dark --lang de              # on the 13-inch iPad Pro, dark, in German
+appshots launch com.example.streaks --capture stats --to streaks -- -appshots stats
+                                                  # start an installed app again with launch arguments,
+                                                  # capture the screen and upload it, in one command
+appshots shoot streaks home stats detail --clean  # you open each screen and press Return; it captures and uploads
 appshots capture --name home --project streaks    # from the booted simulator, uploaded straight away
 appshots capture --name home --device --project streaks   # from the plugged-in, unlocked iPhone or iPad
 appshots capture --name home --clean              # simulator only: 9:41, full battery and signal
+appshots simctl openurl booted "streaks://stats"  # simctl with the right Xcode, for deep links and the like
+appshots devices                                  # booted simulators and connected devices
 appshots pull streaks --render                    # render everything and unpack it into ./store-screenshots/streaks,
                                                   # header and search results assets included
+appshots update                                   # the skill and the CLI as the server has them now
 appshots login https://appshots.example.com       # only the token, without the skill or the MCP connection
 ```
 
 The `--name` is what slides refer to (`"screenshot": "home"`). Capturing the same name again replaces the screenshot, and every slide using it updates. An iPhone and an iPad screenshot can share a name; each target size picks the matching one.
 
+`appshots run` finds the workspace or project and its scheme, boots the simulator the store sizes ask for (iPhone Pro Max, or the 13-inch iPad Pro with `--ipad`), and builds in Xcode's own build folder, so a project Xcode has built already starts in seconds. `--fresh` builds in a folder of its own instead. What follows a lone `--` goes to the app as launch arguments.
+
 Simulator capture uses `simctl`. Device capture uses `devicectl device capture screenshot`, which needs Xcode 27 or newer and a device that is unlocked and trusts the Mac. If `xcode-select` points at the Command Line Tools, the CLI switches to `/Applications/Xcode.app` by itself.
 
 ## The Studio
 
-Open the server in a browser and sign in to see every slide as a live preview at export size, edit copy, layout, badges and style, drop in screenshots, and download the set as a ZIP. Below the slides, the Header and search results section adds, previews and edits the three store assets, with the safe area drawn as a dashed frame. Projects sit in the sidebar. Changes an agent makes through MCP show up in an open Studio within a few seconds.
+Open the server in a browser and sign in to see every slide as a live preview at export size, and download the set as a ZIP. Projects sit in the sidebar. Changes an agent makes through MCP show up in an open Studio within a few seconds.
+
+- **Slides.** The heading of the section switches between iPhone and iPad. Click a slide to edit it: the editor opens beside a large preview of that slide, with the layouts as small sketches, the screenshots as thumbnails to pick from (two or three for the layouts that take several), sliders for the device's size, position and tilt, and editors for feature cards or points, badges, and the row of icons or logos.
+- **Screenshots.** Drop files anywhere on the page, or use the upload button.
+- **Header and search results.** Adds, previews and edits the three store assets. **Show safe area** draws the part every device shows as a dashed frame; it is off until you tick it and never in the exported file.
 
 ## Slides
 
 A project has a theme and up to ten slides. Every style field can be set on the theme and overridden per slide.
 
-- **Layouts:** `device-bottom`, `device-top`, `device-center`, `tilted`, `duo` (two devices), `hero` (badges above the headline)
-- **Badges** (up to four per slide): `laurel` (wreath), `stars`, `icon`, `pill`; with a title, a subtitle, a star value and an icon (`trophy`, `crown`, `medal`, `star`, `heart`, `download`, `bolt`, `shield`, `check`)
+- **Layouts:** one device (`device-bottom`, `device-top`, `device-center`, `tilted`, `closeup`, `floating`, `hero` with badges above the headline), the device beside a column of copy (`device-right`, `device-left`), several devices (`duo` and `side-by-side` take `screenshot` and `screenshot2`, `trio` takes `screenshot3` as well), and `features`, which has no device at all
+- **Feature slides:** the `features` layout lists up to six things the app does as cards with an icon or a figure, a title and a line of text, in the styles `bento`, `grid`, `cards` or `list`
+- **Feature points:** on every other layout, `features` is a short list next to the headline, as `list`, `cards`, `grid` or `chips`. It goes best with `device-right` and `device-left`, which give the copy a column of its own
+- **Badges** (up to four per slide): `laurel` (wreath), `stars`, `rating` (the figure with five stars), `review` (a quote with its author), `icon`, `pill`; plain or in `gold`
+- **Icon and logo rows:** `iconRow` puts up to eight icons or logos under the copy with an optional label such as "Works with", as `tiles`, `circles` or `plain`, in the brands' own colours, the accent or the text colour
+- **Icons:** 199 of them for badges, features and rows, 43 of which are logos of services such as YouTube, Instagram, Spotify, Slack and Notion. They are the fill weight of [Phosphor Icons](https://phosphoricons.com) (MIT); `npm run icons` rebuilds `src/icons.ts` from the list in `scripts/icons.mjs`
 - **Backgrounds:** presets (`midnight`, `aurora`, `ember`, `ocean`, `sunset`, `candy`, `forest`, `graphite`, `peach`, `mint`, `lavender`, `sky`, `paper`, `ink`), `auto` (colours taken from the slide's screenshot), a hex colour, or a custom `{type, colors}` gradient or mesh
 - **Fonts:** Inter, Manrope, Plus Jakarta Sans, Sora, Space Grotesk, Bricolage Grotesque, Fraunces, Instrument Serif (bundled, nothing is fetched at render time)
-- **Device:** frame (`auto`, `iphone`, `ipad`, `none`), colour, scale, rotation, perspective, offset, shadow
+- **Device:** frame (`auto`, `iphone`, `ipad`, `none`), colour and shadow, and per slide its size (`scale`), place (`offsetX`, `offsetY`), tilt (`rotate`) and turn in 3D (`perspective`)
 - **Text:** `*asterisks*` tint words with the accent colour, a newline forces a break, and any text can be a `{ "en-US": "...", "de-DE": "..." }` map for localized sets
 
 Output sizes, portrait: iPhone 6.9" (1320×2868), iPhone 6.5" (1284×2778), iPad 13" (2064×2752), iPad 12.9" (2048×2732). By default a render produces the 6.9" set, plus the 13" iPad set once the project has iPad screenshots. Files are opaque PNGs laid out as `<locale>/<target>/01.png`.
@@ -211,7 +248,7 @@ A project can hold one of each, built from the same screenshots and theme as its
 | `search` | 3840×2560 (3:2) | 2168×1030 at 836, 765 | The search results asset |
 | `universal` | 5244×2950 (16:9) | 1402×962 at 1921, 660 | One file for both; it is what "Use header asset in search results" expects |
 
-The store crops these images differently on each device and orientation, and only the safe area is always visible. appShots therefore centres the copy and shrinks it until it fits inside that area, and treats everything around it as decoration that may be cut off. The Studio and the previews an agent gets draw the safe area as a dashed frame; the exported PNG does not contain it.
+The store crops these images differently on each device and orientation, and only the safe area is always visible. appShots therefore centres the copy and shrinks it until it fits inside that area, and treats everything around it as decoration that may be cut off. The previews an agent gets draw the safe area as a dashed frame, and the Studio does when **Show safe area** is ticked; the exported PNG never contains it.
 
 - **Layouts:** `fan` (copy above up to five fanned devices), `sides` (copy between up to four devices), `wall` (copy over a dimmed wall of bare screenshots). Without screenshots an asset is copy on the background, without copy it is the devices alone.
 - **Per asset:** eyebrow, headline, subheadline, up to six screenshots in order of importance, up to three badges, background, font, colours, headline size, and the device frame, colour, size and shadow. What an asset leaves out comes from the project theme.
@@ -244,6 +281,7 @@ Account settings and the People page need a browser sign-in; an API token cannot
 ## Good to know
 
 - Screenshots are portrait only; there is no landscape or Apple Watch/TV output.
-- Put only real figures and awards in badges. App Review rejects screenshots with invented download counts, ratings or rankings.
+- Put only real figures, reviews and awards in badges. App Review rejects screenshots with invented download counts, ratings or rankings.
+- Logos are other companies' trademarks. Show them only for services the app really works with, and none in the header and search results assets, where Apple does not allow them.
 - The device frames are drawn in CSS, not Apple's product images.
 - Put the server behind HTTPS. No passwords are stored. `accounts.json` on the data volume holds each person's name, email address and Google account id, the list of allowed addresses, and API tokens as SHA-256 hashes; a token is shown once when it is created.

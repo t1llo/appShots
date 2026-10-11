@@ -1,5 +1,18 @@
 import { z } from "zod";
-import { BACKGROUNDS, BADGE_TYPE_IDS, CREATIVE_LAYOUT_IDS, DEVICE_COLOR_IDS, FONT_IDS, ICON_IDS, LAYOUT_IDS } from "./design.ts";
+import {
+  BACKGROUNDS,
+  BADGE_TONE_IDS,
+  BADGE_TYPE_IDS,
+  CREATIVE_LAYOUT_IDS,
+  DEVICE_COLOR_IDS,
+  FEATURE_STYLE_IDS,
+  FONT_IDS,
+  ICON_IDS,
+  ICON_ROW_SIZE_IDS,
+  ICON_ROW_STYLE_IDS,
+  ICON_ROW_TONE_IDS,
+  LAYOUT_IDS,
+} from "./design.ts";
 
 /** Ids and screenshot names end up in file paths and URLs, so they stay strictly slug-shaped. */
 export const SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -15,10 +28,27 @@ const text = z
 
 export const badgeSchema = z.object({
   type: z.enum(BADGE_TYPE_IDS).default("laurel"),
-  title: text.optional().describe('The big line, e.g. "10K+" or "4.9"'),
-  subtitle: text.optional().describe('The small line, e.g. "Downloads" or "App Store rating"'),
+  title: text.optional().describe('The big line, e.g. "10K+" or "4.9". On a review it is the quote'),
+  subtitle: text.optional().describe('The small line, e.g. "Downloads" or "App Store rating". On a review it is who said it'),
   stars: z.number().min(0).max(5).optional().describe("Shows a star row filled to this value"),
   icon: z.enum(ICON_IDS).optional(),
+  tone: z.enum(BADGE_TONE_IDS).optional().describe("Default plain"),
+});
+
+export const featureSchema = z.object({
+  icon: z.enum(ICON_IDS).optional(),
+  value: text.optional().describe('A big figure or word shown in place of the icon, e.g. "0", "24h" or "100%"'),
+  title: text.describe("The feature in two to four words"),
+  text: text.optional().describe("One short supporting line. The small tiles of a full slide leave it out."),
+});
+
+export const iconRowSchema = z.object({
+  icons: z.array(z.enum(ICON_IDS)).min(1).max(8).describe("The icons and brand logos, in the order shown"),
+  label: text.optional().describe('A short line over the row, e.g. "Works with"'),
+  style: z.enum(ICON_ROW_STYLE_IDS).optional().describe("Default tiles"),
+  tone: z.enum(ICON_ROW_TONE_IDS).optional().describe("Default brand"),
+  size: z.enum(ICON_ROW_SIZE_IDS).optional().describe("Default medium"),
+  position: z.enum(["top", "bottom"]).optional().describe("Above the headline or below the subheadline. Default bottom"),
 });
 
 const backgroundPreset = z.enum(["auto", ...(Object.keys(BACKGROUNDS) as [string, ...string[]])]);
@@ -66,9 +96,13 @@ export const slideSchema = z.object({
   headline: text.optional(),
   subheadline: text.optional(),
   screenshot: slug.optional().describe("Name of an uploaded raw screenshot"),
-  screenshot2: slug.optional().describe("Second screenshot, used by the duo layout"),
+  screenshot2: slug.optional().describe("Second screenshot, for the layouts with two or three devices"),
+  screenshot3: slug.optional().describe("Third screenshot, for the trio layout"),
   badges: z.array(badgeSchema).max(4).optional(),
   badgePosition: z.enum(["top", "bottom"]).optional().describe("Above the headline or below the subheadline"),
+  features: z.array(featureSchema).max(8).optional().describe("Most important first. The cards of the features layout; on every other layout a short list of feature points with the copy"),
+  featureStyle: z.enum(FEATURE_STYLE_IDS).optional().describe("bento, grid, cards or list on the features layout (default bento); list, cards, grid or chips for feature points (default list)"),
+  iconRow: iconRowSchema.optional().describe("A row of icons or brand logos with the copy, such as the services the app works with"),
   ...styleFields,
 });
 
@@ -111,6 +145,8 @@ export const projectSchema = z.object({
 
 export type Text = z.infer<typeof text>;
 export type Badge = z.infer<typeof badgeSchema>;
+export type Feature = z.infer<typeof featureSchema>;
+export type IconRow = z.infer<typeof iconRowSchema>;
 export type Background = z.infer<typeof backgroundSchema>;
 export type DeviceStyle = z.infer<typeof deviceSchema>;
 export type Theme = z.infer<typeof themeSchema>;

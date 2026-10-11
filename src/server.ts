@@ -35,7 +35,8 @@ import {
 } from "./accounts.ts";
 import { config } from "./config.ts";
 import { CREATIVE_CAPACITY, creativeHtml } from "./creative.ts";
-import { BACKGROUNDS, BADGE_TYPES, CREATIVE_LAYOUTS, DEVICE_COLOR_IDS, FONT_IDS, FONTS, ICON_IDS, LAYOUTS } from "./design.ts";
+import { BACKGROUNDS, BADGE_TONES, BADGE_TYPES, CREATIVE_LAYOUTS, DEVICE_COLOR_IDS, FEATURE_STYLES, POINT_STYLES, ICON_ROW_SIZE_IDS, ICON_ROW_STYLES, ICON_ROW_TONES, FONT_IDS, FONTS, ICON_GROUPS, ICON_IDS, LAYOUT_SHOTS, LAYOUTS } from "./design.ts";
+import { ICONS } from "./icons.ts";
 import { createMcpServer } from "./mcp.ts";
 import { closeBrowser, defaultTargets, renderProject } from "./render.ts";
 import { creativesSchema, localeSchema, slideSchema, themeSchema } from "./schema.ts";
@@ -199,6 +200,28 @@ app.get("/fonts/:font/:file", (req, res) => {
   res.set("Cache-Control", "public, max-age=31536000, immutable").sendFile(path.join(root, "node_modules", font.pkg, "files", req.params.file));
 });
 
+// Every icon as a symbol, for the Studio's picker: <use href="/icons.svg#rocket">.
+const iconSprite = `<svg xmlns="http://www.w3.org/2000/svg">${ICON_IDS.map((id) => `<symbol id="${id}" viewBox="0 0 256 256">${ICONS[id]}</symbol>`).join("")}</svg>`;
+app.get("/icons.svg", (_req, res) => {
+  res.type("image/svg+xml").set("Cache-Control", "public, max-age=86400").send(iconSprite);
+});
+
+// Page analytics, when POSTHOG_KEY is set: the home page and the Studio both load this file, and without a key it
+// is empty. The Studio shows people's unreleased apps, so there it counts pages and clicks and never records the screen.
+const POSTHOG_LOADER = String.raw`!function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}p||((p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",p.onerror=function(){p=null},(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r));var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],Object.defineProperty(u,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e}}),Object.defineProperty(u.people,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(){return u.toString(1)+".people (stub)"}}),o="gu mu yu bu ku init Qu Zu Wu Vu Yu el Gu ec zu lc uc cc hc dc vc capture getExtension Ju fu mc calculateEventProperties gc register register_once register_for_session unregister unregister_for_session wc Uu yc getFeatureFlag getFeatureFlagPayload getFeatureFlagResult getAllFeatureFlags isFeatureEnabled reloadFeatureFlags updateFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys onActiveMatchingSurveysChanged renderSurvey displaySurvey cancelPendingSurvey canRenderSurvey canRenderSurveyAsync kc identify setPersonProperties unsetPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset Sc shutdown setIdentity clearIdentity get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException addExceptionStep captureLog startExceptionAutocapture stopExceptionAutocapture loadToolbar get_property getSessionProperty bc rc createPersonProfile setInternalOrTestUser Cu xu opt_in_capturing opt_out_capturing $u has_opted_in_capturing has_opted_out_capturing get_explicit_consent_status is_capturing clear_opt_in_out_capturing nc debug il Os getPageViewId captureTraceFeedback captureTraceMetric Nu".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);`;
+const analyticsJs = (studio: boolean) =>
+  config.posthog
+    ? `${POSTHOG_LOADER}\nposthog.init(${JSON.stringify(config.posthog.key)},${JSON.stringify({
+        api_host: config.posthog.host,
+        defaults: "2026-05-30",
+        person_profiles: "identified_only",
+        ...(studio ? { disable_session_recording: true } : {}),
+      })});\n`
+    : "// Analytics are off on this server.\n";
+app.get("/analytics.js", (req, res) => {
+  res.type("application/javascript").set("Cache-Control", "public, max-age=300").send(analyticsJs(req.query.page === "studio"));
+});
+
 // ---------------------------------------------------------------- home page and signing in
 
 // The built scripts and styles carry no data and have content hashes in their names, so they are public and cached for good.
@@ -354,13 +377,21 @@ api.get("/meta", (_req, res) => {
   res.json({
     targets: TARGETS,
     layouts: LAYOUTS,
+    layoutShots: LAYOUT_SHOTS,
     placements: PLACEMENTS,
     creativeLayouts: Object.fromEntries(Object.entries(CREATIVE_LAYOUTS).map(([id, note]) => [id, { note, screenshots: CREATIVE_CAPACITY[id as keyof typeof CREATIVE_LAYOUTS] }])),
     fonts: FONT_IDS,
     backgrounds: ["auto", ...Object.keys(BACKGROUNDS)],
     deviceColors: DEVICE_COLOR_IDS,
     badgeTypes: BADGE_TYPES,
+    badgeTones: BADGE_TONES,
+    featureStyles: FEATURE_STYLES,
+    pointStyles: POINT_STYLES,
+    iconRowStyles: ICON_ROW_STYLES,
+    iconRowTones: ICON_ROW_TONES,
+    iconRowSizes: ICON_ROW_SIZE_IDS,
     icons: ICON_IDS,
+    iconGroups: ICON_GROUPS,
     authEnabled: config.auth,
     /** Null only while sign-in is off. */
     account: user ? { email: user.email, name: user.name, admin: isAdmin(user) } : null,

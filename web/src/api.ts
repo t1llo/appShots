@@ -3,19 +3,29 @@ import type { CreativeLayoutId } from "../../src/design.ts";
 import type { Project, Text } from "../../src/schema.ts";
 import type { Placement, PlacementId, Target, TargetId } from "../../src/sizes.ts";
 
-export type { Background, Badge, Creative, DeviceStyle, Project, Slide, Text, Theme } from "../../src/schema.ts";
+export type { Background, Badge, Creative, DeviceStyle, Feature, IconRow, Project, Slide, Text, Theme } from "../../src/schema.ts";
 export type { CreativeLayoutId, Placement, PlacementId, Target, TargetId };
 
 export interface Meta {
   targets: Record<TargetId, Target>;
   layouts: Record<string, string>;
+  /** How many screenshots each slide layout shows. */
+  layoutShots: Record<string, number>;
   placements: Record<PlacementId, Placement>;
   creativeLayouts: Record<CreativeLayoutId, { note: string; screenshots: number }>;
   fonts: string[];
   backgrounds: string[];
   deviceColors: string[];
   badgeTypes: Record<string, string>;
+  badgeTones: Record<string, string>;
+  featureStyles: Record<string, string>;
+  pointStyles: Record<string, string>;
+  iconRowStyles: Record<string, string>;
+  iconRowTones: Record<string, string>;
+  iconRowSizes: string[];
   icons: string[];
+  /** The same icons under the headings the picker shows them under. */
+  iconGroups: Record<string, string[]>;
   authEnabled: boolean;
   /** Who is signed in. Null only while the server runs without sign-in. */
   account: { email: string; name: string; admin: boolean } | null;

@@ -10,6 +10,8 @@ import { toast } from "./ui.tsx";
 
 const SLIDE_HEIGHT = 440;
 const ASSET_HEIGHT = 190;
+/** From this window width on, the selected slide is also shown large beside its fields. */
+const FOCUS_FROM = 1360;
 
 type Selection = { kind: "slide"; index: number } | { kind: "creative"; placement: PlacementId } | null;
 
@@ -57,6 +59,16 @@ function Stage({ src, frameKey, width, height, scale }: { src: string | null; fr
   return <div className="stage" ref={ref} style={{ width: Math.round(width * scale), height: Math.round(height * scale) }} />;
 }
 
+function useViewport() {
+  const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  useEffect(() => {
+    const read = () => setSize({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", read);
+    return () => window.removeEventListener("resize", read);
+  }, []);
+  return size;
+}
+
 // ---------------------------------------------------------------- page
 
 export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initial: Detail; openConnect: () => void }) {
@@ -75,6 +87,20 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   const [status, setStatusState] = useState({ text: "", error: false });
   const [title, setTitle] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const viewport = useViewport();
+  const [guides, setGuidesState] = useState(() => {
+    try {
+      return localStorage.getItem("appshots.guides") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setGuides = (on: boolean) => {
+    setGuidesState(on);
+    try {
+      localStorage.setItem("appshots.guides", on ? "1" : "0");
+    } catch {}
+  };
 
   // Timers and requests outlive renders, so they read the draft from here.
   const latest = useRef(draft);
@@ -198,7 +224,15 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   };
 
   const assignShot = (shot: Shot) => {
-    if (slideIndex != null) return update((project) => void (project.slides[slideIndex]!.screenshot = shot.name), true);
+    if (slideIndex != null) {
+      return update((project) => {
+        const slide = project.slides[slideIndex]!;
+        // A layout with several devices takes the screenshot in its first free place.
+        const keys = (["screenshot", "screenshot2", "screenshot3"] as const).slice(0, Math.max(1, meta.layoutShots[slide.layout ?? "device-bottom"] ?? 1));
+        if (keys.some((key) => slide[key] === shot.name)) return;
+        slide[keys.find((key) => !slide[key]) ?? keys[0]!] = shot.name;
+      }, true);
+    }
     if (placement == null) return toast("Select a slide or an asset first, then click a screenshot to use it there.");
     if ((draft.creatives[placement]!.screenshots?.length ?? 0) >= 6) return toast("An asset takes up to six screenshots.");
     update((project) => {
@@ -232,7 +266,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
       }
       // Fresh uploads fill slides that are still waiting for a screenshot, so a new project comes alive on the first drop.
       const { slides } = latest.current;
-      const used = new Set(slides.flatMap((slide) => [slide.screenshot, slide.screenshot2]));
+      const used = new Set(slides.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]));
       const waiting = slides.flatMap((slide, index) => (slide.screenshot ? [] : [index]));
       const fills = uploaded.filter((shot) => !used.has(shot.name) && used.add(shot.name)).slice(0, waiting.length);
       if (fills.length) update((project) => fills.forEach((shot, at) => void (project.slides[waiting[at]!]!.screenshot = shot.name)), true);
@@ -253,6 +287,13 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     setSelection(next);
     setTab("item");
   };
+
+  // Moving through the set with the arrows keeps the selected card in view.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current) document.querySelector(".workspace .card.selected")?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    opened.current = true;
+  }, [slideIndex, placement]);
 
   const addSlide = () => {
     const used = new Set(draft.slides.map((slide) => slide.screenshot));
@@ -324,7 +365,9 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     setExporting(true);
     try {
       await save();
-      const result = await api<RenderResponse>("POST", `/projects/${id}/render`, {});
+      // The standard sizes, and the one picked for the previews when it is another.
+      const targets = [...new Set([...detail.defaultTargets, target])];
+      const result = await api<RenderResponse>("POST", `/projects/${id}/render`, { targets });
       queryClient.setQueryData(detailQuery(id).queryKey, (current) => current && { ...current, outputs: result.outputs, creativeOutputs: result.creativeOutputs });
       if (result.warnings.length) toast(result.warnings.join("\n"), "warn", 9000);
       const assets = result.creatives.length ? ` and ${plural(result.creatives.length, "header and search results asset")}` : "";
@@ -346,10 +389,14 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
 
   const size = meta.targets[target];
   const slideScale = SLIDE_HEIGHT / size.height;
-  const used = new Set([...draft.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2]), ...placements.flatMap((where) => draft.creatives[where]?.screenshots ?? [])]);
+  const used = new Set([...draft.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2, slide.screenshot3]), ...placements.flatMap((where) => draft.creatives[where]?.screenshots ?? [])]);
   const look = [saved.theme, saved.locales[0], locale, shotsKey(shots)];
   const changeSlide: Change<Project["slides"][number]> = (recipe) => update((project) => recipe(project.slides[slideIndex!]!));
   const changeCreative: Change<Creative> = (recipe) => update((project) => recipe(project.creatives[placement!]!));
+
+  // The large preview of the selected slide: as tall as the panel allows, within a column that leaves the gallery two cards.
+  const focused = slideIndex != null && slideIndex < saved.slides.length && viewport.width >= FOCUS_FROM;
+  const focusScale = Math.min(Math.min(380, Math.max(260, viewport.width * 0.2)) / size.width, (viewport.height - 150) / size.height);
 
   const itemTab = placement ? meta.placements[placement].label : slideIndex != null ? `Slide ${slideIndex + 1}` : "Slide";
 
@@ -361,13 +408,6 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
         <span className={`status${status.error ? " error" : ""}`} role="status">
           {status.text}
         </span>
-        <select className="ghost" aria-label="Preview size" title="Preview size" value={target} onChange={(event) => setTarget(event.target.value as TargetId)}>
-          {(Object.keys(meta.targets) as TargetId[]).map((key) => (
-            <option key={key} value={key}>
-              {meta.targets[key].label} · {meta.targets[key].width}×{meta.targets[key].height}
-            </option>
-          ))}
-        </select>
         {draft.locales.length > 1 ? (
           <select className="ghost" aria-label="Preview language" title="Preview language" value={locale} onChange={(event) => setLocale(event.target.value)}>
             {draft.locales.map((code) => (
@@ -470,9 +510,19 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
           </section>
 
           <section className="block">
-            <div className="section-head">
+            <div className="section-head wrap">
               <h2>Slides</h2>
               <span className="hint">Live previews at the exact export size. Up to 10 per set.</span>
+              <label className="device-pick" title="The device the slides are shown for. Export ZIP holds this size along with the standard ones.">
+                Device
+                <select value={target} onChange={(event) => setTarget(event.target.value as TargetId)}>
+                  {(Object.keys(meta.targets) as TargetId[]).map((key) => (
+                    <option key={key} value={key}>
+                      {meta.targets[key].label} · {meta.targets[key].width}×{meta.targets[key].height}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
             <div className="slides">
               {draft.slides.map((slide, index) => {
@@ -507,9 +557,15 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
           </section>
 
           <section className="block">
-            <div className="section-head">
+            <div className="section-head wrap">
               <h2>Header and search results</h2>
-              <span className="hint">Optional images for the Header and Search Results tab in App Store Connect. The dashed frame is the safe area and is not exported.</span>
+              <span className="hint">Optional images for the Header and Search Results tab in App Store Connect.</span>
+              {placements.some((where) => draft.creatives[where]) ? (
+                <label className="check" title="Draws the part every device shows as a dashed frame. It is a guide in this preview only and never part of the exported image.">
+                  <input type="checkbox" checked={guides} onChange={(event) => setGuides(event.target.checked)} />
+                  Show safe area
+                </label>
+              ) : null}
             </div>
             <div className="slides">
               {placements.map((where) => {
@@ -537,8 +593,8 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
                 return (
                   <button key={where} className={`card${on ? " selected" : ""}`} type="button" aria-pressed={on} aria-label={`${spec.label} asset`} onClick={() => select({ kind: "creative", placement: where })}>
                     <Stage
-                      src={saved.creatives[where] ? `/render/${id}/creative/${where}?${new URLSearchParams({ locale, guides: "1" })}` : null}
-                      frameKey={JSON.stringify([saved.creatives[where], ...look])}
+                      src={saved.creatives[where] ? `/render/${id}/creative/${where}?${new URLSearchParams(guides ? { locale, guides: "1" } : { locale })}` : null}
+                      frameKey={JSON.stringify([saved.creatives[where], guides, ...look])}
                       width={spec.width}
                       height={spec.height}
                       scale={scale}
@@ -551,7 +607,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
           </section>
         </div>
 
-        <aside className="panel">
+        <aside className={`panel${focused ? " with-focus" : ""}`}>
           <div className="tabs">
             <button className={`tab${tab === "item" ? " on" : ""}`} type="button" onClick={() => setTab("item")}>
               {itemTab}
@@ -560,17 +616,32 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
               Project
             </button>
           </div>
-          <Scope.Provider value={{ meta, projectId: id, shots, target, locale, primary: draft.locales[0]! }}>
-            {tab === "project" ? (
-              <ProjectEditor project={draft} change={update} remove={() => void deleteProject()} />
-            ) : placement ? (
-              <CreativeEditor key={placement} project={draft} placement={placement} change={changeCreative} remove={() => removeCreative(placement)} />
-            ) : slideIndex != null ? (
-              <SlideEditor key={slideIndex} project={draft} index={slideIndex} change={changeSlide} actions={slideActions(slideIndex)} />
-            ) : (
-              <p className="muted pad">Select a slide to edit it, or add one.</p>
-            )}
-          </Scope.Provider>
+          <div className="panel-body">
+            {focused ? (
+              <div className="focus">
+                <Stage
+                  src={`/render/${id}/${slideIndex}?${new URLSearchParams({ target, locale })}`}
+                  frameKey={JSON.stringify([slideIndex, saved.slides[slideIndex], target, focusScale.toFixed(3), ...look])}
+                  width={size.width}
+                  height={size.height}
+                  scale={focusScale}
+                />
+              </div>
+            ) : null}
+            <div className="panel-fields">
+              <Scope.Provider value={{ meta, projectId: id, shots, target, locale, primary: draft.locales[0]!, guides }}>
+                {tab === "project" ? (
+                  <ProjectEditor project={draft} change={update} remove={() => void deleteProject()} />
+                ) : placement ? (
+                  <CreativeEditor key={placement} project={draft} placement={placement} change={changeCreative} remove={() => removeCreative(placement)} />
+                ) : slideIndex != null ? (
+                  <SlideEditor key={slideIndex} project={draft} index={slideIndex} change={changeSlide} actions={slideActions(slideIndex)} />
+                ) : (
+                  <p className="muted pad">Select a slide to edit it, or add one.</p>
+                )}
+              </Scope.Provider>
+            </div>
+          </div>
         </aside>
       </div>
     </div>
