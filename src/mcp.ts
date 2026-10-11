@@ -105,7 +105,7 @@ function describe(project: Project, shots: Shot[], base: string) {
     creativeAssets: project.creatives,
     screenshots: shots.map((shot) => ({ name: shot.name, device: shot.device, size: `${shot.width}×${shot.height}` })),
     defaultTargets: defaultTargets(shots),
-    gallery: `${base}/#/${project.id}`,
+    studio: `${base}/#/${project.id}`,
   };
 }
 
@@ -194,7 +194,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
     (input) =>
       guard(async () => {
         const created = await createProject(space, input);
-        return text(`Created project "${created.id}".\n\n${uploadHelp(base, created.id)}\n\nGallery: ${base}/#/${created.id}`);
+        return text(`Created project "${created.id}".\n\n${uploadHelp(base, created.id)}\n\nStudio: ${base}/#/${created.id}`);
       }),
   );
 
@@ -337,7 +337,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
           lines.push("", "Header and search results assets (the dashed frame in the previews marks the safe area and is not in the PNG):");
           for (const file of result.creatives) lines.push(`  ${file.placement} (${file.width}×${file.height}), ${file.locale}  ${base}/files/${id}/out/${file.path}`);
         }
-        lines.push("", `Gallery: ${base}/#/${id}`, `ZIP of everything: ${base}/api/projects/${id}/export.zip (or \`appshots pull ${id}\`)`);
+        lines.push("", `Studio: ${base}/#/${id}`, `ZIP of everything: ${base}/api/projects/${id}/export.zip (or \`appshots pull ${id}\`)`);
         if (result.warnings.length) lines.push("", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`));
 
         const content: CallToolResult["content"] = [{ type: "text", text: lines.join("\n") }];

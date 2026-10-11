@@ -2,7 +2,7 @@ import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
-/** Where `npm run dev` serves the API while `npm run dev:web` serves the gallery with hot reload. */
+/** Where `npm run dev` serves the API while `npm run dev:web` serves the Studio with hot reload. */
 const server = process.env.APPSHOTS_SERVER ?? "http://localhost:3000";
 const web = path.resolve(import.meta.dirname, "web");
 

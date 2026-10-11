@@ -13,7 +13,7 @@ const ASSET_HEIGHT = 190;
 
 type Selection = { kind: "slide"; index: number } | { kind: "creative"; placement: PlacementId } | null;
 
-/** The part of a project the gallery edits and sends back. */
+/** The part of a project the Studio edits and sends back. */
 type Saved = Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives">;
 
 const snapshot = (project: Project) => JSON.stringify({ name: project.name, locales: project.locales, theme: project.theme, slides: project.slides, creatives: project.creatives } satisfies Saved);
@@ -153,7 +153,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     };
   }, [save]);
 
-  // Picks up changes made elsewhere while the gallery is open: Claude editing through MCP, or the CLI uploading a capture.
+  // Picks up changes made elsewhere while the Studio is open: Claude editing through MCP, or the CLI uploading a capture.
   const live = useQuery({ ...detailQuery(id), refetchInterval: dirty ? false : 3000 });
   const detail = live.data ?? initial;
   const { shots } = detail;
@@ -180,8 +180,8 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
   }, [shots.length]);
 
   useEffect(() => {
-    document.title = `${draft.name} · appShots`;
-    return () => void (document.title = "appShots");
+    document.title = `${draft.name} · appShots Studio`;
+    return () => void (document.title = "appShots Studio");
   }, [draft.name]);
 
   const locale = draft.locales.includes(chosenLocale) ? chosenLocale : draft.locales[0]!;

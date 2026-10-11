@@ -6,7 +6,7 @@ import { InputError, NotFoundError, type Space } from "./store.ts";
 
 // Everybody signs in with Google. The admin is the address in ADMIN_EMAIL and works in the server's own space,
 // directly under the data directory. Everyone else is an account in accounts.json with a private directory
-// under users/<id>, and gets in only while their address is on the list or sign-in is open to anyone.
+// under users/<id>. Anyone with a Google account gets in, unless the admin has narrowed sign-in to a list.
 
 export type SignupMode = "list" | "open";
 
@@ -34,6 +34,8 @@ export interface User {
 
 interface State {
   signup: SignupMode;
+  /** True once the admin has picked `signup` under People. */
+  signupChosen: boolean;
   /** The addresses that may sign in while `signup` is "list". The admin is not on it and does not need to be. */
   allowed: string[];
   users: User[];
@@ -50,9 +52,13 @@ export class AuthError extends Error {
 
 const file = path.join(config.dataDir, "accounts.json");
 const saved = JSON.parse(await readFile(file, "utf8").catch(() => "{}")) as Partial<State>;
+// Open unless the admin narrowed it. Earlier versions wrote their own default into the file ("invite", then "list"),
+// so a list counts only when the admin picked it or put somebody on it.
+const signupChosen = saved.signupChosen === true;
+const listInUse = signupChosen || (Array.isArray(saved.allowed) && saved.allowed.length > 0);
 const state: State = {
-  // Anything but an explicit "open" is the list, including the invite-only mode of earlier versions.
-  signup: saved.signup === "open" ? "open" : "list",
+  signup: saved.signup === "list" && listInUse ? "list" : "open",
+  signupChosen,
   allowed: Array.isArray(saved.allowed) ? saved.allowed : [],
   users: Array.isArray(saved.users) ? saved.users : [],
 };
@@ -102,6 +108,7 @@ export const signupMode = () => state.signup;
 
 export async function setSignupMode(mode: SignupMode): Promise<void> {
   state.signup = mode;
+  state.signupChosen = true;
   await save();
 }
 

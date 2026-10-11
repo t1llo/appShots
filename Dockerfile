@@ -1,4 +1,4 @@
-# The web gallery is the one part that is built: React, bundled by Vite into web/dist.
+# The web pages are the one part that is built: React, bundled by Vite into web/dist.
 FROM node:24-bookworm-slim AS web
 
 WORKDIR /app
@@ -42,5 +42,5 @@ USER node
 VOLUME /data
 EXPOSE 3000
 
-# Node 24 runs the server's TypeScript sources directly; only the gallery above is built.
+# Node 24 runs the server's TypeScript sources directly; only the web pages above are built.
 CMD ["node", "src/server.ts"]

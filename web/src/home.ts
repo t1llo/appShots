@@ -1,5 +1,5 @@
-// The public home page is plain HTML (web/home.html). This adds the two things that depend on the visit:
-// why a sign-in just failed, and whether signing in is by invitation.
+// The public home page is plain HTML (web/home.html). This adds what depends on the visit or needs a script:
+// why a sign-in just failed, who may sign in, and the motion.
 
 const ERRORS: Record<string, string> = {
   not_allowed: "That Google account is not on the list for this server yet. Ask the person who runs it to add your address.",
@@ -21,7 +21,49 @@ if (code) {
 
 fetch("/auth/config")
   .then((response) => response.json())
-  .then((config: { signup: "list" | "open" }) => {
-    if (config.signup === "list") document.getElementById("signin-note")!.textContent = "Free to use. Sign-in is by invitation for now: your Google address has to be on the list.";
+  .then((config: { signIn: boolean; signup: "list" | "open" }) => {
+    const note = document.getElementById("signin-note")!;
+    if (!config.signIn) note.textContent = "No sign-in needed on this server.";
+    else if (config.signup === "list") note.textContent = "Free. By invitation for now: sign in with a Google address on the list.";
   })
   .catch(() => {});
+
+// A reel drifts sideways for ever: the row is repeated until it is wider than any window it can end up in, then
+// slides by exactly one row and starts over. Anyone who asked for less motion keeps a row to scroll by hand.
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+for (const reel of still ? [] : document.querySelectorAll<HTMLElement>("[data-reel]")) {
+  const track = reel.querySelector<HTMLElement>(".reel-track")!;
+  const row = [...track.children];
+  reel.classList.add("rolling");
+  const width = track.scrollWidth + parseFloat(getComputedStyle(track).columnGap);
+  const copies = Math.max(2, Math.ceil(Math.max(screen.width, innerWidth) / width) + 1);
+  for (let n = 1; n < copies; n++) {
+    for (const image of row) {
+      const copy = image.cloneNode(true) as HTMLImageElement;
+      copy.alt = "";
+      copy.setAttribute("aria-hidden", "true");
+      // A lazy copy off to the right would pop in mid-scroll.
+      copy.loading = "eager";
+      track.append(copy);
+    }
+  }
+  reel.style.setProperty("--copies", String(copies));
+  reel.style.setProperty("--time", `${Math.round(width / (reel.classList.contains("wide") ? 26 : 34))}s`);
+}
+
+for (const host of document.querySelectorAll("[data-host]")) host.textContent = location.host;
+
+// The terminal writes itself out the first time it scrolls into view.
+const terminal = document.querySelector(".term");
+if (terminal) {
+  terminal.classList.add("armed");
+  const watcher = new IntersectionObserver(
+    (entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      terminal.classList.add("on");
+      watcher.disconnect();
+    },
+    { threshold: 0.5 },
+  );
+  watcher.observe(terminal);
+}

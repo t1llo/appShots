@@ -63,7 +63,7 @@ import { slideHtml } from "./template.ts";
 import { writeZip } from "./zip.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
-/** The gallery and the home page, built from web/ by `npm run build`. */
+/** The Studio and the home page, built from web/ by `npm run build`. */
 const webDir = path.join(root, "web", "dist");
 
 // ---------------------------------------------------------------- fonts
@@ -160,7 +160,7 @@ app.disable("x-powered-by");
 app.set("trust proxy", 1);
 
 app.use((_req, res, next) => {
-  // Slide previews are framed by the gallery only.
+  // Slide previews are framed by the Studio only.
   res.set({ "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "X-Frame-Options": "SAMEORIGIN" });
   next();
 });
@@ -199,17 +199,19 @@ function sendPage(res: Response, name: string): void {
   res.set("Cache-Control", "no-cache").sendFile(page);
 }
 
-/** One address, two pages: the gallery for whoever is signed in, the public home page for everybody else. */
+/** One address, two pages: the Studio for whoever is signed in, the public home page for everybody else. */
 app.get("/", (req, res) => sendPage(res, identify(req) ? "index.html" : "home.html"));
 // The home page under its own address too, so it can be looked at while signed in or with sign-in off.
 app.get("/home", (_req, res) => sendPage(res, "home.html"));
+// Where every "Open Studio" button points: straight in for whoever is signed in, through Google for everybody else.
+app.get("/studio", (req, res) => res.redirect(identify(req) ? "/" : "/auth/google"));
 // Addresses from before the home page did the signing in.
 app.get(["/login", "/signup", "/reset"], (_req, res) => res.redirect("/"));
 
 const auth = express.Router();
 
 auth.get("/config", (_req, res) => {
-  res.json({ signup: signupMode() });
+  res.json({ signIn: config.auth, signup: signupMode() });
 });
 
 const googleRedirect = (req: Request) => `${baseUrl(req)}/auth/google/callback`;

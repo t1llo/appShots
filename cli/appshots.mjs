@@ -27,10 +27,10 @@ const HELP = `appshots: capture app screenshots and sync them with an appShots s
   appshots upload <project> <files...>   Upload existing screenshots (name = file name, or --name)
   appshots pull <project> [--out <dir>]  Download the rendered screenshots and header and search
                                          results assets (--render renders first)
-  appshots open [project]                Open the web gallery
+  appshots open [project]                Open the Studio in the browser
 
 Server and token come from APPSHOTS_URL / APPSHOTS_TOKEN, or from 'appshots login'.
-The token is a personal one from Connect or Account in the web gallery.`;
+The token is a personal one from Connect or Account in the Studio.`;
 
 function fail(message) {
   console.error(`appshots: ${message}`);
@@ -123,7 +123,7 @@ function promptHidden(question) {
 async function login(url) {
   if (!url) fail("Usage: appshots login <url>");
   if (!/^https?:\/\//.test(url)) fail("The URL must start with http:// or https://");
-  const config = { url: url.replace(/\/+$/, ""), token: process.env.APPSHOTS_TOKEN ?? (await promptHidden("Token (from Connect in the gallery; leave empty if the server has no sign-in): ")) };
+  const config = { url: url.replace(/\/+$/, ""), token: process.env.APPSHOTS_TOKEN ?? (await promptHidden("Token (from Connect in the Studio; leave empty if the server has no sign-in): ")) };
   await request(config, "GET", "/api/projects");
   mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
   writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });

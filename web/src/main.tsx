@@ -1,4 +1,4 @@
-// The gallery's shell: the sidebar, the routes, and what every page shares.
+// The Studio's shell: the sidebar, the routes, and what every page shares.
 // Routes live in the URL hash, so the #/<project> links that the MCP tools and the CLI print keep working.
 
 import "./app.css";
@@ -180,7 +180,7 @@ function Home() {
   const open = useOpenDialog();
   if (first) return <Navigate to="/$projectId" params={{ projectId: first.id }} replace />;
   return (
-    <Message title="App Store screenshots, on tap" text="Create a project here, or let Claude build one through the MCP endpoint. Either way the result shows up in this gallery.">
+    <Message title="App Store screenshots, on tap" text="Create a project here, or let Claude build one through the MCP endpoint. Either way the result shows up here in the Studio.">
       <button className="btn primary" type="button" onClick={() => open("new")}>
         New project
       </button>

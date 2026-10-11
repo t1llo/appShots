@@ -2,7 +2,7 @@
   "name": "appshots",
   "version": "0.1.0",
   "private": true,
-  "description": "Self-hosted App Store screenshot generator with an MCP endpoint, a web gallery and a Mac capture CLI.",
+  "description": "Self-hosted App Store screenshot generator with an MCP endpoint, a web Studio and a Mac capture CLI.",
   "type": "module",
   "engines": {
     "node": ">=24"

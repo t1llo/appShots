@@ -352,8 +352,8 @@ function PeopleLists({ data }: { data: PeopleData }) {
         <Field label="Sign-in is open to" hint={byList ? "Add the Google address of everyone you want to let in." : "Anybody who finds this address can sign in, make projects and render on your server."}>
           <Select
             options={[
-              ["list", "Only the people listed here"],
               ["open", "Anyone with a Google account"],
+              ["list", "Only the people listed here"],
             ]}
             value={data.signup}
             onChange={setMode}

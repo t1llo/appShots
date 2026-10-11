@@ -6,7 +6,7 @@
     <title>appShots · App Store screenshots, on tap</title>
     <meta
       name="description"
-      content="Make App Store screenshots for iPhone and iPad from your app's own screens: device frames, headlines, badges, and every size App Store Connect asks for. Works with Claude."
+      content="App Store screenshots for iPhone and iPad, made in the Studio or by your agent over MCP. Device frames, headlines, badges, and every size App Store Connect asks for."
     />
     <link
       rel="icon"
@@ -16,105 +16,91 @@
   </head>
   <body class="home">
     <header class="home-bar">
-      <a class="home-brand" href="/">
+      <a class="home-brand" href="/home">
         <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
           <rect width="32" height="32" rx="7" fill="currentColor" />
           <rect x="10.5" y="6.5" width="11" height="19" rx="3" fill="none" stroke="var(--bg)" stroke-width="2.2" />
         </svg>
         appShots
       </a>
-      <a class="btn" href="/auth/google">Sign in</a>
+      <a class="btn" href="/studio">Open Studio</a>
     </header>
 
     <main>
       <section class="home-hero">
+        <a class="home-pill" href="#agents"><i></i>Built for agents · MCP included</a>
         <h1>App Store screenshots, on tap</h1>
-        <p class="home-lead">
-          Drop in screens from your app, write a headline, and get the whole set in every size App Store Connect asks for. Or tell Claude what your app does and let it build the set for you.
-        </p>
+        <p class="home-lead">Make them in the Studio, or hand the whole job to your agent.</p>
         <p class="inline-error" id="signin-error" role="alert" hidden></p>
-        <a class="btn big" href="/auth/google">
-          <svg viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
-            <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z" />
-            <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.33-1.58-5.04-3.71H.96v2.33A9 9 0 0 0 9 18z" />
-            <path fill="#FBBC05" d="M3.96 10.71a5.4 5.4 0 0 1 0-3.42V4.96H.96a9 9 0 0 0 0 8.08l3-2.33z" />
-            <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.96l3 2.33C4.67 5.16 6.66 3.58 9 3.58z" />
-          </svg>
-          Continue with Google
-        </a>
-        <p class="home-note" id="signin-note">Free to use. Your projects stay private to you.</p>
+        <a class="btn cta" href="/studio">Open Studio<span aria-hidden="true">→</span></a>
+        <p class="home-note" id="signin-note">Free. Sign in with Google.</p>
       </section>
 
-      <section class="home-set" aria-label="An example set">
-        <div class="home-slides">
-          <img src="/src/home/slide-1.webp" width="540" height="1173" alt="Example slide: two award wreaths and the headline Habits that stick above an iPhone showing a habit list" />
-          <img src="/src/home/slide-2.webp" width="540" height="1173" alt="Example slide: Your day at a glance, with the iPhone rising from the bottom edge" />
-          <img src="/src/home/slide-3.webp" width="540" height="1173" alt="Example slide: Watch your streaks grow, with a tilted iPhone showing a weekly chart" />
-          <img src="/src/home/slide-4.webp" width="540" height="1173" alt="Example slide: Light or dark, your call, with two overlapping iPhones" />
-          <img src="/src/home/slide-5.webp" width="540" height="1173" alt="Example slide: Private by design in a serif face, with the iPhone at the top" />
-        </div>
-        <p class="home-caption">A set made here from four screens of a sample app, exported at 1320 × 2868 for the 6.9-inch iPhone.</p>
-      </section>
-
-      <section class="home-grid" aria-label="What it does">
-        <div>
-          <h3>Every size, exact</h3>
-          <p>iPhone 6.9″ and 6.5″, iPad 13″ and 12.9″, as PNGs at the pixel sizes App Store Connect accepts. One set of slides covers all of them.</p>
-        </div>
-        <div>
-          <h3>Frames and layouts</h3>
-          <p>Six layouts with a device drawn around your screenshot: rising from the bottom, tilted, two at once, or a hero slide that leads with your numbers.</p>
-        </div>
-        <div>
-          <h3>Badges for what you earned</h3>
-          <p>Wreaths, star ratings and pills for your real downloads, rating and awards, sized to sit on one row.</p>
-        </div>
-        <div>
-          <h3>Header and search results</h3>
-          <p>The wide images for App Store Connect's new Header and Search Results tab, with the safe area drawn while you edit.</p>
-        </div>
-        <div>
-          <h3>Every language</h3>
-          <p>Write each line once per language. The whole set renders for all of them in one go, sorted into folders.</p>
-        </div>
-        <div>
-          <h3>Built to work with Claude</h3>
-          <p>Connect Claude and ask in plain words. With the skill it runs your app in the simulator, captures the screens, writes the headlines and builds the set.</p>
+      <section class="reel" data-reel aria-label="Example screenshots made in the Studio">
+        <div class="reel-track">
+          <img src="/src/home/slide-01.webp" width="480" height="1043" alt="Example: Habits that stick, with two award wreaths above an iPhone" />
+          <img src="/src/home/slide-06.webp" width="480" height="1043" alt="Example: Never miss a day, on blue" />
+          <img src="/src/home/slide-02.webp" width="480" height="1043" alt="Example: Your day at a glance, with the iPhone rising from the bottom" />
+          <img src="/src/home/slide-03.webp" width="480" height="1043" alt="Example: Watch your streaks grow, with a tilted iPhone" />
+          <img src="/src/home/slide-07.webp" width="480" height="1043" alt="Example: See the whole week, on peach" />
+          <img src="/src/home/slide-05.webp" width="480" height="1043" alt="Example: Private by design, in a serif face" />
+          <img src="/src/home/slide-08.webp" width="480" height="1043" alt="Example: Small wins, big change, with a tilted iPhone" />
+          <img src="/src/home/slide-04.webp" width="480" height="1043" alt="Example: Light or dark, your call, with two iPhones" />
+          <img src="/src/home/slide-09.webp" width="480" height="1043" alt="Example: Loved by early risers, with a star rating" />
+          <img src="/src/home/slide-10.webp" width="480" height="1043" alt="Example: Day and night, with two iPhones" />
         </div>
       </section>
 
-      <section class="home-steps" aria-label="How it works">
-        <h2>From screen to store in three steps</h2>
-        <ol>
-          <li>
-            <h3>Capture</h3>
-            <p>Drag screenshots in, or let the small Mac tool grab the simulator or a plugged-in iPhone and upload them.</p>
-          </li>
-          <li>
-            <h3>Compose</h3>
-            <p>Pick a layout, write the headline, set the look once for the whole set. Every slide previews live at export size.</p>
-          </li>
-          <li>
-            <h3>Export</h3>
-            <p>Download a ZIP sorted by language and device, ready to drop into App Store Connect.</p>
-          </li>
-        </ol>
+      <section class="home-agents" id="agents">
+        <div>
+          <p class="home-eyebrow">For agents</p>
+          <h2>Your agent can make the whole set</h2>
+          <p class="home-lead">It runs your app, captures the screens, writes the copy and renders every size.</p>
+          <ul class="home-ways">
+            <li><b>MCP server</b><span>Nine tools at <code>/mcp</code></span></li>
+            <li><b>Claude skill</b><span><a href="/skill.md"><code>/appshots</code></a>, start to finish</span></li>
+            <li><b>CLI</b><span>Captures simulator or iPhone</span></li>
+          </ul>
+        </div>
+        <div class="term" role="img" aria-label="Illustration: in Claude Code, the appshots skill reads the app, captures four screens in the iOS Simulator, writes ten headlines and renders ten slides.">
+          <div class="term-bar"><i></i><i></i><i></i><span>example</span></div>
+          <div class="term-body" aria-hidden="true">
+            <p><span class="dim">~/streaks ❯</span> claude</p>
+            <p><span class="dim">&gt;</span> /appshots</p>
+            <p><span class="ok">●</span> Read the app: a habit tracker</p>
+            <p><span class="ok">●</span> Captured 4 simulator screens</p>
+            <p><span class="ok">●</span> Wrote 10 headlines</p>
+            <p><span class="ok">●</span> Rendered 10 slides at 1320 × 2868</p>
+            <p><span class="dim">→ <span data-host>your-server</span>/#/streaks</span><b class="caret"></b></p>
+          </div>
+        </div>
       </section>
 
-      <section class="home-wide">
-        <img src="/src/home/header.webp" width="1800" height="772" loading="lazy" alt="Example header image: Build habits that stick above three fanned iPhones on a dark green background" />
-        <p class="home-caption">The product page header from the same project, 3840 × 1646.</p>
+      <section class="reel wide" data-reel aria-label="Example header and search results images">
+        <div class="reel-track">
+          <img src="/src/home/wide-1.webp" width="1306" height="560" loading="lazy" alt="Example header image: Build habits that stick above three fanned iPhones" />
+          <img src="/src/home/wide-2.webp" width="840" height="560" loading="lazy" alt="Example search results image: Every day counts between two iPhones" />
+          <img src="/src/home/wide-4.webp" width="1306" height="560" loading="lazy" alt="Example header image: Your day at a glance between two iPhones" />
+          <img src="/src/home/wide-3.webp" width="995" height="560" loading="lazy" alt="Example image: Small steps, every day, over a wall of screens" />
+          <img src="/src/home/wide-5.webp" width="840" height="560" loading="lazy" alt="Example search results image: Streaks that last above three iPhones" />
+        </div>
       </section>
+      <p class="home-caption">All of these are examples, made here from four screens of a sample app.</p>
 
       <section class="home-end">
-        <h2>Make your first set</h2>
-        <a class="btn big" href="/auth/google">Continue with Google</a>
+        <ul class="home-facts">
+          <li>Every App Store size</li>
+          <li>iPhone and iPad</li>
+          <li>Header and search images</li>
+          <li>Badges</li>
+          <li>Any language</li>
+        </ul>
+        <a class="btn cta" href="/studio">Open Studio<span aria-hidden="true">→</span></a>
       </section>
     </main>
 
     <footer class="home-foot">
-      <p>appShots keeps your Google name and email address to sign you in, and the projects you make. Nothing else.</p>
-      <p>Device frames are drawn by appShots. Not affiliated with Apple; App Store is a trademark of Apple Inc.</p>
+      <p>Signing in keeps your Google name and email address, and the projects you make. Not affiliated with Apple.</p>
     </footer>
 
     <script type="module" src="/src/home.ts"></script>

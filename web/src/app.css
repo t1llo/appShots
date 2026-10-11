@@ -997,7 +997,9 @@ dialog .foot {
   font-size: 15px;
 }
 .home-bar,
-.home main > section,
+.home-hero,
+.home-agents,
+.home-end,
 .home-foot {
   width: min(1120px, 100% - 40px);
   margin-inline: auto;
@@ -1016,24 +1018,57 @@ dialog .foot {
   font-weight: 600;
   text-decoration: none;
 }
-.btn.big {
-  height: 44px;
-  padding: 0 20px;
-  border-radius: 8px;
-  background: var(--bg);
-  box-shadow: var(--shadow-card);
+.btn.cta {
+  height: 46px;
+  padding: 0 22px;
+  border-radius: 10px;
+  background: var(--text);
+  box-shadow: none;
+  color: var(--bg);
   font-size: 15px;
+  font-weight: 600;
+  transition: opacity 0.15s;
 }
-.btn.big:hover {
-  background: var(--soft);
+.btn.cta:hover {
+  opacity: 0.86;
+}
+.btn.cta span {
+  transition: transform 0.2s;
+}
+.btn.cta:hover span {
+  transform: translateX(3px);
 }
 
 .home-hero {
   display: grid;
   justify-items: center;
   gap: 20px;
-  padding: 72px 0 56px;
+  padding: 64px 0 44px;
   text-align: center;
+}
+.home-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 13px;
+  border-radius: 999px;
+  background: var(--soft);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.home-pill:hover {
+  color: var(--text);
+}
+.home-pill i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2fa66a;
+  animation: pulse 2.4s ease-out infinite;
 }
 .home h1 {
   max-width: 14ch;
@@ -1043,8 +1078,15 @@ dialog .foot {
   letter-spacing: -0.035em;
   text-wrap: balance;
 }
+.home h2 {
+  font-size: clamp(26px, 3.4vw, 38px);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.028em;
+  text-wrap: balance;
+}
 .home-lead {
-  max-width: 58ch;
+  max-width: 46ch;
   color: var(--text-2);
   font-size: clamp(16px, 1.6vw, 19px);
   line-height: 1.5;
@@ -1063,146 +1105,295 @@ dialog .foot {
   font-size: 13px;
 }
 .home-caption {
-  margin-top: 18px;
+  padding: 6px 20px 0;
   text-align: center;
 }
 
-.home-slides {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
+/* A reel is a row of examples that drifts sideways for ever. home.ts repeats the row and sets --copies and --time;
+   until it has (and for anyone who asked for less motion) the row simply scrolls by hand. */
+.reel {
+  --gap: 18px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 14px 0 26px;
 }
-.home-slides img,
-.home-wide img {
+.reel.wide {
+  --gap: 20px;
+}
+.reel.rolling {
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+}
+.reel-track {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap);
+  width: max-content;
+  padding-inline: 20px;
+}
+.reel.rolling .reel-track {
+  padding-inline: 0;
+  animation: reel var(--time, 60s) linear infinite;
+  will-change: transform;
+}
+.reel.wide.rolling .reel-track {
+  animation-direction: reverse;
+}
+.reel.rolling:hover .reel-track {
+  animation-play-state: paused;
+}
+.reel img {
   display: block;
-  width: 100%;
-  height: auto;
+  width: auto;
+  height: clamp(270px, 30vw, 400px);
+  border-radius: 13px;
   box-shadow: var(--shadow-card);
 }
-.home-slides img {
+.reel.wide img {
+  height: clamp(150px, 18vw, 250px);
   border-radius: 14px;
 }
-.home-wide img {
-  border-radius: 16px;
+/* Every other slide sits lower, and the two halves bob out of step. Ten slides to a row keeps that pattern unbroken across the repeat. */
+.reel:not(.wide) img:nth-child(even) {
+  margin-top: 30px;
+}
+.reel.rolling:not(.wide) img {
+  animation: bob 7s ease-in-out infinite;
+}
+.reel.rolling:not(.wide) img:nth-child(even) {
+  animation-delay: -3.5s;
+}
+@keyframes reel {
+  to {
+    transform: translateX(calc((-100% - var(--gap)) / var(--copies, 2)));
+  }
+}
+@keyframes bob {
+  50% {
+    transform: translateY(-9px);
+  }
+}
+@keyframes pulse {
+  from {
+    box-shadow: 0 0 0 0 rgb(47 166 106 / 0.5);
+  }
+  70%,
+  to {
+    box-shadow: 0 0 0 7px rgb(47 166 106 / 0);
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
 }
 
-.home-grid {
+.home-agents {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 36px 40px;
-  padding: 96px 0;
-}
-.home h3 {
-  margin-bottom: 6px;
-  font-size: 16px;
-  font-weight: 600;
-}
-.home-grid p,
-.home-steps p {
-  color: var(--text-2);
-  text-wrap: pretty;
-}
-
-.home h2 {
-  font-size: clamp(24px, 3.2vw, 34px);
-  font-weight: 700;
-  line-height: 1.15;
-  letter-spacing: -0.025em;
-  text-wrap: balance;
-}
-.home-steps {
-  padding: 56px 40px;
-  border-radius: 20px;
+  grid-template-columns: 1fr 1.05fr;
+  align-items: center;
+  gap: 56px;
+  margin-block: 72px;
+  padding: 56px;
+  border-radius: 24px;
   background: var(--soft);
+  scroll-margin-top: 24px;
 }
-.home-steps ol {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 32px 40px;
-  margin: 36px 0 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: step;
-}
-.home-steps li {
-  counter-increment: step;
-}
-.home-steps li::before {
-  content: counter(step);
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
+.home-eyebrow {
   margin-bottom: 14px;
-  border-radius: 50%;
-  background: var(--text);
-  color: var(--bg);
+  color: var(--accent);
   font-size: 13px;
   font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.home-agents .home-lead {
+  margin-top: 14px;
+  font-size: 17px;
+}
+.home-ways {
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.home-ways li {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+.home-ways b {
+  flex: 0 0 104px;
+  font-weight: 600;
+}
+.home-ways span {
+  color: var(--text-2);
+}
+.home code {
+  color: inherit;
 }
 
-.home-wide {
-  padding-top: 96px;
+/* The terminal is dark in both themes, so its colours are its own. */
+.term {
+  overflow: hidden;
+  border-radius: 14px;
+  background: #17171a;
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.08),
+    0 18px 40px -18px rgb(0 0 0 / 0.45);
+  color: #e8e8e6;
 }
+.term-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.07);
+}
+.term-bar i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.16);
+}
+.term-bar span {
+  margin-left: auto;
+  color: rgb(255 255 255 / 0.35);
+  font-size: 12px;
+}
+.term-body {
+  display: grid;
+  gap: 9px;
+  padding: 20px 20px 24px;
+  font:
+    13px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+.term-body p:nth-child(3) {
+  margin-top: 8px;
+}
+.term .dim {
+  color: rgb(255 255 255 / 0.42);
+}
+.term .ok {
+  margin-right: 4px;
+  color: #4cc38a;
+}
+.term .caret {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 7px;
+  background: rgb(255 255 255 / 0.7);
+  vertical-align: text-bottom;
+  animation: blink 1.1s steps(1) infinite;
+}
+/* home.ts arms the terminal, then switches it on when it scrolls into view: the lines arrive one after another. */
+.term.armed p {
+  opacity: 0;
+  transform: translateY(5px);
+}
+.term.armed.on p {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.4s,
+    transform 0.4s;
+}
+.term.on p:nth-child(2) {
+  transition-delay: 0.5s;
+}
+.term.on p:nth-child(3) {
+  transition-delay: 1.2s;
+}
+.term.on p:nth-child(4) {
+  transition-delay: 1.9s;
+}
+.term.on p:nth-child(5) {
+  transition-delay: 2.6s;
+}
+.term.on p:nth-child(6) {
+  transition-delay: 3.3s;
+}
+.term.on p:nth-child(7) {
+  transition-delay: 4s;
+}
+
 .home-end {
   display: grid;
   justify-items: center;
-  gap: 24px;
-  padding: 96px 0;
+  gap: 28px;
+  padding: 72px 0 88px;
   text-align: center;
 }
+.home-facts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.home-facts li {
+  padding: 5px 12px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--text-2);
+  font-size: 13px;
+}
 .home-foot {
-  display: grid;
-  gap: 4px;
-  padding: 24px 0 40px;
+  padding: 22px 0 36px;
   border-top: 1px solid var(--line);
   color: var(--text-3);
   font-size: 12px;
+  text-align: center;
 }
 
 @media (max-width: 860px) {
   .home-hero {
-    padding: 44px 0 40px;
+    padding: 40px 0 32px;
   }
-  /* Five slides do not fit side by side on a phone, so the row scrolls, the way it does in the App Store. */
-  .home-set {
-    width: 100% !important;
+  .reel {
+    --gap: 12px;
   }
-  .home-slides {
-    grid-template-columns: none;
-    grid-auto-flow: column;
-    grid-auto-columns: min(58vw, 240px);
+  .reel:not(.wide) img:nth-child(even) {
+    margin-top: 22px;
+  }
+  .home-agents {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    margin-block: 48px;
+    padding: 32px 22px;
+    border-radius: 18px;
+  }
+  .home-ways li {
     gap: 12px;
-    padding: 4px 20px;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    scroll-padding-inline: 20px;
-    scrollbar-width: none;
   }
-  .home-slides img {
-    scroll-snap-align: start;
+  .home-ways b {
+    flex-basis: 96px;
   }
-  .home-caption {
-    padding-inline: 20px;
+  .term-body {
+    padding: 16px 16px 20px;
+    font-size: 12px;
   }
-  .home-grid,
-  .home-steps ol {
-    grid-template-columns: 1fr 1fr;
-  }
-  .home-grid,
   .home-end {
-    padding: 64px 0;
-  }
-  .home-steps {
-    padding: 40px 24px;
-  }
-  .home-wide {
-    padding-top: 64px;
+    padding: 48px 0 64px;
   }
 }
-@media (max-width: 560px) {
-  .home-grid,
-  .home-steps ol {
-    grid-template-columns: 1fr;
+@media (prefers-reduced-motion: reduce) {
+  .home-pill i,
+  .term .caret {
+    animation: none;
+  }
+  .term.armed p {
+    opacity: 1;
+    transform: none;
+    transition: none;
   }
 }

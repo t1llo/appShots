@@ -1,4 +1,4 @@
-# appShots: App Store screenshot generator. One service carries the web gallery, the REST API and
+# appShots: App Store screenshot generator. One service carries the home page, the Studio, the REST API and
 # the MCP endpoint (/mcp).
 #
 # Deploy the Compose file from this repository: set PUBLIC_URL, GOOGLE_CLIENT_ID,
@@ -28,7 +28,7 @@ services:
       # <PUBLIC_URL>/auth/google/callback. Required here: without them the server has no sign-in at all.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set the client ID of your Google OAuth client}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set the client secret of your Google OAuth client}
-      # Your own Google address: the admin, who decides under People who else may sign in.
+      # Your own Google address: the admin. Sign-in is open to any Google account unless the admin narrows it under People.
       ADMIN_EMAIL: ${ADMIN_EMAIL:?Set your Google address, which becomes the admin}
       # Caps for every account other than the admin.
       USER_MAX_PROJECTS: ${USER_MAX_PROJECTS:-20}

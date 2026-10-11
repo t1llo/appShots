@@ -13,8 +13,8 @@ Work through the steps in order. Say in a line or two what you decided at each s
 
 Three things have to be there. If one is missing, tell the user the exact command and stop.
 
-- **The MCP server `appshots`.** Its tools are `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets` and `render`. If they are missing: `claude mcp add --transport http appshots {{SERVER}}/mcp --header "Authorization: Bearer <token>"`, with a token from **Account** in the gallery at {{SERVER}}, then a new Claude session.
-- **The `appshots` CLI**, which captures the screen and uploads it. Try `appshots projects`. If the command does not exist, the user downloads `appshots.mjs` from **Connect** in the gallery; it also runs as `node appshots.mjs`. If it is not logged in: `appshots login {{SERVER}}`.
+- **The MCP server `appshots`.** Its tools are `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets` and `render`. If they are missing: `claude mcp add --transport http appshots {{SERVER}}/mcp --header "Authorization: Bearer <token>"`, with a token from **Connect** in the Studio at {{SERVER}}, then a new Claude session.
+- **The `appshots` CLI**, which captures the screen and uploads it. Try `appshots projects`. If the command does not exist, the user downloads `appshots.mjs` from **Connect** in the Studio; it also runs as `node appshots.mjs`. If it is not logged in: `appshots login {{SERVER}}`.
 - **Xcode**, for the simulator. If `xcrun simctl` fails because `xcode-select` points at the Command Line Tools, prefix commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 
 Then call `get_design_guide` and read it. It is the current reference for layouts, backgrounds, fonts, badges, copy and the header and search results assets, and it wins over anything remembered.
@@ -93,8 +93,8 @@ Do not commit `raw-shots/`.
 
 Tell the user:
 
-- The gallery link, {{SERVER}}/#/<project>, where every slide can still be edited by hand.
-- How to get the files: **Export ZIP** in the gallery, or `appshots pull <project>` for `./store-screenshots/<project>`.
+- The Studio link, {{SERVER}}/#/<project>, where every slide can still be edited by hand.
+- How to get the files: **Export ZIP** in the Studio, or `appshots pull <project>` for `./store-screenshots/<project>`.
 - The slides with their headlines, in order.
 - What you assumed or left out: no iPad set, no badges, a screen you could not reach.
 - That the header and search results assets should be checked in App Store Connect's preview before submitting.
