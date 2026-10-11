@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BACKGROUNDS, BADGE_TYPE_IDS, DEVICE_COLOR_IDS, FONT_IDS, ICON_IDS, LAYOUT_IDS } from "./design.ts";
+import { BACKGROUNDS, BADGE_TYPE_IDS, CREATIVE_LAYOUT_IDS, DEVICE_COLOR_IDS, FONT_IDS, ICON_IDS, LAYOUT_IDS } from "./design.ts";
 
 /** Ids and screenshot names end up in file paths and URLs, so they stay strictly slug-shaped. */
 export const SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -15,7 +15,7 @@ const text = z
 
 export const badgeSchema = z.object({
   type: z.enum(BADGE_TYPE_IDS).default("laurel"),
-  title: text.optional().describe('The big line, e.g. "10K+", "4.9" or "App of the Day"'),
+  title: text.optional().describe('The big line, e.g. "10K+" or "4.9"'),
   subtitle: text.optional().describe('The small line, e.g. "Downloads" or "App Store rating"'),
   stars: z.number().min(0).max(5).optional().describe("Shows a star row filled to this value"),
   icon: z.enum(ICON_IDS).optional(),
@@ -72,6 +72,32 @@ export const slideSchema = z.object({
   ...styleFields,
 });
 
+/**
+ * One header or search results asset. It takes its look from the project theme like a slide does, but the copy
+ * is always centred, because it has to stay inside the placement's safe area.
+ */
+export const creativeSchema = z.object({
+  layout: z.enum(CREATIVE_LAYOUT_IDS).optional().describe("Default fan"),
+  eyebrow: text.optional().describe("Small uppercase line above the headline"),
+  headline: text.optional(),
+  subheadline: text.optional(),
+  screenshots: z.array(slug).max(6).optional().describe("Names of uploaded raw screenshots, most important first. Without any, the asset is copy on the background."),
+  badges: z.array(badgeSchema).max(3).optional(),
+  badgePosition: z.enum(["top", "bottom"]).optional().describe("Above the headline or below the subheadline"),
+  background: backgroundSchema.optional(),
+  textColor: styleFields.textColor,
+  accentColor: styleFields.accentColor,
+  font: styleFields.font,
+  textScale: styleFields.textScale,
+  device: deviceSchema.pick({ frame: true, color: true, scale: true, shadow: true }).optional(),
+});
+
+export const creativesSchema = z.object({
+  header: creativeSchema.optional().describe("Product page header, 21:9, 3840×1646"),
+  search: creativeSchema.optional().describe("Search results asset, 3:2, 3840×2560"),
+  universal: creativeSchema.optional().describe("One 16:9 file, 5244×2950, that App Store Connect crops for both places"),
+});
+
 export const projectSchema = z.object({
   id: slug,
   name: z.string().min(1).max(80),
@@ -80,6 +106,7 @@ export const projectSchema = z.object({
   locales: z.array(locale).min(1).max(40),
   theme: themeSchema,
   slides: z.array(slideSchema).max(10),
+  creatives: creativesSchema.default({}),
 });
 
 export type Text = z.infer<typeof text>;
@@ -88,6 +115,8 @@ export type Background = z.infer<typeof backgroundSchema>;
 export type DeviceStyle = z.infer<typeof deviceSchema>;
 export type Theme = z.infer<typeof themeSchema>;
 export type Slide = z.infer<typeof slideSchema>;
+export type Creative = z.infer<typeof creativeSchema>;
+export type Creatives = z.infer<typeof creativesSchema>;
 export type Project = z.infer<typeof projectSchema>;
 
 export const localeSchema = locale;

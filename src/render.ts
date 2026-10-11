@@ -3,14 +3,20 @@ import path from "node:path";
 import { type Browser, chromium } from "playwright";
 import sharp from "sharp";
 import { config } from "./config.ts";
-import { type DeviceKind, TARGETS, type TargetId } from "./sizes.ts";
-import { findShot, getProject, InputError, listShots, outDir, type Shot, type Space } from "./store.ts";
+import { CREATIVE_CAPACITY } from "./creative.ts";
+import { type DeviceKind, PLACEMENT_IDS, PLACEMENTS, type PlacementId, TARGETS, type TargetId } from "./sizes.ts";
+import { CREATIVE_DIR, findShot, getProject, InputError, listShots, outDir, type Shot, type Space } from "./store.ts";
 
 export interface RenderRequest {
   targets?: TargetId[];
   locales?: string[];
   /** Zero-based slide indexes; everything when omitted. */
   slides?: number[];
+  /**
+   * Header and search results assets to render. Left out, every one the project defines is rendered along with
+   * the slides. Naming only slides or only assets renders just those; an empty list means no assets.
+   */
+  creatives?: PlacementId[];
 }
 
 export interface RenderedFile {
@@ -30,9 +36,20 @@ export interface RenderedSheet {
   path: string;
 }
 
+export interface RenderedCreative {
+  placement: PlacementId;
+  locale: string;
+  /** Path relative to the project's output directory. */
+  path: string;
+  width: number;
+  height: number;
+  bytes: number;
+}
+
 export interface RenderResult {
   files: RenderedFile[];
   sheets: RenderedSheet[];
+  creatives: RenderedCreative[];
   warnings: string[];
 }
 
@@ -94,15 +111,24 @@ export function renderProject(space: Space, id: string, request: RenderRequest =
 async function renderNow(space: Space, id: string, request: RenderRequest): Promise<RenderResult> {
   const project = await getProject(space, id);
   const shots = await listShots(space, id);
-  if (project.slides.length === 0) throw new InputError("This project has no slides yet. Add some with set_slides first.");
+  const defined = PLACEMENT_IDS.filter((placement) => project.creatives[placement]);
+  const everything = !request.slides?.length && request.creatives === undefined;
+  const placements = everything ? defined : [...new Set(request.creatives ?? [])];
+  for (const placement of placements) {
+    if (!project.creatives[placement]) throw new InputError(`This project has no ${PLACEMENTS[placement].label.toLowerCase()} asset yet. Design it first.`);
+  }
 
   const targets = request.targets?.length ? request.targets : defaultTargets(shots);
   const locales = request.locales?.length ? request.locales : project.locales;
-  const indexes = request.slides?.length ? [...new Set(request.slides)].sort((a, b) => a - b) : project.slides.map((_, i) => i);
+  // Asking for assets alone leaves the slides as they are.
+  const indexes = request.slides?.length ? [...new Set(request.slides)].sort((a, b) => a - b) : placements.length && !everything ? [] : project.slides.map((_, i) => i);
   for (const index of indexes) {
     if (!Number.isInteger(index) || index < 0 || index >= project.slides.length) {
       throw new InputError(`Slide ${index + 1} does not exist; the project has ${project.slides.length}.`);
     }
+  }
+  if (indexes.length === 0 && placements.length === 0) {
+    throw new InputError("This project has nothing to render yet. Add slides with set_slides, or a header or search results asset.");
   }
   const full = indexes.length === project.slides.length;
 
@@ -120,51 +146,87 @@ async function renderNow(space: Space, id: string, request: RenderRequest): Prom
     }
   }
 
-  const instance = await getBrowser();
+  for (const placement of placements) {
+    const creative = project.creatives[placement]!;
+    const { label } = PLACEMENTS[placement];
+    const names = creative.screenshots ?? [];
+    const room = CREATIVE_CAPACITY[creative.layout ?? "fan"];
+    for (const name of names.slice(0, room)) {
+      if (!shots.some((shot) => shot.name === name)) warnings.add(`${label}: no screenshot named "${name}" has been uploaded, so ${creative.layout === "wall" ? "it was left out" : "a placeholder was drawn"}.`);
+    }
+    const extra = names.length - room;
+    if (extra > 0) warnings.add(`${label}: the ${creative.layout ?? "fan"} layout shows ${room} screenshots, so the last ${extra === 1 ? "one was" : `${extra} were`} left out.`);
+  }
+
   const local = `127.0.0.1:${config.port}`;
   const files: RenderedFile[] = [];
   const sheets: RenderedSheet[] = [];
+  const creatives: RenderedCreative[] = [];
+
+  /** Loads one page of this server at an exact size and returns it as the opaque PNG App Store Connect wants. */
+  const capture = async (size: { width: number; height: number }, urls: string[], each: (png: Buffer, i: number) => Promise<void>) => {
+    const instance = await getBrowser();
+    const context = await instance.newContext({
+      viewport: { width: size.width, height: size.height },
+      deviceScaleFactor: 1,
+      extraHTTPHeaders: { "x-appshots-internal": config.internalSecret, "x-appshots-space": space.id },
+    });
+    // The pages only ever need this server; nothing they contain may make the browser call out, least of all with those headers.
+    await context.route("**/*", (route) => {
+      const url = new URL(route.request().url());
+      return url.protocol === "data:" || url.host === local ? route.continue() : route.abort();
+    });
+    try {
+      const page = await context.newPage();
+      for (const [i, url] of urls.entries()) {
+        await page.goto(url, { waitUntil: "load" });
+        await page.waitForFunction(() => document.body.dataset.ready === "1", undefined, { timeout: 20_000 });
+        const raw = await page.screenshot({ type: "png", clip: { x: 0, y: 0, width: size.width, height: size.height } });
+        // App Store Connect rejects PNGs that carry an alpha channel, even a fully opaque one.
+        await each(await sharp(raw).removeAlpha().png({ compressionLevel: 9 }).toBuffer(), i);
+      }
+    } finally {
+      await context.close();
+    }
+  };
 
   for (const locale of locales) {
-    for (const target of targets) {
+    const query = `locale=${encodeURIComponent(locale)}`;
+    for (const target of indexes.length ? targets : []) {
       const size = TARGETS[target];
       const relDir = path.join(locale, target);
       const dir = path.join(outDir(space, id), relDir);
       if (full) await rm(dir, { recursive: true, force: true });
       await mkdir(dir, { recursive: true });
-
-      const context = await instance.newContext({
-        viewport: { width: size.width, height: size.height },
-        deviceScaleFactor: 1,
-        extraHTTPHeaders: { "x-appshots-internal": config.internalSecret, "x-appshots-space": space.id },
-      });
-      // Slide pages only ever need this server; nothing a slide contains may make the browser call out, least of all with those headers.
-      await context.route("**/*", (route) => {
-        const url = new URL(route.request().url());
-        return url.protocol === "data:" || url.host === local ? route.continue() : route.abort();
-      });
-      try {
-        const page = await context.newPage();
-        for (const index of indexes) {
-          const url = `http://${local}/render/${id}/${index}?target=${target}&locale=${encodeURIComponent(locale)}`;
-          await page.goto(url, { waitUntil: "load" });
-          await page.waitForFunction(() => document.body.dataset.ready === "1", undefined, { timeout: 20_000 });
-          const raw = await page.screenshot({ type: "png", clip: { x: 0, y: 0, width: size.width, height: size.height } });
-          // App Store Connect rejects PNGs that carry an alpha channel, even a fully opaque one.
-          const png = await sharp(raw).removeAlpha().png({ compressionLevel: 9 }).toBuffer();
+      await capture(
+        size,
+        indexes.map((index) => `http://${local}/render/${id}/${index}?target=${target}&${query}`),
+        async (png, i) => {
+          const index = indexes[i]!;
           const file = slideFile(index);
           await writeFile(path.join(dir, file), png);
           files.push({ slide: index, target, locale, path: path.join(relDir, file), width: size.width, height: size.height, bytes: png.length });
-        }
-      } finally {
-        await context.close();
-      }
-
+        },
+      );
       await buildSheet(dir);
       sheets.push({ target, locale, path: path.join(relDir, "sheet.jpg") });
     }
+
+    const relDir = path.join(locale, CREATIVE_DIR);
+    const dir = path.join(outDir(space, id), relDir);
+    // A render of everything also clears assets that have since been removed from the project.
+    if (everything) await rm(dir, { recursive: true, force: true });
+    if (placements.length) await mkdir(dir, { recursive: true });
+    for (const placement of placements) {
+      const size = PLACEMENTS[placement];
+      await capture(size, [`http://${local}/render/${id}/creative/${placement}?${query}`], async (png) => {
+        const file = `${placement}.png`;
+        await writeFile(path.join(dir, file), png);
+        creatives.push({ placement, locale, path: path.join(relDir, file), width: size.width, height: size.height, bytes: png.length });
+      });
+    }
   }
-  return { files, sheets, warnings: [...warnings] };
+  return { files, sheets, creatives, warnings: [...warnings] };
 }
 
 /** Stitches a directory's rendered slides into one strip so the whole set can be judged at a glance. */

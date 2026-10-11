@@ -40,11 +40,12 @@ import {
   userSession,
 } from "./accounts.ts";
 import { config } from "./config.ts";
-import { BACKGROUNDS, BADGE_TYPES, DEVICE_COLOR_IDS, FONT_IDS, FONTS, ICON_IDS, LAYOUTS } from "./design.ts";
+import { CREATIVE_CAPACITY, creativeHtml } from "./creative.ts";
+import { BACKGROUNDS, BADGE_TYPES, CREATIVE_LAYOUTS, DEVICE_COLOR_IDS, FONT_IDS, FONTS, ICON_IDS, LAYOUTS } from "./design.ts";
 import { createMcpServer } from "./mcp.ts";
 import { closeBrowser, defaultTargets, renderProject } from "./render.ts";
-import { localeSchema, slideSchema, themeSchema } from "./schema.ts";
-import { isTargetId, TARGET_IDS, TARGETS } from "./sizes.ts";
+import { creativesSchema, localeSchema, slideSchema, themeSchema } from "./schema.ts";
+import { isPlacementId, isTargetId, PLACEMENT_IDS, PLACEMENTS, TARGET_IDS, TARGETS } from "./sizes.ts";
 import {
   countProjects,
   createProject,
@@ -52,6 +53,7 @@ import {
   deleteShot,
   getProject,
   InputError,
+  listCreativeOutputs,
   listOutputs,
   listProjects,
   listShots,
@@ -353,16 +355,24 @@ const projectPatch = z.object({
   locales: z.array(localeSchema).min(1).max(40).optional(),
   theme: themeSchema.optional(),
   slides: z.array(slideSchema).max(10).optional(),
+  creatives: creativesSchema.optional(),
 });
 const renderBody = z.object({
   targets: z.array(z.enum(TARGET_IDS)).optional(),
   locales: z.array(localeSchema).optional(),
   slides: z.array(z.number().int().min(0)).optional(),
+  creatives: z.array(z.enum(PLACEMENT_IDS)).optional(),
 });
 
+/** Renders of assets the project no longer defines stay on disk until the next full render, but are not offered. */
+async function creativeOutputs(space: Space, id: string) {
+  const [project, outputs] = await Promise.all([getProject(space, id), listCreativeOutputs(space, id)]);
+  return outputs.filter((output) => project.creatives[output.placement]);
+}
+
 async function projectDetail(space: Space, id: string) {
-  const [project, shots, outputs] = await Promise.all([getProject(space, id), listShots(space, id), listOutputs(space, id)]);
-  return { project, shots, outputs, defaultTargets: defaultTargets(shots) };
+  const [project, shots, outputs, creatives] = await Promise.all([getProject(space, id), listShots(space, id), listOutputs(space, id), creativeOutputs(space, id)]);
+  return { project, shots, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots) };
 }
 
 api.get("/meta", (_req, res) => {
@@ -370,6 +380,8 @@ api.get("/meta", (_req, res) => {
   res.json({
     targets: TARGETS,
     layouts: LAYOUTS,
+    placements: PLACEMENTS,
+    creativeLayouts: Object.fromEntries(Object.entries(CREATIVE_LAYOUTS).map(([id, note]) => [id, { note, screenshots: CREATIVE_CAPACITY[id as keyof typeof CREATIVE_LAYOUTS] }])),
     fonts: FONT_IDS,
     backgrounds: ["auto", ...Object.keys(BACKGROUNDS)],
     deviceColors: DEVICE_COLOR_IDS,
@@ -414,7 +426,7 @@ api.delete("/projects/:id/shots/:file", async (req, res) => {
 
 api.post("/projects/:id/render", async (req, res) => {
   const result = await renderProject(spaceOf(res), req.params.id, renderBody.parse(req.body ?? {}));
-  res.json({ ...result, outputs: await listOutputs(spaceOf(res), req.params.id) });
+  res.json({ ...result, outputs: await listOutputs(spaceOf(res), req.params.id), creativeOutputs: await creativeOutputs(spaceOf(res), req.params.id) });
 });
 
 api.get("/projects/:id/export.zip", async (req, res) => {
@@ -422,11 +434,12 @@ api.get("/projects/:id/export.zip", async (req, res) => {
   const { id } = req.params;
   await getProject(space, id);
   if (req.query.render === "1") await renderProject(space, id);
-  const outputs = await listOutputs(space, id);
-  if (outputs.length === 0) throw new InputError("Nothing has been rendered yet. Render the project first, or add ?render=1.");
-  const entries = outputs.flatMap((set) =>
-    set.files.map((file) => ({ name: `${set.locale}/${set.target}/${file}`, file: path.join(outDir(space, id), set.locale, set.target, file) })),
-  );
+  const [outputs, creatives] = await Promise.all([listOutputs(space, id), creativeOutputs(space, id)]);
+  if (outputs.length === 0 && creatives.length === 0) throw new InputError("Nothing has been rendered yet. Render the project first, or add ?render=1.");
+  const entries = [
+    ...outputs.flatMap((set) => set.files.map((file) => ({ name: `${set.locale}/${set.target}/${file}`, file: path.join(outDir(space, id), set.locale, set.target, file) }))),
+    ...creatives.map((output) => ({ name: output.path.split(path.sep).join("/"), file: path.join(outDir(space, id), output.path) })),
+  ];
   res.type("zip").set("Content-Disposition", `attachment; filename="${id}-screenshots.zip"`);
   await writeZip(res, entries);
   res.end();
@@ -520,6 +533,16 @@ app.get("/files/:id/out/*file", async (req, res) => {
   await getProject(spaceOf(res), req.params.id);
   const relative = (req.params.file as unknown as string[]).join("/");
   res.set("Cache-Control", "private, no-cache").sendFile(safeJoin(outDir(spaceOf(res), req.params.id), relative));
+});
+
+app.get("/render/:id/creative/:placement", async (req, res) => {
+  const space = spaceOf(res);
+  const project = await getProject(space, req.params.id);
+  const { placement } = req.params;
+  if (!isPlacementId(placement) || !project.creatives[placement]) throw new NotFoundError(`This project has no "${placement}" asset`);
+  const shots = await listShots(space, project.id);
+  const locale = localeSchema.safeParse(req.query.locale).data ?? project.locales[0]!;
+  res.set("Cache-Control", "no-store").type("html").send(await creativeHtml({ space, project, shots, placement, locale, guides: req.query.guides === "1" }));
 });
 
 app.get("/render/:id/:index", async (req, res) => {

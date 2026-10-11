@@ -25,7 +25,8 @@ const HELP = `appshots: capture app screenshots and sync them with an appShots s
       --project <id>                       Upload it to this project straight away
       --out <dir>                          Where to save the PNG (default: ./raw-shots)
   appshots upload <project> <files...>   Upload existing screenshots (name = file name, or --name)
-  appshots pull <project> [--out <dir>]  Download the rendered screenshots (--render renders first)
+  appshots pull <project> [--out <dir>]  Download the rendered screenshots and header and search
+                                         results assets (--render renders first)
   appshots open [project]                Open the web gallery
 
 Server and token come from APPSHOTS_URL / APPSHOTS_TOKEN, or from 'appshots login'.

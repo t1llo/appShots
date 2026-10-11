@@ -3,10 +3,12 @@ import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { BACKGROUNDS, BADGE_TYPES, DEVICE_COLOR_IDS, FONTS, ICON_IDS, LAYOUTS } from "./design.ts";
+import sharp from "sharp";
+import { CREATIVE_CAPACITY } from "./creative.ts";
+import { BACKGROUNDS, BADGE_TYPES, CREATIVE_LAYOUTS, DEVICE_COLOR_IDS, FONTS, ICON_IDS, LAYOUTS } from "./design.ts";
 import { defaultTargets, renderProject } from "./render.ts";
-import { localeSchema, type Project, slideSchema, slugSchema, themeSchema } from "./schema.ts";
-import { TARGET_IDS, TARGETS } from "./sizes.ts";
+import { creativeSchema, localeSchema, type Project, slideSchema, slugSchema, themeSchema } from "./schema.ts";
+import { PLACEMENT_IDS, PLACEMENTS, type PlacementId, TARGET_IDS, TARGETS } from "./sizes.ts";
 import { createProject, getProject, listProjects, listShots, outDir, type Shot, type Space, updateProject } from "./store.ts";
 
 function uploadHelp(base: string, id: string): string {
@@ -30,7 +32,8 @@ function designGuide(base: string): string {
 2. Get raw screenshots into the project (see Uploading below), then check them with \`get_project\`.
 3. \`set_slides\` with the copy and design for the whole set. Put shared styling in \`theme\`; slides override it.
 4. \`render\`. It returns a contact sheet image: look at it, fix what is off with \`update_slide\`, render again.
-5. The user downloads the PNGs from ${base}/#/<project> or with \`appshots pull <project>\`.
+5. Optionally \`set_creative_assets\` for the product page header and the search results asset (see below), and \`render\` again.
+6. The user downloads the PNGs from ${base}/#/<project> or with \`appshots pull <project>\`.
 
 ## Uploading
 ${uploadHelp(base, "<project>")}
@@ -64,14 +67,32 @@ ${list(BADGE_TYPES)}
 Icons: ${ICON_IDS.join(", ")}. Up to 4 per slide; they shrink to stay on one row. Examples:
 - \`{"type":"laurel","title":"10K+","subtitle":"Downloads"}\`
 - \`{"type":"laurel","stars":5,"title":"4.9","subtitle":"App Store rating"}\`
-- \`{"type":"laurel","icon":"trophy","title":"App of the Day","subtitle":"Featured"}\`
+- \`{"type":"icon","icon":"shield","title":"Private","subtitle":"No account needed"}\`
 Only use figures and awards the app really has: App Review rejects screenshots with invented ratings, download counts or accolades.
 
 ## Copy
 - Headline: two to five words, one benefit per slide, verb first where it fits. Wrap a word in *asterisks* to tint it with \`accentColor\` (with no accent set, the rest of the headline dims instead). \`\\n\` forces a line break.
 - Subheadline: one short sentence, or leave it out.
 - Any text field also accepts \`{"en":"…","de":"…"}\`; list the locales on the project and every one is rendered.
-- Slide 1 does the selling: lead with the main benefit, or use the \`hero\` layout with real social proof. Vary layouts across the set so it does not read as one template repeated.`;
+- Slide 1 does the selling: lead with the main benefit, or use the \`hero\` layout with real social proof. Vary layouts across the set so it does not read as one template repeated.
+
+## Header and search results assets
+App Store Connect has a "Header and Search Results" tab under Product Page Information. The images uploaded there show at the top of the product page and with the app in search results on iOS 27 and iPadOS 27 or later. They are optional and set per language; without them the store keeps showing screenshots there. Build them with \`set_creative_assets\` from the same screenshots and theme as the slides:
+${Object.entries(PLACEMENTS)
+  .map(([id, p]) => `- \`${id}\`: ${p.label}, ${p.width}×${p.height} (${p.ratio}). ${p.note} Safe area ${p.safe.width}×${p.safe.height} at ${p.safe.x},${p.safe.y}.`)
+  .join("\n")}
+The store crops these images differently per device and orientation, and only the safe area is always shown. So the copy is always centred and kept inside it, and everything outside it has to work as decoration that may be cut off. A header and a search asset can be made separately, or one \`universal\` asset serves both (App Store Connect's "Use header asset in search results" switch needs the universal file).
+Each asset takes \`layout\`, \`eyebrow\`, \`headline\`, \`subheadline\`, \`screenshots\` (a list of names, most important first), \`badges\` (up to 3), \`background\`, \`font\`, \`textColor\`, \`accentColor\`, \`textScale\` and \`device\` (\`frame\`, \`color\`, \`scale\`, \`shadow\`). What an asset leaves out comes from the project theme. Layouts:
+${Object.entries(CREATIVE_LAYOUTS)
+  .map(([id, note]) => `- \`${id}\`: ${note}`)
+  .join("\n")}
+Without screenshots an asset is copy on the background; without copy it is the devices alone.
+Apple reviews these assets and is stricter than with screenshots:
+- One clear idea. The headline is a short phrase that adds to the picture and makes the app's purpose obvious at a glance; a subheadline is rarely needed. Text is optional.
+- No prices, discounts, web addresses or copyright symbols, and no logos of or references to other platforms.
+- No claims or awards that cannot be verified, and no Apple accolades at all (Editors' Choice, App of the Day, Game of the Day, Apple Design Award).
+- Translate the text for every language the asset is uploaded for, or leave it out. The content has to suit a 4+ age rating.
+\`render\` returns a preview of each asset with the safe area drawn as a dashed frame, which is not part of the PNG. Check that nothing important falls outside it.`;
 }
 
 function describe(project: Project, shots: Shot[], base: string) {
@@ -81,6 +102,7 @@ function describe(project: Project, shots: Shot[], base: string) {
     locales: project.locales,
     theme: project.theme,
     slides: project.slides.map((slide, i) => ({ slide: i + 1, ...slide })),
+    creativeAssets: project.creatives,
     screenshots: shots.map((shot) => ({ name: shot.name, device: shot.device, size: `${shot.width}×${shot.height}` })),
     defaultTargets: defaultTargets(shots),
     gallery: `${base}/#/${project.id}`,
@@ -103,10 +125,25 @@ async function guard(run: () => Promise<CallToolResult>): Promise<CallToolResult
 function unknownScreenshots(project: Project, shots: Shot[]): string[] {
   const known = new Set(shots.map((shot) => shot.name));
   const missing = new Set<string>();
-  for (const slide of project.slides) {
-    for (const name of [slide.screenshot, slide.screenshot2]) if (name && !known.has(name)) missing.add(name);
-  }
+  const named = [...project.slides.flatMap((slide) => [slide.screenshot, slide.screenshot2]), ...Object.values(project.creatives).flatMap((creative) => creative?.screenshots ?? [])];
+  for (const name of named) if (name && !known.has(name)) missing.add(name);
   return [...missing];
+}
+
+/** A small JPEG of a rendered asset with the safe area drawn in, so the model can check what a narrow crop keeps. */
+async function creativePreview(file: string, placement: PlacementId): Promise<string> {
+  const { width, height, safe } = PLACEMENTS[placement];
+  const scale = 1400 / width;
+  const [w, h] = [1400, Math.round(height * scale)];
+  const frame = (colour: string, extra: string) =>
+    `<rect x="${safe.x * scale}" y="${safe.y * scale}" width="${safe.width * scale}" height="${safe.height * scale}" fill="none" stroke="${colour}" stroke-width="3" ${extra}/>`;
+  const overlay = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${frame("#FFFFFF", 'stroke-opacity=".7"')}${frame("#FF2D78", 'stroke-dasharray="12 8"')}</svg>`;
+  const data = await sharp(file)
+    .resize(w, h)
+    .composite([{ input: Buffer.from(overlay) }])
+    .jpeg({ quality: 80 })
+    .toBuffer();
+  return data.toString("base64");
 }
 
 const project = slugSchema.describe("Project id");
@@ -118,7 +155,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
     { name: "appshots", version: "0.1.0" },
     {
       instructions:
-        "Generates App Store screenshots: raw app screenshots placed in device frames with headlines, backgrounds and social-proof badges, exported at exact store sizes. Call get_design_guide first.",
+        "Generates App Store screenshots: raw app screenshots placed in device frames with headlines, backgrounds and social-proof badges, exported at exact store sizes. Also makes the product page header and search results assets of App Store Connect. Call get_design_guide first.",
     },
   );
 
@@ -126,7 +163,8 @@ export function createMcpServer(base: string, space: Space): McpServer {
     "get_design_guide",
     {
       title: "Design guide",
-      description: "How to use this server: the workflow, how screenshots get uploaded, and every layout, background, font, device option and badge. Read this before building a set.",
+      description:
+        "How to use this server: the workflow, how screenshots get uploaded, every layout, background, font, device option and badge, and the rules for header and search results assets. Read this before building a set.",
       annotations: { readOnlyHint: true },
     },
     () => guard(async () => text(designGuide(base))),
@@ -164,7 +202,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
     "get_project",
     {
       title: "Get project",
-      description: "Returns a project's theme, slides and the raw screenshots uploaded so far.",
+      description: "Returns a project's theme, slides, header and search results assets, and the raw screenshots uploaded so far.",
       inputSchema: { project },
       annotations: { readOnlyHint: true },
     },
@@ -233,28 +271,71 @@ export function createMcpServer(base: string, space: Space): McpServer {
   );
 
   server.registerTool(
+    "set_creative_assets",
+    {
+      title: "Set header and search results assets",
+      description:
+        "Designs the wide images for the Header and Search Results tab of App Store Connect: the product page header, the search results asset, or one universal asset for both. Each asset given replaces that one; the others stay. Nothing is rendered until you call render.",
+      inputSchema: {
+        project,
+        header: creativeSchema.optional().describe("Product page header, 3840×1646"),
+        search: creativeSchema.optional().describe("Search results asset, 3840×2560"),
+        universal: creativeSchema.optional().describe("Universal asset, 5244×2950, cropped by App Store Connect for both places"),
+        remove: z.array(z.enum(PLACEMENT_IDS)).optional().describe("Assets to delete from the project"),
+      },
+    },
+    ({ project: id, remove, ...given }) =>
+      guard(async () => {
+        const current = await getProject(space, id);
+        const creatives = { ...current.creatives };
+        for (const placement of PLACEMENT_IDS) if (given[placement]) creatives[placement] = given[placement];
+        for (const placement of remove ?? []) delete creatives[placement];
+        const updated = await updateProject(space, id, { creatives });
+        const shots = await listShots(space, id);
+        const lines = PLACEMENT_IDS.filter((placement) => updated.creatives[placement]).map((placement) => {
+          const creative = updated.creatives[placement]!;
+          const layout = creative.layout ?? "fan";
+          const extra = (creative.screenshots?.length ?? 0) - CREATIVE_CAPACITY[layout];
+          return `- ${placement}: ${PLACEMENTS[placement].label}, ${layout} layout${extra > 0 ? ` (it shows ${CREATIVE_CAPACITY[layout]} screenshots, so the last ${extra} will be left out)` : ""}`;
+        });
+        const missing = unknownScreenshots(updated, shots);
+        const note = missing.length ? `\nNot uploaded yet, so these will render as placeholders: ${missing.join(", ")}.` : "";
+        return text(lines.length ? `The project now has these assets:\n${lines.join("\n")}\nCall render to see them.${note}` : "The project has no header or search results assets now.");
+      }),
+  );
+
+  server.registerTool(
     "render",
     {
       title: "Render screenshots",
       description:
-        "Renders the slides to PNGs at exact App Store sizes and returns a contact sheet image to review, plus download links. Pass `slides` to re-render only some while iterating.",
+        "Renders the slides, and the header and search results assets if the project has any, to PNGs at exact App Store sizes. Returns images to review plus download links. Pass `slides` or `creatives` to re-render only those while iterating.",
       inputSchema: {
         project,
         slides: z.array(slideNumber).optional().describe("Slide numbers to render; all when omitted"),
-        targets: z.array(z.enum(TARGET_IDS)).optional().describe("Output sizes; defaults to iphone-6.9 plus ipad-13 when iPad screenshots exist"),
+        creatives: z
+          .array(z.enum(PLACEMENT_IDS))
+          .optional()
+          .describe("Header and search results assets to render. Left out, all of them are rendered along with the slides; given alone, the slides are left as they are; [] skips the assets."),
+        targets: z.array(z.enum(TARGET_IDS)).optional().describe("Slide sizes; defaults to iphone-6.9 plus ipad-13 when iPad screenshots exist"),
         locales: z.array(localeSchema).optional().describe("Defaults to every project locale"),
       },
     },
-    ({ project: id, slides, targets, locales }) =>
+    ({ project: id, slides, creatives, targets, locales }) =>
       guard(async () => {
-        const result = await renderProject(space, id, { targets, locales, slides: slides?.map((n) => n - 1) });
-        const lines = [`Rendered ${result.files.length} PNG${result.files.length === 1 ? "" : "s"}.`];
+        const result = await renderProject(space, id, { targets, locales, creatives, slides: slides?.map((n) => n - 1) });
+        const count = result.files.length + result.creatives.length;
+        const lines = [`Rendered ${count} PNG${count === 1 ? "" : "s"}.`];
         for (const sheet of result.sheets) {
           const size = TARGETS[sheet.target];
           lines.push("", `${sheet.target} (${size.width}×${size.height}), ${sheet.locale}:`);
           for (const file of result.files.filter((f) => f.target === sheet.target && f.locale === sheet.locale)) {
             lines.push(`  ${String(file.slide + 1).padStart(2, "0")}  ${base}/files/${id}/out/${file.path}`);
           }
+        }
+        if (result.creatives.length) {
+          lines.push("", "Header and search results assets (the dashed frame in the previews marks the safe area and is not in the PNG):");
+          for (const file of result.creatives) lines.push(`  ${file.placement} (${file.width}×${file.height}), ${file.locale}  ${base}/files/${id}/out/${file.path}`);
         }
         lines.push("", `Gallery: ${base}/#/${id}`, `ZIP of everything: ${base}/api/projects/${id}/export.zip (or \`appshots pull ${id}\`)`);
         if (result.warnings.length) lines.push("", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`));
@@ -265,6 +346,9 @@ export function createMcpServer(base: string, space: Space): McpServer {
         for (const sheet of shown) {
           const data = await readFile(path.join(outDir(space, id), sheet.path));
           content.push({ type: "image", data: data.toString("base64"), mimeType: "image/jpeg" });
+        }
+        for (const file of result.creatives.filter((creative) => creative.locale === result.creatives[0]!.locale)) {
+          content.push({ type: "image", data: await creativePreview(path.join(outDir(space, id), file.path), file.placement), mimeType: "image/jpeg" });
         }
         return { content };
       }),

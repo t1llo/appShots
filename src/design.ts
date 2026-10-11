@@ -12,6 +12,16 @@ export const LAYOUTS = {
 export type LayoutId = keyof typeof LAYOUTS;
 export const LAYOUT_IDS = Object.keys(LAYOUTS) as [LayoutId, ...LayoutId[]];
 
+/** Layouts for the wide header and search results assets, which are composed around a small safe area. */
+export const CREATIVE_LAYOUTS = {
+  fan: "Copy at the top of the safe area, up to five devices fanned out below it and bleeding off the bottom edge. The first screenshot takes the centre.",
+  sides: "Copy in the middle of the safe area, up to four devices standing left and right of it. With one screenshot the device stands on the right.",
+  wall: "Copy over a dimmed, tilted wall of bare screenshots that fills the whole canvas.",
+} as const;
+
+export type CreativeLayoutId = keyof typeof CREATIVE_LAYOUTS;
+export const CREATIVE_LAYOUT_IDS = Object.keys(CREATIVE_LAYOUTS) as [CreativeLayoutId, ...CreativeLayoutId[]];
+
 export interface FontDef {
   family: string;
   pkg: string;

@@ -1,6 +1,6 @@
 # appShots
 
-Self-hosted App Store screenshot generator for iPhone and iPad. Describe the slides to Claude (copy, look, badges such as "10K+ downloads", a five-star rating or an award wreath), feed it screenshots straight from the simulator or a plugged-in iPhone, and get back PNGs at the exact sizes App Store Connect accepts.
+Self-hosted App Store screenshot generator for iPhone and iPad. Describe the slides to Claude (copy, look, badges such as "10K+ downloads", a five-star rating or an award wreath), feed it screenshots straight from the simulator or a plugged-in iPhone, and get back PNGs at the exact sizes App Store Connect accepts. It also makes the wide images for App Store Connect's Header and Search Results tab.
 
 ![An example set: five slides rendered for the 6.9-inch iPhone](docs/example.jpg)
 
@@ -71,7 +71,7 @@ The token is `APPSHOTS_TOKEN` for the owner, or a personal token for an account:
 
 > Make App Store screenshots for my habit tracker in project "streaks". Six slides, dark purple look, open with a hero slide with a laurel badge "4.8 · App Store rating" and one for "50K+ downloads", then one slide per feature using the screenshots home, stats and widgets.
 
-Claude answers with a contact sheet of the rendered set, a link to the gallery and a ZIP link. Tools: `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `render`. Every tool works inside the space the token belongs to.
+Claude answers with a contact sheet of the rendered set, a link to the gallery and a ZIP link. Tools: `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets`, `render`. Every tool works inside the space the token belongs to.
 
 The endpoint authenticates with a bearer header, so it works with clients that can send one (Claude Code, the Agent SDK, `mcp-remote`). It does not implement OAuth.
 
@@ -85,7 +85,8 @@ appshots devices                                  # booted simulators and connec
 appshots capture --name home --project streaks    # from the booted simulator, uploaded straight away
 appshots capture --name home --device --project streaks   # from the plugged-in, unlocked iPhone or iPad
 appshots capture --name home --clean              # simulator only: 9:41, full battery and signal
-appshots pull streaks --render                    # render everything and unpack it into ./store-screenshots/streaks
+appshots pull streaks --render                    # render everything and unpack it into ./store-screenshots/streaks,
+                                                  # header and search results assets included
 ```
 
 The `--name` is what slides refer to (`"screenshot": "home"`). Capturing the same name again replaces the screenshot, and every slide using it updates. An iPhone and an iPad screenshot can share a name; each target size picks the matching one.
@@ -109,6 +110,28 @@ A project has a theme and up to ten slides. Every style field can be set on the 
 
 Output sizes, portrait: iPhone 6.9" (1320×2868), iPhone 6.5" (1284×2778), iPad 13" (2064×2752), iPad 12.9" (2048×2732). By default a render produces the 6.9" set, plus the 13" iPad set once the project has iPad screenshots. Files are opaque PNGs laid out as `<locale>/<target>/01.png`.
 
+## Header and search results assets
+
+App Store Connect has a **Header and Search Results** tab under Product Page Information. An image uploaded there is shown at the top of the product page, or with the app in search results, on iOS 27 and iPadOS 27 or later. Both are optional and set per language; without them the store keeps using screenshots in those places.
+
+A project can hold one of each, built from the same screenshots and theme as its slides:
+
+| Asset | Size | Safe area | Used for |
+| --- | --- | --- | --- |
+| `header` | 3840×1646 (21:9) | 1646×661 at 1097, 493 | The product page header |
+| `search` | 3840×2560 (3:2) | 2168×1030 at 836, 765 | The search results asset |
+| `universal` | 5244×2950 (16:9) | 1402×962 at 1921, 660 | One file for both; it is what "Use header asset in search results" expects |
+
+The store crops these images differently on each device and orientation, and only the safe area is always visible. appShots therefore centres the copy and shrinks it until it fits inside that area, and treats everything around it as decoration that may be cut off. The gallery and the previews Claude gets draw the safe area as a dashed frame; the exported PNG does not contain it.
+
+- **Layouts:** `fan` (copy above up to five fanned devices), `sides` (copy between up to four devices), `wall` (copy over a dimmed wall of bare screenshots). Without screenshots an asset is copy on the background, without copy it is the devices alone.
+- **Per asset:** eyebrow, headline, subheadline, up to six screenshots in order of importance, up to three badges, background, font, colours, headline size, and the device frame, colour, size and shadow. What an asset leaves out comes from the project theme.
+- **Output:** opaque PNGs at `<locale>/creative-assets/header.png`, `search.png` and `universal.png`, rendered with the slides and included in the ZIP.
+
+Apple reviews these images and asks for more restraint than in screenshots: one clear idea, a short phrase at most, no prices, discounts, web addresses or copyright symbols, no logos of other platforms, no claims or awards that cannot be verified and no Apple accolades (Editors' Choice, App of the Day, Apple Design Award), and text translated for every language it is uploaded for. See Apple's [creative asset specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications/).
+
+Apple publishes the safe areas as a design template, not as numbers. The values above are measured from that template, so check each asset in App Store Connect's preview before submitting. The video variants of these assets are not generated.
+
 ## REST API
 
 Everything the gallery and the CLI do goes through `/api`, with the same bearer token. A token only ever reaches the projects of the space it belongs to.
@@ -117,19 +140,21 @@ Everything the gallery and the CLI do goes through `/api`, with the same bearer 
 GET    /api/projects                       list
 POST   /api/projects                       create {name, locales?, theme?, slides?}
 GET    /api/projects/:id                   project, screenshots, rendered files
-PUT    /api/projects/:id                   update {name?, locales?, theme?, slides?}
+PUT    /api/projects/:id                   update {name?, locales?, theme?, slides?, creatives?: {header?, search?, universal?}}
 DELETE /api/projects/:id
 PUT    /api/projects/:id/shots/:name       upload a screenshot (raw image body, ?device=iphone|ipad to override detection)
 DELETE /api/projects/:id/shots/:file
-POST   /api/projects/:id/render            {targets?, locales?, slides?}
+POST   /api/projects/:id/render            {targets?, locales?, slides?, creatives?}
 GET    /api/projects/:id/export.zip        ?render=1 renders first
 ```
+
+A render without `slides` and `creatives` produces everything. `slides` (zero-based indexes) or `creatives` (`header`, `search`, `universal`) narrow it to those, and `"creatives": []` renders the slides alone.
 
 Account settings and the People page need a browser sign-in; an API token cannot create more tokens, change a password or manage accounts.
 
 ## Good to know
 
-- Portrait only; there is no landscape or Apple Watch/TV output.
+- Screenshots are portrait only; there is no landscape or Apple Watch/TV output.
 - Put only real figures and awards in badges. App Review rejects screenshots with invented download counts, ratings or rankings.
 - The device frames are drawn in CSS, not Apple's product images.
 - Put the server behind HTTPS. Passwords are stored as scrypt hashes and API tokens as SHA-256 hashes in `accounts.json` on the data volume; a token is shown once when it is created.

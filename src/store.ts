@@ -1,8 +1,8 @@
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { type Project, projectSchema, SLUG, type Slide, type Theme } from "./schema.ts";
-import { type DeviceKind, deviceKindOf } from "./sizes.ts";
+import { type Creatives, type Project, projectSchema, SLUG, type Slide, type Theme } from "./schema.ts";
+import { type DeviceKind, deviceKindOf, PLACEMENT_IDS, type PlacementId } from "./sizes.ts";
 
 export class NotFoundError extends Error {}
 export class InputError extends Error {}
@@ -95,7 +95,10 @@ async function writeProject(space: Space, project: Project): Promise<void> {
   await rename(tmp, path.join(dir, "project.json"));
 }
 
-export async function createProject(space: Space, input: { name: string; locales?: string[]; theme?: Theme; slides?: Slide[] }): Promise<Project> {
+export async function createProject(
+  space: Space,
+  input: { name: string; locales?: string[]; theme?: Theme; slides?: Slide[]; creatives?: Creatives },
+): Promise<Project> {
   if (space.limits && (await countProjects(space)) >= space.limits.projects) {
     throw new InputError(`This account is limited to ${space.limits.projects} projects. Delete one to make room.`);
   }
@@ -111,6 +114,7 @@ export async function createProject(space: Space, input: { name: string; locales
     locales: input.locales?.length ? input.locales : ["en"],
     theme: input.theme ?? {},
     slides: input.slides ?? [],
+    creatives: input.creatives ?? {},
   });
   await writeProject(space, project);
   return project;
@@ -119,7 +123,7 @@ export async function createProject(space: Space, input: { name: string; locales
 export async function updateProject(
   space: Space,
   id: string,
-  patch: Partial<Pick<Project, "name" | "locales" | "theme" | "slides">>,
+  patch: Partial<Pick<Project, "name" | "locales" | "theme" | "slides" | "creatives">>,
 ): Promise<Project> {
   const current = await getProject(space, id);
   const defined = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
@@ -213,6 +217,31 @@ export async function listOutputs(space: Space, id: string): Promise<OutputSet[]
     }
   }
   return sets;
+}
+
+/** Where the header and search results assets of one locale are written, inside the output directory. */
+export const CREATIVE_DIR = "creative-assets";
+
+export interface CreativeOutput {
+  locale: string;
+  placement: PlacementId;
+  /** Path relative to the project's output directory. */
+  path: string;
+  version: number;
+}
+
+/** Lists the header and search results assets rendered so far. */
+export async function listCreativeOutputs(space: Space, id: string): Promise<CreativeOutput[]> {
+  const root = outDir(space, id);
+  const found: CreativeOutput[] = [];
+  for (const locale of (await readdir(root).catch(() => [])).sort()) {
+    for (const placement of PLACEMENT_IDS) {
+      const relative = path.join(locale, CREATIVE_DIR, `${placement}.png`);
+      const info = await stat(path.join(root, relative)).catch(() => null);
+      if (info) found.push({ locale, placement, path: relative, version: Math.round(info.mtimeMs) });
+    }
+  }
+  return found;
 }
 
 /** Resolves a file inside a project subdirectory, refusing anything that would escape it. */

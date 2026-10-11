@@ -16,23 +16,23 @@ export interface SlideContext {
 
 type FrameKind = DeviceKind | "none";
 
-const esc = (value: string) =>
+export const esc = (value: string) =>
   value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 
-function pick(text: Text | undefined, locale: string, fallback: string): string {
+export function pick(text: Text | undefined, locale: string, fallback: string): string {
   if (text === undefined) return "";
   if (typeof text === "string") return text;
   return text[locale] ?? text[locale.split("-")[0]!] ?? text[fallback] ?? Object.values(text)[0] ?? "";
 }
 
 /** Escapes copy, then turns *emphasis* into accent spans and newlines into breaks. */
-function rich(value: string): string {
+export function rich(value: string): string {
   return esc(value)
     .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
     .replace(/\r?\n/g, "<br>");
 }
 
-const round = (value: number) => Math.round(value * 100) / 100;
+export const round = (value: number) => Math.round(value * 100) / 100;
 
 function luminance(hex: string): number {
   const raw = hex.slice(1);
@@ -44,7 +44,7 @@ function luminance(hex: string): number {
   return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
 }
 
-function backgroundLuminance(def: BackgroundDef): number {
+export function backgroundLuminance(def: BackgroundDef): number {
   const values = def.colors.map(luminance);
   if (def.type !== "mesh" || values.length === 1) return values.reduce((a, b) => a + b, 0) / values.length;
   // The base colour shows through between the blobs, so it carries half the weight.
@@ -54,7 +54,7 @@ function backgroundLuminance(def: BackgroundDef): number {
 
 const MESH_SPOTS = ["12% 8%", "88% 22%", "72% 92%", "8% 78%"];
 
-function backgroundCss(def: BackgroundDef): string {
+export function backgroundCss(def: BackgroundDef): string {
   const [base, ...rest] = def.colors;
   if (def.type === "solid" || rest.length === 0) return `background:${base}`;
   if (def.type === "gradient") return `background:linear-gradient(${def.angle ?? 165}deg,${def.colors.join(",")})`;
@@ -62,7 +62,7 @@ function backgroundCss(def: BackgroundDef): string {
   return `background-color:${base};background-image:${blobs.join(",")}`;
 }
 
-async function resolveBackground(background: Background | undefined, shotsPath: string, shot: Shot | undefined): Promise<BackgroundDef> {
+export async function resolveBackground(background: Background | undefined, shotsPath: string, shot: Shot | undefined): Promise<BackgroundDef> {
   if (background === undefined) return BACKGROUNDS.midnight;
   if (typeof background === "object") return background;
   if (background.startsWith("#")) return { type: "solid", colors: [background] };
@@ -150,7 +150,7 @@ const ICONS: Record<IconId, string> = {
 
 const iconSvg = (id: IconId) => `<svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ICONS[id]}</svg>`;
 
-function badgeHtml(badge: Badge, locale: string, fallback: string): string {
+export function badgeHtml(badge: Badge, locale: string, fallback: string): string {
   const title = pick(badge.title, locale, fallback);
   const subtitle = pick(badge.subtitle, locale, fallback);
   const titleHtml = title ? `<div class="b-title">${esc(title)}</div>` : "";
@@ -215,6 +215,8 @@ interface DeviceOptions {
   style: DeviceStyle;
   targetDevice: DeviceKind;
   width: number;
+  /** Exact device width in pixels, for layouts that place devices themselves. Replaces the width derived from the canvas. */
+  pixels?: number;
   canvas: { width: number; height: number };
   fit: "width" | "contain";
   /** False when the screenshot already shows the Dynamic Island. */
@@ -223,23 +225,29 @@ interface DeviceOptions {
   defaults?: Partial<DeviceStyle>;
 }
 
-function deviceHtml(options: DeviceOptions): string {
-  const { shot, style, canvas } = options;
-  const merged = { ...options.defaults, ...style };
-  const kind: DeviceKind = merged.frame === "iphone" || merged.frame === "ipad" ? merged.frame : (shot?.device ?? options.targetDevice);
-  const frame: FrameKind = merged.frame === "none" ? "none" : kind;
+/** Which frame a screenshot gets, and how tall the device comes out per unit of its width. */
+export function deviceShape(shot: Shot | undefined, style: DeviceStyle, fallback: DeviceKind) {
+  const kind: DeviceKind = style.frame === "iphone" || style.frame === "ipad" ? style.frame : (shot?.device ?? fallback);
+  const frame: FrameKind = style.frame === "none" ? "none" : kind;
   const geometry = FRAMES[kind];
 
   // Follow the screenshot's own proportions so nothing gets cropped, within what the frame can plausibly hold.
-  const [aw, ah] = geometry.aspect;
-  let aspect = `${aw}/${ah}`;
+  let [aw, ah] = geometry.aspect;
   if (shot && shot.height > shot.width) {
     const ratio = shot.width / shot.height;
     const [lo, hi] = kind === "iphone" ? [0.44, 0.58] : [0.66, 0.78];
-    if (ratio >= lo && ratio <= hi) aspect = `${shot.width}/${shot.height}`;
+    if (ratio >= lo && ratio <= hi) [aw, ah] = [shot.width, shot.height];
   }
+  const rim = frame === "none" ? 0 : (geometry.band + geometry.bezel) * 2;
+  return { kind, frame, geometry, aspect: `${aw}/${ah}`, ratio: (1 - rim) * (ah / aw) + rim };
+}
 
-  const dw = round(canvas.width * BASE_WIDTH[options.targetDevice][kind] * options.width * (options.fit === "width" ? (merged.scale ?? 1) : 1));
+export function deviceHtml(options: DeviceOptions): string {
+  const { shot, style, canvas } = options;
+  const merged = { ...options.defaults, ...style };
+  const { kind, frame, geometry, aspect } = deviceShape(shot, merged, options.targetDevice);
+
+  const dw = round(options.pixels ?? canvas.width * BASE_WIDTH[options.targetDevice][kind] * options.width * (options.fit === "width" ? (merged.scale ?? 1) : 1));
   const transforms: string[] = [];
   if (merged.offsetX || merged.offsetY) {
     transforms.push(`translate(${round(((merged.offsetX ?? 0) / 100) * canvas.width)}px,${round(((merged.offsetY ?? 0) / 100) * canvas.height)}px)`);
@@ -283,7 +291,7 @@ function deviceHtml(options: DeviceOptions): string {
 const NOISE =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
 
-const CSS = `
+export const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:#000;overflow:hidden}
 .canvas{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;color:var(--text);font-family:var(--body);font-synthesis:none;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision}
@@ -346,7 +354,7 @@ html,body{background:#000;overflow:hidden}
 `;
 
 /** Runs in the page: waits for fonts and images, then shrinks badges and copy until they fit. */
-const FIT_SCRIPT = `(async () => {
+export const FIT_SCRIPT = `(async () => {
   const canvas = document.querySelector('.canvas');
   const set = (name, value) => canvas.style.setProperty(name, String(value));
   try {
@@ -359,8 +367,8 @@ const FIT_SCRIPT = `(async () => {
   const stage = canvas.querySelector('.stage');
 
   const badges = canvas.querySelector('.badges');
+  let bs = parseFloat(canvas.style.getPropertyValue('--bs'));
   if (badges) {
-    let bs = parseFloat(canvas.style.getPropertyValue('--bs'));
     const wrapped = () => {
       const kids = badges.children;
       const last = kids[kids.length - 1];
@@ -375,7 +383,12 @@ const FIT_SCRIPT = `(async () => {
     let ts = parseFloat(canvas.style.getPropertyValue('--ts'));
     const floor = ts * 0.5;
     const tooBig = () => copy.offsetHeight > max || (headline && headline.scrollWidth > headline.clientWidth + 1);
-    while (tooBig() && ts > floor) set('--ts', (ts -= 0.025));
+    // Where the copy has a fixed box to stay in, the badges shrink in step with the text instead of holding their size.
+    const together = badges && canvas.dataset.shrink === 'together';
+    while (tooBig() && ts > floor) {
+      set('--ts', (ts -= 0.025));
+      if (together && bs > 0.4) set('--bs', (bs -= 0.02));
+    }
   }
 
   if (stage) {
