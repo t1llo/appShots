@@ -1,0 +1,37 @@
+# Shots: App Store screenshot generator. One service carries the web gallery, the REST API and
+# the MCP endpoint (/mcp).
+#
+# Deploy the Compose file from this repository: set SHOTS_TOKEN, then give the
+# `shots` service a domain on port 3000. A reverse proxy terminates TLS; no host port is published.
+#
+# Local:   docker compose -f docker-compose.yaml -f compose.local.yaml up --build
+x-service: &service
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  shots:
+    <<: *service
+    build: .
+    # Reaps the Chromium helper processes the renderer leaves behind.
+    init: true
+    environment:
+      SHOTS_TOKEN: ${SHOTS_TOKEN:?Set a long random access token (openssl rand -hex 32)}
+      # Optional. Only needed when the links Claude gets back should use another origin than the one it called.
+      PUBLIC_URL: ${PUBLIC_URL:-}
+    expose: ["3000"]
+    volumes:
+      - shots-data:/data
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:3000/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  shots-data:
