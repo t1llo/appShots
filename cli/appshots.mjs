@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Mac-side companion to an appShots server: captures screenshots from a simulator or a connected
 // iPhone/iPad, uploads them, and pulls the rendered store screenshots back down. `appshots setup` also
-// installs the /appshots skill for Claude Code and connects Claude Code to the server.
+// installs the appshots skill for a coding agent and connects that agent to the server, and `appshots call`
+// reaches the server's tools for agents that have no MCP.
 // No dependencies, so it runs straight from a checkout: `node cli/appshots.mjs` or `npm link`.
 
 import { execFileSync, spawnSync } from "node:child_process";
@@ -12,14 +13,24 @@ import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const CONFIG_FILE = path.join(process.env.XDG_CONFIG_HOME ?? path.join(homedir(), ".config"), "appshots", "config.json");
-// Where Claude Code looks for the skill. The CLI lives next to it, so the skill finds it without a PATH.
-const SKILL_DIR = path.join(homedir(), ".claude", "skills", "appshots");
+// Where agents look for the skill. Claude Code has a folder of its own; Codex, OpenCode, Pi and most others
+// read the shared Agent Skills folder. The CLI goes next to the skill, so the skill finds it without a PATH.
+const CLAUDE_SKILL = path.join(homedir(), ".claude", "skills", "appshots");
+const SHARED_SKILL = path.join(homedir(), ".agents", "skills", "appshots");
+const AGENTS = {
+  claude: { name: "Claude Code", dir: CLAUDE_SKILL, start: "type /appshots" },
+  codex: { name: "Codex", dir: SHARED_SKILL, start: "type $appshots" },
+  opencode: { name: "OpenCode", dir: SHARED_SKILL, start: "ask it for your App Store screenshots" },
+  pi: { name: "Pi", dir: SHARED_SKILL, start: "type /skill:appshots" },
+  other: { name: "your agent", dir: SHARED_SKILL, start: "tell it: Read ~/.agents/skills/appshots/SKILL.md and follow it" },
+};
 const BOOLEAN_FLAGS = new Set(["clean", "render", "help"]);
 
 const HELP = `appshots: capture app screenshots and sync them with an appShots server
 
-  appshots setup <url> [--token <token>] Everything in one go: save the token, install the /appshots
-                                         skill and this CLI for Claude Code, connect Claude Code
+  appshots setup <url> [--agent <agent>] Everything in one go: save the token, install the appshots skill
+                                         and this CLI, connect the agent. Agents: claude (the default),
+                                         codex, opencode, pi, other. --token <token> skips the question
   appshots login <url>                   Save the server URL and token only (asks for the token)
   appshots projects                      List projects on the server
   appshots devices                       List booted simulators and connected devices
@@ -34,6 +45,9 @@ const HELP = `appshots: capture app screenshots and sync them with an appShots s
   appshots pull <project> [--out <dir>]  Download the rendered screenshots and header and search
                                          results assets (--render renders first)
   appshots open [project]                Open the Studio in the browser
+  appshots tools [tool]                  List the server's tools, or one tool's arguments
+  appshots call <tool> [arguments]       Call one. Arguments are JSON: inline, @file.json, or - for stdin
+                                         (--out <dir> is where returned pictures are saved)
 
 Server and token come from APPSHOTS_URL / APPSHOTS_TOKEN, or from 'appshots setup' or 'appshots login'.
 The token is a personal one from Connect in the Studio.`;
@@ -177,12 +191,46 @@ function linkOntoPath(target) {
   return null;
 }
 
+/** Runs an agent's own command, so that agent's config file is written the way it wants it. */
+function agentRun(bin, args) {
+  const result = spawnSync(bin, args, { encoding: "utf8" });
+  return { ok: result.status === 0, detail: `${result.stderr ?? ""}${result.stdout ?? ""}`.trim() || result.error?.message || `${bin} ${args[0]} failed` };
+}
+
+// Each returns { ok, detail } for the agent's MCP connection, saved for every folder.
+const CONNECT = {
+  claude(server, token) {
+    // An entry left in this folder would win over the one for every folder, so both go first.
+    for (const scope of ["local", "user"]) agentRun("claude", ["mcp", "remove", "appshots", "--scope", scope]);
+    return agentRun("claude", ["mcp", "add", "--transport", "http", "--scope", "user", "appshots", `${server}/mcp`, ...(token ? ["--header", `Authorization: Bearer ${token}`] : [])]);
+  },
+  codex(server, token) {
+    // Adding replaces an older entry of the same name.
+    const added = agentRun("codex", ["mcp", "add", "appshots", "--url", `${server}/mcp`]);
+    if (!added.ok || !token) return added;
+    // `codex mcp add` takes no header, so the token goes into the table it has just written.
+    const file = path.join(process.env.CODEX_HOME ?? path.join(homedir(), ".codex"), "config.toml");
+    const header = `http_headers = { Authorization = ${JSON.stringify(`Bearer ${token}`)} }`;
+    const table = /^\[mcp_servers\.appshots\][ \t]*$/m;
+    const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+    if (!table.test(text)) return { ok: false, detail: `the token could not be added. Put this line under [mcp_servers.appshots] in ${tilde(file)}:\n      http_headers = { Authorization = "Bearer <your token>" }` };
+    writeFileSync(file, text.replace(table, (line) => `${line}\n${header}`));
+    return added;
+  },
+  opencode(server, token) {
+    return agentRun("opencode", ["mcp", "add", "--global", "--url", `${server}/mcp`, ...(token ? ["--header", `Authorization=Bearer ${token}`] : []), "appshots"]);
+  },
+};
+
 async function setup(url, flags) {
-  if (!url || !/^https?:\/\//.test(url)) fail("Usage: appshots setup <url> [--token <token>]");
+  if (!url || !/^https?:\/\//.test(url)) fail("Usage: appshots setup <url> [--agent claude|codex|opencode|pi|other] [--token <token>]");
+  const id = typeof flags.agent === "string" ? flags.agent.toLowerCase() : "claude";
+  const agent = AGENTS[id];
+  if (!agent) fail(`Unknown agent "${flags.agent}". Use one of: ${Object.keys(AGENTS).join(", ")}.`);
   const server = url.replace(/\/+$/, "");
   const done = (text) => console.log(`  ✓ ${text}`);
   const open = (text) => console.log(`  ! ${text}`);
-  console.log(`Setting up appShots for ${server}`);
+  console.log(`Setting up appShots for ${server}${id === "other" ? "" : ` and ${agent.name}`}`);
 
   // 1. The token, checked against the server before anything is written.
   let token = typeof flags.token === "string" ? flags.token : (process.env.APPSHOTS_TOKEN ?? "");
@@ -200,39 +248,52 @@ async function setup(url, flags) {
   saveConfig({ url: server, token });
   done(`Signed in to ${server}`);
 
-  // 2. This file next to the skill, and on the PATH where that is easy.
-  const cli = path.join(SKILL_DIR, "appshots.mjs");
+  // 2. This file next to the skill, and on the PATH where that is easy. A copy set up for another agent
+  // earlier is brought up to date as well, so the two never drift apart.
+  const dirs = [agent.dir, ...[CLAUDE_SKILL, SHARED_SKILL].filter((dir) => dir !== agent.dir && existsSync(path.join(dir, "SKILL.md")))];
   const self = realpathSync(fileURLToPath(import.meta.url));
-  mkdirSync(SKILL_DIR, { recursive: true });
-  if (!existsSync(cli) || realpathSync(cli) !== self) copyFileSync(self, cli);
-  chmodSync(cli, 0o755);
+  for (const dir of dirs) {
+    const copy = path.join(dir, "appshots.mjs");
+    mkdirSync(dir, { recursive: true });
+    if (!existsSync(copy) || realpathSync(copy) !== self) copyFileSync(self, copy);
+    chmodSync(copy, 0o755);
+  }
+  const cli = path.join(agent.dir, "appshots.mjs");
   const command = linkOntoPath(cli);
-  done(command ? `Capture tool installed: appshots (${tilde(command)})` : `Capture tool installed: node ${tilde(cli)}`);
+  done(command ? `Command installed: appshots (${tilde(command)})` : `Command installed: node ${tilde(cli)}`);
 
   // 3. The skill, with this server's address in it.
   const skill = await fetch(`${server}/skill.md`).catch(() => null);
   if (skill?.ok) {
-    writeFileSync(path.join(SKILL_DIR, "SKILL.md"), await skill.text());
-    done("Skill installed: /appshots in Claude Code");
+    const text = await skill.text();
+    for (const dir of dirs) writeFileSync(path.join(dir, "SKILL.md"), text);
+    done(`Skill installed: ${tilde(agent.dir)}`);
   } else {
-    open("This server has no /appshots skill to install.");
+    open("This server has no appshots skill to install.");
   }
 
-  // 4. Claude Code, for every folder. An entry left in this folder would win over it, so that one goes first.
-  let connected = false;
-  if (spawnSync("claude", ["--version"], { stdio: "ignore" }).error) {
-    open("Claude Code was not found, so it is not connected yet. Install it (https://claude.com/claude-code) and run this again.");
-  } else {
-    for (const scope of ["local", "user"]) spawnSync("claude", ["mcp", "remove", "appshots", "--scope", scope], { stdio: "ignore" });
-    const added = spawnSync("claude", ["mcp", "add", "--transport", "http", "--scope", "user", "appshots", `${server}/mcp`, ...(token ? ["--header", `Authorization: Bearer ${token}`] : [])], { encoding: "utf8" });
-    connected = added.status === 0;
-    if (connected) done("Claude Code connected to the server (MCP server \"appshots\")");
-    else open(`Claude Code could not be connected: ${`${added.stderr}${added.stdout}`.trim() || "claude mcp add failed"}`);
+  // 4. The agent's connection to the server's MCP tools. Where there is none, the skill uses `appshots call`.
+  let connected = true;
+  if (CONNECT[id]) {
+    // Each of these agents has a command named like its id.
+    if (spawnSync(id, ["--version"], { stdio: "ignore" }).error) {
+      connected = false;
+      open(`${agent.name} was not found, so it is not connected yet. Install it and run this again.`);
+    } else {
+      const result = CONNECT[id](server, token);
+      connected = result.ok;
+      if (connected) done(`${agent.name} connected to the server (MCP server "appshots")`);
+      // Whatever the agent printed may repeat the command it was given.
+      else open(`${agent.name} could not be connected: ${token ? result.detail.replaceAll(token, "<your token>") : result.detail}`);
+    }
+  } else if (id === "pi") {
+    done("Pi has no MCP, so the skill reaches the server through the appshots command");
   }
 
   console.log("");
-  if (connected && skill?.ok) console.log("Ready. Open Claude Code in your app's folder, start a new session and type /appshots");
+  if (connected && skill?.ok) console.log(`Ready. Open ${agent.name} in your app's folder, start a new session and ${agent.start}`);
   else console.log("Not finished: see the lines marked ! above.");
+  if (id === "other") console.log(`If your agent speaks MCP, you can also add the server there: ${server}/mcp, an HTTP server${token ? ' with the header "Authorization: Bearer <your token>"' : ""}.`);
   if (!command) console.log(`To type 'appshots' yourself, add this to ~/.zshrc: alias appshots='node ${tilde(cli)}'`);
 }
 
@@ -359,6 +420,66 @@ async function pull(config, project, flags) {
   console.log(`Screenshots are in ${outDir}`);
 }
 
+/** One call to the server's MCP endpoint, which answers each request by itself and in plain JSON. */
+async function rpc(config, method, params) {
+  const response = await request(config, "POST", "/mcp", {
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+  });
+  const reply = await response.json();
+  if (reply.error) fail(reply.error.message ?? "The server refused the call.");
+  return reply.result;
+}
+
+async function tools(config, name) {
+  const list = (await rpc(config, "tools/list")).tools;
+  if (name) {
+    const tool = list.find((entry) => entry.name === name);
+    if (!tool) fail(`No tool "${name}". Run 'appshots tools' for the list.`);
+    console.log(`${tool.name}: ${tool.description}\n\nArguments, as a JSON Schema:\n${JSON.stringify(tool.inputSchema, null, 2)}`);
+    return;
+  }
+  console.log(`Tools of the appShots server at ${config.url}. Call one with:  appshots call <tool> '<arguments as JSON>'`);
+  console.log("Start with get_design_guide. 'appshots tools <tool>' prints one tool's arguments in full; a ? marks an optional one.\n");
+  for (const tool of list) {
+    const required = new Set(tool.inputSchema?.required ?? []);
+    const args = Object.keys(tool.inputSchema?.properties ?? {}).map((key) => (required.has(key) ? key : `${key}?`));
+    console.log(`${tool.name}${args.length ? `  { ${args.join(", ")} }` : ""}\n  ${tool.description}\n`);
+  }
+}
+
+async function call(config, name, input, flags) {
+  if (!name) fail("Usage: appshots call <tool> ['<arguments as JSON>' | @file.json | -]");
+  let source = input ?? "{}";
+  if (source === "-") {
+    source = readFileSync(0, "utf8");
+  } else if (source.startsWith("@")) {
+    if (!existsSync(source.slice(1))) fail(`No such file: ${source.slice(1)}`);
+    source = readFileSync(source.slice(1), "utf8");
+  }
+  let args;
+  try {
+    args = JSON.parse(source);
+  } catch (error) {
+    fail(`The arguments are not valid JSON: ${error.message}`);
+  }
+  const result = await rpc(config, "tools/call", { name, arguments: args });
+  // An agent without MCP cannot be handed a picture, so pictures become files it can open.
+  const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join(tmpdir(), "appshots"));
+  let pictures = 0;
+  for (const part of result.content ?? []) {
+    if (part.type === "text") {
+      (result.isError ? console.error : console.log)(part.text);
+    } else if (part.type === "image") {
+      mkdirSync(outDir, { recursive: true });
+      const file = path.join(outDir, `${name}-${++pictures}.${part.mimeType === "image/png" ? "png" : "jpg"}`);
+      writeFileSync(file, Buffer.from(part.data, "base64"));
+      console.log(`Picture saved, open it to look: ${file}`);
+    }
+  }
+  if (result.isError) process.exit(1);
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   const { positional, flags } = parseArgs(rest);
@@ -408,6 +529,10 @@ async function main() {
       spawnSync("open", [positional[0] ? `${config.url}/#/${positional[0]}` : config.url]);
       return;
     }
+    case "tools":
+      return tools(loadConfig(), positional[0]);
+    case "call":
+      return call(loadConfig(), positional[0], positional[1], flags);
     default:
       fail(`Unknown command "${command}". Run 'appshots help'.`);
   }

@@ -1,6 +1,6 @@
 ---
 name: appshots
-description: Make the App Store screenshots for the app in this repository from start to finish. Runs the app in the iOS Simulator or uses a plugged-in iPhone or iPad, captures the screens worth showing, writes the headlines, and builds and renders the set on the appShots server through its MCP tools. Use when asked for App Store screenshots, store screenshots, a screenshot set, or the header and search results assets of an app.
+description: Make the App Store screenshots for the app in this repository from start to finish. Runs the app in the iOS Simulator or uses a plugged-in iPhone or iPad, captures the screens worth showing, writes the headlines, and builds and renders the set on the appShots server. Use when asked for App Store screenshots, store screenshots, a screenshot set, or the header and search results assets of an app.
 ---
 
 # appShots
@@ -11,20 +11,34 @@ Work through the steps in order. Say in a line or two what you decided at each s
 
 ## 1. Check the setup
 
-Check these three before anything else.
+Check these before anything else.
 
-- **The MCP server `appshots`.** Its tools are `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets` and `render`. Call `list_projects` to see that it answers.
-- **The `appshots` CLI**, which captures the screen and uploads it. It sits next to this skill: `node ~/.claude/skills/appshots/appshots.mjs`. The rest of this skill writes `appshots` for short; use the long form when `appshots` is not a command. Run `appshots projects` to see that it is there and signed in.
+- **The `appshots` command.** It captures the screen, uploads it and reaches the server. It is the file `appshots.mjs` in this skill's folder, next to this file. The rest of this skill writes `appshots` for short; where that is not a command, run `node <this skill's folder>/appshots.mjs`. Run `appshots projects` to see that it is there and signed in.
 - **Xcode**, for the simulator. If `xcrun simctl` fails because `xcode-select` points at the Command Line Tools, prefix commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 
-If the MCP tools are missing or answer 401, or the CLI is missing or not signed in, the setup has not been run on this Mac. One command does all of it, and only the user can get it, because it carries their token. Do not hand them separate commands to piece together. Tell them exactly this, as numbered steps, and stop:
+These commands need the network, Xcode and the simulator. If your shell is sandboxed and one fails for that reason, ask the user to allow it.
 
-1. Open {{SERVER}}, sign in, and click **Connect Claude** in the sidebar.
-2. Choose **Let Claude do everything** and click **Create token**.
-3. Copy the command that appears and paste it into Terminal. It installs this skill and the CLI and connects Claude Code.
-4. Start a new Claude session in this folder and type `/appshots` again.
+**The server's tools** are `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets` and `render`. There are two ways to reach them, and the rest of this skill names only the tool:
 
-If the tools still answer 401 in a session started after that setup, an older connection saved for this folder is in the way. Run `claude mcp remove appshots -s local` yourself, then ask for one more new session.
+- As MCP tools, when this session has an MCP server called `appshots` and its `list_projects` answers.
+- Through the command, in every other case, including an MCP server that answers 401:
+
+  ```bash
+  appshots tools                                   # every tool and its arguments
+  appshots tools set_slides                        # one tool's arguments in full
+  appshots call list_projects
+  appshots call create_project '{"name": "Streaks"}'
+  appshots call set_slides @slides.json            # arguments from a file, for anything long
+  ```
+
+  A tool that returns pictures saves them and prints where. Open those files to look at them.
+
+If `appshots projects` fails because the command is missing or not signed in, the setup has not been run on this Mac. One command does all of it, and only the user can get it, because it carries their token. Do not hand them separate commands to piece together. Tell them exactly this, as numbered steps, and stop:
+
+1. Open {{SERVER}}, sign in, and click **Connect an agent** in the sidebar.
+2. Pick the agent you are (or **Something else**), then **Do everything for me**, and click **Create token**.
+3. Copy the command that appears and paste it into Terminal.
+4. Start a new session in this folder and ask for the screenshots again.
 
 Then call `get_design_guide` and read it. It is the current reference for layouts, backgrounds, fonts, badges, copy and the header and search results assets, and it wins over anything remembered.
 
@@ -107,3 +121,4 @@ Tell the user:
 - The slides with their headlines, in order.
 - What you assumed or left out: no iPad set, no badges, a screen you could not reach.
 - That the header and search results assets should be checked in App Store Connect's preview before submitting.
+- If the `appshots` MCP server answered 401 and you used the command instead: running the setup command again, from this folder, repairs the connection.

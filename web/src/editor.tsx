@@ -366,7 +366,7 @@ export function SlideEditor({ project, index, change, actions }: { project: Proj
       </Section>
       <JsonSection
         value={slide}
-        hint="Everything Claude can set on this slide, including custom gradients and device offsets."
+        hint="Everything an agent can set on this slide, including custom gradients and device offsets."
         onApply={(parsed) =>
           change((item) => {
             for (const key of Object.keys(item)) delete (item as Record<string, unknown>)[key];
@@ -473,7 +473,7 @@ export function CreativeEditor({ project, placement, change, remove }: { project
       </Section>
       <JsonSection
         value={creative}
-        hint="Everything Claude can set on this asset, including custom gradients."
+        hint="Everything an agent can set on this asset, including custom gradients."
         onApply={(parsed) =>
           change((item) => {
             for (const key of Object.keys(item)) delete (item as Record<string, unknown>)[key];

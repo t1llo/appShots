@@ -22,7 +22,7 @@ services:
     init: true
     environment:
       # The public origin, e.g. https://appshots.example.com. Used as the Google redirect, in the links
-      # Claude gets back and in the skill at /skill.md. Empty falls back to each request's host.
+      # an agent gets back and in the skill at /skill.md. Empty falls back to each request's host.
       PUBLIC_URL: ${PUBLIC_URL:-}
       # Sign-in is Google only. OAuth client of type "Web application" with the redirect URI
       # <PUBLIC_URL>/auth/google/callback. Required here: without them the server has no sign-in at all.

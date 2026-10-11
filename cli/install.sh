@@ -1,24 +1,27 @@
 #!/bin/sh
 # Sets this Mac up for the appShots server at {{SERVER}} in one go:
 #
-#   curl -fsS {{SERVER}}/install.sh | APPSHOTS_TOKEN=<token> sh
+#   curl -fsS {{SERVER}}/install.sh | APPSHOTS_TOKEN=<token> sh -s <agent>
 #
-# It downloads the appshots CLI and hands over to `appshots setup`, which saves the token, installs the
-# /appshots skill for Claude Code and connects Claude Code to the server.
+# <agent> is claude, codex, opencode, pi or other; left out, it is claude. The script downloads the appshots
+# CLI and hands over to `appshots setup`, which saves the token, installs the appshots skill and the CLI
+# where that agent looks for skills, and connects the agent to the server.
 set -eu
+
+agent="${1:-${APPSHOTS_AGENT:-claude}}"
 
 if ! command -v node >/dev/null 2>&1; then
   echo "appshots: Node.js 18 or newer is needed. Install it (https://nodejs.org, or 'brew install node') and run this again." >&2
   exit 1
 fi
 
-dir="$HOME/.claude/skills/appshots"
-mkdir -p "$dir"
-curl -fsS "{{SERVER}}/cli/appshots.mjs" -o "$dir/appshots.mjs"
-chmod +x "$dir/appshots.mjs"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsS "{{SERVER}}/cli/appshots.mjs" -o "$tmp/appshots.mjs"
 
 # Piped into sh, stdin is this script. Give setup the terminal back so it can ask for the token.
 if (exec </dev/tty) 2>/dev/null; then
-  exec node "$dir/appshots.mjs" setup "{{SERVER}}" "$@" </dev/tty
+  node "$tmp/appshots.mjs" setup "{{SERVER}}" --agent "$agent" </dev/tty
+else
+  node "$tmp/appshots.mjs" setup "{{SERVER}}" --agent "$agent"
 fi
-exec node "$dir/appshots.mjs" setup "{{SERVER}}" "$@"

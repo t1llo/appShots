@@ -44,7 +44,7 @@ function Message({ title, text, children }: { title: string; text: string; child
 
 function Shell() {
   const meta = useQuery(metaQuery);
-  // Polled, so projects that Claude creates through MCP show up without a reload.
+  // Polled, so projects that an agent creates through MCP show up without a reload.
   const projects = useQuery({ ...projectsQuery, refetchInterval: 3000 });
   const [dialog, setDialog] = useState<DialogKind | null>(null);
 
@@ -94,7 +94,7 @@ function Shell() {
         <div className="nav-group">
           <button className="nav-item" type="button" onClick={() => setDialog("connect")}>
             <Icon path={BOLT} />
-            <span className="nav-text">Connect Claude</span>
+            <span className="nav-text">Connect an agent</span>
           </button>
           {account?.admin ? (
             <button className="nav-item" type="button" onClick={() => setDialog("people")}>
@@ -180,12 +180,12 @@ function Home() {
   const open = useOpenDialog();
   if (first) return <Navigate to="/$projectId" params={{ projectId: first.id }} replace />;
   return (
-    <Message title="App Store screenshots, on tap" text="Create a project here, or let Claude build one through the MCP endpoint. Either way the result shows up here in the Studio.">
+    <Message title="App Store screenshots, on tap" text="Create a project here, or let your agent build one. Either way the result shows up here in the Studio.">
       <button className="btn primary" type="button" onClick={() => open("new")}>
         New project
       </button>
       <button className="btn" type="button" onClick={() => open("connect")}>
-        Connect Claude
+        Connect an agent
       </button>
     </Message>
   );

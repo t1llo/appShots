@@ -153,7 +153,7 @@ export function ProjectPage({ meta, initial, openConnect }: { meta: Meta; initia
     };
   }, [save]);
 
-  // Picks up changes made elsewhere while the Studio is open: Claude editing through MCP, or the CLI uploading a capture.
+  // Picks up changes made elsewhere while the Studio is open: an agent editing through MCP, or the CLI uploading a capture.
   const live = useQuery({ ...detailQuery(id), refetchInterval: dirty ? false : 3000 });
   const detail = live.data ?? initial;
   const { shots } = detail;

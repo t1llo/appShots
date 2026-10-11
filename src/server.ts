@@ -171,8 +171,8 @@ app.get("/healthz", (_req, res) => {
   res.type("text").send("ok");
 });
 
-// What a Mac needs to work with this server: the Claude skill that runs the whole flow, the CLI that captures
-// and uploads, and the script that installs both and connects Claude Code (`curl <server>/install.sh | sh`).
+// What a Mac needs to work with this server: the skill that runs the whole flow in a coding agent, the CLI that
+// captures and uploads, and the script that installs both and connects the agent (`curl <server>/install.sh | sh`).
 // None of them holds a secret, so they are public. The server fills in its own address.
 const skill = await readFile(path.join(root, "skill", "SKILL.md"), "utf8");
 const installer = await readFile(path.join(root, "cli", "install.sh"), "utf8");

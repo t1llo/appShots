@@ -1,6 +1,6 @@
 # appShots
 
-Self-hosted App Store screenshot generator for iPhone and iPad. Describe the slides to Claude (copy, look, badges such as "10K+ downloads", a five-star rating or an award wreath), feed it screenshots straight from the simulator or a plugged-in iPhone, and get back PNGs at the exact sizes App Store Connect accepts. It also makes the wide images for App Store Connect's Header and Search Results tab.
+Self-hosted App Store screenshot generator for iPhone and iPad. Describe the slides to your coding agent (copy, look, badges such as "10K+ downloads", a five-star rating or an award wreath), feed it screenshots straight from the simulator or a plugged-in iPhone, and get back PNGs at the exact sizes App Store Connect accepts. It also makes the wide images for App Store Connect's Header and Search Results tab.
 
 ![An example set: five slides rendered for the 6.9-inch iPhone](docs/example.jpg)
 
@@ -9,9 +9,9 @@ It is four things:
 | Piece | Where it runs | What it does |
 | --- | --- | --- |
 | Server | Docker or `npm start` | Renders slides, stores projects, serves the home page, the Studio (the editor in the browser), the REST API and the MCP endpoint at `/mcp` |
-| MCP endpoint | Part of the server | Lets Claude create projects, write slides and render them |
-| `appshots` CLI | Your Mac | Captures the simulator or a connected device and uploads the screenshot; a container cannot see your USB devices, so this part stays local |
-| `/appshots` skill | Claude Code on your Mac | Does the whole job in an app's repository: runs the app, captures the screens, writes the copy and builds the set |
+| MCP endpoint | Part of the server | Lets an agent create projects, write slides and render them |
+| `appshots` CLI | Your Mac | Captures the simulator or a connected device and uploads the screenshot; a container cannot see your USB devices, so this part stays local. Also reaches the server's tools for agents without MCP |
+| `appshots` skill | Your agent, on your Mac | Does the whole job in an app's repository: runs the app, captures the screens, writes the copy and builds the set. Works in Claude Code, Codex, OpenCode, Pi and anything else that reads a skill or follows a file |
 
 ## Run it locally
 
@@ -75,7 +75,7 @@ While the OAuth consent screen is in "Testing", Google itself only lets in the t
 
 ### What open sign-in costs
 
-The server makes no paid calls. Claude runs on each person's own subscription, on their own machine, so more people cost nothing per use. What they use is this one machine:
+The server makes no paid calls. The agent runs on each person's own subscription, on their own machine, so more people cost nothing per use. What they use is this one machine:
 
 - **CPU and memory.** A render drives a headless Chromium: about a second per slide on a recent Mac, more on a small server, and a few hundred megabytes of memory while it runs. Renders are queued one at a time for the whole server, so many people at once means waiting, not a bigger bill.
 - **Disk.** This is what grows. An account can hold 20 projects of 40 screenshots, each up to 40 MB when uploaded, plus the rendered sets. A handful of people is nothing; a few hundred accounts filled to the cap would not fit on a small disk. Lower `USER_MAX_PROJECTS` and `USER_MAX_SHOTS` if the disk is small, and keep an eye on the volume.
@@ -86,54 +86,87 @@ If that is more than you want to carry, switch to **Only the people listed here*
 ### Upgrading from a version with `APPSHOTS_TOKEN`
 
 - `APPSHOTS_TOKEN` is no longer read. The projects it reached are the server's own space, which now belongs to the admin.
-- Claude and the CLI need a personal token instead: sign in, open **Connect Claude**, create one, and run the command it shows.
+- Agents and the CLI need a personal token instead: sign in, open **Connect an agent**, create one, and run the command it shows.
 - Accounts made with an email and a password, or through an invite link, are kept: the account and its projects come back on the first Google sign-in with the same address. Their old passwords and tokens are discarded.
 - Sign-in is open to anyone with a Google account unless you picked the list under People or put somebody on it. A server that was invite-only is open after the upgrade; choose **Only the people listed here** to close it again.
 
-## Connect Claude
+## Connect an agent
 
-**Connect Claude** in the Studio's sidebar asks how you want to work and then gives the steps, with your token already filled in:
+**Connect an agent** in the Studio's sidebar asks which agent you use, then what it should do, and gives the steps with your token already filled in.
+
+| Agent | Skill goes to | Start it with | MCP connection |
+| --- | --- | --- | --- |
+| Claude Code | `~/.claude/skills/appshots` | `/appshots` | `claude mcp add`, for every folder |
+| Codex | `~/.agents/skills/appshots` | `$appshots` | `codex mcp add`, plus the token in `~/.codex/config.toml` |
+| OpenCode | `~/.agents/skills/appshots` | Ask for the screenshots | `opencode mcp add --global` |
+| Pi | `~/.agents/skills/appshots` | `/skill:appshots` | None: Pi has no MCP, the skill uses `appshots call` |
+| Something else | `~/.agents/skills/appshots` | "Read `~/.agents/skills/appshots/SKILL.md` and follow it" | By hand, if the agent has MCP |
+
+For each agent there are three ways to work:
 
 | Way | What you do | What it sets up |
 | --- | --- | --- |
-| Let Claude do everything | Paste one command, then type `/appshots` in your app's folder | The skill, the CLI and the MCP connection |
-| Tell Claude what you want | Paste one command, then describe the set to Claude | The MCP connection |
+| Do everything for me | Paste one command, then start the skill in your app's folder | The skill, the CLI and the MCP connection |
+| Tell it what to do | Paste one command, add your screenshots, describe the set | The MCP connection |
 | Make it by hand | Nothing | Nothing: you work in the Studio |
 
 ### One command for everything
 
 ```bash
-curl -fsS https://appshots.example.com/install.sh | APPSHOTS_TOKEN=<token> sh
+curl -fsS https://appshots.example.com/install.sh | APPSHOTS_TOKEN=<token> sh -s codex
 ```
 
-Connect shows this with a real token in place of `<token>`. It needs Node and Claude Code on the Mac, and does four things:
+Connect shows this with a real token in place of `<token>` and your agent at the end: `claude` (also what you get with nothing after `sh`), `codex`, `opencode`, `pi` or `other`. It needs Node on the Mac, and does four things:
 
 1. Checks the token against the server and saves it in `~/.config/appshots`.
-2. Puts the CLI in `~/.claude/skills/appshots/appshots.mjs` and links it as `appshots` in `~/.local/bin`, `~/bin` or next to `claude`, whichever is on your PATH.
-3. Installs the `/appshots` skill in `~/.claude/skills/appshots`.
-4. Connects Claude Code to the server's MCP endpoint for every folder (`claude mcp add --scope user`), replacing an older `appshots` entry.
+2. Puts the CLI next to the skill and links it as `appshots` in `~/.local/bin`, `~/bin` or next to `claude`, whichever is on your PATH.
+3. Installs the skill where that agent looks for skills.
+4. Connects the agent to the server's MCP endpoint for every folder, with the agent's own command, replacing an older `appshots` entry.
 
-Run it again whenever the server has been updated or the token replaced. `install.sh`, the skill and the CLI hold no secrets, so the server hands them out without sign-in; the token is the only thing that opens anything.
+Run it again whenever the server has been updated or the token replaced, and once per agent if you use several; a copy set up for another agent is brought up to date at the same time. `install.sh`, the skill and the CLI hold no secrets, so the server hands them out without sign-in; the token is the only thing that opens anything.
 
-Then open Claude Code in an app's repository, start a new session and type `/appshots`, or just ask for App Store screenshots. Claude reads the code to learn what the app does, builds and runs it in the iOS Simulator (or uses a plugged-in, unlocked iPhone or iPad), fills it with believable content, captures the screens worth showing, writes the headlines, builds the set through the MCP tools, looks at the render and fixes what is off. The skill's source is [skill/SKILL.md](skill/SKILL.md).
+Then open the agent in an app's repository, start a new session and start the skill, or just ask for App Store screenshots. The agent reads the code to learn what the app does, builds and runs it in the iOS Simulator (or uses a plugged-in, unlocked iPhone or iPad), fills it with believable content, captures the screens worth showing, writes the headlines, builds the set, looks at the render and fixes what is off. The skill's source is [skill/SKILL.md](skill/SKILL.md).
 
 ### Only the MCP connection
 
 ```bash
 claude mcp add --transport http --scope user appshots https://appshots.example.com/mcp --header "Authorization: Bearer <token>"
+opencode mcp add --global --url https://appshots.example.com/mcp --header "Authorization=Bearer <token>" appshots
+```
+
+Codex takes no header on its command line, so use the setup command above for it, or add the server yourself in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.appshots]
+url = "https://appshots.example.com/mcp"
+http_headers = { Authorization = "Bearer <token>" }
 ```
 
 Then ask in plain words, for example:
 
 > Make App Store screenshots for my habit tracker in project "streaks". Six slides, dark purple look, open with a hero slide with a laurel badge "4.8 · App Store rating" and one for "50K+ downloads", then one slide per feature using the screenshots home, stats and widgets.
 
-Claude answers with a contact sheet of the rendered set, a link to the Studio and a ZIP link. Tools: `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets`, `render`. Every tool works inside the space the token belongs to.
+The agent answers with a contact sheet of the rendered set, a link to the Studio and a ZIP link. Tools: `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets`, `render`. Every tool works inside the space the token belongs to.
 
-The endpoint authenticates with a bearer header, so it works with clients that can send one (Claude Code, the Agent SDK, `mcp-remote`). It does not implement OAuth.
+The endpoint is Streamable HTTP and authenticates with a bearer header, so it works with any client that can send one. It does not implement OAuth.
+
+### Without MCP
+
+The CLI reaches the same tools, for Pi and any other agent that can run a command but has no MCP:
+
+```bash
+appshots tools                                    # every tool and its arguments
+appshots tools set_slides                         # one tool's arguments in full
+appshots call create_project '{"name": "Streaks"}'
+appshots call set_slides @slides.json             # arguments from a file, or - for stdin
+appshots call render '{"project": "streaks"}'     # pictures a tool returns are saved, and the paths printed
+```
+
+The skill uses these by itself when the session has no working `appshots` MCP server.
 
 ## Capture from your Mac
 
-The setup command above installs the CLI. It is one file with no dependencies, so in a checkout it also runs as `node cli/appshots.mjs`, or as `appshots` after `npm link`; `appshots setup <url>` does what the setup command does.
+The setup command above installs the CLI. It is one file with no dependencies, so in a checkout it also runs as `node cli/appshots.mjs`, or as `appshots` after `npm link`; `appshots setup <url> --agent <agent>` does what the setup command does.
 
 ```bash
 appshots devices                                  # booted simulators and connected devices
@@ -151,7 +184,7 @@ Simulator capture uses `simctl`. Device capture uses `devicectl device capture s
 
 ## The Studio
 
-Open the server in a browser and sign in to see every slide as a live preview at export size, edit copy, layout, badges and style, drop in screenshots, and download the set as a ZIP. Below the slides, the Header and search results section adds, previews and edits the three store assets, with the safe area drawn as a dashed frame. Projects sit in the sidebar. Changes Claude makes through MCP show up in an open Studio within a few seconds.
+Open the server in a browser and sign in to see every slide as a live preview at export size, edit copy, layout, badges and style, drop in screenshots, and download the set as a ZIP. Below the slides, the Header and search results section adds, previews and edits the three store assets, with the safe area drawn as a dashed frame. Projects sit in the sidebar. Changes an agent makes through MCP show up in an open Studio within a few seconds.
 
 ## Slides
 
@@ -178,7 +211,7 @@ A project can hold one of each, built from the same screenshots and theme as its
 | `search` | 3840×2560 (3:2) | 2168×1030 at 836, 765 | The search results asset |
 | `universal` | 5244×2950 (16:9) | 1402×962 at 1921, 660 | One file for both; it is what "Use header asset in search results" expects |
 
-The store crops these images differently on each device and orientation, and only the safe area is always visible. appShots therefore centres the copy and shrinks it until it fits inside that area, and treats everything around it as decoration that may be cut off. The Studio and the previews Claude gets draw the safe area as a dashed frame; the exported PNG does not contain it.
+The store crops these images differently on each device and orientation, and only the safe area is always visible. appShots therefore centres the copy and shrinks it until it fits inside that area, and treats everything around it as decoration that may be cut off. The Studio and the previews an agent gets draw the safe area as a dashed frame; the exported PNG does not contain it.
 
 - **Layouts:** `fan` (copy above up to five fanned devices), `sides` (copy between up to four devices), `wall` (copy over a dimmed wall of bare screenshots). Without screenshots an asset is copy on the background, without copy it is the devices alone.
 - **Per asset:** eyebrow, headline, subheadline, up to six screenshots in order of importance, up to three badges, background, font, colours, headline size, and the device frame, colour, size and shadow. What an asset leaves out comes from the project theme.
