@@ -1,9 +1,9 @@
 # appShots: App Store screenshot generator. One service carries the home page, the Studio, the REST API and
 # the MCP endpoint (/mcp).
 #
+# No host port is published: put a reverse proxy that terminates TLS in front of port 3000.
 # Deploy the Compose file from this repository: set PUBLIC_URL, GOOGLE_CLIENT_ID,
 # GOOGLE_CLIENT_SECRET and ADMIN_EMAIL, then give the `appshots` service a domain on port 3000.
-# A reverse proxy terminates TLS; no host port is published.
 #
 # Local:   docker compose -f docker-compose.yaml -f compose.local.yaml up --build
 x-service: &service
@@ -28,10 +28,10 @@ services:
       # <PUBLIC_URL>/auth/google/callback. Required here: without them the server has no sign-in at all.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set the client ID of your Google OAuth client}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set the client secret of your Google OAuth client}
-      # Your own Google address: the admin. Sign-in is open to any Google account unless the admin narrows it under People.
+      # Your own Google address: the admin. Sign-in is open to any Google account unless the admin narrows it on the Admin page.
       ADMIN_EMAIL: ${ADMIN_EMAIL:?Set your Google address, which becomes the admin}
-      # Page analytics with PostHog, for the home page and the Studio. The project token is the public, write-only
-      # one that ends up in the page anyway. POSTHOG_KEY=off turns analytics off.
+      # Optional page analytics with PostHog, for the home page and the Studio: your project token (phc_…), which is
+      # the public, write-only one that ends up in the page anyway. Without it the pages load no analytics.
       POSTHOG_KEY: ${POSTHOG_KEY:-}
       POSTHOG_HOST: ${POSTHOG_HOST:-https://us.i.posthog.com}
       # Who runs this server and where to write about one's data, as the privacy policy and the terms name them.

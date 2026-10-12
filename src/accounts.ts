@@ -44,7 +44,7 @@ interface Spent {
 
 interface State {
   signup: SignupMode;
-  /** True once the admin has picked `signup` under People. */
+  /** True once the admin has picked `signup` on the Admin page. */
   signupChosen: boolean;
   /** The addresses that may sign in while `signup` is "list". The admin is not on it and does not need to be. */
   allowed: string[];

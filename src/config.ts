@@ -95,7 +95,7 @@ export const config = {
   limits: {
     projects: positive(process.env.USER_MAX_PROJECTS, 20),
     shots: positive(process.env.USER_MAX_SHOTS, 40),
-    /** Renders an account gets. The admin can give one account more under People. */
+    /** Renders an account gets. The admin can give one account more on the Admin page. */
     renders: positive(process.env.USER_RENDER_CREDITS, 10),
   },
 };

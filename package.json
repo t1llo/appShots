@@ -2,6 +2,11 @@
   "name": "appshots",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/t1llo/appShots.git"
+  },
   "description": "Self-hosted App Store screenshot generator with an MCP endpoint, a web Studio and a Mac capture CLI.",
   "type": "module",
   "engines": {

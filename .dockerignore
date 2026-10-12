@@ -5,6 +5,7 @@ web/dist
 data
 raw-shots
 store-screenshots
+notes
 *.md
 !skill/SKILL.md
 !docs/*.md
