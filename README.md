@@ -2,6 +2,12 @@
 
 App Store screenshots for iPhone, iPad and Mac, made by your coding agent or by hand.
 
+[![Hosted app: live](https://img.shields.io/website?url=https%3A%2F%2Fshots.beffa.xyz&label=hosted%20app&up_message=live)](https://shots.beffa.xyz)
+[![MCP server](https://img.shields.io/badge/MCP-server-8250df?logo=modelcontextprotocol&logoColor=white)](#connect-an-agent)
+[![Self-host with Docker Compose](https://img.shields.io/badge/self--host-Docker%20Compose-2496ED?logo=docker&logoColor=white)](#host-it)
+[![License: MIT](https://img.shields.io/github/license/t1llo/appShots)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/t1llo/appShots)](https://github.com/t1llo/appShots/commits/main)
+
 **[Try it at shots.beffa.xyz](https://shots.beffa.xyz)** · [Docs](https://shots.beffa.xyz/docs) · [Host it yourself](#host-it)
 
 ![An example set: five slides rendered for the 6.9-inch iPhone](docs/example.jpg)
