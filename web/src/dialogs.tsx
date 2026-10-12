@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { createContext, type FormEvent, useContext, useState } from "react";
 import { api, detailQuery, errorText, type Meta, type Project, projectsQuery } from "./api.ts";
 import { LanguageList } from "./languages.tsx";
+import { track } from "./track.ts";
 import { CopyBlock, Dialog, Field, toast } from "./ui.tsx";
 
 type Named = { id: string; name: string };
@@ -76,6 +77,7 @@ function NewProject({ close }: { close: () => void }) {
         locales,
         slides: [{ layout: "device-bottom", headline: "Say what your app does", subheadline: "One short supporting line" }],
       });
+      track("create_project");
       await queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey });
       close();
       await navigate({ to: "/$projectId", params: { projectId: project.id } });
@@ -278,6 +280,7 @@ function Connect({ meta, close }: { meta: Meta; close: () => void }) {
 
   const create = attempt(async () => {
     setToken((await api<FreshToken>("POST", "/account/tokens", { name: agent?.id === "other" || !agent ? "Agent" : agent.name })).token);
+    track("connect_agent", { agent: agent?.id ?? "none" });
     await queryClient.invalidateQueries({ queryKey: tokensKey });
   });
 

@@ -2,6 +2,7 @@
 // need a script: the light and dark switch, the list of pages on a narrow screen, and Copy on every code block.
 
 import { setAppearance, shownAppearance } from "./theme.ts";
+import { track } from "./track.ts";
 
 document.getElementById("appearance")!.addEventListener("click", () => setAppearance(shownAppearance() === "dark" ? "light" : "dark"));
 
@@ -25,6 +26,7 @@ for (const pre of document.querySelectorAll<HTMLPreElement>(".prose pre")) {
   button.addEventListener("click", async () => {
     // Without the line break at the end, so a command pasted into a terminal waits for Return.
     await navigator.clipboard.writeText((pre.textContent ?? "").trimEnd());
+    track("copy_command");
     button.textContent = "Copied";
     setTimeout(() => (button.textContent = "Copy"), 1200);
   });

@@ -31,10 +31,12 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set the client secret of your Google OAuth client}
       # Your own Google address: the admin. Sign-in is open to any Google account unless the admin narrows it on the Admin page.
       ADMIN_EMAIL: ${ADMIN_EMAIL:?Set your Google address, which becomes the admin}
-      # Optional page analytics with PostHog, for the home page and the Studio: your project token (phc_…), which is
-      # the public, write-only one that ends up in the page anyway. Without it the pages load no analytics.
-      POSTHOG_KEY: ${POSTHOG_KEY:-}
-      POSTHOG_HOST: ${POSTHOG_HOST:-https://us.i.posthog.com}
+      # Optional page analytics with Umami, for the home page, the docs and the Studio: the address of your Umami
+      # server and the id this site has on it. Neither is a secret. Without both the pages load no analytics.
+      UMAMI_URL: ${UMAMI_URL:-}
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
+      # "on" also loads Umami's recorder, which replays visits, on the home page and the docs. Never in the Studio.
+      UMAMI_RECORDER: ${UMAMI_RECORDER:-}
       # Who runs this server and where to write about one's data, as the privacy policy and the terms name them.
       OPERATOR_NAME: ${OPERATOR_NAME:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}

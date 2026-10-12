@@ -22,7 +22,8 @@
     <!-- The server (src/site.ts) puts the tags that need its own address here: the canonical link and what a shared link shows. -->
     <!--site:head-->
     <link rel="stylesheet" href="/src/app.css" />
-    <script async src="/analytics.js" vite-ignore></script>
+    <!-- The server (src/site.ts) puts the page analytics here, when it has any. -->
+    <!--site:analytics-->
   </head>
   <body class="home">
     <!-- The marks of GitHub and of the agents the setup command knows. Each is drawn where a <use> points at it. -->
@@ -49,10 +50,10 @@
             <path d="M8 5.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6zM8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
           </svg>
         </button>
-        <a class="icon-btn plain home-gh" href="https://github.com/t1llo/appShots" title="Source on GitHub" aria-label="Source on GitHub">
+        <a class="icon-btn plain home-gh" href="https://github.com/t1llo/appShots" data-umami-event="open_github" data-umami-event-from="bar" title="Source on GitHub" aria-label="Source on GitHub">
           <svg class="icon mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" /></svg>
         </a>
-        <a class="btn" href="/studio">Open Studio</a>
+        <a class="btn" href="/studio" data-umami-event="open_studio" data-umami-event-from="bar">Open Studio</a>
       </div>
     </header>
 
@@ -73,13 +74,14 @@
             <code><span class="dim">$</span> curl -fsS <span data-origin>https://your-server</span>/install.sh | <span data-token>APPSHOTS_TOKEN=<span class="dim">&lt;your token&gt;</span> </span>sh -s <b data-agent-id>claude</b></code>
           </p>
         </div>
-        <p class="home-note hero-note" data-when="open"><b>Completely free either way:</b> <a href="/studio">sign in with Google</a> to get your token and try it here in the Studio, or <a href="https://github.com/t1llo/appShots#host-it">host it yourself</a>.</p>
-        <p class="home-note hero-note" data-when="list" hidden><b>Free, and by invitation for now:</b> <a href="/studio">sign in</a> with a Google address on the list to get your token, or <a href="https://github.com/t1llo/appShots#host-it">host it yourself</a>.</p>
-        <p class="home-note hero-note" data-when="account" hidden>You are signed in as <span data-name></span>. <a href="/studio">Connect an agent</a> in the Studio writes this line with your token in it.</p>
+        <p class="home-note hero-note" data-when="open"><b>Completely free either way:</b> <a href="/studio" data-umami-event="open_studio" data-umami-event-from="note">sign in with Google</a> to get your token and try it here in the Studio, or <a href="https://github.com/t1llo/appShots#host-it" data-umami-event="open_github" data-umami-event-from="note">host it yourself</a>.</p>
+        <p class="home-note hero-note" data-when="list" hidden><b>Free, and by invitation for now:</b> <a href="/studio" data-umami-event="open_studio" data-umami-event-from="note">sign in</a> with a Google address on the list to get your token, or <a href="https://github.com/t1llo/appShots#host-it" data-umami-event="open_github" data-umami-event-from="note">host it yourself</a>.</p>
+        <!-- rr-mask keeps the name out of a recording of the page, on a server that makes them. -->
+        <p class="home-note hero-note" data-when="account" hidden>You are signed in as <span class="rr-mask" data-name></span>. <a href="/studio" data-umami-event="open_studio" data-umami-event-from="note">Connect an agent</a> in the Studio writes this line with your token in it.</p>
         <p class="home-note hero-note" data-when="none" hidden>No sign-in and no token needed on this server.</p>
         <div class="home-cta">
-          <a class="btn cta" href="/studio">Open Studio<span aria-hidden="true">→</span></a>
-          <a class="btn cta ghost" href="https://github.com/t1llo/appShots"><svg class="icon mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#mark-github" /></svg>GitHub</a>
+          <a class="btn cta" href="/studio" data-umami-event="open_studio" data-umami-event-from="hero">Open Studio<span aria-hidden="true">→</span></a>
+          <a class="btn cta ghost" href="https://github.com/t1llo/appShots" data-umami-event="open_github" data-umami-event-from="hero"><svg class="icon mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#mark-github" /></svg>GitHub</a>
         </div>
       </section>
 
@@ -204,14 +206,14 @@
           <li>Open source</li>
         </ul>
         <div class="home-cta">
-          <a class="btn cta" href="/studio">Open Studio<span aria-hidden="true">→</span></a>
-          <a class="btn cta ghost" href="https://github.com/t1llo/appShots"><svg class="icon mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#mark-github" /></svg>GitHub</a>
+          <a class="btn cta" href="/studio" data-umami-event="open_studio" data-umami-event-from="end">Open Studio<span aria-hidden="true">→</span></a>
+          <a class="btn cta ghost" href="https://github.com/t1llo/appShots" data-umami-event="open_github" data-umami-event-from="end"><svg class="icon mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#mark-github" /></svg>GitHub</a>
         </div>
       </section>
     </main>
 
     <footer class="home-foot">
-      <nav aria-label="More"><a href="/docs">Docs</a><a href="/docs/quick-start">Quick start</a><a href="https://github.com/t1llo/appShots">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
+      <nav aria-label="More"><a href="/docs">Docs</a><a href="/docs/quick-start">Quick start</a><a href="https://github.com/t1llo/appShots" data-umami-event="open_github" data-umami-event-from="foot">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
       <p>Signing in keeps your Google name and email address, and the projects you make. Not affiliated with Apple or with the makers of these agents. Their names and marks are theirs.</p>
     </footer>
 

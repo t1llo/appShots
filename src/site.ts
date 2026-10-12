@@ -76,7 +76,7 @@ const VALUES: Record<string, string> = {
   // A name is plain text, whatever characters it has.
   OPERATOR: config.operator.name.replace(/[\\`*_{}[\]<>()#+!|~-]/g, "\\$&"),
   CONTACT: config.operator.email,
-  ANALYTICS_HOST: config.posthog ? new URL(config.posthog.host).host : "",
+  ANALYTICS_HOST: config.umami ? new URL(config.umami.url).host : "",
   LAYOUTS: table(["Layout", "Screenshots", "What it is"], Object.entries(LAYOUTS).map(([id, note]) => [`\`${id}\``, String(LAYOUT_SHOTS[id as keyof typeof LAYOUT_SHOTS]), note])),
   BADGE_TYPES: described(BADGE_TYPES, "Type"),
   BADGE_TONES: described(BADGE_TONES, "Tone"),
@@ -125,7 +125,7 @@ const VALUES: Record<string, string> = {
 
 /** What `<!-- if name -->` asks about. */
 const FLAGS: Record<string, boolean> = {
-  analytics: config.posthog != null,
+  analytics: config.umami != null,
   operator: config.operator.name !== "",
   contact: config.operator.email !== "",
 };
@@ -239,7 +239,30 @@ function shareTags(base: string, page: { url: string; title: string; description
   ].join("\n    ");
 }
 
-/** A page of web/dist as text, read again whenever a build has replaced it. Null until the pages are built. */
+/**
+ * The tags of the page analytics, for the head of a page, or nothing on a server that has none. With PUBLIC_URL set,
+ * only pages opened under that address are counted. The Studio shows people's unreleased apps, and both its title
+ * and the part of its address after the # name the project that is open: there the title sent is always the Studio's
+ * own, that part of the address stays in the browser, and the recorder is never loaded.
+ */
+function analyticsTags(studio: boolean): string {
+  const umami = config.umami;
+  if (!umami) return "";
+  const domain = URL.canParse(config.publicUrl) ? ` data-domains="${escapeHtml(new URL(config.publicUrl).hostname)}"` : "";
+  const script = (file: string, more = "") => `<script defer src="${escapeHtml(umami.url)}/${file}" data-website-id="${umami.website}"${more}></script>`;
+  if (studio) {
+    return [
+      `<script>window.studioAnalytics = function (type, payload) { payload.title = "appShots Studio"; return payload; };</script>`,
+      script("script.js", `${domain} data-tag="studio" data-exclude-hash="true" data-before-send="studioAnalytics"`),
+    ].join("\n    ");
+  }
+  return [script("script.js", domain), ...(umami.recorder ? [script("recorder.js")] : [])].join("\n    ");
+}
+
+/**
+ * A page of web/dist as text, with the analytics in its head, read again whenever a build has replaced it. Null
+ * until the pages are built.
+ */
 const shells = new Map<string, { at: number; text: string }>();
 function shell(name: string): string | null {
   const file = path.join(webDir, name);
@@ -247,10 +270,13 @@ function shell(name: string): string | null {
   const at = statSync(file).mtimeMs;
   const kept = shells.get(name);
   if (kept?.at === at) return kept.text;
-  const text = readFileSync(file, "utf8");
+  const text = readFileSync(file, "utf8").replace("<!--site:analytics-->", () => analyticsTags(name === "index.html"));
   shells.set(name, { at, text });
   return text;
 }
+
+/** The Studio's page. Null until the pages are built. */
+export const studioPage = (): string | null => shell("index.html");
 
 /** The home page, which has its title already, with its address and the picture for shared links filled in. Null until the pages are built. */
 export function homePage(base: string): string | null {

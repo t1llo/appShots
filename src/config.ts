@@ -45,18 +45,19 @@ function signIn() {
 const { enabled, values } = signIn();
 
 /**
- * Page analytics with PostHog: the project token, which is the public, write-only one, and the host it reports
- * to. Without a token the pages load nothing. A value that is no token turns them off rather than stopping the server.
+ * Page analytics with Umami: the address of the Umami server and the id this site has on it. Neither is a secret,
+ * both end up in the page. The pages load nothing unless both are set, and a value that cannot be right turns
+ * analytics off rather than stopping the server. The recorder, which replays visits, is a setting of its own.
  */
 function analytics() {
-  const key = (process.env.POSTHOG_KEY ?? "").trim();
-  const host = (process.env.POSTHOG_HOST ?? "").trim().replace(/\/+$/, "") || "https://us.i.posthog.com";
-  if (!key || key === "off") return null;
-  if (!/^phc_[A-Za-z0-9]+$/.test(key) || !/^https:\/\/[a-z0-9.-]+$/.test(host)) {
-    console.warn("Analytics are off: POSTHOG_KEY has to be a PostHog project token (phc_…) and POSTHOG_HOST an https origin.");
+  const url = (process.env.UMAMI_URL ?? "").trim().replace(/\/+$/, "");
+  const website = (process.env.UMAMI_WEBSITE_ID ?? "").trim().toLowerCase();
+  if (!url && !website) return null;
+  if (!/^https:\/\/[a-z0-9.-]+(:\d+)?(\/[\w.~-]+)*$/i.test(url) || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(website)) {
+    console.warn("Analytics are off: UMAMI_URL has to be the https address of an Umami server and UMAMI_WEBSITE_ID the id of a website on it. Set both.");
     return null;
   }
-  return { key, host };
+  return { url, website, recorder: /^(on|true|yes|1)$/i.test((process.env.UMAMI_RECORDER ?? "").trim()) };
 }
 
 /** Who runs this server, as the privacy policy and the terms name them. Both are optional. */
@@ -105,7 +106,7 @@ export const config = {
     authUrl: process.env.GOOGLE_AUTH_URL ?? "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: process.env.GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
   },
-  posthog: analytics(),
+  umami: analytics(),
   operator: operator(),
   /** Caps for accounts other than the admin. */
   limits: {

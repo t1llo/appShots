@@ -29,7 +29,7 @@ export default defineConfig({
   server: {
     // The documentation is put together by the server, from docs/ and the built web/dist/docs.html.
     proxy: Object.fromEntries(
-      ["^/api/", "^/auth/", "^/logout", "^/render/", "^/files/", "^/fonts/", "^/mcp", "^/cli/", "^/skill\\.md", "^/analytics\\.js", "^/docs(/|$)", "^/(privacy|terms)(\\.md)?$", "^/(llms|llms-full|robots)\\.txt$", "^/sitemap\\.xml$", "^/og\\.jpg$"].map((route) => [route, server]),
+      ["^/api/", "^/auth/", "^/logout", "^/render/", "^/files/", "^/fonts/", "^/mcp", "^/cli/", "^/skill\\.md", "^/docs(/|$)", "^/(privacy|terms)(\\.md)?$", "^/(llms|llms-full|robots)\\.txt$", "^/sitemap\\.xml$", "^/og\\.jpg$"].map((route) => [route, server]),
     ),
   },
 });

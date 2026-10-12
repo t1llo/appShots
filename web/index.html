@@ -12,7 +12,8 @@
         if (kept === "light" || kept === "dark") document.documentElement.dataset.theme = kept;
       } catch (error) {}
     </script>
-    <script async src="/analytics.js?page=studio" vite-ignore></script>
+    <!-- The server (src/site.ts) puts the page analytics here, when it has any. -->
+    <!--site:analytics-->
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2337352f'/%3E%3Crect x='10.5' y='6.5' width='11' height='19' rx='3' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3C/svg%3E"

@@ -46,7 +46,7 @@ import { createMcpServer } from "./mcp.ts";
 import { mockupHtml, mockupName, mockupShots, mockupStage } from "./mockup.ts";
 import { cancelRender, closeBrowser, defaultTargets, frozenFor, getRender, listRenders, renderMockup, renderProject, startRender } from "./render.ts";
 import { creativesSchema, deviceSlidesSchema, localeSchema, type Mockups, mockupsSchema, type Project, slideSchema, slidesFor, targetsSchema, themeSchema } from "./schema.ts";
-import { homePage, siteRoutes } from "./site.ts";
+import { homePage, siteRoutes, studioPage } from "./site.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, isDeviceKind, isPlacementId, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, sourceOf, TARGET_IDS, type TargetId, TARGETS } from "./sizes.ts";
 import {
   creativeDir,
@@ -244,42 +244,22 @@ app.get("/icons.svg", (_req, res) => {
   res.type("image/svg+xml").set("Cache-Control", "public, max-age=86400").send(iconSprite);
 });
 
-// Page analytics, when POSTHOG_KEY is set: the home page and the Studio both load this file, and without a key it
-// is empty. The Studio shows people's unreleased apps, so there it counts pages and clicks and never records the screen.
-const POSTHOG_LOADER = String.raw`!function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}p||((p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",p.onerror=function(){p=null},(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r));var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],Object.defineProperty(u,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e}}),Object.defineProperty(u.people,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(){return u.toString(1)+".people (stub)"}}),o="gu mu yu bu ku init Qu Zu Wu Vu Yu el Gu ec zu lc uc cc hc dc vc capture getExtension Ju fu mc calculateEventProperties gc register register_once register_for_session unregister unregister_for_session wc Uu yc getFeatureFlag getFeatureFlagPayload getFeatureFlagResult getAllFeatureFlags isFeatureEnabled reloadFeatureFlags updateFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys onActiveMatchingSurveysChanged renderSurvey displaySurvey cancelPendingSurvey canRenderSurvey canRenderSurveyAsync kc identify setPersonProperties unsetPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset Sc shutdown setIdentity clearIdentity get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException addExceptionStep captureLog startExceptionAutocapture stopExceptionAutocapture loadToolbar get_property getSessionProperty bc rc createPersonProfile setInternalOrTestUser Cu xu opt_in_capturing opt_out_capturing $u has_opted_in_capturing has_opted_out_capturing get_explicit_consent_status is_capturing clear_opt_in_out_capturing nc debug il Os getPageViewId captureTraceFeedback captureTraceMetric Nu".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);`;
-const analyticsJs = (studio: boolean) =>
-  config.posthog
-    ? `${POSTHOG_LOADER}\nposthog.init(${JSON.stringify(config.posthog.key)},${JSON.stringify({
-        api_host: config.posthog.host,
-        defaults: "2026-05-30",
-        person_profiles: "identified_only",
-        ...(studio ? { disable_session_recording: true } : {}),
-      })});\n`
-    : "// Analytics are off on this server.\n";
-app.get("/analytics.js", (req, res) => {
-  res.type("application/javascript").set("Cache-Control", "public, max-age=300").send(analyticsJs(req.query.page === "studio"));
-});
-
 // ---------------------------------------------------------------- home page and signing in
 
 // The built scripts and styles carry no data and have content hashes in their names, so they are public and cached for good.
 app.use("/assets", express.static(path.join(webDir, "assets"), { immutable: true, maxAge: "1y" }));
 
-function sendPage(res: Response, name: string): void {
-  const page = path.join(webDir, name);
-  if (!existsSync(page)) return void res.status(503).type("text").send("The web pages have not been built yet. Run: npm run build");
-  res.set("Cache-Control", "no-cache").sendFile(page);
-}
-
-/** The home page carries its own address, for search engines and shared links, so it is filled in rather than sent as a file. */
-function sendHome(req: Request, res: Response): void {
-  const page = homePage(baseUrl(req));
-  if (page == null) return sendPage(res, "home.html");
+/** A page of web/dist as src/site.ts filled it in, with what only the server knows: its address, its analytics. */
+function sendPage(res: Response, page: string | null): void {
+  if (page == null) return void res.status(503).type("text").send("The web pages have not been built yet. Run: npm run build");
   res.set("Cache-Control", "no-cache").type("html").send(page);
 }
 
+/** The home page carries its own address, for search engines and shared links. */
+const sendHome = (req: Request, res: Response) => sendPage(res, homePage(baseUrl(req)));
+
 /** One address, two pages: the Studio for whoever is signed in, the public home page for everybody else. */
-app.get("/", (req, res) => (identify(req) ? sendPage(res, "index.html") : sendHome(req, res)));
+app.get("/", (req, res) => (identify(req) ? sendPage(res, studioPage()) : sendHome(req, res)));
 // The home page under its own address too, so it can be looked at while signed in or with sign-in off.
 app.get("/home", sendHome);
 // The documentation, the privacy policy and the terms, which anybody can read.

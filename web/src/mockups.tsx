@@ -7,6 +7,7 @@ import { api, type Detail, detailQuery, type DeviceStyle, errorText, fetchFile, 
 import { DEVICE_LOOKS, ids, Slider, STATUS_BARS, TimeInput } from "./editor.tsx";
 import { languageName, LanguageSwitch } from "./languages.tsx";
 import { dropTarget, ProjectBar, shotsKey, Stage, UPLOAD } from "./project.tsx";
+import { track } from "./track.ts";
 import { CopyBlock, Field, Icon, NumberInput, Select, toast } from "./ui.tsx";
 
 const DOWNLOAD = "M8 2.6v7.8M4.9 7.5L8 10.6l3.1-3.1M2.8 10.4v2.8h10.4v-2.8";
@@ -172,6 +173,7 @@ export function MockupsPage({ meta, initial }: { meta: Meta; initial: Detail }) 
     try {
       await save();
       saveFile(await fetchFile(url), name);
+      track("export", { kind: key === "zip" ? "mockups" : "mockup" });
     } catch (error) {
       toast(errorText(error), "error");
     } finally {

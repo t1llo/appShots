@@ -2,6 +2,7 @@
 // why a sign-in just failed, who may sign in or is signed in already, and the motion.
 
 import { setAppearance, shownAppearance } from "./theme.ts";
+import { track } from "./track.ts";
 
 document.getElementById("appearance")!.addEventListener("click", () => setAppearance(shownAppearance() === "dark" ? "light" : "dark"));
 
@@ -76,11 +77,19 @@ const agents = [...document.querySelectorAll<HTMLElement>("[data-agent]")];
 for (const card of agents) {
   card.addEventListener("click", () => {
     const id = card.dataset.agent!;
+    track("pick_agent", { agent: id });
     for (const other of agents) other.setAttribute("aria-pressed", String(other.dataset.agent === id));
     for (const name of document.querySelectorAll("[data-agent-id]")) name.textContent = id;
     for (const line of document.querySelectorAll<HTMLElement>("[data-for]")) line.hidden = line.dataset.for !== id;
   });
 }
+
+// Copying a setup line is what this page is for, so it is counted, with the agent it was written for.
+document.addEventListener("copy", () => {
+  const from = getSelection()?.anchorNode;
+  if (!(from instanceof Element ? from : from?.parentElement)?.closest(".setup-line")) return;
+  track("copy_command", { agent: document.querySelector("[data-agent-id]")?.textContent ?? "" });
+});
 
 // The terminal writes itself out the first time it scrolls into view.
 const terminal = document.querySelector(".term");

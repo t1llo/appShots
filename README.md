@@ -168,7 +168,7 @@ With a hosting panel that builds and deploys a Compose file from a repository, o
 | `USER_MAX_SHOTS` | `40` | Screenshots per project and language, and images per project |
 | `USER_RENDER_CREDITS` | `10` | Renders each account other than the admin gets |
 | `OPERATOR_NAME`, `CONTACT_EMAIL` | none | Who runs the server and where to write, as the privacy policy and the terms name them |
-| `POSTHOG_KEY`, `POSTHOG_HOST` | off, `https://us.i.posthog.com` | Page analytics, see [Analytics](#analytics) |
+| `UMAMI_URL`, `UMAMI_WEBSITE_ID`, `UMAMI_RECORDER` | off | Page analytics, see [Analytics](#analytics) |
 | `CLIENT_IP_HEADER` | none | The request header a CDN in front puts the visitor's address in, see below |
 | `PORT` | `3000` | The port the server listens on |
 | `DATA_DIR` | `data`, in the container `/data` | Where everything is stored |
@@ -219,9 +219,15 @@ If that is more than you want to carry, switch to **Only the people listed here*
 
 ### Analytics
 
-Off unless you turn it on. With `POSTHOG_KEY` set to a PostHog project token (`phc_…`), the home page and the Studio load PostHog and report page views and clicks. `POSTHOG_HOST` is the host it reports to, `https://us.i.posthog.com` unless set. The token is the public, write-only one that sits in the page source of any site using PostHog.
+Off unless you turn it on. With `UMAMI_URL` set to the address of your [Umami](https://umami.is) server, such as `https://stats.example.com`, and `UMAMI_WEBSITE_ID` to the id this site has on it, the home page, the docs and the Studio load Umami's script. Neither value is a secret: both sit in the page source. Umami sets no cookie.
 
-The Studio shows people's unreleased apps, so session recording is switched off there whatever the PostHog project says, and nobody's name or email address is sent along. The analytics section of the privacy policy appears only while `POSTHOG_KEY` is set.
+It reports page views and seven actions: opening the Studio, following a link to GitHub, choosing an agent, copying a command, creating a project, connecting an agent and exporting. With `PUBLIC_URL` set, only pages opened under that address are counted, so a copy running somewhere else adds nothing.
+
+The Studio shows people's unreleased apps. From there Umami learns that the Studio was opened and that one of those actions happened, and never the name of a project, anything typed, or who is signed in.
+
+`UMAMI_RECORDER=on` also loads Umami's recorder, which replays visits, on the home page and the docs. The Studio never loads it, and the name of whoever is signed in is masked where the home page shows it. What it records and how often is set for the website in Umami.
+
+The analytics section of the privacy policy appears only while both settings are there.
 
 ### Docs, privacy policy and terms
 
