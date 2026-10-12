@@ -75,31 +75,46 @@ With Docker in place of Node, see [On your own machine](#on-your-own-machine).
 
 ## Host it
 
-appShots is one Docker container with one volume. It runs wherever Docker does: on your own machine, with Docker Desktop for example, or on a server for other people to use.
+appShots is one Docker container with one volume, so it runs wherever Docker does. Host it on your own machine for yourself, or on a server for other people too.
+
+Everything it stores is in the `appshots-data` volume: projects, uploaded screenshots, renders, accounts and the key that signs sessions. Back it up; nothing else holds state.
 
 ### On your own machine
 
-Two commands build the container and start it:
+You need Docker, for example [Docker Desktop](https://www.docker.com/products/docker-desktop/), and nothing else.
 
-```bash
-git clone https://github.com/t1llo/appShots.git
-cd appShots
-docker build -t appshots .
-docker run -d --name appshots --init -p 127.0.0.1:3000:3000 -v appshots-data:/data appshots
-```
+1. Get the code:
 
-The Studio is now at `http://localhost:3000`, and only this machine can reach it. The first build takes a few minutes, because it downloads the Chromium that draws the slides. `docker stop appshots` stops the server, and `docker start appshots` brings it back with everything in it.
+   ```bash
+   git clone https://github.com/t1llo/appShots.git
+   cd appShots
+   ```
 
-Started like this the server has no sign-in and no accounts: whoever can reach the port works in the server's own space. That is fine on your own machine and nowhere else.
+2. Build the container. The first build takes a few minutes, because it downloads the Chromium that draws the slides.
 
-To have sign-in and accounts on your own machine as well, start it with the Compose files as on a server. Set `PUBLIC_URL=http://localhost:3000` and add `http://localhost:3000/auth/google/callback` to the OAuth client's redirect URIs.
+   ```bash
+   docker build -t appshots .
+   ```
+
+3. Start it:
+
+   ```bash
+   docker run -d --name appshots --init -p 127.0.0.1:3000:3000 -v appshots-data:/data appshots
+   ```
+
+4. Open `http://localhost:3000`. That is the Studio, and **Connect an agent** in its sidebar sets up your agent.
+
+`docker stop appshots` stops the server, and `docker start appshots` brings it back with everything in it.
+
+Only this machine can reach a server started like this, and it has no sign-in and no accounts: whoever can reach the port works in the server's own space. That is fine on your own machine and nowhere else. To have sign-in and accounts here as well, follow steps 1 to 4 for a server, with `PUBLIC_URL=http://localhost:3000` and `http://localhost:3000/auth/google/callback` among the OAuth client's redirect URIs.
 
 ### On a server
 
-For other people to use it, the server needs a domain, HTTPS and sign-in. `docker-compose.yaml` is that deployment: one service and one volume. It refuses to start without the sign-in settings, and it speaks plain HTTP on port 3000, so a reverse proxy that terminates TLS goes in front of it.
+You need a server with Docker, a domain that points at it, and a Google account to make the sign-in with.
 
 1. Create the Google OAuth client described under [Sign in with Google](#sign-in-with-google).
-2. On the server, clone the repository and make the settings file:
+
+2. On the server, get the code and make the settings file:
 
    ```bash
    git clone https://github.com/t1llo/appShots.git
@@ -107,15 +122,26 @@ For other people to use it, the server needs a domain, HTTPS and sign-in. `docke
    cp .env.example .env
    ```
 
-   In `.env`, set `PUBLIC_URL` to the address people will use, for example `https://appshots.example.com`, and `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `ADMIN_EMAIL`, your own Google address.
-3. Start it:
+3. Fill in `.env`:
+
+   ```ini
+   PUBLIC_URL=https://appshots.example.com
+   GOOGLE_CLIENT_ID=<the client ID from step 1>
+   GOOGLE_CLIENT_SECRET=<the client secret from step 1>
+   ADMIN_EMAIL=<your own Google address>
+   ```
+
+   `PUBLIC_URL` is the address people will use. The server refuses to start without the other three.
+
+4. Start it:
 
    ```bash
    docker compose -f docker-compose.yaml -f compose.local.yaml up -d --build
    ```
 
    The server now answers on `127.0.0.1:3000` of that machine and on no other address. `APPSHOTS_PORT` in `.env` moves it to another port.
-4. Point your reverse proxy at that port, with a certificate for your domain. With [Caddy](https://caddyserver.com) this is the whole configuration:
+
+5. Put a reverse proxy with HTTPS in front of that port. With [Caddy](https://caddyserver.com) this is the whole configuration:
 
    ```text
    appshots.example.com {
@@ -125,11 +151,11 @@ For other people to use it, the server needs a domain, HTTPS and sign-in. `docke
 
    With nginx or another proxy, pass `X-Forwarded-Proto` and `X-Forwarded-For` on and allow uploads of 40 MB (`client_max_body_size 40m`).
 
-When the proxy runs in Docker as well, or a hosting panel builds and deploys the Compose file from the repository for you, use `docker-compose.yaml` alone. It publishes no port on the host: route your domain to port `3000` of the `appshots` service, and give it the four settings as environment variables.
+6. Open your domain and sign in with the address in `ADMIN_EMAIL`. You are the admin, and the Admin page decides who else gets in.
 
-Everything lives in the `appshots-data` volume: projects, uploaded screenshots, renders, accounts and the key that signs sessions. Back it up; nothing else holds state.
+To update, run `git pull` and step 4 again.
 
-To update, run `git pull` and the start command again.
+With a hosting panel that builds and deploys a Compose file from a repository, or a proxy that runs in Docker itself, use `docker-compose.yaml` alone in place of steps 4 and 5. It publishes no port on the host: give the `appshots` service your domain on port `3000`, and the four settings as environment variables.
 
 ### Settings
 
