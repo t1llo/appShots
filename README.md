@@ -20,7 +20,7 @@ A coding agent can do the whole job over MCP: work out how your app is run, run 
 
 appShots runs as an app at **[shots.beffa.xyz](https://shots.beffa.xyz)**. Sign in with Google, open the Studio or connect your agent with one line, and make a set. There is no server to set up.
 
-This repository is that same app, under the MIT licence. To keep your screenshots on your own server, with your own sign-in and limits, [host it](#host-it): the deployment is one Docker Compose file. To run it on your own machine first, see the [quick start](#quick-start).
+This repository is that same app, under the MIT licence. To keep your screenshots to yourself, [host it](#host-it): two Docker commands run it on your own machine, and one Docker Compose file puts it on a server with your own sign-in and limits.
 
 ## What it makes
 
@@ -71,26 +71,65 @@ npm start         # http://localhost:3000
 
 Started like this the server has no sign-in, no home page and no accounts: whoever can reach the port works in the server's own space. That is fine on localhost and nowhere else. The home page is at `/home` and the docs are at `/docs`.
 
-To run the container instead:
-
-```bash
-cp .env.example .env   # then fill in the sign-in settings
-docker compose -f docker-compose.yaml -f compose.local.yaml up --build
-```
-
-The compose file always asks for the sign-in settings. For a local container, add `http://localhost:3000/auth/google/callback` to the OAuth client's redirect URIs and set `PUBLIC_URL=http://localhost:3000`.
+With Docker in place of Node, see [On your own machine](#on-your-own-machine).
 
 ## Host it
 
-`docker-compose.yaml` is the whole deployment: one service and one volume. It publishes no host port and expects a reverse proxy in front of it that terminates TLS.
+appShots is one Docker container with one volume. It runs wherever Docker does: on your own machine, with Docker Desktop for example, or on a server for other people to use.
+
+### On your own machine
+
+Two commands build the container and start it:
+
+```bash
+git clone https://github.com/t1llo/appShots.git
+cd appShots
+docker build -t appshots .
+docker run -d --name appshots --init -p 127.0.0.1:3000:3000 -v appshots-data:/data appshots
+```
+
+The Studio is now at `http://localhost:3000`, and only this machine can reach it. The first build takes a few minutes, because it downloads the Chromium that draws the slides. `docker stop appshots` stops the server, and `docker start appshots` brings it back with everything in it.
+
+Started like this the server has no sign-in and no accounts: whoever can reach the port works in the server's own space. That is fine on your own machine and nowhere else.
+
+To have sign-in and accounts on your own machine as well, start it with the Compose files as on a server. Set `PUBLIC_URL=http://localhost:3000` and add `http://localhost:3000/auth/google/callback` to the OAuth client's redirect URIs.
+
+### On a server
+
+For other people to use it, the server needs a domain, HTTPS and sign-in. `docker-compose.yaml` is that deployment: one service and one volume. It refuses to start without the sign-in settings, and it speaks plain HTTP on port 3000, so a reverse proxy that terminates TLS goes in front of it.
 
 1. Create the Google OAuth client described under [Sign in with Google](#sign-in-with-google).
-2. Start the stack from this repository. It is built from `docker-compose.yaml`.
-3. Set `PUBLIC_URL` to the address people will use, for example `https://appshots.example.com`.
-4. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `ADMIN_EMAIL`, your own Google address. The stack refuses to start without them.
-5. Give the `appshots` service a domain on port `3000`.
+2. On the server, clone the repository and make the settings file:
+
+   ```bash
+   git clone https://github.com/t1llo/appShots.git
+   cd appShots
+   cp .env.example .env
+   ```
+
+   In `.env`, set `PUBLIC_URL` to the address people will use, for example `https://appshots.example.com`, and `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `ADMIN_EMAIL`, your own Google address.
+3. Start it:
+
+   ```bash
+   docker compose -f docker-compose.yaml -f compose.local.yaml up -d --build
+   ```
+
+   The server now answers on `127.0.0.1:3000` of that machine and on no other address. `APPSHOTS_PORT` in `.env` moves it to another port.
+4. Point your reverse proxy at that port, with a certificate for your domain. With [Caddy](https://caddyserver.com) this is the whole configuration:
+
+   ```text
+   appshots.example.com {
+       reverse_proxy 127.0.0.1:3000
+   }
+   ```
+
+   With nginx or another proxy, pass `X-Forwarded-Proto` and `X-Forwarded-For` on and allow uploads of 40 MB (`client_max_body_size 40m`).
+
+When the proxy runs in Docker as well, or a hosting panel builds and deploys the Compose file from the repository for you, use `docker-compose.yaml` alone. It publishes no port on the host: route your domain to port `3000` of the `appshots` service, and give it the four settings as environment variables.
 
 Everything lives in the `appshots-data` volume: projects, uploaded screenshots, renders, accounts and the key that signs sessions. Back it up; nothing else holds state.
+
+To update, run `git pull` and the start command again.
 
 ### Settings
 

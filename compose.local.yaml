@@ -1,4 +1,5 @@
-# Local override: publishes the port that a reverse proxy would otherwise route to.
+# Publishes the port on this machine's own address (127.0.0.1) and nowhere else: for a run on your
+# own machine, and for a server whose reverse proxy runs on the host.
 #   docker compose -f docker-compose.yaml -f compose.local.yaml up --build
 services:
   appshots:

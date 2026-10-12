@@ -2,10 +2,11 @@
 # the MCP endpoint (/mcp).
 #
 # No host port is published: put a reverse proxy that terminates TLS in front of port 3000.
-# Deploy the Compose file from this repository: set PUBLIC_URL, GOOGLE_CLIENT_ID,
-# GOOGLE_CLIENT_SECRET and ADMIN_EMAIL, then give the `appshots` service a domain on port 3000.
+# Set PUBLIC_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and ADMIN_EMAIL in a .env file beside this one
+# or in the environment, then route your domain to port 3000 of the `appshots` service.
 #
-# Local:   docker compose -f docker-compose.yaml -f compose.local.yaml up --build
+# With the proxy on the host, or on your own machine, compose.local.yaml publishes the port on 127.0.0.1:
+#   docker compose -f docker-compose.yaml -f compose.local.yaml up -d --build
 x-service: &service
   restart: unless-stopped
   logging:
