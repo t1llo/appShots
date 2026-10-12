@@ -2157,6 +2157,23 @@ select.add-language:hover:not(:disabled) {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+/* The agent's mark above its name, in Connect's first step. */
+.agent-mark {
+  width: 22px;
+  height: 22px;
+  margin-bottom: 8px;
+  fill: currentColor;
+}
+.agent-mark.claude {
+  color: #d97757;
+}
+.agent-mark.line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .choice b {
   font-weight: 600;
 }
