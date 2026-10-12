@@ -311,3 +311,16 @@
     white-space: normal;
   }
 }
+/* On a phone the bar has the menu button to fit in, and the link to the page you are on makes way for it. A table
+   of three columns or more keeps a width its columns can be read at, and scrolls sideways. */
+@media (max-width: 640px) {
+  .docs .home-link[aria-current] {
+    display: none;
+  }
+  .prose table:has(th:nth-child(3)) {
+    min-width: 480px;
+  }
+  .prose table:has(th:nth-child(4)) {
+    min-width: 620px;
+  }
+}
