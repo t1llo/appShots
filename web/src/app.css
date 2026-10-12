@@ -2545,32 +2545,63 @@ dialog .foot {
   padding: 64px 0 44px;
   text-align: center;
 }
-.home-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 13px;
+/* The setup line sits right under the headline, with the agents it can be written for above it. */
+.hero-setup {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 6px;
+}
+.hero-setup .setup-line {
+  margin-top: 0;
+}
+.hero-agents {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
   border-radius: 999px;
   background: var(--soft);
   box-shadow: inset 0 0 0 1px var(--line);
+}
+.hero-agents button {
+  height: 28px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
   color: var(--text-2);
+  font: inherit;
   font-size: 13px;
   font-weight: 500;
-  text-decoration: none;
+  cursor: pointer;
 }
-.home-pill:hover {
+.hero-agents button:hover {
   color: var(--text);
 }
-.home-pill i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #2fa66a;
-  animation: pulse 2.4s ease-out infinite;
+.hero-agents button[aria-pressed="true"] {
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line-strong);
+  color: var(--text);
+}
+.hero-note {
+  max-width: 780px;
+  margin-top: -6px;
+  font-size: 14px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.hero-note :is(a, b) {
+  color: var(--text-2);
+}
+.hero-note b {
+  font-weight: 600;
+}
+.hero-note a:hover {
+  color: var(--text);
 }
 .home h1 {
-  max-width: 14ch;
+  max-width: 20ch;
   font-size: clamp(38px, 6.4vw, 68px);
   font-weight: 700;
   line-height: 1.04;
@@ -2670,15 +2701,6 @@ dialog .foot {
 @keyframes bob {
   50% {
     transform: translateY(-9px);
-  }
-}
-@keyframes pulse {
-  from {
-    box-shadow: 0 0 0 0 rgb(47 166 106 / 0.5);
-  }
-  70%,
-  to {
-    box-shadow: 0 0 0 7px rgb(47 166 106 / 0);
   }
 }
 @keyframes blink {
@@ -3059,9 +3081,12 @@ dialog .foot {
   .agent small {
     display: none;
   }
+  .hero-agents button {
+    padding: 0 9px;
+    font-size: 12.5px;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .home-pill i,
   .term .caret {
     animation: none;
   }

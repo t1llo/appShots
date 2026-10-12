@@ -58,15 +58,29 @@
 
     <main>
       <section class="home-hero">
-        <a class="home-pill" href="#setup"><i></i>Claude Code · Codex · OpenCode · Pi</a>
-        <h1>App Store screenshots by your agent</h1>
-        <p class="home-lead">Hand the whole job to your coding agent, or make the set yourself in the Studio.</p>
+        <h1>App Store screenshots made by your agent</h1>
+        <p class="home-lead">One line sets it up. Then ask your agent for your screenshots.</p>
         <p class="inline-error" id="signin-error" role="alert" hidden></p>
+        <div class="hero-setup">
+          <div class="hero-agents" role="group" aria-label="Your agent">
+            <button type="button" data-agent="claude" aria-pressed="true">Claude Code</button>
+            <button type="button" data-agent="codex" aria-pressed="false">Codex</button>
+            <button type="button" data-agent="opencode" aria-pressed="false">OpenCode</button>
+            <button type="button" data-agent="pi" aria-pressed="false">Pi</button>
+            <button type="button" data-agent="other" aria-pressed="false">Other</button>
+          </div>
+          <p class="setup-line">
+            <code><span class="dim">$</span> curl -fsS <span data-origin>https://your-server</span>/install.sh | <span data-token>APPSHOTS_TOKEN=<span class="dim">&lt;your token&gt;</span> </span>sh -s <b data-agent-id>claude</b></code>
+          </p>
+        </div>
+        <p class="home-note hero-note" data-when="open"><b>Completely free either way:</b> <a href="/studio">sign in with Google</a> to get your token and try it here in the Studio, or <a href="https://github.com/t1llo/appShots#host-it">host it yourself</a>.</p>
+        <p class="home-note hero-note" data-when="list" hidden><b>Free, and by invitation for now:</b> <a href="/studio">sign in</a> with a Google address on the list to get your token, or <a href="https://github.com/t1llo/appShots#host-it">host it yourself</a>.</p>
+        <p class="home-note hero-note" data-when="account" hidden>You are signed in as <span data-name></span>. <a href="/studio">Connect an agent</a> in the Studio writes this line with your token in it.</p>
+        <p class="home-note hero-note" data-when="none" hidden>No sign-in and no token needed on this server.</p>
         <div class="home-cta">
           <a class="btn cta" href="/studio">Open Studio<span aria-hidden="true">→</span></a>
           <a class="btn cta ghost" href="https://github.com/t1llo/appShots"><svg class="icon mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#mark-github" /></svg>GitHub</a>
         </div>
-        <p class="home-note" id="signin-note">Free. Sign in with Google.</p>
       </section>
 
       <section class="reel" data-reel aria-label="Example screenshots made in the Studio">
@@ -87,6 +101,7 @@
           <img src="/src/home/habits-10.webp" width="480" height="1043" alt="Example: Day and night, in a serif face with two iPhones" />
         </div>
       </section>
+      <p class="home-caption">All of these were made with appShots.</p>
 
       <section class="home-agents" id="agents">
         <div>
@@ -175,7 +190,7 @@
           <img src="/src/home/habits-search.webp" width="840" height="560" loading="lazy" alt="Example search results image: Streaks that last above three iPhones" />
         </div>
       </section>
-      <p class="home-caption">All of these were made here, for six different apps.</p>
+      <p class="home-caption">These too. All made with appShots, for six different apps.</p>
 
       <section class="home-end">
         <ul class="home-facts">

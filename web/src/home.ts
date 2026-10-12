@@ -26,16 +26,20 @@ if (code) {
 fetch("/auth/config")
   .then((response) => response.json())
   .then((config: { signIn: boolean; signup: "list" | "open"; account: { name: string } | null }) => {
-    const note = document.getElementById("signin-note")!;
+    // The line under the setup command says where the token comes from. Which one fits depends on the visit.
+    const show = (when: string) => {
+      for (const note of document.querySelectorAll<HTMLElement>("[data-when]")) note.hidden = note.dataset.when !== when;
+    };
     if (!config.signIn) {
-      note.textContent = "No sign-in needed on this server.";
       // Without sign-in there is no token, and the setup line works as it stands.
       for (const part of document.querySelectorAll("[data-token]")) part.remove();
+      show("none");
     } else if (config.account) {
-      // Somebody who is signed in and looks at this page is told so: the buttons take them straight to their projects.
-      note.textContent = `You are signed in as ${config.account.name}. Your projects are one click away.`;
+      // Somebody who is signed in and looks at this page is told so, and where their token is.
+      for (const name of document.querySelectorAll("[data-name]")) name.textContent = config.account.name;
+      show("account");
     } else if (config.signup === "list") {
-      note.textContent = "Free. By invitation for now: sign in with a Google address on the list.";
+      show("list");
     }
   })
   .catch(() => {});
@@ -66,12 +70,13 @@ for (const reel of still ? [] : document.querySelectorAll<HTMLElement>("[data-re
 for (const host of document.querySelectorAll("[data-host]")) host.textContent = location.host;
 for (const origin of document.querySelectorAll("[data-origin]")) origin.textContent = location.origin;
 
-// An agent's card writes the setup line for that agent, and shows how to start the skill in it.
+// An agent's name above the first setup line, or its card further down, writes both lines for that agent and
+// shows how to start the skill in it.
 const agents = [...document.querySelectorAll<HTMLElement>("[data-agent]")];
 for (const card of agents) {
   card.addEventListener("click", () => {
     const id = card.dataset.agent!;
-    for (const other of agents) other.setAttribute("aria-pressed", String(other === card));
+    for (const other of agents) other.setAttribute("aria-pressed", String(other.dataset.agent === id));
     for (const name of document.querySelectorAll("[data-agent-id]")) name.textContent = id;
     for (const line of document.querySelectorAll<HTMLElement>("[data-for]")) line.hidden = line.dataset.for !== id;
   });
