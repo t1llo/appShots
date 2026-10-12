@@ -38,6 +38,9 @@ services:
       # Who runs this server and where to write about one's data, as the privacy policy and the terms name them.
       OPERATOR_NAME: ${OPERATOR_NAME:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      # With a CDN or a second proxy in front of your reverse proxy: the request header it puts the visitor's address
+      # in, e.g. CF-Connecting-IP. Leave it empty unless every request comes through that service.
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
       # Caps for every account other than the admin.
       USER_MAX_PROJECTS: ${USER_MAX_PROJECTS:-20}
       USER_MAX_SHOTS: ${USER_MAX_SHOTS:-40}

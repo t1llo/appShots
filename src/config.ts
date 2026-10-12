@@ -70,6 +70,20 @@ function operator() {
   return { name, email };
 }
 
+/**
+ * The request header that carries the visitor's address, for a server with a CDN or a second proxy in front of
+ * its reverse proxy: there the reverse proxy reports that service's address, not the visitor's.
+ */
+function visitorHeader(): string | null {
+  const name = (process.env.CLIENT_IP_HEADER ?? "").trim().toLowerCase();
+  if (!name) return null;
+  if (!/^[a-z0-9-]+$/.test(name)) {
+    console.warn("CLIENT_IP_HEADER is not the name of a header, so the address the reverse proxy reports is used.");
+    return null;
+  }
+  return name;
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   dataDir,
@@ -79,6 +93,8 @@ export const config = {
   adminEmail: values.ADMIN_EMAIL,
   /** Public origin used in links handed to MCP clients and in the Google redirect. Falls back to the request's host. */
   publicUrl: (process.env.PUBLIC_URL ?? "").replace(/\/+$/, ""),
+  /** Set only when every request comes through the service that sets this header: anyone else could send it themselves. */
+  clientIpHeader: visitorHeader(),
   /** Lets the in-process renderer fetch slide pages without anyone's token. */
   internalSecret: randomBytes(24).toString("hex"),
   sessionSecret: persistentSecret(),

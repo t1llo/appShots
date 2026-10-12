@@ -169,10 +169,13 @@ With a hosting panel that builds and deploys a Compose file from a repository, o
 | `USER_RENDER_CREDITS` | `10` | Renders each account other than the admin gets |
 | `OPERATOR_NAME`, `CONTACT_EMAIL` | none | Who runs the server and where to write, as the privacy policy and the terms name them |
 | `POSTHOG_KEY`, `POSTHOG_HOST` | off, `https://us.i.posthog.com` | Page analytics, see [Analytics](#analytics) |
+| `CLIENT_IP_HEADER` | none | The request header a CDN in front puts the visitor's address in, see below |
 | `PORT` | `3000` | The port the server listens on |
 | `DATA_DIR` | `data`, in the container `/data` | Where everything is stored |
 
 Set all three sign-in settings or none. With only one or two of them the server refuses to start, so a typo cannot leave a deployed server open.
+
+With a CDN or a second proxy in front of your reverse proxy, set `CLIENT_IP_HEADER` to the header that service puts the visitor's address in, such as `CF-Connecting-IP`. Sign-in attempts are counted per address, and without it they would all count against that service. Set it only when every request comes through that service, since anyone else could send the header themselves.
 
 ### Sign in with Google
 

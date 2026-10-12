@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { isIP } from "node:net";
 import path from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express, { type NextFunction, type Request, type Response } from "express";
@@ -176,6 +177,12 @@ app.disable("x-powered-by");
 // The reverse proxy in front terminates TLS; trusting that one hop makes req.protocol, req.ip and secure cookies correct.
 app.set("trust proxy", 1);
 
+/** The visitor's address: what the reverse proxy reports, or what CLIENT_IP_HEADER carries when a CDN stands in front of it. */
+function visitorAddress(req: Request): string | undefined {
+  const claimed = config.clientIpHeader ? req.get(config.clientIpHeader)?.trim() : undefined;
+  return claimed && isIP(claimed) ? claimed : req.ip;
+}
+
 app.use((_req, res, next) => {
   // Slide previews are framed by the Studio only.
   res.set({ "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "X-Frame-Options": "SAMEORIGIN" });
@@ -294,7 +301,7 @@ const googleRedirect = (req: Request) => `${baseUrl(req)}/auth/google/callback`;
 
 auth.get("/google", (req, res) => {
   if (!config.auth) return res.redirect("/");
-  if (!allow(`google:${req.ip}`, 30, 15 * 60_000)) return res.redirect("/?error=too_many");
+  if (!allow(`google:${visitorAddress(req)}`, 30, 15 * 60_000)) return res.redirect("/?error=too_many");
   const pending = {
     state: randomBytes(16).toString("base64url"),
     nonce: randomBytes(16).toString("base64url"),
