@@ -10,5 +10,6 @@ notes
 !skill/SKILL.md
 !docs/*.md
 docs/examples
+assets
 compose.local.yaml
 docker-compose.yaml
