@@ -9,5 +9,6 @@ notes
 *.md
 !skill/SKILL.md
 !docs/*.md
+docs/examples
 compose.local.yaml
 docker-compose.yaml

@@ -217,7 +217,7 @@ const asMarkdown = (page: Page) => `# ${page.title}\n\n${page.updated ? `Last up
 
 // ---------------------------------------------------------------- HTML
 
-const SUMMARY = "App Store screenshots for iPhone, iPad and Mac, made in the Studio or by your agent over MCP. Device frames, headlines, badges, and every size App Store Connect asks for.";
+const SUMMARY = "App Store screenshots for iPhone, iPad and Mac, made by your coding agent over MCP or by hand in the Studio. Device frames, headlines, badges, and every size App Store Connect asks for.";
 
 /** JSON inside a <script> tag: a "<" in it must not be able to end the tag. */
 const jsonLd = (value: unknown) => `<script type="application/ld+json">${JSON.stringify(value).replaceAll("<", "\\u003c")}</script>`;
@@ -257,7 +257,7 @@ export function homePage(base: string): string | null {
   const page = shell("home.html");
   if (!page) return null;
   const tags = [
-    shareTags(base, { url: "/", title: "appShots · App Store screenshots, on tap", description: SUMMARY }),
+    shareTags(base, { url: "/", title: "appShots · App Store screenshots by your agent", description: SUMMARY }),
     jsonLd({
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",

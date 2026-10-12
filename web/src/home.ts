@@ -27,10 +27,16 @@ fetch("/auth/config")
   .then((response) => response.json())
   .then((config: { signIn: boolean; signup: "list" | "open"; account: { name: string } | null }) => {
     const note = document.getElementById("signin-note")!;
-    if (!config.signIn) note.textContent = "No sign-in needed on this server.";
-    // Somebody who is signed in and looks at this page is told so: the buttons take them straight to their projects.
-    else if (config.account) note.textContent = `You are signed in as ${config.account.name}. Your projects are one click away.`;
-    else if (config.signup === "list") note.textContent = "Free. By invitation for now: sign in with a Google address on the list.";
+    if (!config.signIn) {
+      note.textContent = "No sign-in needed on this server.";
+      // Without sign-in there is no token, and the setup line works as it stands.
+      for (const part of document.querySelectorAll("[data-token]")) part.remove();
+    } else if (config.account) {
+      // Somebody who is signed in and looks at this page is told so: the buttons take them straight to their projects.
+      note.textContent = `You are signed in as ${config.account.name}. Your projects are one click away.`;
+    } else if (config.signup === "list") {
+      note.textContent = "Free. By invitation for now: sign in with a Google address on the list.";
+    }
   })
   .catch(() => {});
 
@@ -58,6 +64,18 @@ for (const reel of still ? [] : document.querySelectorAll<HTMLElement>("[data-re
 }
 
 for (const host of document.querySelectorAll("[data-host]")) host.textContent = location.host;
+for (const origin of document.querySelectorAll("[data-origin]")) origin.textContent = location.origin;
+
+// An agent's card writes the setup line for that agent, and shows how to start the skill in it.
+const agents = [...document.querySelectorAll<HTMLElement>("[data-agent]")];
+for (const card of agents) {
+  card.addEventListener("click", () => {
+    const id = card.dataset.agent!;
+    for (const other of agents) other.setAttribute("aria-pressed", String(other === card));
+    for (const name of document.querySelectorAll("[data-agent-id]")) name.textContent = id;
+    for (const line of document.querySelectorAll<HTMLElement>("[data-for]")) line.hidden = line.dataset.for !== id;
+  });
+}
 
 // The terminal writes itself out the first time it scrolls into view.
 const terminal = document.querySelector(".term");

@@ -15,6 +15,32 @@ You give it the raw screens of your app. It puts them in device frames with a he
 
 It comes with seventeen layouts, 41 fonts, 199 icons, badges, feature cards and backgrounds that can take their colours from the screenshot. The fonts are bundled and the device frames are drawn in CSS, so nothing is fetched while rendering.
 
+## Examples
+
+These are renders as they came out of appShots, scaled down and laid side by side.
+
+**One app, every output.** A party game's set for the iPhone: seven slides, designed once and exported for the 6.9, 6.5, 6.3 and 6.1-inch displays.
+
+![Seven iPhone slides on dark red, from Find the spy among you with two award wreaths to Settle the score](docs/examples/iphone.webp)
+
+The same app with a set of its own for the iPad:
+
+![Five iPad slides of the same game, some with the iPad tilted](docs/examples/ipad.webp)
+
+Its header and search results images for App Store Connect, and the banner for the top of a README:
+
+![A wide header image with the headline between two iPhones, and a search results image with the headline over a wall of screens](docs/examples/assets.webp)
+
+![A README banner: app icon, headline, tagline and two award wreaths on the left, three iPhones on the right](docs/examples/banner.webp)
+
+**A Mac app** at 2880×1800, its windows beside the headline or under it, and a slide of feature cards:
+
+![Six Mac slides on dark green, among them Ten Mac apps. One menu bar. and Private by default](docs/examples/mac.webp)
+
+**Two more sets**, each seven slides from one design: a party game and a voice notes app.
+
+![Two rows of seven iPhone slides, the first on purple and cream, the second on pale green](docs/examples/sets.webp)
+
 ## How it fits together
 
 | Piece | Where it runs | What it does |
