@@ -394,6 +394,11 @@ app.all("/mcp", (_req, res) => {
 // ---------------------------------------------------------------- REST API
 
 const api = express.Router();
+// Everything here belongs to one account. A CDN in front keeps a .zip by default and would hand one person's export to the next caller.
+api.use((_req, res, next) => {
+  res.set("Cache-Control", "private, no-cache");
+  next();
+});
 api.use(express.json({ limit: "2mb" }));
 
 const projectPatch = z.object({
