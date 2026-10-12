@@ -95,7 +95,7 @@ The skill does this by itself when the session has no working `appshots` MCP ser
 appshots check
 ```
 
-It reports whether the server answers and accepts your token, whether the skill is current, which Xcode there is, the project in the current folder, the simulators it would use and any plugged-in device. Each line says what to do when something is missing.
+It reports whether the server answers and accepts your token, whether the skill is current, which Xcode there is, the project in the current folder and what it is made with, the simulators it would use and any plugged-in device. Each line says what to do when something is missing.
 
 ## Tokens
 

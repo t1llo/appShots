@@ -33,7 +33,7 @@ appshots shoot ledger overview budgets reports --mac Ledger
 appshots upload ledger ~/Desktop/overview.png --as mac
 ```
 
-`appshots run` and `appshots launch` are for the iOS Simulator. Build and start a Mac app the way the project does, such as with Xcode's Run button.
+`appshots run` and `appshots launch` are for the iOS Simulator. Build and start a Mac app the way the project does, such as with Xcode's Run button, `npm run tauri dev` or `npm run start`. A Tauri or Electron app that runs from source goes by the name of its program, not the name in the menu bar. See [Web apps and other toolkits](/docs/web-apps#a-desktop-app-from-tauri-electron-or-flutter).
 
 ## Which pictures count as Mac
 

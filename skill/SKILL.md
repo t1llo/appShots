@@ -1,6 +1,6 @@
 ---
 name: appshots
-description: Make the App Store screenshots for the app in this repository from start to finish. Asks a few questions, takes the screens from screenshots the user already has, from the iOS Simulator, from a plugged-in iPhone or iPad or from the window of a Mac app, writes the headlines, and builds and renders the set on the appShots server. Works for iPhone, iPad and Mac apps. Also makes device mockups: the app's screens inside an iPhone, iPad or MacBook on a transparent background, for a website or a README. And banners: the wide picture at the top of a README, a repository's social preview, a link preview. Use when asked for App Store or Mac App Store screenshots, store screenshots, a screenshot set, the header and search results assets of an app, device mockups of its screens, or a README banner or social preview made from them.
+description: Make the App Store screenshots for the app in this repository from start to finish. Asks a few questions, takes the screens from screenshots the user already has, from the iOS Simulator, from a plugged-in iPhone or iPad, from the window of a Mac app or from the pages of a web app, writes the headlines, and builds and renders the set on the appShots server. Works for iPhone, iPad and Mac apps and for web apps, whatever they are built with: Xcode, Flutter, React Native, Expo, Capacitor, Tauri, Electron or a web framework. Also makes device mockups: the app's screens inside an iPhone, iPad or MacBook on a transparent background, for a website or a README. And banners: the wide picture at the top of a README, a repository's social preview, a link preview. Use when asked for App Store or Mac App Store screenshots, store screenshots, a screenshot set, the header and search results assets of an app, device mockups of its screens, or a README banner or social preview made from them.
 ---
 
 # appShots
@@ -15,8 +15,8 @@ If what the user wants is not store screenshots but the devices alone, such as "
 
 A set takes about ten minutes when the user supplies or opens the screens, and about twenty when you reach them yourself. What makes it take an hour is building the app from scratch, hunting for screens by trial and error, reading the whole codebase, and rendering over and over. So:
 
-- **Use the `appshots` commands for everything on the Mac.** Do not write shell scripts, Swift scripts, UI tests or fastlane lanes to take screenshots, and do not call `xcodebuild` or `xcrun simctl` yourself. `appshots run`, `launch`, `capture` and `simctl` do it the same way each time and know which Xcode and which simulator to use. The one exception is building and opening a Mac app, in step 6 D.
-- **Build at most once per device,** with `appshots run`. It reuses the build Xcode already made. Skip it when the app is installed already.
+- **Use the `appshots` commands for everything on the Mac.** Do not write shell scripts, Swift scripts, UI tests, fastlane lanes or Playwright and Puppeteer scripts to take screenshots, and do not call `xcodebuild` or `xcrun simctl` yourself. `appshots run`, `launch`, `boot`, `capture` and `simctl` do it the same way each time and know which Xcode, which simulator and which browser to use. The one exception is starting an app that `appshots run` does not build: a Mac app, or an app made with another toolkit, starts with the project's own command, which `appshots check` names (step 6 D, E and F).
+- **Build at most once per device,** with `appshots run` or the project's own run command. `appshots run` reuses the build Xcode already made. Skip it when the app is installed or running already.
 - **Two tries per screen.** If a screen does not come up after two attempts, ask the user to open it and capture it then.
 - **Read little.** The README, the root view with its tabs or navigation, and the accent colour. Ten files at most.
 - **Render the whole set once,** then fix what is off in one go. Two rounds of fixes at most. Where the account's renders are counted, every `render` uses one, so do not render slide by slide.
@@ -33,7 +33,7 @@ Run this first, from the app's folder:
 appshots check
 ```
 
-It reports in one go: whether the server answers, whether this skill is the current one, which Xcode there is, the project and scheme in this folder, the simulators it would use, the apps installed on the booted ones, and plugged-in devices. Each line says what to do when something is missing. These commands need the network, Xcode and the simulator; if your shell is sandboxed and one fails for that reason, ask the user to allow it.
+It reports in one go: whether the server answers, whether this skill is the current one, which Xcode there is, the project in this folder and what it is made with, the commands that start it, the simulators it would use, the apps installed on the booted ones, and plugged-in devices. Each line says what to do when something is missing. These commands need the network and, depending on the app, Xcode and the simulator or a browser; if your shell is sandboxed and one fails for that reason, ask the user to allow it.
 
 If the `Skill:` line says the server has a newer one, run `appshots update`, then read this file again from the top and follow the new one. If `check` is not a command this copy knows, it is an old one: ask the user to run the setup command again, as described below.
 
@@ -59,26 +59,37 @@ If `check` says the server is not set up or did not accept the token, the setup 
 
 Then call `get_design_guide` and read it. It is the current reference for layouts, feature slides, backgrounds, fonts, badges, icon and logo rows, the app's logo and other placed images, copy, Mac apps, the header and search results assets and banners, and it wins over anything remembered.
 
-**Find out what kind of app this is** before you ask anything. It is a Mac app when an Xcode target has `SDKROOT = macosx` or `macosx` among its `SUPPORTED_PLATFORMS`, when a Swift package lists `.macOS` in its `platforms`, or when it is an Electron or Tauri app. A Mac app gets a landscape set for the Mac App Store, and its screens come from its own window on this Mac: step 6 D. An app for iPhone and Mac can have both in one project.
+**Find out what kind of app this is** before you ask anything. It decides where the app runs, and an app is always captured where it runs. `check` says what the project is made with and gives the commands; this table says what follows from it:
+
+| The app | It runs | It is started by | A screen is captured with | Step |
+| --- | --- | --- | --- | --- |
+| iPhone or iPad app in an Xcode project | in the iOS Simulator, or on a plugged-in device | `appshots run` | `appshots capture --clean` | 6 B, C |
+| iPhone or iPad app made with Flutter, React Native, Expo, Capacitor or Tauri | in the iOS Simulator | `appshots boot`, then the toolkit's own command | `appshots capture --clean` | 6 E |
+| Mac app: Xcode, Tauri, Electron, Flutter for macOS | in a window on this Mac | the project's own command | `appshots capture --mac <app>` | 6 D |
+| Web app: Next.js, Vite, SvelteKit, Rails, Django and the like | as pages in a browser | its dev server | `appshots capture --web <address>` | 6 F |
+
+An Xcode project is a Mac app when a target has `SDKROOT = macosx` or `macosx` among its `SUPPORTED_PLATFORMS`, or when a Swift package lists `.macOS` in its `platforms`. A Mac app gets a landscape set for the Mac App Store. A web app is drawn at the size of an iPhone, an iPad or a Mac, whichever the set is for, and comes out as that device's screenshots. An app for several of these can have them all in one project.
+
+If `check` recognises nothing, find out how the app is started from the README and the project's scripts (`package.json`, a `Makefile`, a `justfile`), then take the row of the table that fits. If it lists several apps below this folder, work from the folder of the one the user means, and ask when that is not clear.
 
 ## 2. Ask first
 
 Ask these together, in one message, before doing anything else. Use this agent's tool for asking the user questions if it has one. Leave out whatever the request or `appshots check` has already answered, and do not add questions of your own.
 
-1. **Devices:** iPhone only, or the iPad or the iPhone Duo as well? One design per device covers every size of it, so never ask about sizes. For an app that runs on the Mac only, leave this question out. For one that runs on iPhone and Mac, ask which of them the set is for.
+1. **Devices:** iPhone only, or the iPad or the iPhone Duo as well? One design per device covers every size of it, so never ask about sizes. For an app that runs on the Mac only, leave this question out. For one that runs on iPhone and Mac, ask which of them the set is for. For a web app, ask how it is to be shown: on an iPhone, on an iPad, on a Mac, or on several of them.
 2. **The screens:** how do we get them?
    - *I have screenshots.* They give you the folder.
    - *I open each screen, you capture it.* The quickest way to real content, and the one to recommend.
-   - *Do it yourself.* You start the app on each screen. Slower, and it may need a few lines in the app that only exist in debug builds; ask whether adding them is fine.
-3. **Where the app runs,** not for a Mac app, and only when `check` leaves it open: on a simulator or on the plugged-in iPhone or iPad? Name the ones `check` listed. If the app is installed on a booted simulator, ask whether that is the current build.
+   - *Do it yourself.* You start the app on each screen. Slower, and it may need a few lines in the app that only exist in debug builds; ask whether adding them is fine. For a web app this is the quick way and the one to recommend: every screen is an address, and nothing in the app has to change.
+3. **Where the app runs,** not for a Mac app or a web app, and only when `check` leaves it open: on a simulator or on the plugged-in iPhone or iPad? Name the ones `check` listed. If the app is installed on a booted simulator, ask whether that is the current build.
 4. **The look:** light or dark? Which languages, if more than the app's main one?
 5. **Extras:** Is there a real rating, download count, award or review to show? Services the app works with, whose logos belong on a slide? A logo, mascot or other artwork of their own to put on the slides, and where the files are? Header and search results assets as well?
 
-If the user says to decide yourself: iPhone only, do it yourself without changing the app, the appearance the app looks best in, the main language, no badges, no logos, no artwork, no header and search results assets.
+If the user says to decide yourself: iPhone only (for a web app that only works on a wide screen, the Mac), do it yourself without changing the app, the appearance the app looks best in, the main language, no badges, no logos, no artwork, no header and search results assets.
 
 ## 3. Understand the app
 
-Read the README, the store description if the repository has one (`fastlane/metadata`, a marketing site), and the root view with its tabs or navigation. Take the accent colour from the asset catalogue.
+Read the README, the store description if the repository has one (`fastlane/metadata`, a marketing site), and the root view with its tabs or navigation, or the router with its routes. Take the accent colour from the asset catalogue, the theme file or the stylesheet.
 
 Come out of it with what the app does in one sentence a stranger would understand, the four to seven things worth showing with the strongest first, and the app's own colours.
 
@@ -117,6 +128,9 @@ First the app has to be running where it will be captured:
 - **Simulator, app installed** (it is under `Apps:` in `appshots check`): `appshots launch <bundle id>`, with `--dark` or `--light` and `--lang <code>` as asked.
 - **Simulator, app not installed:** `appshots run`, with the same options, and `--ipad` for the iPad or `--duo` for the iPhone Duo.
 - **Plugged-in iPhone or iPad:** the user opens the app on it and keeps it unlocked.
+- **An app made with another toolkit:** start it as in E, then carry on here.
+
+A web app has nothing for the user to open: its screens are captured by address, as in F.
 
 Then give the user this one command to paste into Terminal, with the names from the plan in order, and tell them which screen each name means:
 
@@ -143,7 +157,7 @@ appshots capture --name home --project <project> --device          # the plugged
    appshots run --duo              # the iPhone Duo, when a Duo set was asked for
    ```
 
-   It finds the project and scheme, boots the simulator, builds in Xcode's own build folder, installs and launches, and prints the bundle id. A first build can take several minutes, so give the command a long timeout and do not start a second one. If it says Xcode is building right now, wait and run it again. React Native, Expo and Flutter apps: use the project's own run command for this one step.
+   It finds the project and scheme, boots the simulator, builds in Xcode's own build folder, installs and launches, and prints the bundle id. A first build can take several minutes, so give the command a long timeout and do not start a second one. If it says Xcode is building right now, wait and run it again. An app made with Flutter, React Native, Expo, Capacitor or Tauri is not built by `appshots run`: start it as in E, then carry on with 2.
 
 2. **Capture each screen with one command:**
 
@@ -177,7 +191,7 @@ appshots capture --name home --project <project> --device          # the plugged
 
 ### D. A Mac app
 
-A Mac app runs on this Mac, not in a simulator, so `appshots run`, `launch` and `--clean` are not for it.
+A Mac app runs on this Mac, not in a simulator, so `appshots run`, `launch` and `--clean` are not for it. That goes for an Xcode Mac app as for one made with Tauri, Electron or Flutter for macOS.
 
 1. **Get it running.** If the user has it open and says that build is current, there is nothing to build. Otherwise build and open it the project's own way. For an Xcode project:
 
@@ -186,7 +200,7 @@ A Mac app runs on this Mac, not in a simulator, so `appshots run`, `launch` and 
    open build/Build/Products/Debug/<App>.app
    ```
 
-   Give the build a long timeout, and do not commit `build/`.
+   Give the build a long timeout, and do not commit `build/`. For Tauri, Electron and Flutter, `appshots check` names the command, such as `npm run tauri dev`, `npm run start` or `flutter run -d macos`. Run it in the background, because it keeps running for as long as the app is open, and wait until its window is there. A first Tauri build compiles for several minutes. If it stops over missing dependencies, install them the way it says, once.
 
 2. **Capture its window with one command:**
 
@@ -194,13 +208,67 @@ A Mac app runs on this Mac, not in a simulator, so `appshots run`, `launch` and 
    appshots capture --mac "<app name>" --name overview --project <project>
    ```
 
-   `<app name>` is the name in the menu bar. It takes the app's frontmost window, without the shadow, and uploads it as a Mac screenshot. When the user opens the screens themselves, give them `appshots shoot <project> overview budgets reports --mac "<app name>"` to paste, as in B.
+   `<app name>` is the name in the menu bar. An app that runs from source goes by the name of its program instead, such as `Electron` or the name of the Cargo package; `check` says which, and `appshots capture --mac` alone lists the apps that have a window open. It takes the app's frontmost window, without the shadow, and uploads it as a Mac screenshot. When the user opens the screens themselves, give them `appshots shoot <project> overview budgets reports --mac "<app name>"` to paste, as in B.
 
 3. **If macOS refuses,** the terminal lacks the Screen Recording permission, and the command says where to switch it on: System Settings, Privacy & Security, Screen & System Audio Recording. Only the user can do that. Tell them, or ask them to take each window themselves (Shift-Command-4, then Space, then a click on the window) and upload the files with `appshots upload <project> <file> --name overview --as mac`.
 
-4. **How to land on a screen,** in the order of C: launch arguments (`open <App>.app --args -appshots stats`), a deep link (`open "<scheme>://stats"`), a debug-only launch argument if the user agreed to one, and otherwise the user opens the screen. `open` only brings a running app to the front, so quit the app before opening it with other arguments: `osascript -e 'quit app "<app name>"'`. Wait two seconds after opening before you capture.
+4. **How to land on a screen,** in the order of C: launch arguments (`open <App>.app --args -appshots stats`), a deep link (`open "<scheme>://stats"`), a debug-only launch argument if the user agreed to one, and otherwise the user opens the screen. `open` only brings a running app to the front, so quit the app before opening it with other arguments: `osascript -e 'quit app "<app name>"'`. Wait two seconds after opening before you capture. An app started from source takes its first screen from what the project already reads at the start, such as an environment variable in front of the command; if it reads none and the user agreed to a change, a few debug-only lines that read one.
 
 5. **Window or full screen.** A captured window is drawn as that window, large and readable, which suits most apps. An app in full screen is drawn inside a MacBook, where its text turns small: at most one such slide, usually the first. Give the window a size that shows the content without empty space before capturing.
+
+6. **Stop what you started.** When the screens are captured, stop the command that runs the app from source. Leave an app the user had open as it is.
+
+### E. An app made with another toolkit
+
+A Flutter, React Native, Expo or Capacitor app, or a Tauri app for iOS, runs in the iOS Simulator like any other. Only the build is the toolkit's own.
+
+1. **Boot the simulator:**
+
+   ```bash
+   appshots boot                   # iPhone Pro Max; --ipad or --duo for those sets
+   ```
+
+   It boots the simulator the store sizes ask for and prints the toolkit's run command with that simulator filled in, such as `flutter run -d <udid>`, `npx expo run:ios --device <udid>`, `npx react-native run-ios --udid <udid>` or `npx cap run ios --target <udid>`.
+
+2. **Start the app with that command, in the background.** It keeps running for as long as the app does, so do not wait for it to end: wait until its output says the app is running. A first build takes several minutes; do not start a second one. If it stops over missing dependencies (`flutter pub get`, `npm install`, `pod install`), run what it names, once.
+
+3. **Capture** as in B or C: `appshots capture --name home --project <project> --clean`. Once the app is installed, `check` lists it under `Apps:` with its bundle id, and `appshots launch <bundle id> --capture <name> --to <project>` starts it again without a build. A React Native or Expo app needs the run command's bundler to stay up for that.
+
+4. **How to land on a screen,** in the order of C. Deep links are the usual way here, since Expo Router, React Navigation and go_router treat a route as an address: `appshots simctl openurl booted "<scheme>://stats"`, then `appshots capture`. Next comes what the project reads at the start already (`flutter run --dart-define=SCREEN=stats`, an `EXPO_PUBLIC_` variable), then a tool in this session that taps, then the user.
+
+5. **Stop the run command** when the screens are captured.
+
+A Capacitor app is its web pages inside a native shell. Capturing the pages as in F is quicker and looks the same, unless a screen depends on a native plugin such as the camera or purchases.
+
+### F. A web app
+
+A web app is captured page by page. `appshots capture --web <address>` draws the page at that address with Chrome, without opening a window, at the exact size of the device, and uploads it as that device's screenshot. It uses the Chrome, Edge or Brave that is installed, which `check` reports under `Browser:`. Do not install or script a browser yourself.
+
+1. **Get it running.** If the user has the dev server running, use its address. Otherwise start it with the command `check` names, such as `npm run dev`, in the background, and read the address off what it prints: the port is not always the usual one. Install dependencies first only if they are missing. If it needs a database, keys or an account you do not have, ask the user to start it and tell you the address. A site that is already online works the same way, when the user says to use it.
+
+2. **Capture each screen with one command:**
+
+   ```bash
+   appshots capture --web http://localhost:5173/stats --name stats --project <project>
+   ```
+
+   It waits for the page and what it fetches, then one second more (`--wait 3` for a slow screen). The size is an iPhone's unless you say otherwise: `--as ipad`, `--as mac` or `--as duo`. Add `--dark` or `--light` for the colour scheme the page is asked for, and `--lang de-DE` for the language the browser reports. On an iPhone or iPad the page is laid out as an installed web app is, between the status bar and the home indicator: the home indicator is drawn, and the status bar's place stays free for step 8 to fill.
+
+3. **How to land on a screen,** in this order. Take the first that works:
+
+   1. Its address. Read the routes off the router or the pages folder; a query or a `#` part counts.
+   2. State the page reads when it loads, set with `--init`: JavaScript that runs before the page's own on every load, such as `--init "localStorage.setItem('onboarded', '1')"` or `--init @seed.js` for a file. Sample data, a dismissed cookie banner and a fixed date go here.
+   3. A step in the loaded page, with `--eval`: the click that opens a tab or a dialog, a scroll. `--eval "document.querySelector('[data-tab=stats]').click()"`. `await` works in it, and when the click leads to another page, that page is captured.
+   4. Pages behind a sign-in: use the test account the project's own seed or fixture files set up, never a real one. `--profile .appshots-browser` keeps cookies between captures, so sign in once with `--eval` and capture the rest after it. Without a test account, ask the user for one, or for the screenshots (A).
+   5. Otherwise ask the user for a screenshot of that screen (A).
+
+4. **Believable content.** Use what the project has for it: a seed script, fixtures, a demo mode, mocked requests. Never write into a database that is not a local one.
+
+5. **Look at each picture.** The command says so when the address answered with an error such as 404. Take a dev tool's badge or overlay out of the picture with `--eval`, as in `--eval "document.querySelector('nextjs-portal')?.remove()"`.
+
+6. **Stop what you started.** When the screens are captured, stop the dev server if you started it, and delete `.appshots-browser` if you made it. Do not commit either.
+
+`appshots shoot` is not for web pages, which have no window to wait for. For the same screens on several devices, capture each address once per device under the same name, with `--as`.
 
 For an app on iPhone and Mac, capture the same screens under the same names on both. The Mac then gets a slide set of its own in step 8. Read Mac apps in the design guide before writing the slides: the canvas is wide and short, so the copy has to be shorter still.
 
@@ -210,6 +278,7 @@ For another language, when the user asked for it and the app itself is translate
 
 ```bash
 appshots launch <bundle id> --lang de-DE --capture stats --to <project> -- <launch arguments>
+appshots capture --web <address> --lang de-DE --name stats --project <project>      # a web app
 appshots upload <project> <folder> --lang de-DE      # or files the user already has in that language
 ```
 
@@ -241,7 +310,7 @@ appshots upload <project> <the 1024 px icon in the asset catalogue> --image --na
 
 ## 8. Build and render
 
-1. `set_slides` with the whole set and the theme. Take the theme from the app: its accent colour, a muted background in the same family or `auto`, one font for the set. Vary the layouts so it does not read as one template repeated: one device, a close-up, the device beside a column of feature points, two or three devices on one slide, a feature slide. If the screenshots come from a real device and show an odd time or a low battery, set `"device": {"statusBar": "cover"}` in the theme: it paints a clean 9:41 status bar over theirs. The theme's `device.style` draws the frames as `clay`, `outline` or `sketch` instead of the real device, when the user wants a calmer or a hand-drawn look; on a slide with two or three devices, `device.spread` is the angle between them.
+1. `set_slides` with the whole set and the theme. Take the theme from the app: its accent colour, a muted background in the same family or `auto`, one font for the set. Vary the layouts so it does not read as one template repeated: one device, a close-up, the device beside a column of feature points, two or three devices on one slide, a feature slide. If the screenshots come from a real device and show an odd time or a low battery, set `"device": {"statusBar": "cover"}` in the theme: it paints a clean 9:41 status bar over theirs. If they are a web app's, taken with `appshots capture --web` for an iPhone or iPad, set `"device": {"statusBar": "overlay"}` instead: it draws the 9:41 status bar into the place those pictures leave free at the top. The theme's `device.style` draws the frames as `clay`, `outline` or `sketch` instead of the real device, when the user wants a calmer or a hand-drawn look; on a slide with two or three devices, `device.spread` is the angle between them.
 2. **A set for every other device,** before the first render. When the project has screenshots of more than one device, the set from 1 is the iPhone's, and each of the others gets its own: `set_slides` again with `"device": "ipad"`, `"device": "mac"` or `"device": "duo"`. Do not send the iPhone's slides unchanged. Start from them and compose each slide for that canvas: an iPad's is close to square and a Mac's is wide, so the layout, the size and place of the device and how much copy fits all change. The sets tell the same story in the same words and share the theme, and they may differ in layouts, in the screens they show, in order and in number. A slide that already sits well on the other canvas stays as it is. A set for each device in the design guide says what usually changes. With one device only, skip this.
 3. `render` with `"creatives": []`. It writes every size of every device the project has screenshots of, each from its own set: sizes of the same shape are the same picture scaled, so there is nothing to design per size and no `targets` to pass. Look at the contact sheet it returns for each device as a customer would: is each headline readable at thumbnail size, does the device crop hide the point of the screen, does the set hold together?
 4. Fix everything that is off with `update_slide`, and in a device's own set with `"of": "ipad"` added, then render those slides in one call, as in `"slides": [2, 5], "creatives": []`. Two rounds at most. `render` says how many renders the account has left when they are counted: each call uses one, so never spend one on a single small fix, and when none are left, say so and stop. The person who runs the server can give the account more. Stop when it is good, not when it is perfect. When the device hides the point of its screen or crowds the copy, move or resize it on that slide with `device`: `scale`, `offsetX` and `offsetY`, in small steps. A placed image that covers something moves with its `x`, `y` and `size`; look at every device's sheet, because the same numbers land elsewhere on a wider canvas, and change them in that device's own set.
@@ -258,7 +327,7 @@ Tell the user:
 - The slides with their headlines, in order.
 - For a Mac set: the files are in the `mac-2880` folder, 2880×1800, and go onto the macOS version of the app in App Store Connect.
 - Which devices have a set of their own, and how those differ from the iPhone's.
-- What you assumed or left out: no iPad or Duo set, no badges, a screen you could not reach, a file you changed for the debug launch argument.
+- What you assumed or left out: no iPad or Duo set, no badges, a screen you could not reach, a file you changed for the debug launch argument, sample data you put into a local database.
 - That header and search results assets, if made, should be checked in App Store Connect's preview before submitting.
 - If the `appshots` MCP server answered 401 and you used the command instead: running the setup command again, from this folder, repairs the connection.
 

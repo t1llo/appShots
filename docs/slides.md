@@ -120,7 +120,7 @@ A screenshot from a real device shows whatever the device showed: an odd time, a
 
 {{STATUS_BARS}}
 
-`statusBarColor` is read off the screenshot unless you set it. Screenshots taken with `appshots capture --clean` in the simulator are clean already and need none of this.
+`statusBarColor` is read off the screenshot unless you set it. Screenshots taken with `appshots capture --clean` in the simulator are clean already and need none of this. A web app's pages taken with `appshots capture --web` have no status bar and leave its place free: `overlay` draws one there.
 
 ## Badges
 

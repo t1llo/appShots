@@ -20,7 +20,7 @@ You can build a set by hand in the Studio, the editor in your browser, or let a 
 | --- | --- | --- |
 | Studio | Your browser, at {{SERVER}} | Shows every slide as a live preview at export size. You edit copy, layout and look, and download the set as a ZIP. |
 | MCP server | {{SERVER}}/mcp | Ten tools that let an agent create projects, write slides and render them. |
-| `appshots` command | Your Mac | Runs your app in the simulator, captures screens from the simulator, a plugged-in iPhone or iPad or the window of a Mac app, and uploads them. |
+| `appshots` command | Your Mac | Runs your app in the simulator, captures screens from the simulator, a plugged-in iPhone or iPad, the window of a Mac app or the pages of a web app, and uploads them. |
 | `appshots` skill | Your agent | The instructions for the whole job: ask a few questions, get the screens, write the headlines, build the set, check the render. |
 
 The server draws the pictures. It cannot see your Mac, your simulator or your phone, which is why capturing happens on your machine and the result is uploaded.
@@ -29,6 +29,7 @@ The server draws the pictures. It cannot see your Mac, your simulator or your ph
 
 - Portrait screenshots for every iPhone, iPhone Duo and iPad display App Store Connect lists, up to ten per set. You design once per device and get every size. See [Output sizes](/docs/sizes).
 - Landscape screenshots for the Mac App Store, with the app as a window or inside a MacBook. See [Mac apps](/docs/mac).
+- Sets for apps that are not Xcode projects: Flutter, React Native, Expo, Capacitor, Tauri, Electron and web apps. See [Web apps and other toolkits](/docs/web-apps).
 - The wide images for the Header and Search Results tab of App Store Connect. See [Header and search results](/docs/store-assets).
 - Any number of languages from one set. See [Languages](/docs/languages).
 - Mockups: each screenshot in its device on a transparent background, for a website or a README. See [Mockups](/docs/mockups).
@@ -42,7 +43,7 @@ The server draws the pictures. It cannot see your Mac, your simulator or your ph
 
 ## All pages
 
-**Make a set:** [The skill](/docs/skill) · [Get your screens in](/docs/screens) · [Mac apps](/docs/mac) · [The Studio](/docs/studio) · [Logos and artwork](/docs/images) · [Languages](/docs/languages) · [Render and export](/docs/export) · [Mockups](/docs/mockups) · [Banners](/docs/banners) · [What App Review accepts](/docs/app-review)
+**Make a set:** [The skill](/docs/skill) · [Get your screens in](/docs/screens) · [Mac apps](/docs/mac) · [Web apps and other toolkits](/docs/web-apps) · [The Studio](/docs/studio) · [Logos and artwork](/docs/images) · [Languages](/docs/languages) · [Render and export](/docs/export) · [Mockups](/docs/mockups) · [Banners](/docs/banners) · [What App Review accepts](/docs/app-review)
 
 **Reference:** [Slides](/docs/slides) · [Header and search results](/docs/store-assets) · [Output sizes](/docs/sizes) · [The appshots command](/docs/cli) · [MCP tools](/docs/mcp) · [REST API](/docs/api)
 

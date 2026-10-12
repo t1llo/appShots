@@ -1,6 +1,6 @@
 ---
 title: Get your screens in
-description: Three ways to get raw app screenshots into an appShots project. Upload files you have, capture each screen as you open it, let the agent run the app in the iOS Simulator, or capture the window of a Mac app.
+description: Three ways to get raw app screenshots into an appShots project. Upload files you have, capture each screen as you open it, let the agent run the app in the iOS Simulator, capture the window of a Mac app, or capture the pages of a web app.
 ---
 
 A slide shows a raw screenshot of your app inside a device frame. Raw means the plain screen, as the simulator or the phone saves it, with nothing around it.
@@ -57,7 +57,7 @@ appshots launch com.example.streaks --capture stats --to streaks -- -appshots st
 
 To land on a screen, the agent uses what your app has already: launch arguments, a demo mode or deep links. If there are none and you agree, it adds a launch argument that only exists in debug builds. Otherwise it asks you to open the screen.
 
-React Native, Expo and Flutter apps use the project's own run command for the build. Capturing works the same.
+An app made with Flutter, React Native, Expo, Capacitor or Tauri is started by its own run command, after `appshots boot` has booted the simulator for it. Capturing works the same. See [Web apps and other toolkits](/docs/web-apps#an-iphone-or-ipad-app-from-another-toolkit).
 
 ## A Mac app
 
@@ -69,6 +69,17 @@ appshots shoot ledger overview budgets reports --mac Ledger
 ```
 
 `Ledger` is the app's name. The terminal needs the Screen Recording permission for this. See [Mac apps](/docs/mac).
+
+## A web app
+
+A web app is captured page by page, by address, at the size of an iPhone, an iPad or a Mac:
+
+```bash
+appshots capture --web http://localhost:3000/stats --name stats --project streaks
+appshots capture --web http://localhost:3000/stats --name stats --project streaks --as mac
+```
+
+The page is drawn by the Chrome, Edge or Brave you have, without opening a window. Options set the colour scheme, the language, sample data and the click that opens a screen. See [Web apps and other toolkits](/docs/web-apps).
 
 ## A clean status bar
 
@@ -99,6 +110,7 @@ A language shows the first language's screenshots until it has its own. See [Lan
 | Simulator capture | Xcode with an iOS simulator |
 | Device capture | Xcode 27 or newer, and the device plugged in, unlocked and trusting the Mac |
 | Mac window capture | The Screen Recording permission for the terminal, under System Settings → Privacy & Security |
+| Web page capture | Google Chrome, Chromium, Microsoft Edge or Brave. No Xcode |
 
 If `xcode-select` points at the Command Line Tools, the command switches to `/Applications/Xcode.app` by itself.
 

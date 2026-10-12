@@ -1,12 +1,12 @@
 ---
 title: The appshots command
 nav: Command line
-description: Reference for the appshots command line tool on the Mac. Setup, update, check, run an app in the iOS Simulator, capture and upload screens, capture a Mac app's window, pull the finished set, download mockups, and call the server's tools.
+description: Reference for the appshots command line tool on the Mac. Setup, update, check, run an app in the iOS Simulator, capture and upload screens, capture a Mac app's window or a web app's pages, pull the finished set, download mockups, and call the server's tools.
 ---
 
-`appshots` is one small Node.js file with no dependencies. It runs your app in a simulator, captures screens, moves files between your Mac and the server, and can call every tool the server has. The [setup command](/docs/connect) installs it as `~/.local/bin/appshots`.
+`appshots` is one small Node.js file with no dependencies. It runs your app in a simulator, captures screens from the simulator, a device, a Mac window or a web page, moves files between your Mac and the server, and can call every tool the server has. The [setup command](/docs/connect) installs it as `~/.local/bin/appshots`.
 
-It needs Node.js 18 or newer. Running and capturing need Xcode.
+It needs Node.js 18 or newer. The simulator and plugged-in devices need Xcode. A web app's pages need Chrome, Edge or Brave instead.
 
 ## Set up and keep current
 
@@ -15,7 +15,7 @@ It needs Node.js 18 or newer. Running and capturing need Xcode.
 | `appshots setup <url> [--agent <agent>]` | Saves the server and your token, installs the skill and this command, and connects the agent. Agents: `claude` (the default), `codex`, `opencode`, `pi`, `other`. `--token <token>` skips the question |
 | `appshots login <url>` | Saves the server address and the token only |
 | `appshots update` | Brings the installed skill and this command up to date with the server's. Needs no token |
-| `appshots check` | Reports the server, whether the skill is current, Xcode, the project in this folder, simulators, installed apps and devices. Every line says what to do next |
+| `appshots check` | Reports the server, whether the skill is current, Xcode, the project in this folder, what it is made with and the commands that start it, simulators, installed apps and devices. Every line says what to do next |
 
 When the server has a newer skill or command than this Mac, every other command says so in one line when it is done. See [Connect an agent](/docs/connect) and [Update](/docs/update).
 
@@ -28,7 +28,7 @@ appshots run --duo
 appshots run --capture home --to streaks
 ```
 
-`run` builds the app in the current folder and starts it in a simulator. It is for iPhone and iPad apps. A Mac app runs on the Mac itself: start it your own way and use `capture --mac`. See [Mac apps](/docs/mac).
+`run` builds the Xcode project in the current folder and starts the app in a simulator. It is for iPhone and iPad apps. A Mac app runs on the Mac itself: start it your own way and use `capture --mac`. See [Mac apps](/docs/mac). An app made with Flutter, React Native, Expo, Capacitor or Tauri is started by its own command, after `appshots boot`. See [Web apps and other toolkits](/docs/web-apps).
 
 | Option | What it does |
 | --- | --- |
@@ -51,6 +51,8 @@ appshots launch com.example.streaks --capture stats --to streaks -- -appshots st
 
 `launch <bundle id>` starts an installed app again without building, to switch screen or language. It takes `--sim`, `--dark`, `--light`, `--lang`, `--capture`, `--to`, `--as` and `--wait`.
 
+`appshots boot` boots the simulator the store sizes ask for, without building anything, and prints its udid together with the run command of the toolkit in the current folder, such as `flutter run -d <udid>`. It takes `--ipad`, `--duo` and `--sim`.
+
 `appshots simctl <arguments>` runs `xcrun simctl` with the right Xcode, for `openurl`, `ui`, `privacy` and `push`.
 
 ## Capture
@@ -69,11 +71,23 @@ Options of `capture`, which `shoot` takes too:
 | `--sim [name or udid]` | From a booted simulator. This is the default |
 | `--device [name or udid]` | From a connected, unlocked iPhone or iPad. Needs Xcode 27 or newer |
 | `--mac <app>` | From a Mac app running on this Mac: its frontmost window, without the shadow. `<app>` is the app's name. The terminal needs the Screen Recording permission. See [Mac apps](/docs/mac) |
+| `--web <address>` | From a web app: the page at this address, drawn by Chrome without a window at the size of an iPhone. `--as ipad`, `--as mac` and `--as duo` draw it at those sizes. Not for `shoot`. See [Web apps and other toolkits](/docs/web-apps) |
 | `--clean` | Simulator only: shows 9:41, full battery and full signal |
 | `--project <id>` | Uploads it to this project straight away. `--to` works too |
 | `--as <iphone, duo, ipad or mac>` | Files it under this device. Only needed when the server cannot tell from the size. `upload`, `run` and `launch` take it too |
 | `--lang <code>` | The language the screenshot shows the app in, one the project has. Left out, it is for the project's first language. See [Languages](/docs/languages#screenshots-per-language) |
 | `--out <dir>` | Where the PNG is saved. Default `./raw-shots` |
+
+With `--web`:
+
+| Option | What it does |
+| --- | --- |
+| `--dark`, `--light` | The colour scheme the page is asked for |
+| `--wait <seconds>` | Time the page gets to settle once it has loaded. Default 1 |
+| `--init <script or @file>` | JavaScript that runs before the page's own on every load: sample data in `localStorage`, a fixed date |
+| `--eval <script or @file>` | JavaScript that runs in the loaded page before the picture: the click or scroll that brings up the screen |
+| `--viewport <width>x<height>` | The page's size in points instead of the device's |
+| `--profile <dir>` | Keeps cookies and storage in this folder between captures |
 
 ## Upload and download
 

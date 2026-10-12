@@ -1,10 +1,20 @@
 # appShots
 
-App Store screenshots for iPhone, iPad and Mac, made by your coding agent or by hand, on a server you host yourself.
+App Store screenshots for iPhone, iPad and Mac, made by your coding agent or by hand.
 
-You give it the raw screens of your app. It puts them in device frames with a headline, a background and badges such as "10K+ downloads" or a five-star rating, and exports PNGs at the exact sizes App Store Connect accepts. A coding agent can do the whole job over MCP: run the app, capture the screens from the simulator or a plugged-in iPhone, write the copy, build the set, look at the render and fix what is off.
+**[Try it at shots.beffa.xyz](https://shots.beffa.xyz)** · [Docs](https://shots.beffa.xyz/docs) · [Host it yourself](#host-it)
 
 ![An example set: five slides rendered for the 6.9-inch iPhone](docs/example.jpg)
+
+You give it the raw screens of your app. It puts them in device frames with a headline, a background and badges such as "10K+ downloads" or a five-star rating, and exports PNGs at the exact sizes App Store Connect accepts.
+
+A coding agent can do the whole job over MCP: work out how your app is run, run it, capture the screens, write the copy, build the set, look at the render and fix what is off. The app can be an Xcode project, a Flutter, React Native, Expo, Capacitor, Tauri or Electron app, or a web app.
+
+## Try it, or host it yourself
+
+appShots runs as an app at **[shots.beffa.xyz](https://shots.beffa.xyz)**. Sign in with Google, open the Studio or connect your agent with one line, and make a set. There is no server to set up.
+
+This repository is that same app, under the MIT licence. To keep your screenshots on your own server, with your own sign-in and limits, [host it](#host-it): the deployment is one Docker Compose file. To run it on your own machine first, see the [quick start](#quick-start).
 
 ## What it makes
 
@@ -17,29 +27,19 @@ It comes with seventeen layouts, 41 fonts, 199 icons, badges, feature cards and 
 
 ## Examples
 
-These are renders as they came out of appShots, scaled down and laid side by side.
+Renders as they came out of appShots, scaled down and laid side by side. The [home page](https://shots.beffa.xyz) shows more.
 
-**One app, every output.** A party game's set for the iPhone: seven slides, designed once and exported for the 6.9, 6.5, 6.3 and 6.1-inch displays.
+A party game's set for the iPhone: seven slides, designed once and exported for the 6.9, 6.5, 6.3 and 6.1-inch displays.
 
 ![Seven iPhone slides on dark red, from Find the spy among you with two award wreaths to Settle the score](docs/examples/iphone.webp)
 
-The same app with a set of its own for the iPad:
-
-![Five iPad slides of the same game, some with the iPad tilted](docs/examples/ipad.webp)
-
-Its header and search results images for App Store Connect, and the banner for the top of a README:
-
-![A wide header image with the headline between two iPhones, and a search results image with the headline over a wall of screens](docs/examples/assets.webp)
-
-![A README banner: app icon, headline, tagline and two award wreaths on the left, three iPhones on the right](docs/examples/banner.webp)
-
-**A Mac app** at 2880×1800, its windows beside the headline or under it, and a slide of feature cards:
+A Mac app at 2880×1800, its windows beside the headline or under it, and a slide of feature cards.
 
 ![Six Mac slides on dark green, among them Ten Mac apps. One menu bar. and Private by default](docs/examples/mac.webp)
 
-**Two more sets**, each seven slides from one design: a party game and a voice notes app.
+The banner for the top of a README.
 
-![Two rows of seven iPhone slides, the first on purple and cream, the second on pale green](docs/examples/sets.webp)
+![A README banner: app icon, headline, tagline and two award wreaths on the left, three iPhones on the right](docs/examples/banner.webp)
 
 ## How it fits together
 
@@ -47,8 +47,8 @@ Its header and search results images for App Store Connect, and the banner for t
 | --- | --- | --- |
 | Server | Docker or `npm start` | Renders slides, stores projects, serves the home page, the Studio (the editor in the browser), the docs, the REST API and the MCP endpoint at `/mcp` |
 | MCP endpoint | Part of the server | Lets an agent create projects, write slides and render them |
-| `appshots` CLI | Your Mac | Captures the simulator, a connected device or the window of a Mac app and uploads the screenshot; a container cannot see your USB devices, so this part stays local. Also reaches the server's tools for agents without MCP |
-| `appshots` skill | Your agent, on your Mac | Does the whole job in an app's repository: runs the app, captures the screens, writes the copy and builds the set. Works in Claude Code, Codex, OpenCode, Pi and anything else that reads a skill or follows a file |
+| `appshots` CLI | Your Mac | Captures the simulator, a connected device, the window of a Mac app or the pages of a web app and uploads the screenshot; a container cannot see your simulator or your USB devices, so this part stays local. Also reaches the server's tools for agents without MCP |
+| `appshots` skill | Your agent, on your Mac | Does the whole job in an app's repository: reads how the app is run, runs it, captures the screens, writes the copy and builds the set. Works in Claude Code, Codex, OpenCode, Pi and anything else that reads a skill or follows a file |
 
 ## Quick start
 
@@ -188,6 +188,8 @@ Connect shows this with a real token in place of `<token>` and your agent at the
 
 Then open the agent in an app's repository and start the skill, or just ask for App Store screenshots. The agent checks the setup, asks a handful of questions (which devices, where the screens come from, the look, any real ratings or logos to show), reads a little of the code to learn what the app does, gets the screens, writes the headlines, builds the set, looks at the render and fixes what is off. The skill's source is [skill/SKILL.md](skill/SKILL.md).
 
+The repository does not have to be an Xcode project. The agent reads what the app is made with and starts it with the toolkit's own command: a Flutter, React Native, Expo or Capacitor app in the simulator, a Tauri or Electron app in its window, a web app in a browser. See [docs/web-apps.md](docs/web-apps.md).
+
 ### Staying current
 
 The server hands out the skill and the CLI it was deployed with. A Mac that was set up before catches up with one command, which needs no token and leaves the agent's connection alone:
@@ -237,9 +239,9 @@ appshots call render '{"project": "streaks"}'     # pictures a tool returns are 
 The setup command above installs the CLI. It is one file with no dependencies, so in a checkout it also runs as `node cli/appshots.mjs`, or as `appshots` after `npm link`.
 
 ```bash
-appshots check                                    # the server, the skill, Xcode, the project here, simulators,
-                                                  # installed apps and devices, each with what to do next
-appshots run                                      # build the app in this folder and launch it in a simulator
+appshots check                                    # the server, the skill, Xcode, the project here and what it is made
+                                                  # with, simulators, installed apps and devices, each with what to do next
+appshots run                                      # build the Xcode project in this folder and launch it in a simulator
 appshots run --ipad --dark --lang de              # on the 13-inch iPad Pro, dark, in German
 appshots shoot streaks home stats detail --clean  # you open each screen and press Return; it captures and uploads
 appshots launch com.example.streaks --capture stats --to streaks -- -appshots stats
@@ -248,6 +250,10 @@ appshots launch com.example.streaks --capture stats --to streaks -- -appshots st
 appshots capture --name home --project streaks    # from the booted simulator, uploaded straight away
 appshots capture --name home --device --project streaks   # from the plugged-in, unlocked iPhone or iPad
 appshots capture --mac Ledger --name overview --project ledger   # the frontmost window of a Mac app
+appshots capture --web http://localhost:3000/stats --name stats --project streaks
+                                                  # a page of a web app at iPhone size; --as ipad or --as mac for those
+appshots boot                                     # boot the simulator for a Flutter, React Native, Expo or Capacitor
+                                                  # app, and print that toolkit's run command with the udid in it
 appshots upload streaks ./screens                 # screenshots you already have: files, or a folder of them
 appshots upload streaks logo.svg mascot.png --image   # a logo and other artwork for the slides
 appshots pull streaks --render                    # render everything and unpack it into ./store-screenshots/streaks
@@ -257,7 +263,7 @@ appshots update                                   # the skill and the CLI as the
 
 The `--name` is what slides refer to (`"screenshot": "home"`). Capturing the same name again replaces the screenshot, and every slide using it updates. An iPhone, an iPad and a Mac screenshot can share a name; each target size picks the matching one. `--lang <code>` files a screenshot under one of the project's languages.
 
-Simulator capture uses `simctl`. Device capture uses `devicectl device capture screenshot`, which needs Xcode 27 or newer and a device that is unlocked and trusts the Mac. `capture --mac` takes an app's frontmost window with `screencapture`, which macOS allows only when the terminal has the Screen Recording permission. Every command and option is in [docs/cli.md](docs/cli.md).
+Simulator capture uses `simctl`. Device capture uses `devicectl device capture screenshot`, which needs Xcode 27 or newer and a device that is unlocked and trusts the Mac. `capture --mac` takes an app's frontmost window with `screencapture`, which macOS allows only when the terminal has the Screen Recording permission. `capture --web` draws the page with the Chrome, Edge or Brave that is installed, without opening a window, and needs no Xcode. Every command and option is in [docs/cli.md](docs/cli.md).
 
 ## The Studio
 
@@ -309,6 +315,7 @@ Files are opaque PNGs laid out as `<locale>/<target>/01.png`, and the ZIP has a 
 | | Sizes | Read more |
 | --- | --- | --- |
 | **Mac apps** | 2880×1800, landscape. A captured window is drawn as that window, a full-screen picture inside a MacBook | [docs/mac.md](docs/mac.md) |
+| **Web apps and other toolkits** | A web app's pages are captured at 1320×2868 for the iPhone, 2064×2752 for the iPad or 2880×1800 for the Mac. Flutter, React Native, Expo, Capacitor, Tauri and Electron apps are captured where they run | [docs/web-apps.md](docs/web-apps.md) |
 | **Header and search results** | `header` 3840×1646, `search` 3840×2560, `universal` 5244×2950, with the copy inside Apple's safe area | [docs/store-assets.md](docs/store-assets.md) |
 | **Banners** | `readme` 2400×800, `social` 1280×640, `link` 1200×630, `post` 1920×1080 | [docs/banners.md](docs/banners.md) |
 | **Mockups** | One transparent PNG per screenshot and device, cut to the device | [docs/mockups.md](docs/mockups.md) |
@@ -335,7 +342,7 @@ A running server shows these pages at `/docs`, with its own address in the examp
 | | Pages |
 | --- | --- |
 | Start | [Overview](docs/index.md) · [Quick start](docs/quick-start.md) · [Connect an agent](docs/connect.md) · [Update](docs/update.md) |
-| Make a set | [The skill](docs/skill.md) · [Get your screens in](docs/screens.md) · [Mac apps](docs/mac.md) · [The Studio](docs/studio.md) · [Logos and artwork](docs/images.md) · [Languages](docs/languages.md) · [Render and export](docs/export.md) · [Mockups](docs/mockups.md) · [Banners](docs/banners.md) · [App Review rules](docs/app-review.md) |
+| Make a set | [The skill](docs/skill.md) · [Get your screens in](docs/screens.md) · [Mac apps](docs/mac.md) · [Web apps and other toolkits](docs/web-apps.md) · [The Studio](docs/studio.md) · [Logos and artwork](docs/images.md) · [Languages](docs/languages.md) · [Render and export](docs/export.md) · [Mockups](docs/mockups.md) · [Banners](docs/banners.md) · [App Review rules](docs/app-review.md) |
 | Reference | [Slides](docs/slides.md) · [Header and search results](docs/store-assets.md) · [Sizes](docs/sizes.md) · [Command line](docs/cli.md) · [MCP tools](docs/mcp.md) · [HTTP API](docs/api.md) |
 | Help | [Accounts, tokens and limits](docs/accounts.md) · [Troubleshooting](docs/troubleshooting.md) · [FAQ](docs/faq.md) |
 

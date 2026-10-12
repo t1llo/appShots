@@ -43,7 +43,7 @@ const webDir = path.join(root, "web", "dist");
 /** The sidebar, top to bottom. A page is the file docs/<name>.md. */
 const SECTIONS: { title: string; pages: string[] }[] = [
   { title: "Start", pages: ["index", "quick-start", "connect", "update"] },
-  { title: "Make a set", pages: ["skill", "screens", "mac", "studio", "images", "languages", "export", "mockups", "banners", "app-review"] },
+  { title: "Make a set", pages: ["skill", "screens", "mac", "web-apps", "studio", "images", "languages", "export", "mockups", "banners", "app-review"] },
   { title: "Reference", pages: ["slides", "store-assets", "sizes", "cli", "mcp", "api"] },
   { title: "Help", pages: ["accounts", "troubleshooting", "faq"] },
   { title: "Legal", pages: ["privacy", "terms"] },

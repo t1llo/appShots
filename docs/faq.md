@@ -20,7 +20,7 @@ Claude Code, Codex, OpenCode and Pi have a ready setup. Any other agent works if
 
 ### Do I need a Mac?
 
-For the Studio, any modern browser will do. Capturing screens from a simulator or a device needs a Mac with Xcode. Screenshots you have already can be uploaded from anywhere.
+For the Studio, any modern browser will do. Capturing screens from a simulator or a device needs a Mac with Xcode, and capturing a Mac app's window needs a Mac. A web app's pages are captured with Chrome, Edge or Brave and no Xcode. Screenshots you have already can be uploaded from anywhere.
 
 ### How long does a set take?
 
@@ -47,6 +47,10 @@ No. You design the set once for the iPhone, and once each for the iPhone Duo and
 ### Does it work for Mac apps?
 
 Yes. The Mac is a device like the iPhone and the iPad. Capture the app's window with `appshots capture --mac`, or upload a screenshot of it, and the set is exported in landscape at the Mac App Store's size. A window is shown as a window, an app in full screen inside a MacBook. See [Mac apps](/docs/mac).
+
+### Does it work with Flutter, React Native or a web app?
+
+Yes. An app is captured where it runs, whatever it is built with. A Flutter, React Native, Expo or Capacitor app runs in the simulator, started by its own command. A Tauri or Electron app is captured as a window on the Mac. A web app is captured page by page with `appshots capture --web`, at the size of an iPhone, an iPad or a Mac. See [Web apps and other toolkits](/docs/web-apps).
 
 ### Can it make a banner for my README?
 

@@ -26,9 +26,11 @@ It also makes [banners](/docs/banners): ask for "a banner for the README" and th
 
 **A Mac app** takes a route of its own, which the agent picks when it reads the project: it builds and opens the app on your Mac and captures its window, instead of using the simulator. See [Mac apps](/docs/mac).
 
+**An app that is not an Xcode project** works too. The agent reads what the project is made with, starts it with the toolkit's own command and captures it where it runs: a Flutter, React Native, Expo or Capacitor app in the simulator, a Tauri or Electron app in its window, and a web app page by page in a browser. See [Web apps and other toolkits](/docs/web-apps).
+
 ## What the agent does
 
-1. **Checks the setup** with `appshots check`: the server, the token, Xcode, the project, simulators and devices. If the server has a newer skill, it updates itself first.
+1. **Checks the setup** with `appshots check`: the server, the token, Xcode, the project and what it is made with, simulators and devices. If the server has a newer skill, it updates itself first.
 2. **Asks you a few questions**, all at once. They are listed below.
 3. **Reads a little of your code**: the README, the root view, the accent colour. It wants one sentence on what the app does and the four to seven things worth showing.
 4. **Plans five to eight slides** and shows you the list: slide, screen, headline. The first slide sells the whole app, and the rest take one benefit each.
@@ -42,9 +44,9 @@ It also makes [banners](/docs/banners): ask for "a banner for the README" and th
 
 | Question | Your choices |
 | --- | --- |
-| Devices | iPhone only, or the iPad or the iPhone Duo as well. For an app that also runs on the Mac, the Mac as well. Never about sizes: one design covers every size of a device |
+| Devices | iPhone only, or the iPad or the iPhone Duo as well. For an app that also runs on the Mac, the Mac as well. For a web app, whether to show it on an iPhone, an iPad, a Mac or several. Never about sizes: one design covers every size of a device |
 | The screens | You have screenshots. You open each screen and it captures. Or it does everything itself |
-| Where the app runs | A simulator, or the plugged-in iPhone or iPad |
+| Where the app runs | A simulator, or the plugged-in iPhone or iPad. Not asked for a Mac app or a web app |
 | The look | Light or dark, and which languages |
 | Extras | A real rating, download count, award or review. Logos of services the app works with. Your own logo or artwork. Header and search results images |
 

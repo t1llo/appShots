@@ -3,7 +3,7 @@ title: Troubleshooting
 description: Fixes for the common appShots problems. Sign-in errors, an agent that cannot see the skill or the MCP server, 401 answers, capture failures in the simulator or on a device, and render problems.
 ---
 
-Start with this. It reports the server, the token, the skill, Xcode, simulators and devices, and every line says what to do next:
+Start with this. It reports the server, the token, the skill, Xcode, the project and what it is made with, simulators and devices, and every line says what to do next:
 
 ```bash
 appshots check
@@ -41,7 +41,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 **"simctl failed" or no simulators.** Xcode is not installed, or it was never opened. Install it from the App Store, open it once, and let it install the iOS platform.
 
-**No booted simulator.** Start your app from Xcode, or run `appshots run`.
+**No booted simulator.** Start your app from Xcode, or run `appshots run`. For an app made with Flutter, React Native, Expo, Capacitor or Tauri, run `appshots boot` and then the toolkit's own run command.
 
 **The build fails in `appshots run`.** Build the app in Xcode first and fix what it reports. If the folder has several projects or schemes, name them with `--project` and `--scheme`.
 
@@ -56,6 +56,16 @@ export PATH="$HOME/.local/bin:$PATH"
 **`--mac` does not find the app.** The app has to be open with a window on screen. Use its name as the menu bar shows it. The command lists the apps it can see.
 
 **`appshots run` says the project is a Mac app.** `run` is for the iOS Simulator. Start a Mac app your own way and capture its window with `appshots capture --mac`.
+
+**`appshots run` says there is no Xcode workspace or project.** `run` builds Xcode projects only. An app made with another toolkit and a web app are started by their own command, which `appshots check` names. See [Web apps and other toolkits](/docs/web-apps).
+
+**`--web` says nothing answers at the address.** The dev server is not running, or it took another port than usual. Read the address off what it printed when it started.
+
+**`--web` finds no browser.** It draws pages with Google Chrome, Chromium, Microsoft Edge or Brave. Install one, or set `APPSHOTS_BROWSER` to the program of a Chromium browser.
+
+**A web page shows a sign-in or an empty state.** The browser the command starts has a profile of its own and knows none of your sign-ins. Put sample data in with `--init`, or keep a session between captures with `--profile`. See [Reach a screen](/docs/web-apps#reach-a-screen).
+
+**A web app's slides have no status bar.** The capture leaves its place free. Set **Status bar** to overlay in the device settings, or `"device": {"statusBar": "overlay"}` in the theme.
 
 ## Slides
 

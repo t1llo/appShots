@@ -4,18 +4,20 @@
 // rendered store screenshots back down. There are three ways to the screenshots: `appshots upload` takes
 // the ones that exist already, `appshots shoot` captures while a person opens each screen, and
 // `appshots run` and `appshots launch` start the app on a given screen and capture it in one go.
+// An app that is not built with Xcode alone is started by its own toolkit and captured where it runs:
+// in the simulator, in a window on this Mac (`capture --mac`), or as a page in a browser (`capture --web`).
 // `appshots check` reports what is there to work with, `appshots setup` installs the appshots skill for a
 // coding agent and connects that agent to the server, `appshots update` brings that skill up to date, and
 // `appshots call` reaches the server's tools for agents that have no MCP.
 // No dependencies, so it runs straight from a checkout: `node cli/appshots.mjs` or `npm link`.
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const CONFIG_FILE = path.join(process.env.XDG_CONFIG_HOME ?? path.join(homedir(), ".config"), "appshots", "config.json");
 // What the server last said its skill and command are, so that asking again can wait.
@@ -35,8 +37,12 @@ const AGENTS = {
 const BUILD_CACHE = path.join(homedir(), "Library", "Caches", "appshots", "build");
 const BOOLEAN_FLAGS = new Set(["clean", "render", "help", "ipad", "duo", "dark", "light", "fresh", "image"]);
 
-const HELP = `appshots: run an app in a simulator, capture its screens and sync them with an appShots server.
-A Mac app runs on the Mac itself: capture its window with 'appshots capture --mac <app>'
+const HELP = `appshots: capture an app's screens and sync them with an appShots server.
+An app is captured where it runs, whatever it is built with: in the iOS Simulator or on a plugged-in
+iPhone or iPad ('appshots capture'), in a window on this Mac ('appshots capture --mac <app>'), or as a
+web app in a browser ('appshots capture --web <address>'). 'appshots run' builds and starts an Xcode
+project; an app made with Flutter, React Native, Expo, Capacitor, Tauri, Electron or a web framework is
+started by that toolkit's own command, and 'appshots check' says which.
 
   appshots setup <url> [--agent <agent>] Everything in one go: save the token, install the appshots skill
                                          and this CLI, connect the agent. Agents: claude (the default),
@@ -45,8 +51,9 @@ A Mac app runs on the Mac itself: capture its window with 'appshots capture --ma
   appshots update                        Bring the installed skill and this CLI up to date with the
                                          server's. Needs no token and leaves the agent's connection alone
   appshots check                         Report what is there: the server, whether the skill is current,
-                                         Xcode, the project in this folder, simulators, the apps installed
-                                         on them, and devices. Each line says what to do next
+                                         the project in this folder and what it is made with, Xcode,
+                                         simulators, the apps installed on them, and devices. Each line
+                                         says what to do next
   appshots projects                      List projects on the server
   appshots run [options] [-- <args>]     Build the app in this folder and launch it in a simulator
       --scheme <name>                      Scheme to build (only when the choice is not obvious)
@@ -68,6 +75,10 @@ A Mac app runs on the Mac itself: capture its window with 'appshots capture --ma
                                          or language. Options as for run: --sim, --dark, --light, --lang,
                                          --capture, --to, --wait. That makes one screen one command:
                                          appshots launch <bundle id> --capture stats --to <project> -- -appshots stats
+  appshots boot [--ipad|--duo|--sim <name|udid>]
+                                         Boot the simulator the store sizes ask for and print its udid,
+                                         for an app its own toolkit starts: flutter run -d <udid>,
+                                         npx expo run:ios --device <udid>, npx cap run ios --target <udid>
   appshots simctl <arguments...>         Run xcrun simctl with the right Xcode: openurl, ui, privacy, push
   appshots devices                       List booted simulators and connected devices
   appshots capture [options]             Take a screenshot
@@ -78,6 +89,19 @@ A Mac app runs on the Mac itself: capture its window with 'appshots capture --ma
                                            without the shadow. A window is shown as a window, an app
                                            in full screen inside a MacBook. The terminal needs the
                                            Screen Recording permission in System Settings
+      --web <address>                      From a web app: the page at this address, drawn by Chrome
+                                           without a window, at the size of an iPhone. --as ipad,
+                                           --as duo or --as mac draws it at that size. On a phone or
+                                           tablet the top is left free for the status bar and the
+                                           home indicator is drawn. With it:
+        --dark, --light                      The colour scheme the page is asked for
+        --wait <seconds>                     Time the page gets to settle once loaded (default: 1)
+        --init <script|@file>                JavaScript run before the page's own on every load:
+                                             sample data in localStorage, a fixed date
+        --eval <script|@file>                JavaScript run in the loaded page before the picture:
+                                             the click or scroll that brings up the screen
+        --viewport <width>x<height>          The page's size in points instead of the device's
+        --profile <dir>                      Keep cookies and storage in this folder between captures
       --clean                              Simulator only: show 9:41, full battery and signal
       --project <id>                       Upload it to this project straight away (--to works too)
       --as <iphone|duo|ipad|mac>           File it under this device. Only needed when the server
@@ -519,7 +543,7 @@ function xcodeEnv() {
 }
 
 function xcrun(args, options) {
-  if (process.platform !== "darwin") fail("This needs a Mac with Xcode. Use 'appshots upload' for existing screenshots.");
+  if (process.platform !== "darwin") fail("This needs a Mac with Xcode. 'appshots capture --web <address>' takes a web app's pages anywhere, and 'appshots upload' takes screenshots you already have.");
   const result = spawnSync("xcrun", args, { encoding: "utf8", env: xcodeEnv(), ...options });
   if (result.error) fail(`Could not run xcrun: ${result.error.message}`);
   return result;
@@ -574,7 +598,7 @@ function choose(candidates, query, kind, flag) {
     fail(matches.length === 0 ? `No ${kind} matches "${query}". Available:\n${describe(candidates) || "  (none)"}` : `"${query}" matches several:\n${describe(matches)}`);
   }
   if (candidates.length === 1) return candidates[0];
-  if (candidates.length === 0) fail(kind === "simulator" ? "No simulator is booted. Start your app in one with 'appshots run' first, or capture from a device with --device." : "No iPhone or iPad is connected. Plug it in, unlock it and trust this Mac.");
+  if (candidates.length === 0) fail(kind === "simulator" ? "No simulator is booted. Start your app in one with 'appshots run' first, or with 'appshots boot' and the project's own run command. A plugged-in device is --device, a window on this Mac --mac <app>, a web page --web <address>." : "No iPhone or iPad is connected. Plug it in, unlock it and trust this Mac.");
   fail(`Several ${kind}s are available; pick one with ${flag} <name>:\n${describe(candidates)}`);
 }
 
@@ -608,13 +632,18 @@ function macWindow(query) {
   return windows.find((window) => window.app === matches[0]);
 }
 
-function capture(flags) {
+/** The name a capture goes by and the file it is saved as. Makes the folder. */
+function shotTarget(flags) {
   const name = typeof flags.name === "string" ? slugify(flags.name) : `shot-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`;
-  // Before the folder is made: a wrong name should leave nothing behind.
-  const window = flags.mac ? macWindow(flags.mac) : null;
   const outDir = path.resolve(typeof flags.out === "string" ? flags.out : "raw-shots");
   mkdirSync(outDir, { recursive: true });
-  const file = path.join(outDir, `${name}.png`);
+  return { name, file: path.join(outDir, `${name}.png`) };
+}
+
+function capture(flags) {
+  // Before the folder is made: a wrong name should leave nothing behind.
+  const window = flags.mac ? macWindow(flags.mac) : null;
+  const { name, file } = shotTarget(flags);
 
   if (window) {
     rmSync(file, { force: true });
@@ -646,6 +675,515 @@ function capture(flags) {
     console.log(`Captured ${simulator.name} -> ${file}`);
   }
   return { name, file };
+}
+
+// ---------------------------------------------------------------- web pages
+
+/**
+ * The screens a web page is drawn at: the points and the scale of the device whose store size comes out of it.
+ * `bar` is what the status bar takes at the top, `home` what the home indicator takes at the bottom, and
+ * `pill` how wide that indicator is.
+ */
+const WEB_SCREENS = {
+  iphone: { label: "an iPhone", width: 440, height: 956, scale: 3, bar: 62, home: 34, pill: 152, touch: true },
+  duo: { label: "an iPhone Duo", width: 669, height: 951, scale: 3, bar: 39, home: 0, pill: 0, touch: true },
+  ipad: { label: "an iPad", width: 1032, height: 1376, scale: 2, bar: 24, home: 20, pill: 320, touch: true },
+  mac: { label: "a Mac", width: 1440, height: 900, scale: 2, bar: 0, home: 0, pill: 0, touch: false },
+};
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Waits until `test` holds, for `ms` at most, and says whether it came to hold. */
+async function until(test, ms) {
+  for (const end = Date.now() + ms; !test(); await pause(50)) if (Date.now() > end) return false;
+  return true;
+}
+
+/**
+ * A Chromium browser that can draw a page without a window: Chrome, Chromium, Edge or Brave as installed, or
+ * the Chromium that Playwright keeps for a project. Null when there is none.
+ */
+function findBrowser() {
+  const given = process.env.APPSHOTS_BROWSER;
+  if (given) return existsSync(given) ? { name: path.basename(given), file: given } : null;
+  if (process.platform === "darwin") {
+    for (const root of ["/Applications", path.join(homedir(), "Applications")]) {
+      for (const name of ["Google Chrome", "Chromium", "Microsoft Edge", "Brave Browser", "Google Chrome Canary"]) {
+        const file = path.join(root, `${name}.app`, "Contents", "MacOS", name);
+        if (existsSync(file)) return { name, file };
+      }
+    }
+  } else if (process.platform === "win32") {
+    for (const root of [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean)) {
+      for (const [name, program] of [["Google Chrome", "Google/Chrome/Application/chrome.exe"], ["Microsoft Edge", "Microsoft/Edge/Application/msedge.exe"], ["Brave Browser", "BraveSoftware/Brave-Browser/Application/brave.exe"]]) {
+        const file = path.join(root, program);
+        if (existsSync(file)) return { name, file };
+      }
+    }
+  } else {
+    const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+    for (const name of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "brave-browser"]) {
+      const file = dirs.map((dir) => path.join(dir, name)).find(existsSync);
+      if (file) return { name, file };
+    }
+  }
+  const cache = process.env.PLAYWRIGHT_BROWSERS_PATH ?? path.join(homedir(), process.platform === "darwin" ? "Library/Caches" : ".cache", "ms-playwright");
+  const number = (entry) => Number(entry.split("-").pop());
+  let kept = [];
+  try {
+    // The newest first, and the whole browser before the one that is only its engine.
+    kept = readdirSync(cache).filter((entry) => /^chromium(_headless_shell)?-\d+$/.test(entry)).sort((a, b) => a.includes("_") - b.includes("_") || number(b) - number(a));
+  } catch {}
+  for (const entry of kept) {
+    for (const folder of readdirSync(path.join(cache, entry))) {
+      for (const binary of ["Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing", "Chromium.app/Contents/MacOS/Chromium", "chrome", "chrome-headless-shell", "headless_shell"]) {
+        const file = path.join(cache, entry, folder, binary);
+        if (existsSync(file) && statSync(file).isFile()) return { name: "Playwright's Chromium", file };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Starts the browser without a window and hands `work` a way to talk to it: `send` for a command of the
+ * DevTools protocol, `listen` for what the browser reports by itself. The talking goes over the two pipes that
+ * --remote-debugging-pipe opens, each message JSON ended by a zero byte, so no port is opened and nothing has
+ * to be installed. The browser gets a profile of its own, apart from the user's, and is gone when `work` is done.
+ */
+async function withBrowser(browser, profile, work) {
+  const dir = profile ? path.resolve(profile) : mkdtempSync(path.join(tmpdir(), "appshots-web-"));
+  mkdirSync(dir, { recursive: true });
+  const options = [
+    "--headless",
+    "--remote-debugging-pipe",
+    `--user-data-dir=${dir}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-extensions",
+    "--disable-sync",
+    "--disable-background-networking",
+    "--disable-component-update",
+    // Without these two a fresh profile asks for the login keychain.
+    "--password-store=basic",
+    "--use-mock-keychain",
+    "--hide-scrollbars",
+    "--mute-audio",
+    "--force-color-profile=srgb",
+    "about:blank",
+  ];
+  const child = spawn(browser.file, options, { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
+  const [, , errors, input, output] = child.stdio;
+  let said = "";
+  errors.on("data", (data) => (said = `${said}${data}`.slice(-2000)));
+  input.on("error", () => {});
+
+  const waiting = new Map();
+  const listeners = new Set();
+  let gone = null;
+  const leave = (reason) => {
+    gone ??= reason;
+    for (const { reject, timer } of waiting.values()) {
+      clearTimeout(timer);
+      reject(new Error(gone));
+    }
+    waiting.clear();
+  };
+  const exited = new Promise((resolve) => {
+    child.once("error", (error) => resolve(leave(`Could not start ${browser.name}: ${error.message}`)));
+    child.once("exit", () => resolve(leave(`${browser.name} quit before it was done.${said.trim() ? `\n${said.trim().split("\n").slice(-5).join("\n")}` : ""}`)));
+  });
+
+  const parts = [];
+  output.on("data", (chunk) => {
+    let from = 0;
+    for (let end = chunk.indexOf(0); end !== -1; end = chunk.indexOf(0, from)) {
+      parts.push(chunk.subarray(from, end));
+      from = end + 1;
+      const message = JSON.parse(Buffer.concat(parts.splice(0)).toString("utf8"));
+      const asked = waiting.get(message.id);
+      if (asked) {
+        waiting.delete(message.id);
+        clearTimeout(asked.timer);
+        if (message.error) asked.reject(new Error(`${asked.method}: ${message.error.message}`));
+        else asked.resolve(message.result);
+      } else if (message.method) {
+        for (const listener of listeners) listener(message);
+      }
+    }
+    if (from < chunk.length) parts.push(chunk.subarray(from));
+  });
+
+  let count = 0;
+  const send = (method, params = {}, sessionId) =>
+    new Promise((resolve, reject) => {
+      if (gone) return reject(new Error(gone));
+      const id = ++count;
+      const timer = setTimeout(() => waiting.delete(id) && reject(new Error(`${browser.name} did not answer ${method}.`)), 60000);
+      waiting.set(id, { resolve, reject, timer, method });
+      input.write(`${JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })}\0`);
+    });
+
+  try {
+    return await work({ send, listen: (listener) => listeners.add(listener) });
+  } finally {
+    send("Browser.close").catch(() => {});
+    // A timer that is still running would keep this command from ending.
+    let patience;
+    await Promise.race([exited, new Promise((resolve) => (patience = setTimeout(resolve, 4000)))]);
+    clearTimeout(patience);
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    if (!profile) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+}
+
+/**
+ * Runs in a blank page of the browser: sets the picture of a web page between the bands a phone keeps free of
+ * it, for the status bar at the top and the home indicator at the bottom, and draws that indicator. A band
+ * takes the colour of the page's edge next to it, so a coloured header runs up into it, or `paper` where that
+ * edge is a picture.
+ */
+async function withDeviceBars({ data, top, bottom, paper, pill }) {
+  const picture = new Image();
+  picture.src = `data:image/png;base64,${data}`;
+  await picture.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = picture.width;
+  canvas.height = top + picture.height + bottom;
+  const pen = canvas.getContext("2d", { willReadFrequently: true });
+  pen.drawImage(picture, 0, top);
+  const band = (from, height, row, fallback) => {
+    if (!height) return;
+    const edge = pen.getImageData(0, row, picture.width, 1).data;
+    let even = true;
+    for (let at = 4; at < edge.length && even; at += 4) for (let c = 0; c < 3; c++) if (Math.abs(edge[at + c] - edge[c]) > 6) even = false;
+    pen.fillStyle = even ? `rgb(${edge[0]} ${edge[1]} ${edge[2]})` : fallback;
+    pen.fillRect(0, from, picture.width, height);
+  };
+  band(0, top, top, paper.top);
+  band(top + picture.height, bottom, top + picture.height - 1, paper.bottom);
+  if (pill) {
+    const left = Math.round((canvas.width - pill.width) / 2);
+    const from = canvas.height - pill.gap - pill.height;
+    // Dark on a light page and light on a dark one, as the phone draws it.
+    const under = pen.getImageData(left, from, pill.width, pill.height).data;
+    let light = 0;
+    for (let at = 0; at < under.length; at += 4) light += 0.299 * under[at] + 0.587 * under[at + 1] + 0.114 * under[at + 2];
+    pen.fillStyle = light / (under.length / 4) > 140 ? "#000" : "#fff";
+    pen.beginPath();
+    pen.roundRect(left, from, pill.width, pill.height, pill.height / 2);
+    pen.fill();
+  }
+  return canvas.toDataURL("image/png").split(",")[1];
+}
+
+/** JavaScript given on the command line: the code itself, or @file for a file that holds it. */
+function scriptOf(value, flag) {
+  if (value === undefined) return null;
+  if (typeof value !== "string") fail(`${flag} needs JavaScript, or @file for a file that holds it.`);
+  if (!value.startsWith("@")) return value;
+  if (!existsSync(value.slice(1))) fail(`No such file: ${value.slice(1)}`);
+  return readFileSync(value.slice(1), "utf8");
+}
+
+/** The address --web was given: a URL, a host and port without its http://, or an HTML file on this computer. */
+function webAddress(value) {
+  if (typeof value !== "string") fail("--web needs the address of the page, as in: --web http://localhost:5173/stats");
+  if (/^(https?|file):\/\//i.test(value)) return value;
+  if (existsSync(value)) return pathToFileURL(path.resolve(value)).href;
+  return `http://${value}`;
+}
+
+/**
+ * Draws one page of a web app at the size of a device and saves it as a raw screenshot of that device. On a
+ * phone or tablet the page is laid out between the status bar and the home indicator, as an installed web app
+ * is: the status bar's place stays free in the picture and the home indicator is drawn. A page that asks for
+ * the whole screen (viewport-fit=cover) gets it, with the safe area it then has to keep to.
+ */
+async function captureWeb(flags) {
+  const address = webAddress(flags.web);
+  const kind = shotDevice(flags) ?? "iphone";
+  const screen = WEB_SCREENS[kind];
+  if (flags.dark && flags.light) fail("Use --dark or --light, not both.");
+  const language = shotLanguage(flags);
+  const wait = flags.wait === undefined ? 1 : typeof flags.wait === "string" ? Number(flags.wait) : NaN;
+  if (!(wait >= 0 && wait <= 600)) fail("--wait needs a number of seconds, as in: --wait 3");
+  const given = flags.viewport === undefined ? null : /^(\d{3,4})x(\d{3,4})$/.exec(String(flags.viewport));
+  if (flags.viewport !== undefined && !given) fail("--viewport needs a size in points, as in: --viewport 1280x800");
+  const width = given ? Number(given[1]) : screen.width;
+  const height = given ? Number(given[2]) : screen.height;
+  const init = scriptOf(flags.init, "--init");
+  const steps = scriptOf(flags.eval, "--eval");
+  if (flags.profile !== undefined && typeof flags.profile !== "string") fail("--profile needs a folder, as in: --profile .appshots-browser");
+  const browser = findBrowser();
+  if (!browser) {
+    fail(
+      process.env.APPSHOTS_BROWSER
+        ? `APPSHOTS_BROWSER points at ${process.env.APPSHOTS_BROWSER}, which does not exist.`
+        : "--web draws the page with Chrome, Chromium, Edge or Brave, and none of them is installed. Install Google Chrome, or point APPSHOTS_BROWSER at a Chromium browser's program.",
+    );
+  }
+
+  let shot;
+  try {
+    shot = await withBrowser(browser, flags.profile, async ({ send, listen }) => {
+      const { targetId } = await send("Target.createTarget", { url: "about:blank" });
+      const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
+      const page = (method, params) => send(method, params, sessionId);
+      const evaluate = async (expression, what) => {
+        const { result, exceptionDetails } = await page("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true, userGesture: true });
+        if (exceptionDetails) throw new Error(`${what} failed in the page: ${(exceptionDetails.exception?.description ?? exceptionDetails.text).split("\n")[0]}`);
+        return result.value;
+      };
+
+      await page("Page.enable");
+      await page("Network.enable");
+      await page("Page.setLifecycleEventsEnabled", { enabled: true });
+      const frame = (await page("Page.getFrameTree")).frameTree.frame.id;
+      // What each document of the page has reached so far. A redirect or a click may bring a new one.
+      const reached = new Map();
+      let current = null;
+      let status = 0;
+      listen(({ sessionId: from, method, params }) => {
+        if (from !== sessionId) return;
+        if (method === "Page.lifecycleEvent" && params.frameId === frame) {
+          if (params.name === "init") current = params.loaderId;
+          if (!reached.has(params.loaderId)) reached.set(params.loaderId, new Set());
+          reached.get(params.loaderId).add(params.name);
+        } else if (method === "Network.responseReceived" && params.type === "Document" && params.frameId === frame) {
+          status = params.response.status;
+        } else if (method === "Page.javascriptDialogOpening") {
+          // An alert would hold the page up for good.
+          page("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+        }
+      });
+      const at = (step) => reached.get(current)?.has(step) ?? false;
+      const loaded = async () => {
+        if (!(await until(() => at("load"), 30000))) throw new Error(`${address} did not finish loading within 30 seconds.`);
+        // Data the page fetches once it runs. A page that never stops fetching is taken as it is.
+        await until(() => at("networkIdle"), 5000);
+      };
+
+      const { userAgent } = await send("Browser.getVersion");
+      await page("Emulation.setUserAgentOverride", { userAgent: userAgent.replace("HeadlessChrome", "Chrome"), ...(language ? { acceptLanguage: language } : {}) });
+      if (language) await page("Emulation.setLocaleOverride", { locale: language.replaceAll("-", "_") }).catch(() => {});
+      await page("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: flags.dark ? "dark" : "light" }] });
+      if (screen.touch) await page("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+      const resize = (inset) => page("Emulation.setDeviceMetricsOverride", { width, height: height - inset, deviceScaleFactor: screen.scale, mobile: screen.touch, screenWidth: width, screenHeight: height });
+      await resize(screen.bar + screen.home);
+      if (init) await page("Page.addScriptToEvaluateOnNewDocument", { source: init });
+
+      // A dev server that was started a moment ago may not be listening yet.
+      let answer;
+      for (const end = Date.now() + 10000; ; await pause(500)) {
+        answer = await page("Page.navigate", { url: address });
+        if (answer.errorText !== "net::ERR_CONNECTION_REFUSED" || Date.now() > end) break;
+      }
+      if (answer.errorText === "net::ERR_CONNECTION_REFUSED") throw new Error(`Nothing answers at ${address}. Is the app's dev server running, and is that its address?`);
+      if (answer.errorText) throw new Error(`Could not open ${address}: ${answer.errorText}`);
+      await until(() => reached.has(answer.loaderId), 5000);
+      await loaded();
+
+      // A page that asks for the whole screen keeps clear of the bars by itself, as on a phone.
+      let band = screen.bar * screen.scale;
+      let foot = screen.home * screen.scale;
+      if (band && /viewport-fit\s*=\s*cover/i.test(await evaluate(`document.querySelector('meta[name="viewport" i]')?.content ?? ""`, "Reading the page"))) {
+        const whole = await page("Emulation.setSafeAreaInsetsOverride", { insets: { top: screen.bar, topMax: screen.bar, bottom: screen.home, bottomMax: screen.home } }).then(() => true, () => false);
+        if (whole) {
+          await resize(0);
+          band = foot = 0;
+          // Once more from the start, so that what the page measures as it loads is what it ends up with.
+          await page("Page.reload");
+          await pause(200);
+          await loaded();
+        }
+      }
+
+      await evaluate("document.fonts.ready.then(() => 0)", "Loading the fonts");
+      if (steps) {
+        // A click that leaves the page takes the script's own answer with it, which is no failure.
+        await evaluate(`(async () => {\n${steps}\n})()`, "--eval").catch((error) => {
+          if (!/context was destroyed|navigated|Cannot find context/i.test(error.message)) throw error;
+        });
+        await pause(200);
+        await loaded();
+      }
+      await pause(wait * 1000);
+
+      const paper = await evaluate(
+        `(() => {
+          const theme = [...document.querySelectorAll('meta[name="theme-color"]')].find((meta) => !meta.media || matchMedia(meta.media).matches)?.content;
+          const solid = (colour) => colour && colour !== "transparent" && !/, 0\\)$/.test(colour);
+          const ground = [document.body, document.documentElement].map((element) => element && getComputedStyle(element).backgroundColor).find(solid) || "#fff";
+          return { top: theme || ground, bottom: ground };
+        })()`,
+        "Reading the page",
+      );
+      let { data } = await page("Page.captureScreenshot", { format: "png" });
+      const pill = screen.pill ? { width: screen.pill * screen.scale, height: 5 * screen.scale, gap: 8 * screen.scale } : null;
+      if (band || pill) {
+        const easel = (await send("Target.attachToTarget", { targetId: (await send("Target.createTarget", { url: "about:blank" })).targetId, flatten: true })).sessionId;
+        const drawn = await send("Runtime.evaluate", { expression: `(${withDeviceBars})(${JSON.stringify({ data, top: band, bottom: foot, paper, pill })})`, awaitPromise: true, returnByValue: true }, easel);
+        if (drawn.exceptionDetails) throw new Error(`Could not make room for the status bar: ${drawn.exceptionDetails.exception?.description ?? drawn.exceptionDetails.text}`);
+        data = drawn.result.value;
+      }
+      return { png: Buffer.from(data, "base64"), status, room: band > 0 };
+    });
+  } catch (error) {
+    if (error instanceof Failure) throw error;
+    fail(error.message);
+  }
+
+  const { name, file } = shotTarget(flags);
+  writeFileSync(file, shot.png);
+  console.log(`Captured ${address} as ${screen.label} shows it (${width * screen.scale}x${height * screen.scale}) -> ${file}`);
+  if (shot.status >= 400) console.log(`  ! The address answered ${shot.status}, so this may be an error page. Open the picture and look.`);
+  if (screen.bar) console.log(`  ${shot.room ? "The top is left free for the status bar" : "The page asks for the whole screen and runs under the status bar"}. "device": {"statusBar": "overlay"} in the theme draws one.`);
+  return { name, file, device: kind };
+}
+
+// ---------------------------------------------------------------- other toolkits
+
+function readJson(file) {
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** Dev servers by the package that brings them, each with the port it takes when the project names none. */
+const WEB_KITS = [
+  ["next", "Next.js", 3000],
+  ["nuxt", "Nuxt", 3000],
+  ["@sveltejs/kit", "SvelteKit", 5173],
+  ["astro", "Astro", 4321],
+  ["@remix-run/dev", "Remix", 5173],
+  ["@angular/core", "Angular", 4200],
+  ["gatsby", "Gatsby", 8000],
+  ["react-scripts", "Create React App", 3000],
+  ["@vue/cli-service", "Vue CLI", 8080],
+  ["vite", "Vite", 5173],
+  ["parcel", "Parcel", 1234],
+  ["webpack-dev-server", "webpack", 8080],
+];
+
+/**
+ * What the app in a folder is made with besides Xcode, and the command each toolkit starts it with: in the
+ * simulator, in a window on this Mac, or as pages for a browser. It is read off the files a toolkit leaves
+ * in a project; nothing is run. <udid> and <simulator> stand for the simulator to start it in.
+ */
+function toolkits(dir) {
+  const has = (...names) => names.some((name) => existsSync(path.join(dir, name)));
+  const text = (name) => {
+    try {
+      return readFileSync(path.join(dir, name), "utf8");
+    } catch {
+      return "";
+    }
+  };
+  const pkg = readJson(path.join(dir, "package.json"));
+  const uses = (name) => Boolean(pkg?.dependencies?.[name] ?? pkg?.devDependencies?.[name]);
+  const scripts = pkg?.scripts ?? {};
+  const script = (...names) => names.find((name) => typeof scripts[name] === "string");
+  const runner = has("pnpm-lock.yaml") ? "pnpm" : has("yarn.lock") ? "yarn" : has("bun.lock", "bun.lockb") ? "bun run" : "npm run";
+  const kit = WEB_KITS.find(([dependency]) => uses(dependency));
+  // The script that serves the pages, and the port it says or its dev server takes by itself.
+  const pages = () => {
+    const name = script("dev", "start", "serve", "develop");
+    if (!name) return null;
+    const port = scripts[name].match(/(?:--port[= ]|-p |\bPORT=)(\d{2,5})/)?.[1] ?? kit?.[2];
+    return { command: `${runner} ${name}`, address: port ? `http://localhost:${port}` : null };
+  };
+  const found = [];
+
+  if (/\bsdk:\s*flutter\b/.test(text("pubspec.yaml"))) {
+    const web = !has("ios") && !has("macos") && has("web") ? { command: "flutter run -d web-server --web-port 8080", address: "http://localhost:8080" } : null;
+    const app = text("macos/Runner/Configs/AppInfo.xcconfig").match(/^PRODUCT_NAME\s*=\s*(.+)$/m)?.[1].trim();
+    found.push({ name: "Flutter", sign: "pubspec.yaml", simulator: has("ios") ? "flutter run -d <udid>" : null, window: has("macos") ? { command: "flutter run -d macos", app, built: true } : null, web });
+  }
+  // With a native project of its own Expo builds the app; without one it opens in Expo Go.
+  if (uses("expo")) found.push({ name: "Expo", sign: "package.json", simulator: has("ios") ? "npx expo run:ios --device <udid>" : "npx expo start --ios" });
+  else if (uses("react-native")) found.push({ name: "React Native", sign: "package.json", simulator: "npx react-native run-ios --udid <udid>" });
+
+  const capacitor = ["capacitor.config.ts", "capacitor.config.js", "capacitor.config.json"].find((name) => has(name));
+  if (capacitor || uses("@capacitor/core")) {
+    // The app is the built pages inside a native shell, so they are built before the shell is.
+    const simulator = has("ios") ? `${script("build") ? `${runner} build && ` : ""}npx cap run ios --target <udid>` : null;
+    found.push({ name: "Capacitor", sign: capacitor ?? "package.json", simulator, web: pages() });
+  }
+
+  const tauri = ["src-tauri/tauri.conf.json", "src-tauri/tauri.conf.json5", "src-tauri/Tauri.toml"].find((name) => has(name));
+  if (tauri || uses("@tauri-apps/cli")) {
+    const cli = script("tauri") ? `${runner} tauri` : uses("@tauri-apps/cli") ? "npx tauri" : "cargo tauri";
+    // Run from source, the window belongs to the program Cargo built, which has the package's name.
+    const program = text("src-tauri/Cargo.toml").match(/^\[package\][^[]*?^name\s*=\s*"([^"]+)"/ms)?.[1];
+    found.push({ name: "Tauri", sign: tauri ?? "package.json", simulator: has("src-tauri/gen/apple") ? `${cli} ios dev "<simulator>"` : null, window: { command: `${cli} dev`, app: program } });
+  }
+  if (uses("electron")) {
+    const name = script("dev", "start");
+    found.push({ name: "Electron", sign: "package.json", window: { command: name ? `${runner} ${name}` : "npx electron .", app: "Electron" } });
+  }
+
+  // A server that renders the pages goes before the bundler that only builds their styles and scripts.
+  const assets = pkg && script("dev") ? `, with '${runner} dev' beside it for the styles and scripts` : "";
+  if (has("manage.py")) found.push({ name: "Django", sign: "manage.py", web: { command: "python manage.py runserver", address: "http://localhost:8000" } });
+  if (has("bin/rails") && has("config/routes.rb")) found.push({ name: "Rails", sign: "bin/rails", web: { command: has("bin/dev") ? "bin/dev" : "bin/rails server", address: "http://localhost:3000" } });
+  if (has("artisan")) found.push({ name: "Laravel", sign: "artisan", web: { command: "php artisan serve", address: "http://localhost:8000", note: assets } });
+  if (/:phoenix\b/.test(text("mix.exs"))) found.push({ name: "Phoenix", sign: "mix.exs", web: { command: "mix phx.server", address: "http://localhost:4000" } });
+
+  if (pkg && found.length === 0) {
+    const web = pages();
+    // A package with a start script may serve pages or may not; `unsure` keeps that apart from a known dev server.
+    if (web) found.push({ name: kit?.[1] ?? "Node.js", sign: "package.json", web, unsure: !kit });
+  }
+  if (found.length === 0 && /\.executable(Target)?\(/.test(text("Package.swift")) && xcodeProjects([dir]).length === 0) {
+    found.push({ name: "Swift Package Manager", sign: "Package.swift", window: { command: "swift run" } });
+  }
+  if (found.length === 0 && has("index.html")) found.push({ name: "plain HTML", sign: "index.html", web: { address: "index.html" } });
+  return found;
+}
+
+/** Folders below this one that hold an app, for a repository that keeps several side by side. */
+function appFolders(dir) {
+  const below = (folder) => {
+    try {
+      return readdirSync(folder, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules")
+        .map((entry) => path.join(folder, entry.name));
+    } catch {
+      return [];
+    }
+  };
+  return [...below(dir), ...["apps", "packages"].flatMap((name) => below(path.join(dir, name)))]
+    .map((folder) => {
+      const kits = toolkits(folder).filter((kit) => !kit.unsure);
+      const made = kits.length > 0 ? kits.map((kit) => kit.name) : xcodeProjects([folder]).length > 0 ? ["Xcode"] : [];
+      return { folder: path.relative(dir, folder), made };
+    })
+    .filter((entry) => entry.made.length > 0);
+}
+
+/** What 'appshots check' says about one toolkit: a line for each place its app runs in, the commands in order. */
+function toolkitLines(kit, simulator, xcode) {
+  const lines = [];
+  if (kit.simulator) {
+    const command = kit.simulator.replaceAll("<udid>", simulator?.udid ?? "<udid>").replaceAll("<simulator>", simulator?.name ?? "<simulator>");
+    const first = simulator?.booted ? "" : simulator ? "'appshots boot', then " : xcode ? "'appshots boot', which prints the udid, then " : "once Xcode is installed, 'appshots boot', which prints the udid, then ";
+    lines.push(`  In the simulator: ${first}'${command}' in the background, then 'appshots capture --clean --name <name>'`);
+  }
+  if (kit.window) {
+    const named = !kit.window.app ? "The window goes by the name of the program that opens it" : kit.window.built ? `Its window goes by "${kit.window.app}"` : `Its window goes by "${kit.window.app}" while it runs from source`;
+    lines.push(`  In a window on this Mac: '${kit.window.command}' in the background, then 'appshots capture --mac ${kit.window.app ? `"${kit.window.app}"` : "<app>"} --name <name>'. ${named}; 'appshots capture --mac' alone lists the windows that are open.`);
+  }
+  if (kit.web?.command) {
+    const { command, address, note = "" } = kit.web;
+    const where = address ? `usually at ${address}; it prints the address it took` : "read the address off what it prints";
+    lines.push(`  In a browser${kit.unsure ? ", if it serves pages" : ""}: '${command}' in the background${note} (${where}), then 'appshots capture --web ${address ?? "<address>"} --name <name>'`);
+  } else if (kit.web) {
+    lines.push(`  In a browser: 'appshots capture --web ${kit.web.address} --name <name>' opens the file as it is`);
+  }
+  return lines;
 }
 
 // ---------------------------------------------------------------- build and run
@@ -743,8 +1281,9 @@ function xcodeProjects(dirs) {
   return [];
 }
 
-// This folder, or ./ios, where React Native and Flutter keep theirs.
-const projectDirs = () => [process.cwd(), path.join(process.cwd(), "ios")];
+// This folder, or where a toolkit keeps the Xcode project it wraps: ./ios for React Native and Flutter,
+// ./ios/App for Capacitor, ./iosApp for Kotlin Multiplatform.
+const projectDirs = () => [".", "ios", "ios/App", "iosApp"].map((dir) => path.join(process.cwd(), dir));
 const fromHere = (file) => path.relative(process.cwd(), file) || ".";
 const container = (project) => [project.endsWith(".xcworkspace") ? "-workspace" : "-project", project];
 
@@ -756,10 +1295,12 @@ function findXcodeProject(given) {
   const found = xcodeProjects(typeof given === "string" ? [path.resolve(given)] : projectDirs());
   if (found.length === 1) return found[0];
   if (found.length > 1) fail(`Several workspaces or projects are here; pick one with --project <path>:\n${found.map((file) => `  ${fromHere(file)}`).join("\n")}`);
+  if (typeof given === "string") fail(`No Xcode workspace or project in ${given}. For run, --project is the workspace or project to build; the project a screenshot goes to is --to <project>.`);
+  const kits = toolkits(process.cwd()).filter((kit) => !kit.unsure);
   fail(
-    typeof given === "string"
-      ? `No Xcode workspace or project in ${given}. For run, --project is the workspace or project to build; the project a screenshot goes to is --to <project>.`
-      : "No Xcode workspace or project in this folder or in ./ios. Run this in your app's folder, or point at it with --project <path>.",
+    kits.length > 0
+      ? `No Xcode workspace or project here: this app is made with ${kits.map((kit) => kit.name).join(" and ")}, and 'appshots run' builds Xcode projects only. Start it with its own command and capture it where it runs. 'appshots check' gives the commands.`
+      : "No Xcode workspace or project in this folder or in ./ios. Run this in your app's folder, or point at it with --project <path>. An app made with something else is started by its own command; 'appshots check' says how.",
   );
 }
 
@@ -1014,6 +1555,7 @@ async function uploadAll(config, project, sources, flags) {
  */
 async function shoot(project, names, flags) {
   if (!process.stdin.isTTY) fail("'appshots shoot' is for a person at the Terminal: it waits for a key before each screenshot. An agent takes them with 'appshots capture'.");
+  if (flags.web) fail("'appshots shoot' captures what a person has opened, and a web page is drawn without a window. Take each page by its address: appshots capture --web <address> --name <name> --project <project>");
   const config = loadConfig();
   const device = shotDevice(flags);
   const language = shotLanguage(flags);
@@ -1172,20 +1714,32 @@ async function check() {
   const skill = await skillStatus();
   if (skill) console.log(`Skill: ${skill}`);
 
+  const projects = xcodeProjects(projectDirs());
+  const kits = toolkits(process.cwd());
+  const known = kits.filter((kit) => !kit.unsure);
+  // A simulator is where the toolkit's own command puts the app, when it has one for iOS.
+  const starter = kits.some((kit) => kit.simulator) ? "boot" : "run";
+  // An app that runs in a window or a browser only has no use for Xcode or a simulator.
+  const apart = projects.length === 0 && known.length > 0 && starter === "run";
+
   const version = process.platform === "darwin" ? spawnSync("xcodebuild", ["-version"], { encoding: "utf8", env: xcodeEnv() }) : null;
   const xcode = version?.status === 0;
   if (xcode) {
     const dir = xcodeEnv().DEVELOPER_DIR ?? execFileSync("xcode-select", ["-p"], { encoding: "utf8" }).trim();
     console.log(`Xcode: ${dir.replace(/\/Contents\/Developer\/?$/, "")}, version ${version.stdout.match(/Xcode (\S+)/)?.[1] ?? "unknown"}`);
   } else if (version) {
-    console.log("Xcode: not found. Install Xcode from the App Store; the Command Line Tools alone cannot build an app or run a simulator.");
+    console.log(apart ? "Xcode: not found, and this project needs none." : "Xcode: not found. Install Xcode from the App Store; the Command Line Tools alone cannot build an app or run a simulator.");
   } else {
-    console.log("Xcode: this is not a Mac. Building and capturing need one; 'appshots upload' takes screenshots you already have.");
+    console.log("Xcode: this is not a Mac. Simulators, devices and Mac windows need one. 'appshots capture --web <address>' takes a web app's pages here, and 'appshots upload' takes screenshots you already have.");
   }
 
-  const projects = xcodeProjects(projectDirs());
-  if (projects.length === 0) {
-    console.log("Project: none in this folder. Run 'appshots run' in your app's folder, the one with the .xcworkspace or .xcodeproj, or give it --project <path>.");
+  if (projects.length === 0 && known.length > 0) {
+    console.log("Project: no Xcode workspace or project here, and 'appshots run' builds only those. This app is captured as its toolkit runs it:");
+  } else if (projects.length === 0) {
+    console.log("Project: nothing recognised in this folder. Run this in your app's folder. 'appshots run' builds an Xcode workspace or project, and --project <path> points at one elsewhere. An app made with anything else is started by its own command and captured where it runs: 'appshots capture' in the simulator, 'appshots capture --mac <app>' in a window on this Mac, 'appshots capture --web <address>' in a browser.");
+    const below = appFolders(process.cwd());
+    const list = below.slice(0, 8).map((entry) => `${entry.folder} (${entry.made.join(", ")})`).join(", ");
+    if (below.length > 0) console.log(`  Apps below this folder: ${list}${below.length > 8 ? `, and ${below.length - 8} more` : ""}. Run 'appshots check' in the one whose screens you want.`);
   } else if (projects.length > 1) {
     console.log(`Project: several in this folder, so 'appshots run' needs --project <path>: ${projects.map(fromHere).join(", ")}`);
   } else {
@@ -1199,6 +1753,18 @@ async function check() {
   }
 
   const simulators = xcode ? attempt(availableSimulators) : { problem: "unknown without Xcode" };
+  for (const kit of kits) {
+    const head = projects.length > 0 && kit.simulator ? ", so its own command starts the app rather than 'appshots run'" : "";
+    console.log(`Made with ${kit.name} (${kit.sign})${head}:`);
+    for (const line of toolkitLines(kit, simulators.value ? recommendedSimulator(simulators.value, "iphone") : null, xcode)) console.log(line);
+  }
+  if (kits.some((kit) => kit.web) || (projects.length === 0 && kits.length === 0)) {
+    const browser = findBrowser();
+    console.log(browser ? `Browser: ${browser.name}, which draws the pages for 'appshots capture --web'` : "Browser: none found. 'appshots capture --web' draws pages with Chrome, Chromium, Edge or Brave. Install one, or point APPSHOTS_BROWSER at a Chromium browser's program.");
+  }
+  // Nothing below concerns an app that never runs in a simulator or on a device.
+  if (apart) return;
+
   if (simulators.problem) {
     console.log(`Simulators: ${simulators.problem.split("\n")[0]}`);
   } else {
@@ -1206,7 +1772,7 @@ async function check() {
     const recommended = new Set();
     for (const [kind, { label, flag, store }] of Object.entries(SIM_KINDS)) {
       const simulator = recommendedSimulator(simulators.value, kind);
-      const command = `'appshots run${flag}'`;
+      const command = `'appshots ${starter}${flag}'`;
       if (!simulator) {
         // Few apps need the Duo, so its absence is not worth a line.
         if (kind !== "duo") console.log(`  ${label}: none. Add an iOS simulator in Xcode under Settings > Components.`);
@@ -1225,7 +1791,7 @@ async function check() {
     const booted = simulators.value.filter((sim) => sim.booted).sort((a, b) => recommended.has(b.udid) - recommended.has(a.udid));
     const which = booted.length > 1 ? " --sim <simulator>" : "";
     if (booted.length === 0) {
-      console.log("Apps: no simulator is booted. 'appshots run' boots one, then builds and installs the app in this folder.");
+      console.log(starter === "run" ? "Apps: no simulator is booted. 'appshots run' boots one, then builds and installs the app in this folder." : "Apps: no simulator is booted. 'appshots boot' boots one, and the project's own command builds and installs the app there.");
     } else {
       console.log(`Apps: these are installed and start without a build, with 'appshots launch <bundle id>${which}'`);
       // Each simulator is a question to simctl, and a long list helps nobody.
@@ -1234,7 +1800,7 @@ async function check() {
         const more = apps?.length > 8 ? `, and ${apps.length - 8} more` : "";
         const list = apps?.slice(0, 8).map((app) => `${app.name} (${app.bundleId})`).join(", ");
         if (!apps) console.log(`  ${simulator.name}: it is busy and did not answer. 'appshots simctl listapps ${simulator.udid}' asks again`);
-        else console.log(`  ${simulator.name}: ${list ? `${list}${more}` : "none of your own. 'appshots run' builds and installs the app in this folder"}`);
+        else console.log(`  ${simulator.name}: ${list ? `${list}${more}` : starter === "run" ? "none of your own. 'appshots run' builds and installs the app in this folder" : "none of your own yet"}`);
       }
       if (booted.length > 6) console.log(`  ${booted.length - 6} more booted simulators are not listed.`);
     }
@@ -1280,6 +1846,17 @@ async function dispatch(command, positional, flags, passthrough) {
     case "launch":
       if (positional.length !== 1) fail("Usage: appshots launch <bundle id> [--sim <name|udid>] [--dark|--light] [--lang <code>] [--capture <name>] [--to <project>] [-- <launch arguments>]");
       return launch(positional[0], flags, passthrough);
+    case "boot": {
+      if (positional.length > 0) fail("Usage: appshots boot [--ipad|--duo|--sim <name|udid>]");
+      const simulator = runSimulator(flags);
+      boot(simulator);
+      const note = simulator.fallback ? `. No ${SIM_KINDS[simKind(flags)].store} is installed, which is the size the store asks for` : "";
+      console.log(`Booted ${simulatorLabel(simulator)}  (${simulator.udid})${note}`);
+      const which = bootedSimulators().length > 1 ? ` --sim ${simulator.udid}` : "";
+      const own = toolkits(process.cwd()).find((kit) => kit.simulator)?.simulator.replaceAll("<udid>", simulator.udid).replaceAll("<simulator>", simulator.name);
+      console.log(`Next: ${own ? `'${own}' in the background` : "start the app there with the project's own command, which takes this udid"}, then: appshots capture --name <name> --project <project> --clean${which}`);
+      return;
+    }
     case "devices": {
       const simulators = bootedSimulators();
       const devices = connectedDevices();
@@ -1295,8 +1872,9 @@ async function dispatch(command, positional, flags, passthrough) {
       const config = typeof project === "string" ? loadConfig() : null;
       const device = shotDevice(flags);
       const language = shotLanguage(flags);
-      const shot = capture(flags);
-      if (config) await upload(config, project, shot.file, shot.name, device, language);
+      if (config) await hasLanguage(config, project, language);
+      const shot = flags.web ? await captureWeb(flags) : capture(flags);
+      if (config) await upload(config, project, shot.file, shot.name, shot.device ?? device, language);
       return;
     }
     case "shoot": {

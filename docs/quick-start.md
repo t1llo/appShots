@@ -8,7 +8,7 @@ There are two ways to a finished set. Both end in the same place: a project in t
 ## What you need
 
 - A Google account, to sign in.
-- **With an agent:** a Mac with [Node.js](https://nodejs.org) 18 or newer, Xcode, and a coding agent (Claude Code, Codex, OpenCode, Pi or another).
+- **With an agent:** a Mac with [Node.js](https://nodejs.org) 18 or newer and a coding agent (Claude Code, Codex, OpenCode, Pi or another). An iPhone or iPad app needs Xcode as well. A [web app](/docs/web-apps) needs Chrome, Edge or Brave instead.
 - **By hand:** a browser and screenshots of your app.
 
 ## With an agent
