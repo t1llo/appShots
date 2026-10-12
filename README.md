@@ -5,7 +5,7 @@ App Store screenshots for iPhone, iPad and Mac, made by your coding agent or by 
 [![Hosted app: live](https://img.shields.io/website?url=https%3A%2F%2Fshots.beffa.xyz&label=hosted%20app&up_message=live)](https://shots.beffa.xyz)
 [![MCP server](https://img.shields.io/badge/MCP-server-8250df?logo=modelcontextprotocol&logoColor=white)](#connect-an-agent)
 [![Self-host with Docker Compose](https://img.shields.io/badge/self--host-Docker%20Compose-2496ED?logo=docker&logoColor=white)](#host-it)
-[![License: MIT](https://img.shields.io/github/license/t1llo/appShots)](LICENSE)
+[![License: GPL-3.0](https://img.shields.io/github/license/t1llo/appShots)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/t1llo/appShots)](https://github.com/t1llo/appShots/commits/main)
 
 **[Try it at shots.beffa.xyz](https://shots.beffa.xyz)** · [Docs](https://shots.beffa.xyz/docs) · [Host it yourself](#host-it)
@@ -20,7 +20,7 @@ A coding agent can do the whole job over MCP: work out how your app is run, run 
 
 appShots runs as an app at **[shots.beffa.xyz](https://shots.beffa.xyz)**. Sign in with Google, open the Studio or connect your agent with one line, and make a set. There is no server to set up.
 
-This repository is that same app, under the MIT licence. To keep your screenshots to yourself, [host it](#host-it): two Docker commands run it on your own machine, and one Docker Compose file puts it on a server with your own sign-in and limits.
+This repository is that same app, under the GPL-3.0 licence. To keep your screenshots to yourself, [host it](#host-it): two Docker commands run it on your own machine, and one Docker Compose file puts it on a server with your own sign-in and limits.
 
 ## What it makes
 
@@ -452,6 +452,8 @@ Issues and pull requests are welcome. Run `npm run typecheck` before sending one
 
 ## License
 
-[MIT](LICENSE).
+Copyright (C) 2026 Tillo Beffa. appShots is free software under the [GNU General Public License, version 3](LICENSE). It comes with no warranty.
+
+The licence covers the appShots code. The screenshots, mockups and banners you make with it are yours.
 
 The icons are from [Phosphor Icons](https://phosphoricons.com) (MIT). The fonts are installed from [Fontsource](https://fontsource.org), each under its own licence: the SIL Open Font License for all but Roboto Slab and Permanent Marker, which are under Apache-2.0.

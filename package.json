@@ -2,7 +2,7 @@
   "name": "appshots",
   "version": "0.1.0",
   "private": true,
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/t1llo/appShots.git"
