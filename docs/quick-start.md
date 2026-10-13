@@ -50,5 +50,5 @@ The agent gets the screens, writes the headlines, builds the set and renders it.
 
 ## Then
 
-- Upload the files to App Store Connect. See [Render and export](/docs/export).
+- Upload the files to App Store Connect, by hand or with `appshots store push`. See [Upload to App Store Connect](/docs/app-store-connect).
 - Read [What App Review accepts](/docs/app-review) before you put ratings, awards or logos on a slide.

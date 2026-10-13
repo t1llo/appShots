@@ -28,6 +28,7 @@ This repository is that same app, under the GPL-3.0 licence. To keep your screen
 - **Header and search results assets**: the wide images of App Store Connect's Header and Search Results tab, with the copy kept inside the safe area.
 - **Banners** for the top of a README, a GitHub social preview, a link preview or a post.
 - **Mockups**: every screenshot in its device on a transparent background, for a website or a deck.
+- **The upload to App Store Connect**: one command puts every language into its language and every size onto its display, in the version you are preparing or a new one, and can change the texts of the store page. It runs on your Mac with an API key of your own, which never reaches the server, and it submits nothing.
 
 It comes with seventeen layouts, 41 fonts, 199 icons, badges, feature cards and backgrounds that can take their colours from the screenshot. The fonts are bundled and the device frames are drawn in CSS, so nothing is fetched while rendering.
 
@@ -338,6 +339,12 @@ appshots upload streaks ./screens                 # screenshots you already have
 appshots upload streaks logo.svg mascot.png --image   # a logo and other artwork for the slides
 appshots pull streaks --render                    # render everything and unpack it into ./store-screenshots/streaks
 appshots mockups streaks --style clay --shadow soft   # transparent device mockups into ./mockups/streaks
+appshots store login                              # save an App Store Connect API key: issuer ID, key ID and the path
+                                                  # of the .p8 file. The role Marketing is enough, and the key stays put
+appshots store push streaks --app com.example.streaks --dry-run
+                                                  # what would go into App Store Connect: each language and display.
+                                                  # Without --dry-run it uploads. Nothing is ever submitted for review
+appshots store text --app com.example.streaks     # the store page's texts as JSON; --set writes them back
 appshots update                                   # the skill and the CLI as the server has them now
 ```
 
@@ -422,7 +429,7 @@ A running server shows these pages at `/docs`, with its own address in the examp
 | | Pages |
 | --- | --- |
 | Start | [Overview](docs/index.md) · [Quick start](docs/quick-start.md) · [Connect an agent](docs/connect.md) · [Update](docs/update.md) |
-| Make a set | [The skill](docs/skill.md) · [Get your screens in](docs/screens.md) · [Mac apps](docs/mac.md) · [Web apps and other toolkits](docs/web-apps.md) · [The Studio](docs/studio.md) · [Logos and artwork](docs/images.md) · [Languages](docs/languages.md) · [Render and export](docs/export.md) · [Mockups](docs/mockups.md) · [Banners](docs/banners.md) · [App Review rules](docs/app-review.md) |
+| Make a set | [The skill](docs/skill.md) · [Get your screens in](docs/screens.md) · [Mac apps](docs/mac.md) · [Web apps and other toolkits](docs/web-apps.md) · [The Studio](docs/studio.md) · [Logos and artwork](docs/images.md) · [Languages](docs/languages.md) · [Render and export](docs/export.md) · [Upload to App Store Connect](docs/app-store-connect.md) · [Mockups](docs/mockups.md) · [Banners](docs/banners.md) · [App Review rules](docs/app-review.md) |
 | Reference | [Slides](docs/slides.md) · [Header and search results](docs/store-assets.md) · [Sizes](docs/sizes.md) · [Command line](docs/cli.md) · [MCP tools](docs/mcp.md) · [HTTP API](docs/api.md) |
 | Help | [Accounts, tokens and limits](docs/accounts.md) · [Troubleshooting](docs/troubleshooting.md) · [FAQ](docs/faq.md) |
 

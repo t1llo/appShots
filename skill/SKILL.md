@@ -1,6 +1,6 @@
 ---
 name: appshots
-description: Make the App Store screenshots for the app in this repository from start to finish. Asks a few questions, takes the screens from screenshots the user already has, from the iOS Simulator, from a plugged-in iPhone or iPad, from the window of a Mac app or from the pages of a web app, writes the headlines, and builds and renders the set on the appShots server. Works for iPhone, iPad and Mac apps and for web apps, whatever they are built with: Xcode, Flutter, React Native, Expo, Capacitor, Tauri, Electron or a web framework. Also makes device mockups: the app's screens inside an iPhone, iPad or MacBook on a transparent background, for a website or a README. And banners: the wide picture at the top of a README, a repository's social preview, a link preview. Use when asked for App Store or Mac App Store screenshots, store screenshots, a screenshot set, the header and search results assets of an app, device mockups of its screens, or a README banner or social preview made from them.
+description: Make the App Store screenshots for the app in this repository from start to finish. Asks a few questions, takes the screens from screenshots the user already has, from the iOS Simulator, from a plugged-in iPhone or iPad, from the window of a Mac app or from the pages of a web app, writes the headlines, and builds and renders the set on the appShots server. Works for iPhone, iPad and Mac apps and for web apps, whatever they are built with: Xcode, Flutter, React Native, Expo, Capacitor, Tauri, Electron or a web framework. Also makes device mockups: the app's screens inside an iPhone, iPad or MacBook on a transparent background, for a website or a README. And banners: the wide picture at the top of a README, a repository's social preview, a link preview. And it can put the finished set into App Store Connect from this Mac with the user's own API key: every language into its language, every device onto its display, in the version being prepared or a new one, along with the store page's texts, without ever submitting anything. Use when asked for App Store or Mac App Store screenshots, store screenshots, a screenshot set, the header and search results assets of an app, device mockups of its screens, a README banner or social preview made from them, or to upload screenshots or texts to App Store Connect.
 ---
 
 # appShots
@@ -9,7 +9,7 @@ Turn the app in this repository into a finished set of App Store screenshots: ge
 
 Follow the steps in order, the same way every time. Say in a line or two what you decided at each step and carry on.
 
-If what the user wants is not store screenshots but the devices alone, such as "iPhone mockups for the website" or "a transparent PNG of the app for the README", go to [Mockups](#mockups-for-a-website-or-a-readme) at the end. That needs no questions, no copy and no slides. If it is a wide picture with a headline, such as "a banner for the README" or "a social preview for the repository", go to [Banners](#a-banner-for-a-readme-or-a-link).
+If what the user wants is not store screenshots but the devices alone, such as "iPhone mockups for the website" or "a transparent PNG of the app for the README", go to [Mockups](#mockups-for-a-website-or-a-readme) at the end. That needs no questions, no copy and no slides. If it is a wide picture with a headline, such as "a banner for the README" or "a social preview for the repository", go to [Banners](#a-banner-for-a-readme-or-a-link). If the set exists already and the user only wants it uploaded, or wants the store page's texts changed, go to [step 10](#10-put-it-into-app-store-connect).
 
 ## Keep it quick
 
@@ -20,7 +20,7 @@ A set takes about ten minutes when the user supplies or opens the screens, and a
 - **Two tries per screen.** If a screen does not come up after two attempts, ask the user to open it and capture it then.
 - **Read little.** The README, the root view with its tabs or navigation, and the accent colour. Ten files at most.
 - **Render the whole set once,** then fix what is off in one go. Two rounds of fixes at most. Where the account's renders are counted, every `render` uses one, so do not render slide by slide.
-- **Only what was asked for.** An iPad or iPhone Duo set, more languages, and header and search results assets each cost time; make them when the user said yes to them.
+- **Only what was asked for.** An iPad or iPhone Duo set, more languages, and header and search results assets each cost time; make them when the user said yes to them. The same goes for the upload to App Store Connect and for the store page's texts.
 - If you pass the time above, stop, say what is holding things up, and ask how to go on.
 
 ## 1. Check the setup
@@ -33,7 +33,7 @@ Run this first, from the app's folder:
 appshots check
 ```
 
-It reports in one go: whether the server answers, whether this skill is the current one, which Xcode there is, the project in this folder and what it is made with, the commands that start it, the simulators it would use, the apps installed on the booted ones, and plugged-in devices. Each line says what to do when something is missing. These commands need the network and, depending on the app, Xcode and the simulator or a browser; if your shell is sandboxed and one fails for that reason, ask the user to allow it.
+It reports in one go: whether the server answers, whether this skill is the current one, whether an App Store Connect key is saved on this Mac, which Xcode there is, the project in this folder and what it is made with, the commands that start it, the simulators it would use, the apps installed on the booted ones, and plugged-in devices. Each line says what to do when something is missing. These commands need the network and, depending on the app, Xcode and the simulator or a browser; if your shell is sandboxed and one fails for that reason, ask the user to allow it.
 
 If the `Skill:` line says the server has a newer one, run `appshots update`, then read this file again from the top and follow the new one. If `check` is not a command this copy knows, it is an old one: ask the user to run the setup command again, as described below.
 
@@ -84,8 +84,9 @@ Ask these together, in one message, before doing anything else. Use this agent's
 3. **Where the app runs,** not for a Mac app or a web app, and only when `check` leaves it open: on a simulator or on the plugged-in iPhone or iPad? Name the ones `check` listed. If the app is installed on a booted simulator, ask whether that is the current build.
 4. **The look:** light or dark? Which languages, if more than the app's main one?
 5. **Extras:** Is there a real rating, download count, award or review to show? Services the app works with, whose logos belong on a slide? A logo, mascot or other artwork of their own to put on the slides, and where the files are? Header and search results assets as well?
+6. **App Store Connect:** shall the finished set be put into App Store Connect as well, or do they upload it themselves? Not for a web app that is not in the App Store. It needs an App Store Connect API key of their own, which stays on this Mac. If the `App Store Connect:` line of `check` shows no key, ask for it with the same question, in the words of [the key](#the-key) in step 10: the issuer ID, the key ID, and the path of the `.p8` file. Never ask for what is in the file.
 
-If the user says to decide yourself: iPhone only (for a web app that only works on a wide screen, the Mac), do it yourself without changing the app, the appearance the app looks best in, the main language, no badges, no logos, no artwork, no header and search results assets.
+If the user says to decide yourself: iPhone only (for a web app that only works on a wide screen, the Mac), do it yourself without changing the app, the appearance the app looks best in, the main language, no badges, no logos, no artwork, no header and search results assets, and no upload to App Store Connect.
 
 ## 3. Understand the app
 
@@ -324,12 +325,70 @@ Tell the user:
 
 - The Studio link, {{SERVER}}/#/<project>, where every slide can still be edited by hand.
 - How to get the files: **Export ZIP** in the Studio, or `appshots pull <project>` for `./store-screenshots/<project>`. There is one folder per display of App Store Connect, and `README.txt` says which folder goes onto which display. A display only takes the files of its own folder.
+- If they did not ask for the upload: that `appshots store push <project>` can put the set into App Store Connect for them, with an API key of their own that stays on this Mac. One line, no more.
 - The slides with their headlines, in order.
 - For a Mac set: the files are in the `mac-2880` folder, 2880×1800, and go onto the macOS version of the app in App Store Connect.
 - Which devices have a set of their own, and how those differ from the iPhone's.
 - What you assumed or left out: no iPad or Duo set, no badges, a screen you could not reach, a file you changed for the debug launch argument, sample data you put into a local database.
 - That header and search results assets, if made, should be checked in App Store Connect's preview before submitting.
 - If the `appshots` MCP server answered 401 and you used the command instead: running the setup command again, from this folder, repairs the connection.
+
+When the user said yes to the upload in step 2, go on with step 10 once they are happy with the set.
+
+## 10. Put it into App Store Connect
+
+Only when the user asked for it: with a yes in step 2, or in their own words at any time. The upload runs on this Mac with `appshots store`, which talks to Apple directly. It changes the store page of a version that is being prepared and nothing else: it cannot submit a version for review or release one, and neither do you, by any other means.
+
+### The key
+
+The command needs an App Store Connect API key of the user's own. If the `App Store Connect:` line of `appshots check` names a key, it is there already: go on. If not, ask the user for three things and tell them where they are:
+
+- In App Store Connect, under **Users and Access → Integrations → App Store Connect API → Team Keys**: the **issuer ID** above the list of keys, the **key ID** beside the key, and the key file, `AuthKey_<key id>.p8`, which is downloaded once when the key is made.
+- A new key should get the role **Marketing**. That is enough to make a version and to change screenshots and texts, and it cannot submit or release anything. Only the Account Holder or an Admin of the team can make a key.
+- You need the **path** of the `.p8` file on this Mac, and never what is in it.
+
+Then save them. This checks them with Apple and lists the apps the key reaches:
+
+```bash
+appshots store login --issuer <issuer id> --key-id <key id> --key <path to the .p8 file>
+```
+
+**The key file is not yours to read.** Do not open it, print it, copy it, move it or put it into the repository, and do not go looking for key files on the Mac: the path the user gives is all the command needs. If the user pastes the key's contents into the chat, do not use them: tell them a pasted key should be revoked in App Store Connect, and ask for the path of a new one. The key, its path and the IDs never go to the appShots server either, not as a tool's argument and not into a project.
+
+### The upload
+
+1. **Find the app.** Take the bundle id from the project (`PRODUCT_BUNDLE_IDENTIFIER`, or the toolkit's own setting) and look for it among the apps `appshots store login` or `appshots store apps` lists. Ask the user when it is not among them or several fit.
+2. **Look first.** Run the dry run and show the user what it prints:
+
+   ```bash
+   appshots store push <project> --app <bundle id> --dry-run
+   ```
+
+   It names the version, and for each language and display how many screenshots would go up and what they would replace. It takes the files of the last render; add `--render` only when the slides changed since.
+3. **If it says no version is being prepared,** a new one has to be created. Take the number from the app (`MARKETING_VERSION`, or the toolkit's own version setting) when that is higher than the latest version the message names. Otherwise ask the user which number the next version gets. Then add `--version <number>` to the dry run and the upload. A version number is not a build number, and no build is made or touched.
+4. **If it says a language is not on the store page,** ask the user whether to add it. `--add-languages` does.
+5. **Wait for the user's yes to that plan,** unless they already told you to upload without asking. Then run the same command without `--dry-run`.
+6. **If Apple refuses a file,** the command says which and why, and ends with an error. Render again and run it once more. Do not work around it.
+
+The command leaves three things out and says so: screenshots for the iPhone Duo, which App Store Connect's API has no display for yet, the header and search results assets, and banners. The first two the user drags in by hand.
+
+`--lang de-DE,fr-FR` uploads only those languages, and `--only iphone,ipad` or `--only iphone-6.9` only those devices or folders. Mac screenshots need a macOS version of the app in App Store Connect: without one, leave them out with `--only iphone,ipad` and tell the user.
+
+### The texts
+
+Only when the user asks for them. `appshots store text --app <bundle id>` prints the store page's texts per language as JSON: `name`, `subtitle`, `description`, `keywords`, `promotionalText`, `whatsNew`, `supportUrl` and `marketingUrl`. To change some, hand back the same shape with only the ones to change:
+
+```bash
+appshots store text --app <bundle id> --set @texts.json --dry-run
+```
+
+Show the user the new texts in full and wait for their yes before you run it without `--dry-run`. Write for the store as for the slides: plain, specific, no invented figures. Apple's limits are 30 characters for the name and the subtitle, 100 for the keywords, 170 for the promotional text and 4000 for the description and what is new; the command refuses longer ones before anything is sent. An app on iOS and the Mac has texts for each: `--platform ios` or `--platform mac`.
+
+### Then tell the user
+
+- What went up: the version, the languages and the displays. And what did not: iPhone Duo screenshots, header and search results assets, a language that is not on the store page.
+- If a version was created: its number, and that it has no build yet.
+- That nothing was submitted. The link the command printed opens the app in App Store Connect, where they look the version over and submit it themselves.
 
 ## Mockups for a website or a README
 

@@ -1,6 +1,6 @@
 ---
 title: Render and export
-description: Render an appShots project to PNGs at exact App Store sizes and download them as a ZIP, from the Studio, the appshots command or an agent. Includes where each file goes in App Store Connect.
+description: Render an appShots project to PNGs at exact App Store sizes and download them as a ZIP, from the Studio, the appshots command or an agent. Includes where each file goes in App Store Connect, by hand or with one command.
 ---
 
 Rendering turns the slides into PNG files at the exact pixel sizes App Store Connect accepts. The previews in the Studio are drawn by the same code, so the files look like the previews.
@@ -90,6 +90,16 @@ An account gets {{RENDERS}} renders. One render is one press of **Export ZIP**, 
 When none are left, ask the person who runs the server for more. Their own renders are not counted.
 
 ## Upload to App Store Connect
+
+**With one command.** With an App Store Connect API key of your own, the `appshots` command puts every language into its language and every folder onto its display:
+
+```bash
+appshots store push streaks --app com.example.streaks --dry-run
+```
+
+The key stays on your Mac, and nothing is submitted for review. See [Upload to App Store Connect](/docs/app-store-connect).
+
+**By hand.**
 
 1. Open your app in [App Store Connect](https://appstoreconnect.apple.com), then the version you are preparing.
 2. Under **Previews and Screenshots**, pick the language at the top right.

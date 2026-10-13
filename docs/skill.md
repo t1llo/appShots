@@ -39,6 +39,7 @@ It also makes [banners](/docs/banners): ask for "a banner for the README" and th
 7. **Writes the copy**: headlines of two to five words, one benefit each.
 8. **Builds and renders** the set, looks at the result, and fixes single slides. Two rounds at most. When you asked for more than one device, each gets a set of its own: the same story, composed again for the iPad's or the Mac's canvas. See [A set for each device](/docs/slides#a-set-for-each-device).
 9. **Hands over**: the link to the project in the Studio, how to get the files, and what it assumed or left out.
+10. **Puts the set into App Store Connect**, if you said yes to that. It shows you what would go where, uploads after your yes, and submits nothing. See [Upload to App Store Connect](/docs/app-store-connect).
 
 ## The questions it asks
 
@@ -49,8 +50,9 @@ It also makes [banners](/docs/banners): ask for "a banner for the README" and th
 | Where the app runs | A simulator, or the plugged-in iPhone or iPad. Not asked for a Mac app or a web app |
 | The look | Light or dark, and which languages |
 | Extras | A real rating, download count, award or review. Logos of services the app works with. Your own logo or artwork. Header and search results images |
+| App Store Connect | Whether it uploads the finished set for you. If yes, and no key is saved on your Mac yet: the issuer ID, the key ID and the path of the key file |
 
-Say "decide yourself" and it takes: iPhone only, does everything itself without changing your app, the appearance the app looks best in, the main language, and no badges, logos, artwork or header images.
+Say "decide yourself" and it takes: iPhone only, does everything itself without changing your app, the appearance the app looks best in, the main language, no badges, logos, artwork or header images, and no upload.
 
 **"You open each screen" is the quickest way to real content.** The agent starts the app and gives you one command to paste. You open each screen and press Return.
 
@@ -61,6 +63,8 @@ Say "decide yourself" and it takes: iPhone only, does everything itself without 
 - **Write scripts or UI tests** to take screenshots. It uses the `appshots` command for everything on the Mac.
 - **Change your app without asking.** Reaching a screen sometimes needs a few lines that only exist in debug builds. It asks first and tells you which file it changed.
 - **Make videos.** appShots makes still images.
+- **Submit your app.** It can put screenshots and texts into the version you are preparing, when you ask it to. It never submits a version for review or releases one.
+- **Read your App Store Connect key.** It asks for the path of the key file and hands that to the `appshots` command. The key stays on your Mac and never reaches the appShots server.
 
 ## Get a better set
 

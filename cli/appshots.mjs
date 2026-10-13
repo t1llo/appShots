@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Mac-side companion to an appShots server: builds the app in the current folder and runs it in a
 // simulator, captures screenshots from a simulator or a connected iPhone/iPad, uploads them, and pulls the
-// rendered store screenshots back down. There are three ways to the screenshots: `appshots upload` takes
+// rendered store screenshots back down, or puts them into App Store Connect. There are three ways to the screenshots: `appshots upload` takes
 // the ones that exist already, `appshots shoot` captures while a person opens each screen, and
 // `appshots run` and `appshots launch` start the app on a given screen and capture it in one go.
 // An app that is not built with Xcode alone is started by its own toolkit and captured where it runs:
@@ -12,7 +12,7 @@
 // No dependencies, so it runs straight from a checkout: `node cli/appshots.mjs` or `npm link`.
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, createPrivateKey, sign } from "node:crypto";
 import { chmodSync, closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -35,7 +35,7 @@ const AGENTS = {
 };
 // Build logs go here, and with --fresh the builds themselves, one folder per project.
 const BUILD_CACHE = path.join(homedir(), "Library", "Caches", "appshots", "build");
-const BOOLEAN_FLAGS = new Set(["clean", "render", "help", "ipad", "duo", "dark", "light", "fresh", "image"]);
+const BOOLEAN_FLAGS = new Set(["clean", "render", "help", "ipad", "duo", "dark", "light", "fresh", "image", "dry-run", "add-languages"]);
 
 const HELP = `appshots: capture an app's screens and sync them with an appShots server.
 An app is captured where it runs, whatever it is built with: in the iOS Simulator or on a plugged-in
@@ -137,13 +137,39 @@ started by that toolkit's own command, and 'appshots check' says which.
       --status-bar <kind>, --time <9:41>   time it shows; and --frame none for the bare screenshot
       --width <pixels>                     Width of each PNG. auto, the default, shows the screenshot
                                            pixel for pixel
+  appshots store <command>               Put a finished set into App Store Connect from this Mac, with an
+                                         API key of your own. The key file stays where it is: only its
+                                         path is saved, and neither goes to the appShots server. Nothing
+                                         is ever submitted for review or released
+      login --issuer <issuer id> --key-id <key id> --key <path to the .p8 file>
+                                           Save the three and check them with Apple. A key with the
+                                           role Marketing is enough. Without --key, AuthKey_<key id>.p8
+                                           is looked for in ~/.appstoreconnect/private_keys
+      apps                                 List the apps the key reaches, with their bundle ids
+      push <project> --app <bundle id>     Upload the project's screenshots: each language into its
+                                           language, each folder onto its display, in place of what is
+                                           there. They go into the version being prepared
+        --version <number>                   Create that version when none is being prepared
+        --render                             Render first, as pull --render does
+        --from <folder>                      Take the files of an earlier 'appshots pull' instead
+        --lang <codes>                       Only these languages, such as de-DE,fr-FR
+        --only <devices or folders>          Only these, such as iphone,ipad or iphone-6.9,ipad-13
+        --add-languages                      Add a language the store page does not have yet
+        --dry-run                            Change nothing and say what would be done
+      text --app <bundle id>               Print the store page's texts per language as JSON: name,
+                                           subtitle, description, keywords, promotionalText, whatsNew,
+                                           supportUrl, marketingUrl
+        --set '<JSON>' | @file.json | -      Write the ones given, in that same shape. Takes --version,
+                                             --add-languages and --dry-run as push does
+        --platform <ios|mac>                 Which version's texts, for an app that has both
   appshots open [project]                Open the Studio in the browser
   appshots tools [tool]                  List the server's tools, or one tool's arguments
   appshots call <tool> [arguments]       Call one. Arguments are JSON: inline, @file.json, or - for stdin
                                          (--out <dir> is where returned pictures are saved)
 
 Server and token come from APPSHOTS_URL / APPSHOTS_TOKEN, or from 'appshots setup' or 'appshots login'.
-The token is a personal one from Connect in the Studio.`;
+The token is a personal one from Connect in the Studio. The App Store Connect key comes from
+'appshots store login', or from ASC_ISSUER_ID, ASC_KEY_ID and ASC_KEY_PATH.`;
 
 /** What fail() throws instead of exiting while attempt() is running. */
 class Failure extends Error {}
@@ -1592,9 +1618,9 @@ async function shoot(project, names, flags) {
   if (skipped.length > 0) console.log(`Skipped: ${skipped.join(", ")}`);
   if (at < names.length) console.log(`Stopped before: ${names.slice(at).join(", ")}`);
 }
-async function pull(config, project, flags) {
-  const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join("store-screenshots", project));
-  const response = await request(config, "GET", `/api/projects/${project}/export.zip${flags.render ? "?render=1" : ""}`);
+/** Downloads the rendered set as the server zips it and unpacks it into a folder. */
+async function fetchExport(config, project, outDir, render) {
+  const response = await request(config, "GET", `/api/projects/${project}/export.zip${render ? "?render=1" : ""}`);
   const dir = mkdtempSync(path.join(tmpdir(), "appshots-"));
   const zip = path.join(dir, "export.zip");
   try {
@@ -1605,6 +1631,11 @@ async function pull(config, project, flags) {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+async function pull(config, project, flags) {
+  const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join("store-screenshots", project));
+  await fetchExport(config, project, outDir, flags.render);
   console.log(`Screenshots are in ${outDir}`);
 }
 
@@ -1673,21 +1704,24 @@ async function tools(config, name) {
   }
 }
 
-async function call(config, name, input, flags) {
-  if (!name) fail("Usage: appshots call <tool> ['<arguments as JSON>' | @file.json | -]");
-  let source = input ?? "{}";
+/** JSON handed over on the command line: inline, as @file.json, or as - for what comes in on stdin. */
+function jsonInput(source, what) {
   if (source === "-") {
     source = readFileSync(0, "utf8");
   } else if (source.startsWith("@")) {
     if (!existsSync(source.slice(1))) fail(`No such file: ${source.slice(1)}`);
     source = readFileSync(source.slice(1), "utf8");
   }
-  let args;
   try {
-    args = JSON.parse(source);
+    return JSON.parse(source);
   } catch (error) {
-    fail(`The arguments are not valid JSON: ${error.message}`);
+    fail(`${what} not valid JSON: ${error.message}`);
   }
+}
+
+async function call(config, name, input, flags) {
+  if (!name) fail("Usage: appshots call <tool> ['<arguments as JSON>' | @file.json | -]");
+  const args = jsonInput(input ?? "{}", "The arguments are");
   const result = await rpc(config, "tools/call", { name, arguments: args });
   // An agent without MCP cannot be handed a picture, so pictures become files it can open.
   const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join(tmpdir(), "appshots"));
@@ -1705,6 +1739,613 @@ async function call(config, name, input, flags) {
   if (result.isError) process.exit(1);
 }
 
+// ---------------------------------------------------------------- App Store Connect
+
+// A finished set goes into App Store Connect from this Mac, with an API key of the user's own. The key file is
+// read here to sign a token that lasts ten minutes, and that token goes to Apple alone: the appShots server
+// never sees the key, the token, or where the key is. Nothing here submits a version for review or releases
+// one, and a key with the role Marketing, which is all this needs, could not.
+
+/** The issuer ID, the key ID and the path of the key file, as `store login` saves them. Never the key. */
+const STORE_FILE = path.join(path.dirname(CONFIG_FILE), "app-store-connect.json");
+// A stand-in for Apple's server on this machine can take its place, so the flow can be exercised without an
+// account. Nothing else can, so the token is never sent to another host.
+const STORE_API = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(process.env.APPSHOTS_STORE_API ?? "") ? process.env.APPSHOTS_STORE_API : "https://api.appstoreconnect.apple.com";
+
+/**
+ * The display of App Store Connect each folder of an export goes onto, as the API names it, and the size the
+ * pictures of that folder have. The names are a generation behind: APP_IPHONE_67 is the 6.9-inch display,
+ * APP_IPHONE_61 the 6.3-inch one and APP_IPHONE_58 the 6.1-inch one. The Mac has one display for its four
+ * sizes, so the largest folder there is goes onto it.
+ */
+const STORE_DISPLAYS = {
+  "iphone-6.9": ["APP_IPHONE_67", 1320, 2868],
+  "iphone-6.3": ["APP_IPHONE_61", 1206, 2622],
+  "iphone-6.5": ["APP_IPHONE_65", 1284, 2778],
+  "iphone-6.1": ["APP_IPHONE_58", 1170, 2532],
+  "iphone-5.5": ["APP_IPHONE_55", 1242, 2208],
+  "iphone-4.7": ["APP_IPHONE_47", 750, 1334],
+  "iphone-4": ["APP_IPHONE_40", 640, 1136],
+  "iphone-3.5": ["APP_IPHONE_35", 640, 960],
+  "ipad-13": ["APP_IPAD_PRO_3GEN_129", 2064, 2752],
+  "ipad-11": ["APP_IPAD_PRO_3GEN_11", 1668, 2420],
+  "ipad-12.9": ["APP_IPAD_PRO_129", 2048, 2732],
+  "ipad-10.5": ["APP_IPAD_105", 1668, 2224],
+  "ipad-9.7": ["APP_IPAD_97", 1536, 2048],
+  "mac-2880": ["APP_DESKTOP", 2880, 1800],
+  "mac-2560": ["APP_DESKTOP", 2560, 1600],
+  "mac-1440": ["APP_DESKTOP", 1440, 900],
+  "mac-1280": ["APP_DESKTOP", 1280, 800],
+};
+/** Folders whose display the API does not have yet. Their files go into App Store Connect by hand. */
+const STORE_BY_HAND = { "iphone-duo": "iPhone Duo", "iphone-duo-cover": "iPhone Duo" };
+const STORE_PLATFORMS = { IOS: "iOS", MAC_OS: "macOS" };
+const platformOf = (display) => (display === "APP_DESKTOP" ? "MAC_OS" : "IOS");
+/** The states in which the page of a version can still be changed. */
+const STORE_OPEN = new Set(["PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "INVALID_BINARY", "READY_FOR_REVIEW"]);
+/** The texts of a store page and how many characters each may have. The first two belong to the app, the rest to a version. */
+const STORE_TEXTS = { name: 30, subtitle: 30, description: 4000, keywords: 100, promotionalText: 170, whatsNew: 4000, supportUrl: 0, marketingUrl: 0 };
+const APP_TEXTS = ["name", "subtitle"];
+
+const STORE_HOWTO = `All three come from App Store Connect, under Users and Access > Integrations > App Store Connect API > Team Keys:
+the issuer ID is above the list of keys, the key ID is beside the key, and the .p8 file is the download offered
+once when the key is made. Give the key the role Marketing: it can then make a version and change screenshots
+and texts, and it cannot submit or release anything.`;
+
+/** The three settings, from the flags, the environment, or what `store login` saved. */
+function storeSettings(flags) {
+  let saved = {};
+  try {
+    saved = JSON.parse(readFileSync(STORE_FILE, "utf8"));
+  } catch {}
+  const pick = (flag, variable, key) => {
+    if (flags[flag] === true) fail(`--${flag} needs ${flag === "key" ? "the path of the .p8 file" : "a value"} after it.`);
+    return String(flags[flag] ?? process.env[variable] ?? saved[key] ?? "").trim();
+  };
+  return { issuerId: pick("issuer", "ASC_ISSUER_ID", "issuerId"), keyId: pick("key-id", "ASC_KEY_ID", "keyId"), keyFile: pick("key", "ASC_KEY_PATH", "keyFile") };
+}
+
+/** Reads the key so that it can sign, and says what is wrong in words a person can act on. Never prints any of it. */
+function storeKey({ issuerId, keyId, keyFile }) {
+  if (/BEGIN [A-Z ]*PRIVATE KEY/.test(keyFile)) fail("--key takes the path of the .p8 file, not what is in it. The key is never pasted anywhere.");
+  if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(issuerId)) fail(`"${issuerId}" is not an issuer ID. It is the long code with dashes above the list of keys in App Store Connect.`);
+  if (!/^[A-Z0-9]{6,20}$/i.test(keyId)) fail(`"${keyId}" is not a key ID. It is the short code beside the key in App Store Connect, such as 2X9R4HXF34.`);
+  // Without a path, the key is looked for where Apple's own tools look for it.
+  const folders = [path.resolve("private_keys"), path.join(homedir(), "private_keys"), path.join(homedir(), ".private_keys"), path.join(homedir(), ".appstoreconnect", "private_keys")];
+  const file = keyFile ? path.resolve(keyFile.replace(/^~(?=\/|$)/, homedir())) : folders.map((dir) => path.join(dir, `AuthKey_${keyId}.p8`)).find(existsSync);
+  if (!file) fail(`Where is the key? Give the path of the .p8 file with --key, or put it into ~/.appstoreconnect/private_keys as AuthKey_${keyId}.p8.`);
+  if (!existsSync(file) || !statSync(file).isFile()) fail(`There is no key file at ${file}. Run 'appshots store login' with --key <path to the .p8 file>.`);
+  let key;
+  try {
+    key = createPrivateKey(readFileSync(file));
+  } catch {
+    fail(`${file} is not a private key. It has to be the .p8 file from App Store Connect, as it was downloaded.`);
+  }
+  if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1") fail(`${file} is not an App Store Connect key.`);
+  return { issuerId, keyId, file, key };
+}
+
+function storeAccount(flags) {
+  const settings = storeSettings(flags);
+  if (!settings.issuerId || !settings.keyId) fail(`No App Store Connect key is set up on this Mac. Run: appshots store login --issuer <issuer id> --key-id <key id> --key <path to the .p8 file>\n${STORE_HOWTO}`);
+  return storeKey(settings);
+}
+
+/** The App Store Connect line of 'appshots check'. It looks at what is saved and asks Apple nothing. */
+function storeStatus() {
+  const settings = storeSettings({});
+  if (!settings.issuerId && !settings.keyId) return "no key set up. It is only needed to put a finished set there: 'appshots store login'";
+  const { value, problem } = attempt(() => storeKey(settings));
+  return problem ?? `key ${value.keyId} (${tilde(value.file)}). 'appshots store push <project> --app <bundle id>' puts a finished set there`;
+}
+
+const storeToken = { value: "", until: 0 };
+
+/** A token Apple takes for ten minutes, signed with the key. A long upload gets a new one in time. */
+function appleToken(account) {
+  const now = Math.floor(Date.now() / 1000);
+  if (storeToken.until - now > 120) return storeToken.value;
+  const part = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const head = `${part({ alg: "ES256", kid: account.keyId, typ: "JWT" })}.${part({ iss: account.issuerId, iat: now, exp: now + 600, aud: "appstoreconnect-v1" })}`;
+  storeToken.value = `${head}.${sign("sha256", Buffer.from(head), { key: account.key, dsaEncoding: "ieee-p1363" }).toString("base64url")}`;
+  storeToken.until = now + 600;
+  return storeToken.value;
+}
+
+/** One call to the App Store Connect API. `what` finishes the sentence "App Store Connect could not ...". */
+async function apple(account, method, route, what, body) {
+  for (let tries = 1; ; tries++) {
+    let response;
+    try {
+      response = await fetch(STORE_API + route, {
+        method,
+        body: body ? JSON.stringify(body) : undefined,
+        headers: { authorization: `Bearer ${appleToken(account)}`, ...(body ? { "content-type": "application/json" } : {}) },
+        signal: AbortSignal.timeout(60000),
+      });
+    } catch (error) {
+      // Asking again is safe. A change that may have arrived is not sent a second time.
+      if (method === "GET" && tries < 3) continue;
+      fail(`Cannot reach App Store Connect: ${error.cause?.message ?? error.message}`);
+    }
+    // Too many requests means this one was not looked at, so it can go again after a pause.
+    if ((response.status === 429 || (response.status >= 500 && method === "GET")) && tries < 4) {
+      await pause(tries * 3000);
+      continue;
+    }
+    const text = await response.text();
+    let reply = null;
+    try {
+      reply = text ? JSON.parse(text) : null;
+    } catch {}
+    if (response.ok) return reply;
+    const detail = [...new Set((reply?.errors ?? []).map((error) => error.detail || error.title).filter(Boolean))].join(" ") || `It answered ${response.status}.`;
+    if (response.status === 401) fail(`App Store Connect did not accept the key. ${detail} Check the issuer ID and the key ID, and that the key has not been revoked, then run 'appshots store login' again.`);
+    if (response.status === 403) fail(`App Store Connect does not let this key ${what}. ${detail} A key keeps the role it was made with, and this needs Marketing or App Manager.`);
+    fail(`App Store Connect could not ${what}. ${detail}`);
+  }
+}
+
+/** Every item of a list, however many pages Apple splits it into. */
+async function appleList(account, route, what) {
+  const items = [];
+  for (let next = route; next; ) {
+    const page = await apple(account, "GET", next, what);
+    items.push(...(page?.data ?? []));
+    // The link to the next page is followed only while it stays with the same server, because the token goes along.
+    next = page?.links?.next?.startsWith(`${STORE_API}/`) ? page.links.next.slice(STORE_API.length) : null;
+  }
+  return items;
+}
+
+async function storeApps(account) {
+  const apps = await appleList(account, "/v1/apps?limit=200", "list the apps");
+  return apps.map((app) => ({ id: app.id, name: app.attributes?.name ?? "", bundleId: app.attributes?.bundleId ?? "" })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+const appLines = (apps) => apps.map((app) => `  ${app.bundleId.padEnd(Math.max(...apps.map((each) => each.bundleId.length)))}  ${app.name}`).join("\n");
+
+/** The app --app names by its bundle id, its name or its Apple ID. Left out, it is the only one the key reaches. */
+async function storeApp(account, query) {
+  const apps = await storeApps(account);
+  if (apps.length === 0) fail("This key reaches no app. A key sees the apps of its own team: is it that team's?");
+  if (typeof query !== "string") {
+    if (apps.length === 1) return apps[0];
+    fail(`Which app? Name it with --app <bundle id>:\n${appLines(apps)}`);
+  }
+  const wanted = query.toLowerCase();
+  const found = apps.filter((app) => app.bundleId.toLowerCase() === wanted || app.id === query || app.name.toLowerCase() === wanted);
+  if (found.length === 1) return found[0];
+  fail(`${found.length > 1 ? "Several apps are" : "No app is"} "${query}" for this key. It reaches:\n${appLines(apps)}`);
+}
+
+function promptLine(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/** Whether a file sits in a Git repository that would take it along in a commit. */
+function couldBeCommitted(file) {
+  const git = (args) => spawnSync("git", ["-C", path.dirname(file), ...args], { encoding: "utf8" });
+  return git(["rev-parse", "--is-inside-work-tree"]).stdout?.trim() === "true" && git(["check-ignore", "-q", file]).status === 1;
+}
+
+async function storeLogin(flags) {
+  const settings = storeSettings(flags);
+  if (!settings.issuerId || !settings.keyId) {
+    // A person at the Terminal is asked for what is missing. None of the three is a secret, and the key itself is never asked for.
+    if (!process.stdin.isTTY) fail(`Usage: appshots store login --issuer <issuer id> --key-id <key id> --key <path to the .p8 file>\n${STORE_HOWTO}`);
+    console.log(`${STORE_HOWTO}\n`);
+    settings.issuerId ||= await promptLine("Issuer ID: ");
+    settings.keyId ||= await promptLine("Key ID: ");
+    settings.keyFile ||= await promptLine("Path to the .p8 file (empty to look in ~/.appstoreconnect/private_keys): ");
+  }
+  const account = storeKey(settings);
+  const apps = await storeApps(account);
+  mkdirSync(path.dirname(STORE_FILE), { recursive: true });
+  writeFileSync(STORE_FILE, `${JSON.stringify({ issuerId: account.issuerId, keyId: account.keyId, keyFile: account.file }, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(STORE_FILE, 0o600);
+  console.log(`App Store Connect accepted key ${account.keyId}. Its ID, the issuer ID and where it is are saved in ${tilde(STORE_FILE)}.`);
+  console.log(`The key itself stays in ${tilde(account.file)}. It signs in to Apple from this Mac and goes nowhere else.`);
+  if (couldBeCommitted(account.file)) console.log("  ! That is inside a Git repository, where it could end up in a commit. Move it out, to ~/.appstoreconnect/private_keys for one, and run this again.");
+  console.log(apps.length > 0 ? `It reaches ${apps.length === 1 ? "one app" : `${apps.length} apps`}:\n${appLines(apps)}` : "It reaches no app yet.");
+  console.log("Next: appshots store push <project> --app <bundle id> --dry-run");
+}
+
+const versionState = (version) => version.attributes?.appVersionState ?? version.attributes?.appStoreState ?? "UNKNOWN";
+const plainState = (state) => ({ PREPARE_FOR_SUBMISSION: "being prepared", READY_FOR_DISTRIBUTION: "on the App Store", READY_FOR_SALE: "on the App Store" })[state] ?? state.toLowerCase().replaceAll("_", " ");
+
+/** The versions of an app on one platform, the newest first. */
+async function storeVersions(account, app, platform) {
+  const versions = await appleList(account, `/v1/apps/${app.id}/appStoreVersions?filter[platform]=${platform}&limit=200`, `list the versions of ${app.name}`);
+  return versions.sort((a, b) => String(b.attributes?.createdDate ?? "").localeCompare(String(a.attributes?.createdDate ?? "")));
+}
+
+/**
+ * The version whose page gets changed: the one being prepared, or with --version a new one. App Store Connect
+ * holds one such version per platform. Nothing is created here: a version that has to be comes back without an id,
+ * and with the one before it, whose languages, texts and screenshots Apple carries over into the new one.
+ */
+async function storeVersion(account, app, platform, flags) {
+  if (flags.version === true) fail("--version needs a number, such as --version 1.3.");
+  const wanted = typeof flags.version === "string" ? flags.version.trim() : "";
+  const system = STORE_PLATFORMS[platform];
+  const versions = await storeVersions(account, app, platform);
+  // Naming a version for a platform the app does not have would add that platform to the app.
+  if (versions.length === 0) fail(`${app.name} has no ${system} version in App Store Connect. ${platform === "MAC_OS" ? "Mac screenshots go onto the macOS version of an app: add that platform there first, or leave them out with --only iphone,ipad." : "Add that platform there first, or leave its screenshots out with --only mac."}`);
+  const open = versions.find((version) => STORE_OPEN.has(versionState(version)));
+  const named = wanted ? versions.find((version) => version.attributes.versionString === wanted) : null;
+  const say = (version) => `${version.attributes.versionString} (${plainState(versionState(version))})`;
+  if (named && named !== open) fail(`Version ${say(named)} of ${app.name} for ${system} can no longer be changed. ${open ? `The one being prepared is ${open.attributes.versionString}: leave out --version to use it.` : "Name a new one with --version."}`);
+  if (open && (named || !wanted)) return { id: open.id, number: open.attributes.versionString, platform };
+  if (open) fail(`Version ${open.attributes.versionString} of ${app.name} for ${system} is being prepared already, and App Store Connect holds one at a time. Leave out --version to use it, or rename it there first.`);
+  if (!wanted) fail(`No version of ${app.name} for ${system} is being prepared: the latest is ${say(versions[0])}. Name the next one and it is created: --version <number>`);
+  if (!/^\d+(\.\d+){0,2}$/.test(wanted)) fail(`"${wanted}" is not a version number. App Store Connect takes up to three numbers with dots between them, such as 1.3 or 2.0.1.`);
+  return { id: null, number: wanted, platform, before: versions[0].id };
+}
+
+async function createVersion(account, app, version) {
+  const body = { data: { type: "appStoreVersions", attributes: { platform: version.platform, versionString: version.number }, relationships: { app: { data: { type: "apps", id: app.id } } } } };
+  version.id = (await apple(account, "POST", "/v1/appStoreVersions", `create version ${version.number}`, body)).data.id;
+  console.log(`Created version ${version.number} of ${app.name} for ${STORE_PLATFORMS[version.platform]}.`);
+}
+
+/** The languages a version's store page has. For a version a dry run would create, the ones it would start with. */
+const versionLanguages = (account, version) => appleList(account, `/v1/appStoreVersions/${version.id ?? version.before}/appStoreVersionLocalizations?limit=200`, `list the languages of version ${version.number}`);
+
+const addLanguage = async (account, version, locale, texts = {}) =>
+  (await apple(account, "POST", "/v1/appStoreVersionLocalizations", `add the language ${locale}`, { data: { type: "appStoreVersionLocalizations", attributes: { locale, ...texts }, relationships: { appStoreVersion: { data: { type: "appStoreVersions", id: version.id } } } } })).data;
+
+/** Whether two codes mean one language: the same code, or the same language where one of them names no region. */
+const sameLanguage = (a, b) => a.toLowerCase() === b.toLowerCase() || ((!a.includes("-") || !b.includes("-")) && a.toLowerCase().split("-")[0] === b.toLowerCase().split("-")[0]);
+
+/** The language of the store page a folder or a text is for: the same code, or the only one that can be meant. */
+function storeLocale(code, listed) {
+  const exact = listed.find((entry) => entry.toLowerCase() === code.toLowerCase());
+  if (exact) return exact;
+  const close = listed.filter((entry) => sameLanguage(entry, code));
+  return close.length === 1 ? close[0] : null;
+}
+
+function listFlag(flags, name, example) {
+  if (flags[name] === undefined) return null;
+  if (typeof flags[name] !== "string") fail(`--${name} needs a value, such as --${name} ${example}.`);
+  return flags[name].split(",").map((part) => part.trim()).filter(Boolean);
+}
+
+/**
+ * What a folder of 'appshots pull' holds for the store: per language, the files of each folder that has a display
+ * in App Store Connect, in the order of their names. Banners and the header and search results images are not
+ * screenshots, so they are not among them.
+ */
+function exportSets(root, flags) {
+  const folders = (dir) => readdirSync(dir).filter((name) => !name.startsWith(".") && statSync(path.join(dir, name)).isDirectory());
+  const order = Object.keys(STORE_DISPLAYS);
+  const languages = listFlag(flags, "lang", "de-DE,fr-FR");
+  const only = listFlag(flags, "only", "iphone,ipad");
+  for (const part of only ?? []) {
+    if (part in STORE_BY_HAND || part === "duo") fail(`App Store Connect's API has no display for the ${STORE_BY_HAND["iphone-duo"]} yet, so its screenshots go in by hand.`);
+    if (!["iphone", "ipad", "mac"].includes(part) && !(part in STORE_DISPLAYS)) fail(`--only takes iphone, ipad, mac, or folders of the export: ${order.join(", ")}.`);
+  }
+  const sets = [];
+  const byHand = new Set();
+  let creatives = false;
+  const found = folders(root).sort();
+  for (const locale of found) {
+    if (languages && !languages.some((code) => sameLanguage(code, locale))) continue;
+    const taken = new Set();
+    for (const target of folders(path.join(root, locale)).sort((a, b) => order.indexOf(a) - order.indexOf(b))) {
+      if (target === "creative-assets") creatives = true;
+      if (target in STORE_BY_HAND && !only) byHand.add(target);
+      const [display, width, height] = STORE_DISPLAYS[target] ?? [];
+      if (!display || taken.has(display) || (only && !only.some((part) => target === part || target.startsWith(`${part}-`)))) continue;
+      const dir = path.join(root, locale, target);
+      const files = readdirSync(dir)
+        .filter((name) => /\.(png|jpe?g)$/i.test(name) && !name.startsWith("."))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+        .map((name) => path.join(dir, name));
+      if (files.length === 0) continue;
+      if (files.length > 10) fail(`${dir} holds ${files.length} screenshots, and App Store Connect takes ten per display.`);
+      // A picture of another size would be refused by Apple after the ones it replaces are gone, so it is caught here.
+      for (const file of files) {
+        const head = readFileSync(file).subarray(0, 24);
+        const png = head.length === 24 && head.readUInt32BE(0) === 0x89504e47;
+        if (png && (head.readUInt32BE(16) !== width || head.readUInt32BE(20) !== height)) fail(`${file} is ${head.readUInt32BE(16)} x ${head.readUInt32BE(20)}, and the pictures of ${target} are ${width} x ${height}. Nothing was changed.`);
+      }
+      taken.add(display);
+      sets.push({ locale, target, display, files });
+    }
+  }
+  const missing = (languages ?? []).filter((code) => !found.some((locale) => sameLanguage(code, locale)));
+  if (missing.length > 0) fail(`There is no language ${missing.join(", ")} among the files. They hold: ${found.join(", ") || "none"}.`);
+  if (sets.length > 0) return { sets, byHand: [...byHand], creatives };
+  if (found.some((name) => name in STORE_DISPLAYS)) fail(`${root} holds the folders of one language. --from takes the folder above it, the one with a folder per language.`);
+  fail(only ? `Nothing among the files is for ${only.join(", ")}.` : byHand.size > 0 ? `The files hold screenshots for the ${STORE_BY_HAND["iphone-duo"]} only, and App Store Connect's API has no display for it yet. They go in by hand.` : `There are no store screenshots in ${root}. Render the project first: --render does it.`);
+}
+
+/** Sends one file where Apple says and tells it the file is there. Returns the screenshot's id. */
+async function uploadScreenshot(account, set, file, checksum) {
+  const data = readFileSync(file);
+  const name = path.basename(file);
+  const body = { data: { type: "appScreenshots", attributes: { fileName: name, fileSize: data.length }, relationships: { appScreenshotSet: { data: { type: "appScreenshotSets", id: set } } } } };
+  const reserved = (await apple(account, "POST", "/v1/appScreenshots", `take ${name}`, body)).data;
+  for (const part of reserved.attributes?.uploadOperations ?? []) {
+    // The bytes go to the storage address Apple names, with the headers it names. The token does not go along.
+    for (let tries = 1; ; tries++) {
+      const sent = await fetch(part.url, {
+        method: part.method,
+        headers: Object.fromEntries((part.requestHeaders ?? []).map((header) => [header.name, header.value])),
+        body: data.subarray(part.offset, part.offset + part.length),
+        signal: AbortSignal.timeout(300000),
+      }).catch((error) => ({ ok: false, status: error.cause?.message ?? error.message }));
+      if (sent.ok) break;
+      if (tries === 3) fail(`${name} could not be sent to App Store Connect (${sent.status}). Run the command again: it starts that display over.`);
+      await pause(tries * 2000);
+    }
+  }
+  await apple(account, "PATCH", `/v1/appScreenshots/${reserved.id}`, `finish ${name}`, { data: { type: "appScreenshots", id: reserved.id, attributes: { uploaded: true, sourceFileChecksum: checksum } } });
+  return reserved.id;
+}
+
+/** Apple checks each file once it has arrived. Waits for that, three minutes at most, and returns what it refused. */
+async function settle(account, uploads) {
+  const state = (shot) => shot.attributes?.assetDeliveryState?.state;
+  const refused = [];
+  const until = Date.now() + 180000;
+  let waiting = uploads;
+  while (waiting.length > 0) {
+    const still = [];
+    for (const upload of waiting) {
+      const shots = (await appleList(account, `/v1/appScreenshotSets/${upload.set}/appScreenshots?limit=200`, "check the uploads")).filter((shot) => upload.names.has(shot.id));
+      if (shots.some((shot) => state(shot) !== "COMPLETE" && state(shot) !== "FAILED")) {
+        still.push(upload);
+        continue;
+      }
+      for (const shot of shots.filter((entry) => state(entry) === "FAILED")) {
+        const why = (shot.attributes.assetDeliveryState.errors ?? []).map((error) => error.description || error.code).filter(Boolean).join(" ");
+        refused.push(`${upload.label}  ${upload.names.get(shot.id)}: ${why || "refused without a reason"}`);
+      }
+    }
+    waiting = still;
+    if (waiting.length === 0 || Date.now() > until) break;
+    await pause(3000);
+  }
+  return { refused, late: waiting.reduce((sum, upload) => sum + upload.names.size, 0) };
+}
+
+const screenshots = (count) => `${count} ${count === 1 ? "screenshot" : "screenshots"}`;
+
+async function storePush(project, flags) {
+  if (flags.from === true || (!project && flags.from === undefined)) {
+    fail("Usage: appshots store push <project> --app <bundle id> [--version <number>] [--render] [--from <folder>] [--lang <codes>] [--only <devices or folders>] [--add-languages] [--dry-run]");
+  }
+  const dry = Boolean(flags["dry-run"]);
+  const account = storeAccount(flags);
+  // The key and the app are settled before anything is rendered or downloaded.
+  const app = await storeApp(account, flags.app);
+
+  let root;
+  if (typeof flags.from === "string") {
+    root = path.resolve(flags.from);
+    if (!existsSync(root) || !statSync(root).isDirectory()) fail(`No such folder: ${root}`);
+  } else {
+    // A folder of its own each time, so that no file of an earlier render goes along with this one's.
+    root = mkdtempSync(path.join(tmpdir(), "appshots-store-"));
+    process.on("exit", () => rmSync(root, { recursive: true, force: true }));
+    await fetchExport(loadConfig(), project, root, flags.render);
+  }
+  const { sets, byHand, creatives } = exportSets(root, flags);
+
+  // Every version is found before one is created, so a set for two platforms does not stop half way.
+  const versions = [];
+  for (const platform of new Set(sets.map((set) => platformOf(set.display)))) versions.push(await storeVersion(account, app, platform, flags));
+  if (dry) console.log("Dry run: nothing is changed.");
+  for (const version of versions) {
+    if (!version.id && !dry) await createVersion(account, app, version);
+    else console.log(`${app.name} ${version.number} for ${STORE_PLATFORMS[version.platform]}${version.id ? "" : ": this version would be created, with the languages and screenshots of the one before it"}`);
+  }
+
+  const uploads = [];
+  const notes = [];
+  let unchanged = 0;
+  for (const version of versions) {
+    const listed = await versionLanguages(account, version);
+    const codes = listed.map((entry) => entry.attributes.locale);
+    const mine = sets.filter((set) => platformOf(set.display) === version.platform);
+    for (const locale of new Set(mine.map((set) => set.locale))) {
+      const code = storeLocale(locale, codes) ?? locale;
+      let language = listed.find((entry) => entry.attributes.locale === code);
+      if (!language) {
+        if (!flags["add-languages"]) {
+          notes.push(`${locale}: version ${version.number} for ${STORE_PLATFORMS[version.platform]} has no such language on its store page. It has ${codes.join(", ")}. --add-languages adds it.`);
+          continue;
+        }
+        if (!dry) language = await addLanguage(account, version, locale);
+        console.log(`${code}  ${dry ? "would be added" : "added"} to the store page`);
+      }
+      const there = language ? await appleList(account, `/v1/appStoreVersionLocalizations/${language.id}/appScreenshotSets?limit=200`, `list the displays of ${code}`) : [];
+      for (const set of mine.filter((entry) => entry.locale === locale)) {
+        const label = `${code.padEnd(8)} ${set.target.padEnd(11)}`;
+        let display = there.find((entry) => entry.attributes.screenshotDisplayType === set.display);
+        const old = display ? await appleList(account, `/v1/appScreenshotSets/${display.id}/appScreenshots?limit=200`, `list the screenshots of ${code}`) : [];
+        const sums = set.files.map((file) => createHash("md5").update(readFileSync(file)).digest("hex"));
+        // The same files in the same order are left alone, so running this twice changes nothing the second time.
+        if (old.length === sums.length && old.every((shot, at) => shot.attributes.sourceFileChecksum === sums[at] && !["FAILED", "AWAITING_UPLOAD"].includes(shot.attributes.assetDeliveryState?.state))) {
+          console.log(`${label}  unchanged, the same ${screenshots(old.length)} are there`);
+          unchanged += old.length;
+          continue;
+        }
+        const instead = old.length > 0 ? `, in place of the ${old.length} there` : "";
+        if (dry) {
+          console.log(`${label}  would upload ${screenshots(sums.length)}${instead}`);
+          continue;
+        }
+        for (const shot of old) await apple(account, "DELETE", `/v1/appScreenshots/${shot.id}`, "remove a screenshot");
+        display ??= (await apple(account, "POST", "/v1/appScreenshotSets", `open the display ${set.target}`, { data: { type: "appScreenshotSets", attributes: { screenshotDisplayType: set.display }, relationships: { appStoreVersionLocalization: { data: { type: "appStoreVersionLocalizations", id: language.id } } } } })).data;
+        // Kept in a Map, which holds the order they were sent in whatever the ids look like.
+        const names = new Map();
+        for (const [at, file] of set.files.entries()) names.set(await uploadScreenshot(account, display.id, file, sums[at]), path.basename(file));
+        // They were sent in the order of the slides. This makes it the order on the store page too.
+        if (sums.length > 1) await apple(account, "PATCH", `/v1/appScreenshotSets/${display.id}/relationships/appScreenshots`, "put the screenshots in order", { data: [...names.keys()].map((id) => ({ type: "appScreenshots", id })) });
+        uploads.push({ label, set: display.id, names });
+        console.log(`${label}  uploaded ${screenshots(sums.length)}${instead}`);
+      }
+    }
+  }
+
+  for (const target of byHand) notes.push(`${target}: App Store Connect's API has no display for the ${STORE_BY_HAND[target]} yet. Drag those files onto it by hand.`);
+  if (creatives) notes.push("The header and search results images are not uploaded. They go onto the Header and Search Results tab by hand.");
+  const sent = uploads.reduce((sum, upload) => sum + upload.names.size, 0);
+  if (sent > 0) {
+    console.log("Waiting for Apple to check them...");
+    const { refused, late } = await settle(account, uploads);
+    for (const line of refused) console.log(`  ! ${line}`);
+    if (late > 0) console.log(`  ! Apple is still checking ${screenshots(late)}. They show in App Store Connect when it is done.`);
+    if (refused.length > 0) process.exitCode = 1;
+    console.log(`${screenshots(sent)} uploaded${refused.length > 0 ? `, ${refused.length} of them refused by Apple` : ""}${unchanged > 0 ? `, ${unchanged} were there already` : ""}.`);
+  } else if (!dry) {
+    console.log(unchanged > 0 ? "Nothing to upload: App Store Connect has these screenshots already." : "Nothing was uploaded.");
+  }
+  for (const note of notes) console.log(`  ! ${note}`);
+  if (dry) return console.log("Run it again without --dry-run to do it.");
+  console.log(`Nothing was submitted for review. Look the version over and submit it yourself: https://appstoreconnect.apple.com/apps/${app.id}`);
+}
+
+/** The texts handed to `store text --set`, refused as a whole when one of them cannot go in. */
+function checkedTexts(texts) {
+  if (!texts || typeof texts !== "object" || Array.isArray(texts) || Object.keys(texts).length === 0) fail(`The texts are one object per language, as 'appshots store text' prints them: {"en-US": {"description": "...", "keywords": "..."}}`);
+  const wrong = [];
+  for (const [locale, fields] of Object.entries(texts)) {
+    if (!fields || typeof fields !== "object" || Array.isArray(fields)) {
+      wrong.push(`${locale}: not an object of texts`);
+      continue;
+    }
+    for (const [field, value] of Object.entries(fields)) {
+      const length = typeof value === "string" ? [...value].length : 0;
+      if (!(field in STORE_TEXTS)) wrong.push(`${locale}: there is no text called "${field}". There are ${Object.keys(STORE_TEXTS).join(", ")}`);
+      else if (typeof value !== "string") wrong.push(`${locale}: ${field} is not a text`);
+      else if (STORE_TEXTS[field] > 0 && length > STORE_TEXTS[field]) wrong.push(`${locale}: ${field} has ${length} characters, and App Store Connect takes ${STORE_TEXTS[field]}`);
+    }
+  }
+  if (wrong.length > 0) fail(`The texts cannot go in as they are:\n${wrong.map((line) => `  ${line}`).join("\n")}`);
+  return texts;
+}
+
+/** The platform whose version holds the texts. An app on both has two sets of them. */
+async function textPlatform(account, app, flags) {
+  if (flags.platform !== undefined) {
+    const platform = { ios: "IOS", mac: "MAC_OS", macos: "MAC_OS" }[String(flags.platform).toLowerCase()];
+    if (!platform) fail("--platform needs ios or mac.");
+    return platform;
+  }
+  const versions = await appleList(account, `/v1/apps/${app.id}/appStoreVersions?limit=200`, `list the versions of ${app.name}`);
+  const has = (platform) => versions.some((version) => version.attributes?.platform === platform);
+  if (has("IOS") && has("MAC_OS")) fail(`${app.name} has an iOS and a macOS version, each with texts of its own. Say which: --platform ios or --platform mac`);
+  return has("MAC_OS") ? "MAC_OS" : "IOS";
+}
+
+/** The app's own page, which holds the name and the subtitle. While a version is being prepared there are two, and it is the new one. */
+async function appInfo(account, app) {
+  const infos = await appleList(account, `/v1/apps/${app.id}/appInfos?limit=200`, `read the page of ${app.name}`);
+  const state = (info) => info.attributes?.state ?? info.attributes?.appStoreState ?? "";
+  return infos.find((info) => STORE_OPEN.has(state(info))) ?? infos.find((info) => !/^READY_FOR_(DISTRIBUTION|SALE)$/.test(state(info))) ?? infos[0] ?? null;
+}
+
+const appNames = async (account, info) => (info ? appleList(account, `/v1/appInfos/${info.id}/appInfoLocalizations?limit=200`, "read the names and subtitles") : []);
+
+async function storeText(flags) {
+  if (flags.set === true) fail("--set needs the texts as JSON: inline, @file.json, or - for stdin.");
+  // What is wrong with the texts is said before Apple is asked anything.
+  const texts = flags.set === undefined ? null : checkedTexts(jsonInput(flags.set, "The texts are"));
+  const dry = Boolean(flags["dry-run"]);
+  const account = storeAccount(flags);
+  const app = await storeApp(account, flags.app);
+  const platform = await textPlatform(account, app, flags);
+  const system = STORE_PLATFORMS[platform];
+
+  if (!texts) {
+    if (flags.version === true) fail("--version needs a number, such as --version 1.3.");
+    const versions = await storeVersions(account, app, platform);
+    // The version being prepared, as that is the one the texts can be changed in. Without one, the latest.
+    const version = typeof flags.version === "string" ? versions.find((entry) => entry.attributes.versionString === flags.version.trim()) : (versions.find((entry) => STORE_OPEN.has(versionState(entry))) ?? versions[0]);
+    if (!version) fail(typeof flags.version === "string" ? `${app.name} has no version ${flags.version} for ${system}.` : `${app.name} has no ${system} version in App Store Connect.`);
+    const languages = await versionLanguages(account, { id: version.id, number: version.attributes.versionString });
+    const names = await appNames(account, await appInfo(account, app));
+    const page = {};
+    for (const language of languages) {
+      const name = names.find((entry) => entry.attributes.locale === language.attributes.locale);
+      page[language.attributes.locale] = Object.fromEntries(Object.keys(STORE_TEXTS).map((field) => [field, (APP_TEXTS.includes(field) ? name?.attributes[field] : language.attributes[field]) ?? ""]));
+    }
+    // The note goes to the error stream, so that the output is the JSON alone and can be saved to a file.
+    console.error(`${app.name} ${version.attributes.versionString} for ${system}, ${plainState(versionState(version))}`);
+    return console.log(JSON.stringify(page, null, 2));
+  }
+
+  const version = await storeVersion(account, app, platform, flags);
+  if (dry) console.log("Dry run: nothing is changed.");
+  if (!version.id && !dry) await createVersion(account, app, version);
+  else console.log(`${app.name} ${version.number} for ${system}${version.id ? "" : ": this version would be created, with the texts of the one before it"}`);
+  const languages = await versionLanguages(account, version);
+  const codes = languages.map((entry) => entry.attributes.locale);
+  const code = (locale) => storeLocale(locale, codes) ?? locale;
+  // Either every language goes in or none does: a text left out without a word would be worse than a refusal.
+  const absent = flags["add-languages"] ? [] : Object.keys(texts).filter((locale) => !codes.includes(code(locale)));
+  if (absent.length > 0) fail(`The store page of version ${version.number} has no ${absent.join(", ")}. It has ${codes.join(", ")}. --add-languages adds a language; nothing was changed.`);
+
+  const changed = {};
+  const own = (fields, ofApp) => Object.fromEntries(Object.entries(fields).filter(([field]) => APP_TEXTS.includes(field) === ofApp));
+  const differing = (fields, now) => Object.keys(fields).filter((field) => (now?.attributes[field] ?? "") !== fields[field]);
+  for (const [locale, fields] of Object.entries(texts)) {
+    const language = languages.find((entry) => entry.attributes.locale === code(locale));
+    const mine = own(fields, false);
+    const fresh = differing(mine, language);
+    changed[code(locale)] = fresh;
+    if (dry) continue;
+    if (!language) await addLanguage(account, version, locale, mine);
+    else if (fresh.length > 0) await apple(account, "PATCH", `/v1/appStoreVersionLocalizations/${language.id}`, `set the texts of ${code(locale)}`, { data: { type: "appStoreVersionLocalizations", id: language.id, attributes: Object.fromEntries(fresh.map((field) => [field, mine[field]])) } });
+  }
+  // Names and subtitles come after the languages, because a language added to a version gets its entry here from Apple.
+  if (Object.values(texts).some((fields) => Object.keys(own(fields, true)).length > 0)) {
+    const info = await appInfo(account, app);
+    if (!info) fail(`App Store Connect shows no page for ${app.name} to put a name or subtitle on.`);
+    const names = await appNames(account, info);
+    for (const [locale, fields] of Object.entries(texts)) {
+      const mine = own(fields, true);
+      const name = names.find((entry) => entry.attributes.locale === (storeLocale(locale, names.map((each) => each.attributes.locale)) ?? code(locale)));
+      const fresh = differing(mine, name);
+      changed[code(locale)].push(...fresh);
+      if (dry || fresh.length === 0) continue;
+      if (name) await apple(account, "PATCH", `/v1/appInfoLocalizations/${name.id}`, `set the name and subtitle of ${code(locale)}`, { data: { type: "appInfoLocalizations", id: name.id, attributes: Object.fromEntries(fresh.map((field) => [field, mine[field]])) } });
+      else await apple(account, "POST", "/v1/appInfoLocalizations", `set the name and subtitle of ${code(locale)}`, { data: { type: "appInfoLocalizations", attributes: { locale: code(locale), ...mine }, relationships: { appInfo: { data: { type: "appInfos", id: info.id } } } } });
+    }
+  }
+  for (const [locale, fields] of Object.entries(changed)) console.log(`${locale.padEnd(8)} ${fields.length > 0 ? `${dry ? "would set" : "set"} ${fields.join(", ")}` : "unchanged"}`);
+  if (dry) return console.log("Run it again without --dry-run to do it.");
+  console.log(`Nothing was submitted for review. Look the version over and submit it yourself: https://appstoreconnect.apple.com/apps/${app.id}`);
+}
+
+async function storeCommand([action, ...rest], flags) {
+  switch (action) {
+    case "login":
+      return storeLogin(flags);
+    case "apps": {
+      const apps = await storeApps(storeAccount(flags));
+      return console.log(apps.length > 0 ? appLines(apps) : "This key reaches no app.");
+    }
+    case "push":
+      return storePush(rest[0], flags);
+    case "text":
+      return storeText(flags);
+    default:
+      fail("Usage: appshots store login | apps | push <project> | text. 'appshots help' lists what each one takes.");
+  }
+}
+
 /**
  * One report of what there is to work with, so an agent sees it in a single call. Nothing missing makes it
  * fail: each line says what is there, or what to do about it.
@@ -1713,6 +2354,7 @@ async function check() {
   console.log(`Server: ${await serverStatus()}`);
   const skill = await skillStatus();
   if (skill) console.log(`Skill: ${skill}`);
+  console.log(`App Store Connect: ${storeStatus()}`);
 
   const projects = xcodeProjects(projectDirs());
   const kits = toolkits(process.cwd());
@@ -1898,6 +2540,8 @@ async function dispatch(command, positional, flags, passthrough) {
       console.log(projects.map((p) => `${p.id}  ${p.name}  (${p.slides} slides)`).join("\n") || "No projects yet.");
       return;
     }
+    case "store":
+      return storeCommand(positional, flags);
     case "open": {
       const config = loadConfig();
       spawnSync("open", [positional[0] ? `${config.url}/#/${positional[0]}` : config.url]);

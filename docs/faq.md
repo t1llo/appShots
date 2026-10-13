@@ -60,6 +60,10 @@ Yes. A project can have a README banner, a social preview for the repository, a 
 
 Yes. The **Mockups** page of a project shows every screenshot in its device with nothing behind it, to download as a transparent PNG. An agent and the `appshots mockups` command do the same. See [Mockups](/docs/mockups).
 
+### Can it upload the screenshots to App Store Connect?
+
+Yes, with an API key of your own. `appshots store push` puts every language into its language and every folder onto its display, in the version you are preparing or a new one, and it can change the texts of the store page. It never submits anything for review. See [Upload to App Store Connect](/docs/app-store-connect).
+
 ### Landscape screenshots, or app preview videos?
 
 iPhone and iPad sets are portrait, and a Mac set is landscape. There are no landscape iPhone or iPad sets and no videos.
@@ -89,6 +93,10 @@ Your account, and the person who runs the server, who has access to its disk. No
 ### Does my agent send my code to appShots?
 
 No. The agent reads your code on your Mac. What reaches the server is the screenshots it uploads and the slides it writes. What your agent sends to its own maker is between you and them.
+
+### Does appShots get my App Store Connect key?
+
+No. Uploading to App Store Connect is done by the `appshots` command on your Mac, which talks to Apple directly. The key file stays where you put it, and neither the key nor its path is sent to the appShots server. See [Upload to App Store Connect](/docs/app-store-connect#where-the-key-is-kept).
 
 ### How do I delete everything?
 

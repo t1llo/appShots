@@ -558,7 +558,14 @@ function exportNotes(name: string, outputs: OutputSet[], creatives: CreativeOutp
     const pad = [0, 1].map((column) => Math.max(...rows.map((row) => row[column]!.length)));
     for (const row of rows) lines.push(`  ${row[0]!.padEnd(pad[0]!)}  ${row[1]!.padEnd(pad[1]!)}  ${row[2]}`);
   }
-  lines.push("", "Every file is a PNG without transparency at the exact pixel size of its display.", "");
+  lines.push(
+    "",
+    "Every file is a PNG without transparency at the exact pixel size of its display.",
+    "",
+    "The appshots command can do the upload: appshots store push <project> --app <bundle id> --dry-run",
+    "It runs on your Mac with an App Store Connect API key of your own, and submits nothing for review.",
+    "",
+  );
   return lines.join("\n");
 }
 

@@ -106,6 +106,34 @@ appshots pull streaks --render
 | `appshots mockups <project>` | Downloads every screenshot in its device on a transparent background. See [Mockups](#mockups) |
 | `appshots open [project]` | Opens the Studio in the browser |
 
+## App Store Connect
+
+```bash
+appshots store login --issuer 57246542-96fe-1a63-e053-0824d011072a --key-id 2X9R4HXF34 --key ~/.appstoreconnect/private_keys/AuthKey_2X9R4HXF34.p8
+appshots store push streaks --app com.example.streaks --dry-run
+appshots store push streaks --app com.example.streaks
+appshots store text --app com.example.streaks
+```
+
+These put a finished set into App Store Connect from your Mac, with an API key of your own. The key file stays where it is, nothing of it goes to the appShots server, and nothing is submitted for review. See [Upload to App Store Connect](/docs/app-store-connect).
+
+| Command | What it does |
+| --- | --- |
+| `appshots store login` | Saves the issuer ID, the key ID and the path of the `.p8` file, checks them with Apple and lists the apps the key reaches. A key with the role Marketing is enough. Without the options it asks for each |
+| `appshots store apps` | Lists the apps the key reaches, with their bundle ids |
+| `appshots store push <project> --app <bundle id>` | Uploads the project's screenshots into the version being prepared: each language into its language, each folder onto its display, in place of what is there |
+| `appshots store text --app <bundle id>` | Prints the store page's texts per language as JSON. `--set '<JSON>'`, `--set @file.json` or `--set -` writes the ones given, in that same shape. `--platform ios` or `--platform mac` for an app that has both |
+
+| Option of `push` | What it does |
+| --- | --- |
+| `--version <number>` | Creates that version when none is being prepared. `text --set` takes it too |
+| `--render` | Renders first, as `pull --render` does |
+| `--from <folder>` | Takes the files of an earlier `appshots pull` |
+| `--lang <codes>` | Only these languages, such as `de-DE,fr-FR` |
+| `--only <devices or folders>` | Only these, such as `iphone,ipad` or `iphone-6.9,ipad-13` |
+| `--add-languages` | Adds a language the store page does not have yet. `text --set` takes it too |
+| `--dry-run` | Changes nothing and says what would be done. `text --set` takes it too |
+
 ## Mockups
 
 ```bash
@@ -151,6 +179,8 @@ Arguments are JSON: inline, `@file.json`, or `-` for standard input. Pictures a 
 | --- | --- |
 | Server and token | `~/.config/appshots/config.json`, readable by you only |
 | Or, for one command | The environment variables `APPSHOTS_URL` and `APPSHOTS_TOKEN` |
+| App Store Connect: issuer ID, key ID and the path of the key file | `~/.config/appshots/app-store-connect.json`, readable by you only. The key itself is never copied |
+| Or, for one command | The environment variables `ASC_ISSUER_ID`, `ASC_KEY_ID` and `ASC_KEY_PATH` |
 | The skill | `~/.claude/skills/appshots` for Claude Code, `~/.agents/skills/appshots` for the others |
 
 `appshots help` prints all of this.

@@ -69,7 +69,7 @@ function designGuide(base: string, space: Space): string {
 3. \`set_slides\` with the copy and design for the whole set. Put shared styling in \`theme\`; slides override it. Then give every other device the project has screenshots of a set composed for its own canvas (see A set for each device).
 4. \`render\`. It returns one contact sheet image per device: look at each, fix what is off with \`update_slide\`, render again.
 5. Optionally \`set_creative_assets\` for the product page header and the search results asset, or for a banner outside the store such as the picture at the top of a README (see Banners), and \`render\` again.
-6. The user downloads the PNGs from ${base}/#/<project> or with \`appshots pull <project>\`.${renderBudget(space)}
+6. The user downloads the PNGs from ${base}/#/<project> or with \`appshots pull <project>\`. \`appshots store push <project> --app <bundle id>\` puts them into App Store Connect instead, from the user's Mac with an API key of their own: that key never comes here, so no tool takes one, and nothing is submitted for review.${renderBudget(space)}
 When what is wanted is not store screenshots but the devices alone, for a website or a README, see Mockups at the end: that needs only steps 1 and 2. For a macOS app, read Mac apps before step 2; for a web app, or an app made with Flutter, React Native, Expo, Capacitor, Tauri or Electron, read Web apps and other toolkits.
 
 ## Uploading
@@ -588,7 +588,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
           lines.push("", kind === "store" ? "Header and search results assets (the dashed frame in the previews marks the safe area and is not in the PNG):" : "Banners:");
           for (const file of drawn) lines.push(`  ${file.placement} (${file.width}×${file.height}), ${file.locale}  ${base}/files/${id}/out/${file.path}`);
         }
-        lines.push("", `Studio: ${base}/#/${id}`, `ZIP of everything: ${base}/api/projects/${id}/export.zip (or \`appshots pull ${id}\`)`);
+        lines.push("", `Studio: ${base}/#/${id}`, `ZIP of everything: ${base}/api/projects/${id}/export.zip (or \`appshots pull ${id}\`)`, `Into App Store Connect, from the user's Mac with their own API key: \`appshots store push ${id} --app <bundle id> --dry-run\``);
         const left = rendersLeft(space.id);
         if (left != null) lines.push("", left === 0 ? "That was this account's last render. The person who runs the server can give it more." : `Renders left on this account: ${left}.`);
         if (result.warnings.length) lines.push("", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`));

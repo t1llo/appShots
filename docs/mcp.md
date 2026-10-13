@@ -27,6 +27,8 @@ A token reaches the projects of the account it belongs to and nothing else. See 
 5. `render`, and look at the pictures it returns.
 6. `update_slide` for the fixes, then `render` again.
 
+Uploading the result to App Store Connect is not among the tools. It needs your App Store Connect key, which stays on your Mac, so the [command line](/docs/app-store-connect) does it.
+
 Every `render` uses one of the account's renders, whatever it draws. So an agent writes the whole set first, renders it in one call, fixes everything it sees in one go and renders once more. The design guide tells it how many are left, and so does every `render`. See [Render and export](/docs/export#how-many-renders).
 
 ## Tools
