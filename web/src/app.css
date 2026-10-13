@@ -2562,7 +2562,11 @@ dialog .foot {
   padding: 64px 0 44px;
   text-align: center;
 }
-/* The setup line sits right under the headline, with the agents it can be written for above it. */
+/* The setup line sits right under the headline, with the agents it can be written for above it. The sentence that
+   announces it is for a phone, where the line comes further down. */
+.home-hero .home-lead {
+  display: none;
+}
 .hero-setup {
   display: grid;
   justify-items: center;
@@ -3102,6 +3106,9 @@ dialog .foot {
   .hero-note[data-when="account"],
   .home-ways + .home-note {
     display: none;
+  }
+  .home-hero .home-lead {
+    display: block;
   }
   .hero-note {
     order: 1;
