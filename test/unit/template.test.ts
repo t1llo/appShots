@@ -107,6 +107,15 @@ test("the reviews layout keeps its review badges out of the copy", async () => {
   assert.match(html!, /class="badges bottom"><div class="badge pill/);
 });
 
+test("cards and a list take the four columns they are given", async () => {
+  const features = Array.from({ length: 8 }, (_, i) => ({ icon: "star" as const, title: `Feature ${i + 1}` }));
+  const [cards, list] = await draw([
+    { layout: "features", headline: "Cards", features, featureStyle: "cards", featureCards: { columns: 4 } },
+    { layout: "features", headline: "List", features, featureStyle: "list", featureCards: { columns: 4 } },
+  ]);
+  for (const html of [cards!, list!]) assert.match(html, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+});
+
 test("a quote is set in the quotation marks of its language", () => {
   assert.equal(quoted("Great app", "en"), "“Great app”");
   assert.equal(quoted("Tolle App", "de-DE"), "„Tolle App“");
@@ -204,6 +213,28 @@ test("a page says when it is ready, and what it could not show", renderTier, asy
     const broken = await state(`<body><img src="/files/none/shots/home.png" alt="" data-shot="home"><script>${READY_SCRIPT}</script></body>`);
     assert.equal(broken.ready, "error");
     assert.match(broken.error!, /^screenshot:home (missing|undecodable)$/);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a long stat figure stays inside its box's padding", renderTier, async () => {
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    for (const align of ["center", "left"] as const) {
+      const [html] = await draw([{ layout: "stat", headline: "Saved", align, features: [{ value: "1,234,567,890+", title: "Hours" }] }]);
+      await page.setContent(html!);
+      await page.waitForFunction(() => document.body.dataset.ready);
+      const room = await page.evaluate(() => {
+        const box = document.querySelector<HTMLElement>(".stat")!;
+        const style = getComputedStyle(box);
+        const figure = document.querySelector<HTMLElement>(".st-value")!;
+        return { inner: box.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight), figure: figure.scrollWidth };
+      });
+      assert.ok(room.figure <= room.inner, `${align}: ${room.figure} > ${room.inner}`);
+    }
   } finally {
     await browser.close();
   }
