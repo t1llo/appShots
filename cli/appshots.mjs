@@ -1374,6 +1374,12 @@ async function runSimulator(flags) {
 	};
 }
 /**
+* How long booting and installing may take before the simulator service is taken to be stuck. A first boot, or
+* a large app on a busy Mac, takes minutes where the questions xcrun is otherwise asked take seconds.
+*/
+const BOOT_TIMEOUT = 6e5;
+const INSTALL_TIMEOUT = 3e5;
+/**
 * Boots a simulator and waits until it is ready, also when someone else has only just started it.
 * @param {{ name: string, udid: string, booted: boolean }} simulator
 */
@@ -1382,16 +1388,30 @@ async function boot(simulator) {
 		"simctl",
 		"boot",
 		simulator.udid
-	]);
+	], { timeout: BOOT_TIMEOUT });
 	const result = await xcrun([
 		"simctl",
 		"bootstatus",
 		simulator.udid,
 		"-b"
-	], { timeout: 6e5 });
+	], { timeout: BOOT_TIMEOUT });
 	forgetSimulators();
 	if (result.status !== 0) fail(`Could not boot ${simulator.name}:\n${`${result.stderr}${result.stdout}`.trim()}`);
 	if (process.env.APPSHOTS_NO_WINDOW !== "1") await run$1("open", ["-a", "Simulator"]);
+}
+/**
+* Installs a built app on a simulator, in place of the copy it has.
+* @param {{ name: string, udid: string }} simulator
+* @param {string} file The .app folder.
+*/
+async function install(simulator, file) {
+	const result = await xcrun([
+		"simctl",
+		"install",
+		simulator.udid,
+		file
+	], { timeout: INSTALL_TIMEOUT });
+	if (result.status !== 0) fail(`Could not install ${path.basename(file)} on ${simulator.name}:\n${result.stderr.trim()}`);
 }
 /**
 * The apps the user put on a simulator, as opposed to the ones iOS comes with. Null when it does not say.
@@ -3395,13 +3415,7 @@ async function run(flags, launchArguments) {
 	if (built.status === "rejected") throw built.reason;
 	if (booted.status === "rejected") throw booted.reason;
 	const app = built.value;
-	const installed = await xcrun([
-		"simctl",
-		"install",
-		simulator.udid,
-		app.file
-	]);
-	if (installed.status !== 0) fail(`Could not install ${path.basename(app.file)} on ${simulator.name}:\n${installed.stderr.trim()}`);
+	await install(simulator, app.file);
 	await startApp(simulator, app.bundleId, plan);
 }
 /**

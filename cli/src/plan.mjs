@@ -1,4 +1,3 @@
-import path from "node:path";
 import { hasLanguage } from "./api.mjs";
 import { build, findXcodeProject, pickScheme } from "./build.mjs";
 import { captureSettled, withCleanStatusBar } from "./capture/sim.mjs";
@@ -6,7 +5,7 @@ import { loadConfig } from "./config.mjs";
 import { fail } from "./fail.mjs";
 import { fromHere } from "./projects.mjs";
 import { shotDevice, shotLanguage, shotTarget } from "./shot.mjs";
-import { availableSimulators, boot, bootedSimulators, runSimulator, simulatorLabel } from "./sim.mjs";
+import { availableSimulators, boot, bootedSimulators, install, runSimulator, simulatorLabel } from "./sim.mjs";
 import { toolkits } from "./toolkits.mjs";
 import { upload } from "./upload.mjs";
 import { choose } from "./util.mjs";
@@ -94,8 +93,7 @@ export async function run(flags, launchArguments) {
   if (built.status === "rejected") throw built.reason;
   if (booted.status === "rejected") throw booted.reason;
   const app = built.value;
-  const installed = await xcrun(["simctl", "install", simulator.udid, app.file]);
-  if (installed.status !== 0) fail(`Could not install ${path.basename(app.file)} on ${simulator.name}:\n${installed.stderr.trim()}`);
+  await install(simulator, app.file);
   await startApp(simulator, app.bundleId, plan);
 }
 

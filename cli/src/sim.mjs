@@ -245,16 +245,33 @@ export async function runSimulator(flags) {
 }
 
 /**
+ * How long booting and installing may take before the simulator service is taken to be stuck. A first boot, or
+ * a large app on a busy Mac, takes minutes where the questions xcrun is otherwise asked take seconds.
+ */
+const BOOT_TIMEOUT = 600000;
+const INSTALL_TIMEOUT = 300000;
+
+/**
  * Boots a simulator and waits until it is ready, also when someone else has only just started it.
  * @param {{ name: string, udid: string, booted: boolean }} simulator
  */
 export async function boot(simulator) {
-  if (!simulator.booted) await xcrun(["simctl", "boot", simulator.udid]);
-  const result = await xcrun(["simctl", "bootstatus", simulator.udid, "-b"], { timeout: 600000 });
+  if (!simulator.booted) await xcrun(["simctl", "boot", simulator.udid], { timeout: BOOT_TIMEOUT });
+  const result = await xcrun(["simctl", "bootstatus", simulator.udid, "-b"], { timeout: BOOT_TIMEOUT });
   forgetSimulators();
   if (result.status !== 0) fail(`Could not boot ${simulator.name}:\n${`${result.stderr}${result.stdout}`.trim()}`);
   // The window is there for the user to watch; everything works without it.
   if (process.env.APPSHOTS_NO_WINDOW !== "1") await run("open", ["-a", "Simulator"]);
+}
+
+/**
+ * Installs a built app on a simulator, in place of the copy it has.
+ * @param {{ name: string, udid: string }} simulator
+ * @param {string} file The .app folder.
+ */
+export async function install(simulator, file) {
+  const result = await xcrun(["simctl", "install", simulator.udid, file], { timeout: INSTALL_TIMEOUT });
+  if (result.status !== 0) fail(`Could not install ${path.basename(file)} on ${simulator.name}:\n${result.stderr.trim()}`);
 }
 
 /**

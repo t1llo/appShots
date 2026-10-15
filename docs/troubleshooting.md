@@ -41,7 +41,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 **"simctl failed" or no simulators.** Xcode is not installed, or it was never opened. Install it from the App Store, open it once, and let it install the iOS platform.
 
-**"xcrun simctl … did not answer within 60 seconds".** The simulator service has stopped answering, which happens most with many simulators booted at once. Shut down the ones you do not need, or all of them with `xcrun simctl shutdown all`. If that hangs too, `killall -9 com.apple.CoreSimulator.CoreSimulatorService` restarts the service. Then try again.
+**"xcrun simctl … did not answer within … seconds".** The simulator service has stopped answering, which happens most with many simulators booted at once. Shut down the ones you do not need, or all of them with `xcrun simctl shutdown all`. If that hangs too, `killall -9 com.apple.CoreSimulator.CoreSimulatorService` restarts the service. Then try again.
 
 **`appshots check` says no iPhone Pro Max simulator is installed.** The screenshots of the closest one are scaled to the store's sizes, which works but is less sharp. `appshots run --create` adds the model when this Xcode has it; at the Terminal, `run` asks first. Otherwise add a newer iOS in Xcode under **Settings → Components**.
 
