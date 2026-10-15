@@ -918,6 +918,13 @@ select.add-language:hover:not(:disabled) {
 .shot .remove:focus-visible {
   opacity: 1;
 }
+/* A touch screen has no hover to bring these out, so there they always show. */
+@media (hover: none) {
+  .nav-row .more,
+  .shot .remove {
+    opacity: 1;
+  }
+}
 /* A screenshot of the first language, shown where the language picked has none of its own yet. */
 .shot.borrowed img {
   opacity: 0.45;

@@ -1,6 +1,7 @@
 // The documentation pages arrive complete from the server (see web/docs.html). This adds the three things that
 // need a script: the light and dark switch, the list of pages on a narrow screen, and Copy on every code block.
 
+import { copyKeys, copyText } from "./clipboard.ts";
 import { setAppearance, shownAppearance } from "./theme.ts";
 import { track } from "./track.ts";
 
@@ -25,10 +26,10 @@ for (const pre of document.querySelectorAll<HTMLPreElement>(".prose pre")) {
   button.textContent = "Copy";
   button.addEventListener("click", async () => {
     // Without the line break at the end, so a command pasted into a terminal waits for Return.
-    await navigator.clipboard.writeText((pre.textContent ?? "").trimEnd());
-    track("copy_command");
-    button.textContent = "Copied";
-    setTimeout(() => (button.textContent = "Copy"), 1200);
+    const copied = await copyText((pre.textContent ?? "").trimEnd(), pre);
+    if (copied) track("copy_command");
+    button.textContent = copied ? "Copied" : `Press ${copyKeys}`;
+    setTimeout(() => (button.textContent = "Copy"), copied ? 1200 : 3000);
   });
   box.append(pre, button);
 }

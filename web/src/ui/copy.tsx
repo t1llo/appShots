@@ -1,20 +1,22 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { copyKeys, copyText } from "../clipboard.ts";
 
 export function CopyBlock({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+  const [label, setLabel] = useState("Copy");
+  const pre = useRef<HTMLPreElement>(null);
   return (
     <div className="copy">
-      <pre>{text}</pre>
+      <pre ref={pre}>{text}</pre>
       <button
         className="btn small"
         type="button"
         onClick={async () => {
-          await navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
+          const copied = await copyText(text, pre.current!);
+          setLabel(copied ? "Copied" : `Press ${copyKeys}`);
+          setTimeout(() => setLabel("Copy"), copied ? 1200 : 3000);
         }}
       >
-        {copied ? "Copied" : "Copy"}
+        {label}
       </button>
     </div>
   );
