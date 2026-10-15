@@ -5,8 +5,8 @@ import { errorText } from "../api.ts";
 import { Section } from "./section.tsx";
 
 /**
- * Applies only what the server would take: every save sends the whole project, so one slide it turns down would
- * hold back every later edit, wherever it is made.
+ * Applies only what the server would take: a save sends all the slides, or all the assets, at once, so one it turns
+ * down would hold back every later edit to them, wherever it is made.
  */
 export function JsonSection({ kind, value, onApply, hint }: { kind: "slide" | "creative"; value: object; onApply: (parsed: object) => void; hint: string }) {
   const pretty = JSON.stringify(value, null, 2);
