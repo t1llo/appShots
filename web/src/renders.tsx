@@ -5,9 +5,10 @@ import { type QueryClient, queryOptions, useQuery, useQueryClient } from "@tanst
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { api, errorText, plural, type RenderJob, type Renders } from "./api.ts";
+import { sequenced, writeQuery } from "./state/sequence.ts";
 import { toast } from "./ui/index.ts";
 
-export const rendersQuery = queryOptions({ queryKey: ["renders"], queryFn: () => api<Renders>("GET", "/renders") });
+export const rendersQuery = queryOptions({ queryKey: ["renders"], queryFn: sequenced((signal) => api<Renders>("GET", "/renders", undefined, { signal })) });
 
 export const working = (job: RenderJob) => job.state === "queued" || job.state === "running";
 
@@ -27,33 +28,32 @@ export function downloadZip(project: string): void {
 export async function startRender(queryClient: QueryClient, project: string): Promise<void> {
   const { job, rendersLeft } = await api<{ job: RenderJob; rendersLeft: number | null }>("POST", `/projects/${project}/render`, { background: true });
   mine.add(job.id);
-  queryClient.setQueryData(rendersQuery.queryKey, (current) => ({ jobs: [job, ...(current?.jobs ?? [])], rendersLeft }));
+  // A list asked for before the run was queued may still be on its way, and it must not take the run back out.
+  writeQuery(queryClient, rendersQuery.queryKey, (current) => ({ jobs: [job, ...(current?.jobs ?? [])], rendersLeft }));
 }
 
-/**
- * The account's renders, asked for every second while one works. Otherwise now and then, so a render that an
- * agent starts through MCP shows up too, and not at all while nobody looks at the tab.
- */
+/** The account's renders, asked for again on the Studio's clock (state/live.ts), so a render an agent starts shows up too. */
 export function useRenders() {
-  return useQuery({
-    ...rendersQuery,
-    refetchInterval: (query) => (query.state.data?.jobs.some(working) ? 1000 : document.hidden ? false : 5000),
-    // A render is meant to be left alone, so the tab has to keep asking while it is in the background.
-    refetchIntervalInBackground: true,
-  });
+  return useQuery(rendersQuery);
 }
 
 // ---------------------------------------------------------------- when a render ends
 
 const canNotify = () => "Notification" in window;
 
-/** What waits for the tab to be looked at again, and the title it had before a finished render was written into it. */
+/**
+ * What waits for the tab to be looked at again, and the note put in front of its title meanwhile. The note is taken
+ * off whatever the title is by then, since a page may have set another one in between.
+ */
 const whenSeen: (() => void)[] = [];
-let plainTitle: string | null = null;
+let titleNote = "";
+const untitle = () => {
+  if (titleNote && document.title.startsWith(titleNote)) document.title = document.title.slice(titleNote.length);
+  titleNote = "";
+};
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
-  if (plainTitle != null) document.title = plainTitle;
-  plainTitle = null;
+  untitle();
   for (const run of whenSeen.splice(0)) run();
 });
 
@@ -74,8 +74,9 @@ function ended(queryClient: QueryClient, job: RenderJob): void {
   if (!document.hidden) return say();
 
   // Nobody is looking: mark the tab, send a notification if that was allowed, and do the rest when the tab is back.
-  plainTitle ??= document.title;
-  document.title = `✓ ${job.name} is rendered`;
+  untitle();
+  titleNote = `✓ ${job.name} is rendered · `;
+  document.title = titleNote + document.title;
   whenSeen.push(say);
   if (!canNotify() || Notification.permission !== "granted") return;
   try {
@@ -91,18 +92,30 @@ function ended(queryClient: QueryClient, job: RenderJob): void {
 export function useRenderNotes(jobs: RenderJob[] | undefined): void {
   const queryClient = useQueryClient();
   const seen = useRef<Map<string, RenderJob> | null>(null);
+  /** Runs that were working and are missing from the latest list. One list without a run is not proof yet that it is lost. */
+  const missing = useRef(new Map<string, RenderJob>());
   useEffect(() => {
     if (!jobs) return;
     const before = seen.current;
-    seen.current = new Map(jobs.map((job) => [job.id, job]));
+    const now = new Map(jobs.map((job) => [job.id, job]));
     // What had ended before the Studio was opened is no news.
-    if (!before) return;
+    if (!before) return void (seen.current = now);
     for (const job of jobs) {
       const was = before.get(job.id);
       if (!working(job) && (!was || working(was))) ended(queryClient, job);
     }
+    const lost: RenderJob[] = [];
+    const missingNow = new Map<string, RenderJob>();
     for (const was of before.values()) {
-      if (!working(was) || seen.current.has(was.id)) continue;
+      if (!working(was) || now.has(was.id)) continue;
+      if (missing.current.has(was.id)) lost.push(was);
+      else missingNow.set(was.id, was);
+    }
+    missing.current = missingNow;
+    // Kept as it was last seen, so the run still counts as working until it is gone from two lists in a row.
+    for (const was of missingNow.values()) now.set(was.id, was);
+    seen.current = now;
+    for (const was of lost) {
       mine.delete(was.id);
       toast(`The render of ${was.name} stopped because the server restarted. Start it again.`, "error", 9000);
     }
@@ -142,8 +155,15 @@ export function RenderList({ renders }: { renders: Renders }) {
     }
   };
 
+  // A screen reader hears when a render starts and ends, not every picture the progress bar counts.
+  const running = shown.filter(working);
+  const spoken = running.length ? `Rendering ${running.map((job) => job.name).join(", ")}` : shown.length ? `Last render: ${shown[0].name}, ${stateText(shown[0]).toLowerCase()}` : "";
+
   return (
-    <div className="nav-group renders" aria-label="Renders">
+    <section className="nav-group renders" aria-label="Renders">
+      <span role="status" aria-live="polite" style={HIDDEN}>
+        {spoken}
+      </span>
       <div className="nav-label">
         Renders
         {left == null ? null : (
@@ -187,6 +207,9 @@ export function RenderList({ renders }: { renders: Renders }) {
           Notify me when it is done
         </button>
       ) : null}
-    </div>
+    </section>
   );
 }
+
+/** Out of sight but read out, without a class of its own in the stylesheet. */
+export const HIDDEN = { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" } as const;

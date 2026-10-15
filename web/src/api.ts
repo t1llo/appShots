@@ -1,7 +1,9 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { CreativeLayoutId } from "../../src/design.ts";
+import { findShot } from "../../src/domain/standins.ts";
 import type { Mockups, Project, Text } from "../../src/schema.ts";
 import type { DeviceKind, Placement, PlacementId, Target, TargetId } from "../../src/sizes.ts";
+import { sequenced } from "./state/sequence.ts";
 
 export type { Background, Badge, Creative, DeviceStyle, Feature, FeatureCards, IconRow, Logo, Mockups, PlacedImage, Project, Slide, Text, Theme } from "../../src/schema.ts";
 export type { CreativeLayoutId, DeviceKind, Placement, PlacementId, Target, TargetId };
@@ -90,6 +92,8 @@ export interface StoredImage {
 
 export interface Detail {
   project: Project;
+  /** How many writes the project has seen, from a server that counts them. It sends the same number as the ETag. */
+  revision?: number;
   shots: Shot[];
   images: StoredImage[];
   outputs: { locale: string; target: string; files: string[]; version: number }[];
@@ -154,6 +158,20 @@ export interface Renders {
 
 export const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+/** An answer that did not go well: the server's message, its status, and the body it came in. */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.status = status;
+    this.body = body;
+  }
+}
+
+/** Whether a request failed because what it asked for is not there, such as a project deleted elsewhere. */
+export const isGone = (error: unknown) => error instanceof ApiError && error.status === 404;
+
 export async function api<T = unknown>(method: string, route: string, body?: unknown, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {};
   let payload: BodyInit | undefined;
@@ -172,16 +190,41 @@ export async function api<T = unknown>(method: string, route: string, body?: unk
 async function answered(response: Response): Promise<Response> {
   if (response.status === 401) {
     location.href = "/login";
-    throw new Error("Signed out");
+    throw new ApiError("Signed out", 401, null);
   }
   if (!response.ok) {
-    let message = response.statusText;
+    let body: unknown = null;
     try {
-      message = (await response.json()).error ?? message;
+      body = await response.json();
     } catch {}
-    throw new Error(message);
+    const message = (body as { error?: unknown } | null)?.error;
+    throw new ApiError(typeof message === "string" ? message : response.statusText, response.status, body);
   }
   return response;
+}
+
+/** The revision a server that counts them sent with a project, in the body or as the ETag. Null from one that does not. */
+export function revisionOf(detail: Detail): number | null {
+  const stored = (detail.project as { revision?: unknown }).revision;
+  return typeof detail.revision === "number" ? detail.revision : typeof stored === "number" ? stored : null;
+}
+
+/** A project's detail, with the revision of its ETag where the body has none. */
+async function withRevision(response: Response): Promise<Detail> {
+  const detail = (await response.json()) as Detail;
+  const tag = /^(?:W\/)?"(\d+)"$/.exec(response.headers.get("etag") ?? "");
+  if (detail.revision == null && tag) detail.revision = Number(tag[1]);
+  return detail;
+}
+
+/**
+ * Saves changes to a project. Sent with the revision they were made on, they are refused with a 409 when someone
+ * else wrote since, and that ApiError's body carries the project as the server has it now.
+ */
+export async function saveProject(id: string, changes: object, revision: number | null, keepalive = false): Promise<Detail> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (revision != null) headers["if-match"] = `"${revision}"`;
+  return withRevision(await answered(await fetch(`/api/projects/${id}`, { method: "PUT", headers, body: JSON.stringify(changes), keepalive })));
 }
 
 /** A file the server makes on request, such as a mockup, by the address the server gave for it. */
@@ -197,9 +240,10 @@ export function saveFile(file: Blob, name: string): void {
 }
 
 export const metaQuery = queryOptions({ queryKey: ["meta"], queryFn: () => api<Meta>("GET", "/meta"), staleTime: Infinity });
-export const projectsQuery = queryOptions({ queryKey: ["projects"], queryFn: () => api<ProjectEntry[]>("GET", "/projects") });
+export const projectsQuery = queryOptions({ queryKey: ["projects"], queryFn: sequenced((signal) => api<ProjectEntry[]>("GET", "/projects", undefined, { signal })) });
 // Fresh for a moment, so the page that opens right after the route has loaded a project does not fetch it twice.
-export const detailQuery = (id: string) => queryOptions({ queryKey: ["project", id], queryFn: () => api<Detail>("GET", `/projects/${id}`), staleTime: 2000 });
+export const detailQuery = (id: string) =>
+  queryOptions({ queryKey: ["project", id], queryFn: sequenced(async (signal) => withRevision(await answered(await fetch(`/api/projects/${id}`, { signal })))), staleTime: 2000 });
 
 /** The mockups of a project in one language. `drawn` names what they were drawn from, so a change there fetches them again. */
 export const mockupsQuery = (id: string, locale: string, drawn: string) =>
@@ -213,24 +257,12 @@ export const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, 
 export const plural = (count: number, word: string, many = `${word}s`) => `${count} ${count === 1 ? word : many}`;
 export const label = (id: string) => id.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
 
-export const slugify = (value: string) =>
-  value
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48) || "shot";
-
 /** Of the screenshots of one name, the one a language shows, picked as the renderer picks it: its own, else the first language's. */
 export const shotIn = (shots: Shot[], locale: string): Shot | undefined =>
   shots.find((shot) => shot.locale?.toLowerCase() === locale.toLowerCase()) ?? shots.find((shot) => !shot.locale) ?? shots[0];
 
-/** The screenshot a device shows under a name in a language. Another device's stands in when it has none. */
-export function shotFor(shots: Shot[], name: string, device: DeviceKind, locale: string): Shot | undefined {
-  const named = shots.filter((shot) => shot.name === name);
-  return shotIn(named.filter((shot) => shot.device === device), locale) ?? shotIn(named, locale);
-}
+/** The screenshot a device shows under a name in a language, picked as the renderer picks it. Another device's stands in when it has none. */
+export const shotFor = (shots: Shot[], name: string, device: DeviceKind, locale: string): Shot | undefined => findShot(shots, name, device, locale);
 
 export function readText(value: Text | undefined, locale: string): string {
   if (value == null) return "";

@@ -2,16 +2,19 @@
 // Routes live in the URL hash, so the #/<project> links that the MCP tools and the CLI print keep working.
 
 import "./styles/studio.css";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createHashHistory, createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider } from "@tanstack/react-router";
 import { type ReactNode, StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { detailQuery, errorText, type Meta, metaQuery, projectsQuery } from "./api.ts";
+import { detailQuery, errorText, isGone, type Meta, metaQuery, projectsQuery } from "./api.ts";
 import { DialogHost, type DialogKind, OpenDialog, useOpenDialog } from "./dialogs.tsx";
 import { MockupsPage } from "./mockups.tsx";
 import { AdminPage, ProjectsPage, SettingsPage } from "./pages.tsx";
-import { dropTarget, ProjectPage } from "./project.tsx";
+import { dropTarget } from "./project/Assets.tsx";
+import { ProjectPage } from "./project/ProjectPage.tsx";
 import { RenderList, useRenderNotes, useRenders } from "./renders.tsx";
+import { useLiveClock } from "./state/live.ts";
+import { forgetDraft } from "./state/useDraft.ts";
 import { Icon, Menu, Toasts } from "./ui/index.ts";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -49,8 +52,9 @@ function Message({ title, text, children }: { title: string; text: string; child
 
 function Shell() {
   const meta = useQuery(metaQuery);
-  // Polled, so projects that an agent creates through MCP show up without a reload.
-  const projects = useQuery({ ...projectsQuery, refetchInterval: 3000 });
+  // Asked for again on the Studio's clock, so projects that an agent creates through MCP show up without a reload.
+  useLiveClock();
+  const projects = useQuery(projectsQuery);
   const renders = useRenders();
   useRenderNotes(renders.data?.jobs);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
@@ -209,13 +213,31 @@ function DropVeil() {
 /** A project's page: its slides, what it is made of, or its mockups. */
 function ProjectRoute({ projectId, view }: { projectId: string; view: "slides" | "assets" | "mockups" }) {
   const meta = useQuery(metaQuery).data!;
+  const queryClient = useQueryClient();
+  // The project as the server has it now, which the clock asks for again while the page is open.
   const detail = useQuery(detailQuery(projectId));
   const open = useOpenDialog();
+  // Deleted elsewhere, by another tab, an agent or the CLI: its edits have nowhere to go, so the page closes.
+  const gone = isGone(detail.error) && detail.data != null;
+  useEffect(() => {
+    if (!gone) return;
+    forgetDraft(projectId);
+    void queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey });
+  }, [gone, projectId]);
+  if (gone) {
+    return (
+      <Message title="This project was deleted" text="It was deleted elsewhere while it was open here, so what was not saved of it could not be kept.">
+        <Link className="btn" to="/">
+          Back to your projects
+        </Link>
+      </Message>
+    );
+  }
   if (detail.data) {
     return view === "mockups" ? (
-      <MockupsPage key={projectId} meta={meta} initial={detail.data} />
+      <MockupsPage key={projectId} meta={meta} detail={detail.data} />
     ) : (
-      <ProjectPage key={projectId} meta={meta} initial={detail.data} view={view} openConnect={() => open("connect")} />
+      <ProjectPage key={projectId} meta={meta} detail={detail.data} view={view} openConnect={() => open("connect")} />
     );
   }
   if (!detail.error) return <Blank />;
