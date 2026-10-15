@@ -106,7 +106,7 @@ appshots pull streaks --render
 | --- | --- |
 | `appshots projects` | Lists your projects |
 | `appshots upload <project> <files or folders…>` | Uploads screenshots. The name is the file name, or `--name` for a single file. `--as duo` or `--as mac` files them under that device. `--lang de-DE` files them under that language. `--image` uploads logos and artwork instead |
-| `appshots pull <project> [--out <dir>]` | Downloads the rendered set into `./store-screenshots/<project>`, one folder per display of App Store Connect, with the header and search results images and the [banners](/docs/banners). `--render` renders first |
+| `appshots pull <project> [--out <dir>]` | Downloads the rendered set into `./store-screenshots/<project>`, one folder per display of App Store Connect, with the header and search results images and the [banners](/docs/banners). `--render` renders first. Pulling again takes out the files an earlier pull put there that the set no longer has, and leaves anything else in the folder |
 | `appshots mockups <project>` | Downloads every screenshot in its device on a transparent background. See [Mockups](#mockups) |
 | `appshots open [project]` | Opens the Studio in the browser |
 
@@ -148,7 +148,7 @@ appshots mockups streaks --style clay --color silver --shadow soft --rotate -8
 appshots mockups streaks --width 1200 --out ./website/img
 ```
 
-`mockups` saves one transparent PNG per screenshot into `./mockups/<project>`, named `<screenshot>-<device>.png`. It needs no slides and uses no render. What the options set is saved with the project, so the Studio's Mockups page shows the same, and the next call without options draws them the same way.
+`mockups` saves one transparent PNG per screenshot into `./mockups/<project>`, named `<screenshot>-<device>.png`. It needs no slides and uses no render. What the options set is saved with the project, so the Studio's Mockups page shows the same, and the next call without options draws them the same way. Like `pull`, a later download takes out only the mockups an earlier one saved that are gone now, so `--out` can point into a website's folder of images.
 
 | Option | What it does |
 | --- | --- |

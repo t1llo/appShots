@@ -3441,9 +3441,36 @@ function filesBelow(dir) {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? filesBelow(path.join(dir, entry.name)).map((file) => path.join(entry.name, file)) : [entry.name]);
 }
 /**
-* Unpacks a download into a folder. What the download holds replaces what is there under the same names, as
-* a whole, so a slide that is gone leaves no picture behind for 'store push' to upload. What an earlier download
-* put there and this one no longer has goes too; anything else in the folder stays.
+* Whether a path from the list of an earlier download is a file inside the folder, whatever the list says.
+* @param {unknown} name
+* @returns {name is string}
+*/
+function insideFolder(name) {
+	if (typeof name !== "string" || name === "" || name === MANIFEST || path.isAbsolute(name)) return false;
+	const parts = path.normalize(name).split(/[/\\]/);
+	return !parts.includes("..") && !parts.includes(".");
+}
+/**
+* Takes out the folders above a file that are left empty, up to the folder the download went into. Finder's
+* own .DS_Store does not count as something left in one.
+* @param {string} outDir
+* @param {string} dir
+*/
+function pruneEmpty(outDir, dir) {
+	while (dir.startsWith(`${outDir}${path.sep}`)) {
+		if (readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.name !== ".DS_Store" || entry.isDirectory()).length > 0) return;
+		rmSync(dir, {
+			recursive: true,
+			force: true
+		});
+		dir = path.dirname(dir);
+	}
+}
+/**
+* Unpacks a download into a folder. Its files replace those of the same names, and the files an earlier
+* download put there that this one no longer has are taken out, so a slide or a language that is gone leaves no
+* picture behind for 'store push' to upload. Anything else in the folder stays, also inside the folders the
+* download writes, since --out may point at a folder that holds more than this.
 * @param {string} zip
 * @param {string} outDir
 * @returns {Promise<string[]>} The files unpacked, relative to the folder.
@@ -3461,21 +3488,22 @@ async function extractZip(zip, outDir) {
 		]);
 		if (result.status !== 0) fail(`Could not unpack the download: ${(result.stderr || result.error?.message || "").trim()}`);
 		const files = filesBelow(staging);
-		const entries = readdirSync(staging);
-		const earlier = readJson(path.join(outDir, MANIFEST))?.entries;
-		for (const name of entries) {
-			rmSync(path.join(outDir, name), {
-				recursive: true,
-				force: true
-			});
-			renameSync(path.join(staging, name), path.join(outDir, name));
+		const earlier = readJson(path.join(outDir, MANIFEST))?.files;
+		const kept = new Set(files);
+		for (const name of Array.isArray(earlier) ? earlier.filter(insideFolder) : []) {
+			if (kept.has(path.normalize(name))) continue;
+			const file = path.join(outDir, name);
+			const found = lstatSync(file, { throwIfNoEntry: false });
+			if (!found || found.isDirectory()) continue;
+			rmSync(file, { force: true });
+			pruneEmpty(outDir, path.dirname(file));
 		}
-		const gone = (Array.isArray(earlier) ? earlier : []).filter((name) => typeof name === "string" && !entries.includes(name) && !/[/\\]|^\.\.?$|^$/.test(name) && name !== MANIFEST);
-		for (const name of gone) rmSync(path.join(outDir, name), {
-			recursive: true,
-			force: true
-		});
-		writeFileSync(path.join(outDir, MANIFEST), `${JSON.stringify({ entries }, null, 2)}\n`);
+		for (const name of files) {
+			const file = path.join(outDir, name);
+			mkdirSync(path.dirname(file), { recursive: true });
+			renameSync(path.join(staging, name), file);
+		}
+		writeFileSync(path.join(outDir, MANIFEST), `${JSON.stringify({ files }, null, 2)}\n`);
 		return files;
 	} finally {
 		rmSync(staging, {
