@@ -13,6 +13,8 @@ import { type Damaged, type NewProject, projects, type Stored, type WriteOptions
 export { ConflictError, DamagedError, InputError, NotFoundError } from "./domain/errors.ts";
 export { imagesDir, outDir, projectDir, safeJoin, shotsDir, type Space } from "./storage/paths.ts";
 export { countProjects, slugify } from "./storage/projects.ts";
+// The Studio picks its thumbnails with the same function, so the two cannot pick differently.
+export { findShot } from "./domain/standins.ts";
 
 export interface Shot {
   name: string;
@@ -422,28 +424,4 @@ export async function listCreativeOutputs(space: Space, id: string): Promise<Cre
     }
   }
   return found;
-}
-
-/** Which device's screenshot stands in when a name has none for the device asked for: the one closest in shape first. */
-const STAND_INS: Record<DeviceKind, DeviceKind[]> = {
-  iphone: ["iphone", "duo", "ipad", "mac"],
-  duo: ["duo", "ipad", "iphone", "mac"],
-  ipad: ["ipad", "duo", "iphone", "mac"],
-  mac: ["mac", "ipad", "duo", "iphone"],
-};
-
-/**
- * Picks the variant for the target's device and the language: that language's own screenshot, else the one for
- * every language, else another language's. Only then another device's stands in, because the shape matters most.
- */
-export function findShot(shots: Shot[], name: string | undefined, device: DeviceKind, locale?: string): Shot | undefined {
-  if (!name) return undefined;
-  const named = shots.filter((shot) => shot.name === name);
-  const lower = locale?.toLowerCase();
-  for (const kind of STAND_INS[device]) {
-    const ofKind = named.filter((shot) => shot.device === kind);
-    const found = ofKind.find((shot) => lower != null && shot.locale?.toLowerCase() === lower) ?? ofKind.find((shot) => !shot.locale) ?? ofKind[0];
-    if (found) return found;
-  }
-  return undefined;
 }

@@ -27,11 +27,6 @@ test("a device's own screenshot comes before another language's, and another dev
 });
 
 test("the Studio's thumbnails pick what the renderer picks", () => {
-  for (const name of ["home", "list", "menu", "gone"]) {
-    for (const device of ["iphone", "duo", "ipad", "mac"] as const) {
-      for (const locale of [undefined, "en", "de", "DE", "fr", "ja"]) {
-        assert.equal(findShot(shots, name, device, locale), storeFindShot(shots, name, device, locale), `${name} on ${device} in ${locale}`);
-      }
-    }
-  }
+  // The renderer reaches the function through store.ts; it has to be the very one the Studio bundles.
+  assert.equal(storeFindShot, findShot);
 });

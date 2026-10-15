@@ -15,13 +15,8 @@ export function isDeviceKind(value: unknown): value is DeviceKind {
   return typeof value === "string" && (DEVICE_KINDS as readonly string[]).includes(value);
 }
 
-/** Which device's screenshot stands in when a name has none for the device asked for: the one closest in shape first. */
-export const STAND_INS: Record<DeviceKind, readonly DeviceKind[]> = {
-  iphone: ["iphone", "duo", "ipad", "mac"],
-  duo: ["duo", "ipad", "iphone", "mac"],
-  ipad: ["ipad", "duo", "iphone", "mac"],
-  mac: ["mac", "ipad", "duo", "iphone"],
-};
+// The order in which devices stand in for each other lives in a module that imports nothing, so the Studio can bundle it.
+export { STAND_INS } from "./standins.ts";
 
 // ---------------------------------------------------------------- frames
 
