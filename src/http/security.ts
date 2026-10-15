@@ -17,6 +17,36 @@ export function visitorAddress(req: Request): string | undefined {
   return claimed && isIP(claimed) ? claimed : req.ip;
 }
 
+/** The host name a request was sent to, lower case and without port or brackets. */
+function hostnameOf(req: Request): string | null {
+  const url = URL.parse(`http://${req.get("host") ?? ""}`);
+  return url ? url.hostname.replace(/^\[(.*)\]$/, "$1") : null;
+}
+
+const publicHost = config.publicUrl ? new URL(config.publicUrl).hostname : "";
+
+/**
+ * Whether a name may reach the routes that act on an account. DNS rebinding points a name the attacker owns at this
+ * server, so a page from that name can call it as its own origin: only names this server knows to be its own pass.
+ * IP literals pass too, since rebinding needs a name, and that keeps a server reached by its LAN address working.
+ */
+function knownHost(name: string): boolean {
+  return name === "localhost" || name.endsWith(".localhost") || isIP(name) !== 0 || name === publicHost || config.allowedHosts.includes(name);
+}
+
+/**
+ * Refuses requests for a name that is not this server's. While sign-in is off, every request works in the server's
+ * own space, so this is what keeps a rebound page out. With sign-in on, the session cookie belongs to the real name
+ * and never travels to another one; the check then runs only once ALLOWED_HOSTS lists the names, so a reverse
+ * proxy that passes on a Host of its own keeps working.
+ */
+export function allowedHost(req: Request, res: Response, next: NextFunction): void {
+  if (config.auth && config.allowedHosts.length === 0) return next();
+  const name = hostnameOf(req);
+  if (name && knownHost(name)) return next();
+  res.status(403).set("Cache-Control", "no-store").json({ error: "This server does not answer to that host name. Open it at its own address, or add the name to ALLOWED_HOSTS." });
+}
+
 /** Everything under /api belongs to one account. A CDN in front keeps a .zip by default and would hand one person's export to the next caller. */
 export function privateCache(_req: Request, res: Response, next: NextFunction): void {
   res.set("Cache-Control", "private, no-cache");

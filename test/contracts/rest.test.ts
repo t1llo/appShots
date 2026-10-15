@@ -666,7 +666,7 @@ describe("open bugs", () => {
     assertError(answer, 413, /20 MB/);
   });
 
-  test("a request for another host name is refused", { todo: "srv-4" }, async () => {
+  test("a request for another host name is refused (srv-4)", async () => {
     // fetch() sets Host itself, so this goes out by hand, as a page that rebinds its name to this server would send it.
     const { port } = new URL(server.url);
     const status = await new Promise<number>((resolve, reject) => {

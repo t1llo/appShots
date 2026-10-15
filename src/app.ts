@@ -16,7 +16,7 @@ import { publicRoutes } from "./http/routes/public.ts";
 import { renderPageRoutes } from "./http/routes/render-pages.ts";
 import { renderRoutes } from "./http/routes/renders.ts";
 import { siteRoutes } from "./http/routes/site.ts";
-import { privateCache, securityHeaders } from "./http/security.ts";
+import { allowedHost, privateCache, securityHeaders } from "./http/security.ts";
 
 export interface AppDeps {
   /** Where the server reports what went wrong on its side. The console unless a test listens in. */
@@ -43,6 +43,8 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
   app.use("/auth", oauthRoutes(log));
   app.post("/logout", logout);
 
+  // Everything below acts on an account's projects.
+  app.use(["/api", "/mcp", "/files", "/render"], allowedHost);
   app.use(requireAuth);
 
   app.use(mcpRoutes());

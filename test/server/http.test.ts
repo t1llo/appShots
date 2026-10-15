@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
+import http from "node:http";
 import { createServer } from "node:net";
 import path from "node:path";
-import { describe, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import { png } from "../helpers/images.ts";
-import { cleanEnv, startServer } from "../helpers/spawn-server.ts";
+import { cleanEnv, startServer, type TestServer } from "../helpers/spawn-server.ts";
 import { tmpData } from "../helpers/tmp-data.ts";
 
 // How the server answers over HTTP in setups the contract tests do not cover: other settings, other folders, sign-in
@@ -49,6 +50,53 @@ describe("starting", { concurrency: true }, () => {
     const { code, output } = await failedStart({ PUBLIC_URL: "appshots.example.com" });
     assert.notEqual(code, 0, output);
     assert.match(output, /PUBLIC_URL has to be the address people open/);
+  });
+});
+
+/** A request with a Host header of its own, which fetch() does not allow: as a page that rebinds its name would send it. */
+function asHost(server: TestServer, host: string, route: string, method = "GET", body?: string): Promise<{ status: number; headers: http.IncomingHttpHeaders; text: string }> {
+  const { port } = new URL(server.url);
+  return new Promise((resolve, reject) => {
+    const headers: Record<string, string | number> = { Host: host, Accept: "application/json, text/event-stream" };
+    if (body) Object.assign(headers, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) });
+    const request = http.request({ host: "127.0.0.1", port, path: route, method, headers }, (response) => {
+      let text = "";
+      response.setEncoding("utf8").on("data", (chunk: string) => (text += chunk));
+      response.on("end", () => resolve({ status: response.statusCode!, headers: response.headers, text }));
+    });
+    request.on("error", reject).end(body);
+  });
+}
+
+describe("host names (srv-4, mcp-8)", () => {
+  let server: TestServer;
+  before(async () => {
+    server = await startServer({ env: { PUBLIC_URL: "https://appshots.example.com", ALLOWED_HOSTS: "studio.test" } });
+  });
+  after(() => server?.stop());
+
+  const tools = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+
+  test("while sign-in is off, the API, MCP, files and pages answer only to the server's own names", async () => {
+    const { port } = new URL(server.url);
+    for (const host of [`localhost:${port}`, `app.localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, "192.168.1.20", "appshots.example.com", "studio.test:8080", "STUDIO.test"]) {
+      assert.equal((await asHost(server, host, "/api/projects")).status, 200, host);
+    }
+    for (const host of [`rebound.example.com:${port}`, "example.com", "appshots.example.com.rebound.test", "studio.test.example.com"]) {
+      const answer = await asHost(server, host, "/api/projects");
+      assert.equal(answer.status, 403, host);
+      assert.match(JSON.parse(answer.text).error, /ALLOWED_HOSTS/);
+      assert.equal(answer.headers["cache-control"], "no-store");
+      assert.equal((await asHost(server, host, "/api/projects", "POST", JSON.stringify({ name: "Rebound" }))).status, 403, host);
+      assert.equal((await asHost(server, host, "/mcp", "POST", tools)).status, 403, host);
+      assert.equal((await asHost(server, host, "/files/any/shots/home.png")).status, 403, host);
+      assert.equal((await asHost(server, host, "/render/any/0")).status, 403, host);
+    }
+    assert.equal((await asHost(server, `localhost:${port}`, "/mcp", "POST", tools)).status, 200);
+  });
+
+  test("public pages and the health check answer to any name", async () => {
+    for (const route of ["/healthz", "/skill.md", "/docs/api.md"]) assert.equal((await asHost(server, "rebound.example.com", route)).status, 200, route);
   });
 });
 
