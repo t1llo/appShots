@@ -25,7 +25,7 @@ A token reaches the projects of the account it belongs to and nothing else. See 
 3. Upload the raw screenshots. This goes through the [command line](/docs/cli) or the [HTTP API](/docs/api), because MCP has no way to send files. A project in several languages can hold each screenshot once per language.
 4. `set_slides`. For an app on more than one device, once more for each of the others with `device`, so every device has a set composed for its own canvas.
 5. `render`, and look at the pictures it returns.
-6. `update_slide` for the fixes, then `render` again.
+6. `update_slide` for the fixes, then `render` again. A change that made things worse is undone with `list_revisions` and `restore_project`.
 
 Uploading the result to App Store Connect is not among the tools. It needs your App Store Connect key, which stays on your Mac, so the [command line](/docs/app-store-connect) does it.
 
@@ -39,7 +39,7 @@ Returns the guide the server is built around: the workflow, how to upload screen
 
 ### list_projects
 
-Lists the projects of the account: id, name, number of slides, languages and when each last changed. `ownSets` names the devices that have a slide set of their own. No arguments.
+Lists the projects of the account: id, name, number of slides, languages and when each last changed. `ownSets` names the devices that have a slide set of their own. A project whose stored file cannot be read is listed too, with `damaged` saying what is wrong: `restore_project` brings back an earlier revision of it. No arguments.
 
 ### create_project
 
@@ -53,11 +53,24 @@ Returns the project's id and how to upload screenshots into it.
 
 ### get_project
 
-`project` is the id. Returns the theme, the slides, the sets single devices have of their own under `deviceSlides`, the header and search results images and banners, the screenshots and images uploaded so far, and `exportSizes`, the sizes a render writes. Each screenshot is listed with its `device`, and with its `locale` when it was uploaded for one language only. A Mac screenshot also says whether it is `shown` as a `window` or inside a `MacBook`. See [Languages](/docs/languages#screenshots-per-language).
+`project` is the id. Returns the theme, the slides, the sets single devices have of their own under `deviceSlides`, the header and search results images and banners, the screenshots and images uploaded so far, and `exportSizes`, the sizes a render writes. Each screenshot is listed with its `device`, and with its `locale` when it was uploaded for one language only. A Mac screenshot also says whether it is `shown` as a `window` or inside a `MacBook`. See [Languages](/docs/languages#screenshots-per-language). `revision` is the version the project is at.
 
 ### update_project
 
-Changes `name`, `locales`, `targets` or `theme` of `project`. The theme is replaced as a whole, so send all of it. `targets` is the list of sizes the project exports, and `[]` goes back to the standard ones. See [Sizes](/docs/sizes).
+Changes `name`, `locales`, `targets` or `theme` of `project`. The theme is replaced as a whole, so send all of it. `targets` is the list of sizes the project exports, and `[]` goes back to the standard ones. See [Sizes](/docs/sizes). `locales` names each language once: `en` and `EN` count as the same one.
+
+### list_revisions
+
+`project` is the id. Every change to a project's name, theme, slides and assets is saved as its next revision, and the last 50 are kept. Returns the `revision` the project is at and the versions kept, newest first, each with its `revision`, the `time` it was saved, the `actor` that saved it (`studio`, `api` or `mcp`) and its `size`. Screenshots and images are not part of them.
+
+### restore_project
+
+| Argument | What it is |
+| --- | --- |
+| `project` | The id |
+| `revision` | The version to bring back, from `list_revisions` |
+
+Saves that version again as a new revision, so a restore can be undone the same way. For when a change made things worse or wrote over the user's own edits, and for a project whose stored file is damaged.
 
 ### set_slides
 
@@ -91,6 +104,8 @@ With `device` and an empty `slides` list, the device's own set is removed and it
 ```json
 { "project": "streaks", "slide": 3, "changes": { "headline": "See your *progress*", "device": { "offsetY": 6 } } }
 ```
+
+A field slides do not have, such as a misspelt `headlne`, is left out, and the answer names it. `set_slides` does the same.
 
 ### set_creative_assets
 

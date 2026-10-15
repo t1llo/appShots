@@ -12,7 +12,7 @@ Everything the Studio does goes through a small JSON API. Use it from a script o
 | Base address | `{{SERVER}}/api` |
 | Sign-in | The header `Authorization: Bearer <token>` |
 | Bodies | JSON, except file uploads, which send the file itself as the body |
-| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403 or 404 |
+| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404, or 409 for a change made on an older revision |
 
 Create the token under **Connect an agent** in the Studio. The examples expect it in `APPSHOTS_TOKEN`.
 
@@ -20,11 +20,13 @@ Create the token under **Connect an agent** in the Studio. The examples expect i
 
 | Request | What it does |
 | --- | --- |
-| `GET /api/projects` | Lists your projects |
+| `GET /api/projects` | Lists your projects. One whose stored file cannot be read is listed with `damaged`, saying what is wrong |
 | `POST /api/projects` | Creates one. Body: `name`, and optionally `locales`, `targets`, `theme`, `slides`, `deviceSlides`, `creatives` |
-| `GET /api/projects/:id` | Returns the project with its screenshots, images and rendered files |
-| `PUT /api/projects/:id` | Changes any of `name`, `locales`, `targets`, `theme`, `slides`, `deviceSlides`, `creatives`, `mockups`. Each one given is replaced as a whole |
-| `DELETE /api/projects/:id` | Deletes it with everything in it |
+| `GET /api/projects/:id` | Returns the project with its screenshots, images and rendered files, and its `revision`, also sent as the `ETag` |
+| `PUT /api/projects/:id` | Changes any of `name`, `locales`, `targets`, `theme`, `slides`, `deviceSlides`, `creatives`, `mockups`. Each one given is replaced as a whole. Answers like `GET`, with the new `revision` |
+| `GET /api/projects/:id/revisions` | Lists the versions kept of the project, newest first. See [Revisions](#revisions) |
+| `POST /api/projects/:id/restore` | Makes an earlier version current again. Body: `{ "revision": 4 }` |
+| `DELETE /api/projects/:id` | Deletes it with everything in it, its earlier versions too, and a damaged one as well |
 | `GET /api/usage` | What the account keeps on the server: the number of `projects`, `slides`, `shots` and `images`, and their size in `bytes` |
 
 ```bash
@@ -34,7 +36,33 @@ curl -s {{SERVER}}/api/projects \
   -d '{"name":"Streaks","locales":["en-US","de-DE"]}'
 ```
 
-The answer holds the project's `id`, which every other request uses. The shape of `slides`, `theme` and `creatives` is on [Slides](/docs/slides), [Header and search results](/docs/store-assets) and [Banners](/docs/banners). `deviceSlides` holds the sets single devices have of their own, by `iphone`, `duo`, `ipad` and `mac`, such as `{ "ipad": [ … ] }`. A device that is not in it draws `slides`. See [A set for each device](/docs/slides#a-set-for-each-device). `creatives` holds both, by name: `header`, `search`, `universal`, `readme`, `social`, `link`, `post`. `targets` is the list of sizes the project exports, such as `["iphone-6.9","iphone-5.5"]`. Leave it out, or send `null` or `[]`, for the standard sizes. See [Sizes](/docs/sizes).
+The answer holds the project's `id`, which every other request uses. The shape of `slides`, `theme` and `creatives` is on [Slides](/docs/slides), [Header and search results](/docs/store-assets) and [Banners](/docs/banners). `deviceSlides` holds the sets single devices have of their own, by `iphone`, `duo`, `ipad` and `mac`, such as `{ "ipad": [ … ] }`. A device that is not in it draws `slides`. See [A set for each device](/docs/slides#a-set-for-each-device). `creatives` holds both, by name: `header`, `search`, `universal`, `readme`, `social`, `link`, `post`. `targets` is the list of sizes the project exports, such as `["iphone-6.9","iphone-5.5"]`. Leave it out, or send `null` or `[]`, for the standard sizes. See [Sizes](/docs/sizes). `locales` names each language once: `en` and `EN` count as the same one.
+
+A field a project or a slide does not have, such as a misspelt `headlne`, is left out and the change goes through. The answer then names it under `warnings`, such as `["Ignored, because a project has no such field: slides[0].headlne."]`. `warnings` is only there when there is something to say.
+
+### Revisions
+
+Every change to a project is saved as its next revision: `1` when it is made, one up with each change after that. Screenshots, images and renders are not part of it. The last 50 revisions are kept.
+
+To change a project without saving over somebody else's edit, send the revision you made the change on in `If-Match`. When the project has moved on since, nothing is saved and the answer is `409`, with the project as it is now:
+
+```bash
+curl -s -X PUT {{SERVER}}/api/projects/streaks \
+  -H "Authorization: Bearer $APPSHOTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H 'If-Match: "7"' \
+  -d '{"name":"Streaks Pro"}'
+```
+
+```json
+{ "error": "Project \"streaks\" was changed since revision 7 and is at revision 8 now. Load it again and make the change on that.", "revision": 8, "project": { "project": { … }, "revision": 8, … } }
+```
+
+`If-Match` takes the `ETag` as `GET` sent it, such as `"7"`, or the bare number. Without it, a change is saved on whatever revision is current, as it always was.
+
+`GET /api/projects/:id/revisions` answers `{ "revision": 8, "revisions": [ … ] }`, with one entry per version kept, newest first: its `revision`, the `time` it was saved, the `actor` that saved it (`studio`, `api` or `mcp`, and `unknown` for one saved before revisions were counted) and its `size` in bytes. `revision` is `null` while the project is damaged.
+
+`POST /api/projects/:id/restore` with `{ "revision": 4 }` saves revision 4 again as a new revision, so a restore can be undone the same way. It answers like `GET`, and takes `If-Match` too. It is also how a damaged project gets its work back: it opens again at the version restored.
 
 ## Screenshots
 

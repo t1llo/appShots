@@ -34,7 +34,7 @@ For anything about your data, contact whoever gave you access to this server.
 
 **Your API tokens.** For each token: a fingerprint (a SHA-256 hash), its last four characters, the day it was created and the day it was last used. The token itself is not stored.
 
-**Your work.** The projects you make: their names, the texts and settings of every slide, the screenshots and images you upload, and the rendered files.
+**Your work.** The projects you make: their names, the texts and settings of every slide, the screenshots and images you upload, and the rendered files. Each project also keeps its last 50 versions of the names, texts and settings, so that a change can be undone. Screenshots and images are not part of them.
 
 **The list of people.** If the server only admits listed people, the email addresses on that list.
 
@@ -113,7 +113,7 @@ Nobody else. Your data is not sold, rented or shared for advertising, and it is 
 
 Until you delete it.
 
-- Deleting a screenshot, an image or a project removes it at once.
+- Deleting a screenshot, an image or a project removes it at once. A project's earlier versions go with it.
 - Deleting your account removes the account, every project, every file and every token at once.
 - One thing stays after that: the number of renders the account used, next to a SHA-256 hash of Google's id for it. It holds no name and no address, and it only serves to give you the same count back if you sign up again.
 - If the person running the server keeps backups of its disk, deleted data can remain in those until they are overwritten.
