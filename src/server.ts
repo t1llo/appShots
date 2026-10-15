@@ -45,7 +45,7 @@ import { ICONS } from "./icons.ts";
 import { createMcpServer } from "./mcp.ts";
 import { mockupHtml, mockupName, mockupShots, mockupStage } from "./mockup.ts";
 import { cancelRender, closeBrowser, defaultTargets, frozenFor, getRender, listRenders, renderMockup, renderProject, startRender } from "./render.ts";
-import { creativesSchema, deviceSlidesSchema, localeSchema, localesSchema, type Mockups, mockupsSchema, type Project, slideSchema, slidesFor, targetsSchema, themeSchema, unknownFields } from "./schema.ts";
+import { creativesSchema, deviceSlidesSchema, localeSchema, localesSchema, type Mockups, mockupsSchema, type Project, repeatedLocales, slideSchema, slidesFor, targetsSchema, themeSchema, unknownFields } from "./schema.ts";
 import { homePage, siteRoutes, studioPage } from "./site.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, isDeviceKind, isPlacementId, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, sourceOf, TARGET_IDS, type TargetId, TARGETS } from "./sizes.ts";
 import { sweepProjects } from "./storage/migrate.ts";
@@ -518,6 +518,8 @@ api.put("/projects/:id", async (req, res) => {
   // Fields a project does not have are left out, as before, but said so: a misspelt one would otherwise go unnoticed.
   const ignored = unknownFields(projectPatch, req.body).filter((field) => !STORED_ONLY.has(field));
   const warnings = ignored.length ? [`Ignored, because a project has no such field: ${ignored.join(", ")}.`] : [];
+  const repeated = patch.locales ? repeatedLocales(req.body.locales) : [];
+  if (repeated.length) warnings.push(`Each language is kept once, in the first of its spellings: left out ${repeated.join(", ")} from locales.`);
   await change(req, res, (options) => updateProject(spaceOf(res), req.params.id, patch, options), warnings);
 });
 /** The versions kept of a project, newest first: every change is one, the last 50 of them. */

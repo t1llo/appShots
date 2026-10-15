@@ -57,7 +57,7 @@ Returns the project's id and how to upload screenshots into it.
 
 ### update_project
 
-Changes `name`, `locales`, `targets` or `theme` of `project`. The theme is replaced as a whole, so send all of it. `targets` is the list of sizes the project exports, and `[]` goes back to the standard ones. See [Sizes](/docs/sizes). `locales` names each language once: `en` and `EN` count as the same one.
+Changes `name`, `locales`, `targets` or `theme` of `project`. The theme is replaced as a whole, so send all of it. `targets` is the list of sizes the project exports, and `[]` goes back to the standard ones. See [Sizes](/docs/sizes). `locales` holds each language once, and `en` and `EN` count as the same one: a language given twice is kept in its first spelling.
 
 ### list_revisions
 

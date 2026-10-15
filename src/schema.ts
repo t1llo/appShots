@@ -31,14 +31,18 @@ const hex = z.string().regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
 const locale = z.string().regex(LOCALE, "BCP-47 code like en or de-CH");
 
 /**
- * A project's languages, each once. Case does not tell two apart: screenshots are matched to a language without it,
- * and a disk that ignores case files "de-DE" and "de-de" into one folder.
+ * Whether the code at `i` names a language that comes before it in `list`. Case does not tell two apart: screenshots
+ * are matched to a language without it, and a disk that ignores case files "de-DE" and "de-de" into one folder.
  */
-const locales = z
-  .array(locale)
-  .min(1)
-  .max(40)
-  .refine((list) => new Set(list.map((code) => code.toLowerCase())).size === list.length, "each language only once, whatever its case");
+const repeats = (list: readonly string[], code: string, i: number) => list.findIndex((other) => other.toLowerCase() === code.toLowerCase()) !== i;
+
+/** The codes in `list` that name a language it named before. */
+export const repeatedLocales = (list: readonly string[]): string[] => list.filter((code, i) => repeats(list, code, i));
+
+const localeList = z.array(locale).min(1).max(40);
+
+/** A project's languages, each once. */
+const locales = localeList.refine((list) => repeatedLocales(list).length === 0, "each language only once, whatever its case");
 
 const text = z
   .union([z.string().max(400), z.record(locale, z.string().max(400))])
@@ -271,7 +275,11 @@ export const allSlides = (project: Pick<Project, "slides" | "deviceSlides">): Sl
 export const slidesFor = (project: Pick<Project, "slides" | "deviceSlides">, device: DeviceKind): Slide[] => project.deviceSlides?.[device] ?? project.slides;
 
 export const localeSchema = locale;
-export const localesSchema = locales;
+/**
+ * Languages as a client sends them. A list that names one twice was taken before that was checked, so it still is:
+ * each is kept once, in the first of its spellings.
+ */
+export const localesSchema = localeList.overwrite((list) => list.filter((code, i) => !repeats(list, code, i)));
 export const slugSchema = slug;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);

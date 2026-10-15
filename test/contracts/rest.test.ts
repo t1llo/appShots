@@ -576,6 +576,16 @@ describe("revisions", () => {
     assert.equal((await call(`/api/projects/${id}`, send("PUT", { name: "Clean" }))).body.warnings, undefined);
   });
 
+  test("a language given twice is taken once, in its first spelling", async () => {
+    const created = await call("/api/projects", send("POST", { name: "Twice", locales: ["en", "de", "EN"] }));
+    assert.equal(created.status, 201);
+    assert.deepEqual(created.body.locales, ["en", "de"]);
+    const answer = await call(`/api/projects/${created.body.id}`, send("PUT", { locales: ["de-DE", "en", "de-de", "DE-DE"] }));
+    assert.equal(answer.status, 200);
+    assert.deepEqual(answer.body.project.locales, ["de-DE", "en"]);
+    assert.deepEqual(answer.body.warnings, ["Each language is kept once, in the first of its spellings: left out de-de, DE-DE from locales."]);
+  });
+
   test("the revisions are listed and an earlier one restored as a new one", async () => {
     const id = await createProject({ name: "Undo" });
     await call(`/api/projects/${id}`, send("PUT", { slides: [{ layout: "statement", headline: "Good" }] }));

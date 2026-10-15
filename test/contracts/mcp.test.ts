@@ -173,6 +173,8 @@ describe("tools", () => {
     // [] goes back to the standard sizes.
     assert.ok(jsonOf(await callTool(server, "update_project", { project: "mcp-app", targets: [] })).exportSizes.length > 1);
     assertRefused(await callTool(server, "update_project", { project: "mcp-app", locales: [] }));
+    // A language given twice is taken once, in its first spelling.
+    assert.deepEqual(jsonOf(await callTool(server, "update_project", { project: "mcp-app", locales: ["en-US", "de-DE", "EN-us"] })).locales, ["en-US", "de-DE"]);
   });
 
   test("set_slides replaces the shared set and names screenshots that are not there", async () => {
