@@ -1,0 +1,630 @@
+/* The home page (web/home.html): the headline, the reels of examples, the terminal, the agents and the setup. */
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./site.css";
+
+.home-hero,
+.home-agents,
+.home-setup,
+.home-end {
+  width: min(1120px, 100% - 40px);
+  margin-inline: auto;
+}
+.btn.cta {
+  height: 46px;
+  padding: 0 22px;
+  border-radius: 10px;
+  background: var(--text);
+  box-shadow: none;
+  color: var(--bg);
+  font-size: 15px;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+.btn.cta:hover {
+  opacity: 0.86;
+}
+.btn.cta span {
+  transition: transform 0.2s;
+}
+.btn.cta:hover span {
+  transform: translateX(3px);
+}
+.btn.cta.ghost {
+  gap: 9px;
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--text);
+}
+.btn.cta.ghost:hover {
+  background: var(--hover);
+  opacity: 1;
+}
+.home-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.home-hero {
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+  padding: 64px 0 44px;
+  text-align: center;
+}
+/* The setup line sits right under the headline, with the agents it can be written for above it. The sentence that
+   announces it is for a phone, where the line comes further down. */
+.home-hero .home-lead {
+  display: none;
+}
+.hero-setup {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 6px;
+}
+.hero-setup .setup-line {
+  margin-top: 0;
+}
+.hero-agents {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--soft);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.hero-agents button {
+  height: 28px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.hero-agents button:hover {
+  color: var(--text);
+}
+.hero-agents button[aria-pressed="true"] {
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line-strong);
+  color: var(--text);
+}
+.hero-note {
+  max-width: 780px;
+  margin-top: -6px;
+  font-size: 14px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.hero-note :is(a, b) {
+  color: var(--text-2);
+}
+.hero-note b {
+  font-weight: 600;
+}
+.hero-note a:hover {
+  color: var(--text);
+}
+.home-lead {
+  max-width: 46ch;
+  color: var(--text-2);
+  font-size: clamp(16px, 1.6vw, 19px);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.home-hero .inline-error {
+  max-width: 52ch;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--danger-soft);
+  font-size: 14px;
+}
+.home-note,
+.home-caption {
+  color: var(--text-3);
+  font-size: 13px;
+}
+.home-caption {
+  padding: 6px 20px 0;
+  text-align: center;
+}
+
+/* A reel is a row of examples that drifts sideways for ever. home.ts repeats the row and sets --copies and --time;
+   until it has (and for anyone who asked for less motion) the row simply scrolls by hand. */
+.reel {
+  --gap: 18px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 14px 0 26px;
+}
+.reel.wide {
+  --gap: 20px;
+}
+.reel.rolling {
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+}
+.reel-track {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap);
+  width: max-content;
+  padding-inline: 20px;
+}
+.reel.rolling .reel-track {
+  padding-inline: 0;
+  animation: reel var(--time, 60s) linear infinite;
+  will-change: transform;
+}
+.reel.wide.rolling .reel-track {
+  animation-direction: reverse;
+}
+.reel.rolling:hover .reel-track {
+  animation-play-state: paused;
+}
+.reel img {
+  display: block;
+  width: auto;
+  height: clamp(270px, 30vw, 400px);
+  border-radius: 13px;
+  box-shadow: var(--shadow-card);
+}
+.reel.wide img {
+  height: clamp(150px, 18vw, 250px);
+  border-radius: 14px;
+}
+/* Every other slide sits lower, and the two halves bob out of step. Ten slides to a row keeps that pattern unbroken across the repeat. */
+.reel:not(.wide) img:nth-child(even) {
+  margin-top: 30px;
+}
+.reel.rolling:not(.wide) img {
+  animation: bob 7s ease-in-out infinite;
+}
+.reel.rolling:not(.wide) img:nth-child(even) {
+  animation-delay: -3.5s;
+}
+@keyframes reel {
+  to {
+    transform: translateX(calc((-100% - var(--gap)) / var(--copies, 2)));
+  }
+}
+@keyframes bob {
+  50% {
+    transform: translateY(-9px);
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* The panel is wider than the column by its padding, so what is in it lines up with the rest of the page. */
+.home-agents {
+  display: grid;
+  grid-template-columns: 1fr 1.05fr;
+  align-items: center;
+  gap: 56px;
+  box-sizing: border-box;
+  width: min(1232px, 100% - 40px);
+  margin-block: 72px;
+  padding: 56px;
+  border-radius: 24px;
+  background: var(--soft);
+  scroll-margin-top: 24px;
+}
+.home-eyebrow {
+  margin-bottom: 14px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.home-agents .home-lead {
+  margin-top: 14px;
+  font-size: 17px;
+}
+.home-ways {
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.home-ways li {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+.home-ways b {
+  flex: 0 0 104px;
+  font-weight: 600;
+}
+.home-ways span {
+  color: var(--text-2);
+}
+.home-ways + .home-note {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+/* The terminal is dark in both themes, so its colours are its own. */
+.term {
+  overflow: hidden;
+  border-radius: 14px;
+  background: #17171a;
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.08),
+    0 18px 40px -18px rgb(0 0 0 / 0.45);
+  color: #e8e8e6;
+}
+.term-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.07);
+}
+.term-bar i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.16);
+}
+.term-bar span {
+  margin-left: auto;
+  color: rgb(255 255 255 / 0.35);
+  font-size: 12px;
+}
+.term-body {
+  display: grid;
+  gap: 9px;
+  padding: 20px 20px 24px;
+  font:
+    13px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+.term-body p:nth-child(3) {
+  margin-top: 8px;
+}
+.term .dim {
+  color: rgb(255 255 255 / 0.42);
+}
+.term .ok {
+  margin-right: 4px;
+  color: #4cc38a;
+}
+.term .caret {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 7px;
+  background: rgb(255 255 255 / 0.7);
+  vertical-align: text-bottom;
+  animation: blink 1.1s steps(1) infinite;
+}
+/* home.ts arms the terminal, then switches it on when it scrolls into view: the lines arrive one after another. */
+.term.armed p {
+  opacity: 0;
+  transform: translateY(5px);
+}
+.term.armed.on p {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.4s,
+    transform 0.4s;
+}
+.term.on p:nth-child(2) {
+  transition-delay: 0.5s;
+}
+.term.on p:nth-child(3) {
+  transition-delay: 1.2s;
+}
+.term.on p:nth-child(4) {
+  transition-delay: 1.9s;
+}
+.term.on p:nth-child(5) {
+  transition-delay: 2.6s;
+}
+.term.on p:nth-child(6) {
+  transition-delay: 3.3s;
+}
+.term.on p:nth-child(7) {
+  transition-delay: 4s;
+}
+
+/* The agents the setup command knows. home.ts lets each card pick the agent the line under them is written for. */
+.home-setup {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  margin-block: 72px;
+  text-align: center;
+  scroll-margin-top: 24px;
+}
+.home-setup .home-eyebrow {
+  margin-bottom: 0;
+}
+.home-setup .home-lead {
+  font-size: 17px;
+}
+.agent-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  width: 100%;
+  margin-top: 18px;
+}
+.agent {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 3px;
+  padding: 18px;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.agent:hover {
+  background: var(--hover);
+}
+.agent[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.agent svg {
+  width: 26px;
+  height: 26px;
+  margin-bottom: 12px;
+  fill: currentColor;
+}
+.agent svg.claude {
+  color: #d97757;
+}
+.agent svg.line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.agent b {
+  font-weight: 600;
+}
+.agent small {
+  color: var(--text-3);
+  font-size: 13px;
+}
+.agent-gets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 14px;
+}
+.agent-gets i {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--active);
+  color: var(--text-2);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 500;
+}
+.agent-gets .off {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--text-3);
+}
+/* Dark in both themes, like the terminal above it. */
+.setup-line {
+  box-sizing: border-box;
+  width: min(100%, 780px);
+  margin-top: 10px;
+  padding: 14px 20px;
+  border-radius: 12px;
+  background: #17171a;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
+  color: #e8e8e6;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.setup-line code {
+  padding: 0;
+  background: none;
+  font-size: 13.5px;
+}
+.setup-line .dim {
+  color: rgb(255 255 255 / 0.42);
+}
+.setup-line b {
+  color: #4cc38a;
+  font-weight: 600;
+}
+
+.home-end {
+  display: grid;
+  justify-items: center;
+  gap: 28px;
+  padding: 72px 0 88px;
+  text-align: center;
+}
+.home-facts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.home-facts li {
+  padding: 5px 12px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+@media (max-width: 860px) {
+  .home-hero {
+    padding: 40px 0 32px;
+  }
+  .reel {
+    --gap: 12px;
+  }
+  .reel:not(.wide) img:nth-child(even) {
+    margin-top: 22px;
+  }
+  .home-agents {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    margin-block: 48px;
+    padding: 32px 22px;
+    border-radius: 18px;
+  }
+  .home-ways li {
+    gap: 12px;
+  }
+  .home-ways b {
+    flex-basis: 96px;
+  }
+  .term-body {
+    padding: 16px 16px 20px;
+    font-size: 12px;
+  }
+  .home-setup {
+    margin-block: 48px;
+  }
+  .home-end {
+    padding: 48px 0 64px;
+  }
+}
+/* Five cards side by side need the room. Below that the agents are a list, a row each. */
+@media (max-width: 960px) {
+  .agent-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    max-width: 520px;
+  }
+  .agent {
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0 14px;
+    padding: 12px 16px;
+  }
+  .agent svg {
+    grid-row: 1 / span 2;
+    margin: 0;
+  }
+  .agent b,
+  .agent small {
+    grid-column: 2;
+  }
+  .agent-gets {
+    grid-area: 1 / 3 / span 2;
+    justify-content: flex-end;
+    margin: 0;
+  }
+  .setup-line {
+    padding: 12px 16px;
+  }
+}
+/* A phone cannot run the setup line, so the top of the page keeps to the headline and the two buttons. The line
+   comes once, further down, under the agents as a handful of chips. */
+@media (max-width: 640px) {
+  .hero-setup,
+  .hero-note[data-when="account"],
+  .home-ways + .home-note {
+    display: none;
+  }
+  .home-hero .home-lead {
+    display: block;
+  }
+  .hero-note {
+    order: 1;
+    margin-top: 0;
+  }
+  .home-cta {
+    width: min(100%, 400px);
+  }
+  .home-cta .btn.cta {
+    flex: 1 1 140px;
+    padding: 0 16px;
+  }
+  .home-hero .home-cta {
+    margin-top: 6px;
+  }
+  .home-agents {
+    padding: 28px 20px;
+  }
+  .agent-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: none;
+    margin-top: 10px;
+  }
+  .agent {
+    display: flex;
+    gap: 8px;
+    height: 40px;
+    padding: 0 14px 0 12px;
+    border-radius: 12px;
+  }
+  .agent svg {
+    width: 18px;
+    height: 18px;
+  }
+  .agent small,
+  .agent-gets {
+    display: none;
+  }
+  .setup-line {
+    padding: 12px 14px;
+  }
+  .setup-line code {
+    font-size: 12.5px;
+  }
+}
+/* The two dark boxes set their lines smaller on the narrowest phones, so fewer of them break. */
+@media (max-width: 359px) {
+  .home-agents {
+    padding: 24px 16px;
+  }
+  .term-body {
+    padding: 14px 14px 18px;
+    font-size: 11px;
+  }
+  .setup-line code {
+    font-size: 11px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .term .caret {
+    animation: none;
+  }
+  .term.armed p {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

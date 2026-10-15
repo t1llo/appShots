@@ -1,5 +1,9 @@
 /* The documentation pages (web/docs.html): the home page's bar and footer around the list of pages, the page
-   itself and its headings. The colours and the buttons are app.css's. */
+   itself and its headings. */
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./site.css";
 
 .docs-top {
   position: sticky;

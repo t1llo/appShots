@@ -1,0 +1,133 @@
+/* The frame the home page and the documentation share: the bar at the top, the headings and the footer. */
+
+.home {
+  height: auto;
+  font-size: 15px;
+}
+.home-bar,
+.home-foot {
+  width: min(1120px, 100% - 40px);
+  margin-inline: auto;
+}
+.home-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 60px;
+}
+.home-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.home-actions .icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+}
+/* A mark is a filled drawing, GitHub's or an agent's, where the icons are lines. */
+.icon.mark {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  stroke: none;
+}
+.home-link {
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.home-link:hover,
+.home-link[aria-current] {
+  color: var(--text);
+}
+.home-link:hover {
+  background: var(--hover);
+}
+/* The sun shows while the page is dark, the moon while it is light: each is what a click turns on. */
+.home-actions .to-dark,
+:root[data-theme="dark"] .home-actions .to-light {
+  display: block;
+}
+.home-actions .to-light,
+:root[data-theme="dark"] .home-actions .to-dark {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .home-actions .to-light {
+    display: block;
+  }
+  :root:not([data-theme="light"]) .home-actions .to-dark {
+    display: none;
+  }
+}
+.home-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.home h1 {
+  max-width: 20ch;
+  font-size: clamp(38px, 6.4vw, 68px);
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+.home h2 {
+  font-size: clamp(26px, 3.4vw, 38px);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.028em;
+  text-wrap: balance;
+}
+.home code {
+  color: inherit;
+}
+.home-foot {
+  padding: 22px 0 36px;
+  border-top: 1px solid var(--line);
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: center;
+}
+.home-foot nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 22px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.home-foot a {
+  color: var(--text-2);
+  text-decoration: none;
+}
+.home-foot a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .home h1 {
+    font-size: clamp(30px, 10.1vw, 38px);
+  }
+}
+/* A phone has no room for the mark in the bar. The button under the headline goes to the same place. */
+@media (max-width: 520px) {
+  .home-actions .home-gh {
+    display: none;
+  }
+}
+/* The narrowest phones have none for the switch either: the page follows the device. */
+@media (max-width: 359px) {
+  .home-actions #appearance {
+    display: none;
+  }
+}

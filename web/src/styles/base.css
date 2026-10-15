@@ -1,0 +1,225 @@
+/* What the Studio, the home page and the documentation share: the page itself, the buttons and the icons, and the
+   box a command is copied from. */
+
+[hidden] {
+  display: none !important;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    14px/1.5 ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI Variable Display",
+    "Segoe UI",
+    Helvetica,
+    "Apple Color Emoji",
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+a {
+  color: inherit;
+}
+code,
+pre,
+textarea.code {
+  font:
+    12.5px/1.55 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+code {
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: var(--code);
+  color: var(--danger);
+}
+.spacer {
+  flex: 1;
+}
+.muted {
+  color: var(--text-2);
+}
+.hint {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.dim {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.pad {
+  padding: 16px;
+}
+.inline-error {
+  color: var(--danger);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+:is(button, a, .btn, .card, .shot, .nav-item, summary):focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 1px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+.btn:hover {
+  background: var(--hover);
+}
+.btn:active {
+  background: var(--active);
+}
+.btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.btn.primary {
+  background: var(--ink);
+  box-shadow: none;
+  color: var(--on-ink);
+  font-variant-numeric: tabular-nums;
+}
+.btn.primary:hover {
+  background: var(--ink-hover);
+}
+.btn.quiet {
+  box-shadow: none;
+  color: var(--text-2);
+}
+.btn.quiet:hover {
+  color: var(--text);
+}
+.btn.danger {
+  color: var(--danger);
+}
+.btn.danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.btn.danger.solid {
+  background: var(--danger);
+  box-shadow: none;
+  color: #fff;
+}
+.btn.danger.solid:hover {
+  filter: brightness(0.94);
+}
+.btn .icon {
+  width: 14px;
+  height: 14px;
+}
+.btn.small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+.btn.wide {
+  width: 100%;
+  height: 36px;
+}
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* A button that is a sign alone. Without `plain` it removes something, and says so under the pointer. */
+.icon-btn {
+  width: 28px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-3);
+  font-size: 16px;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  background: var(--hover);
+  color: var(--danger);
+}
+.icon-btn.plain:hover {
+  color: var(--text);
+}
+.icon-btn:disabled {
+  background: none;
+  color: var(--text-3);
+  opacity: 0.4;
+  cursor: default;
+}
+/* A command, with a button that copies it. */
+.copy {
+  position: relative;
+}
+.copy pre {
+  margin: 0;
+  padding: 11px 68px 11px 14px;
+  border-radius: 6px;
+  background: var(--code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.copy button {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  height: 26px;
+  background: var(--popover);
+}
+.copy button:hover {
+  background: var(--soft);
+}
+
+/* A narrow window scrolls the page as a whole. */
+@media (max-width: 960px) {
+  html,
+  body {
+    height: auto;
+  }
+}

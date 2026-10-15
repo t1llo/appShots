@@ -1,7 +1,7 @@
 // The Studio's shell: the sidebar, the routes, and what every page shares.
 // Routes live in the URL hash, so the #/<project> links that the MCP tools and the CLI print keep working.
 
-import "./app.css";
+import "./styles/studio.css";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { createHashHistory, createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider } from "@tanstack/react-router";
 import { type ReactNode, StrictMode, useEffect, useState } from "react";
