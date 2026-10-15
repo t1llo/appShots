@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { errorText } from "../api.ts";
-import { hostToasts } from "./toast.tsx";
+import { hostToasts, toast } from "./toast.tsx";
 
 /**
  * A modal that exists only while it is open. Put `data-autofocus` on the element that should take the focus. When it
@@ -39,12 +39,20 @@ export function Dialog({ onClose, children }: { onClose: () => void; children: R
 
 /**
  * Asks before doing something that is hard to take back. `run` does it and closes the dialog. A failure stays in the
- * dialog, next to the button that caused it, so it can be tried again or cancelled.
+ * dialog, next to the button that caused it, so it can be tried again or cancelled. Cancelling does not stop a run
+ * that has started, so one that fails after the dialog has gone is told in a toast instead.
  */
 export function Confirm(props: { title: ReactNode; children?: ReactNode; action: string; running: string; danger?: boolean; run: () => Promise<unknown>; onClose: () => void }) {
   const { title, children, action, running, danger, run, onClose } = props;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const shown = useRef(false);
+  useEffect(() => {
+    shown.current = true;
+    return () => {
+      shown.current = false;
+    };
+  }, []);
 
   const go = async () => {
     if (busy) return;
@@ -53,6 +61,7 @@ export function Confirm(props: { title: ReactNode; children?: ReactNode; action:
     try {
       await run();
     } catch (failure) {
+      if (!shown.current) return toast(errorText(failure), "error");
       setError(errorText(failure));
       setBusy(false);
     }
