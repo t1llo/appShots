@@ -7,7 +7,7 @@ import { api, day, errorText, type Meta, plural, projectsQuery } from "./api.ts"
 import { attempt, type FreshToken, type TokenEntry, tokensKey, useOpenDialog } from "./dialogs.tsx";
 import { rendersQuery } from "./renders.tsx";
 import { type Appearance, readAppearance, setAppearance } from "./theme.ts";
-import { CopyBlock, Icon, Menu, Select, toast } from "./ui/index.ts";
+import { Confirm, CopyBlock, Icon, Menu, Segmented, Select, toast } from "./ui/index.ts";
 
 /** A page of its own: its name in the bar, and under it a column that holds a heading and sections. */
 export function Page({ name, title, sub, actions, wide, children }: { name: string; title: string; sub?: ReactNode; actions?: ReactNode; wide?: boolean; children?: ReactNode }) {
@@ -172,25 +172,24 @@ const APPEARANCES: { id: Appearance; text: string; title: string; path: string }
 function AppearanceSwitch() {
   const [chosen, setChosen] = useState(readAppearance);
   return (
-    <div className="segmented" role="radiogroup" aria-label="Appearance">
-      {APPEARANCES.map((entry) => (
-        <button
-          key={entry.id}
-          className={chosen === entry.id ? "on" : ""}
-          type="button"
-          role="radio"
-          aria-checked={chosen === entry.id}
-          title={entry.title}
-          onClick={() => {
-            setAppearance(entry.id);
-            setChosen(entry.id);
-          }}
-        >
-          <Icon path={entry.path} />
-          {entry.text}
-        </button>
-      ))}
-    </div>
+    <Segmented
+      label="Appearance"
+      choices={APPEARANCES.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        text: (
+          <>
+            <Icon path={entry.path} />
+            {entry.text}
+          </>
+        ),
+      }))}
+      value={chosen}
+      onChange={(id) => {
+        setAppearance(id);
+        setChosen(id);
+      }}
+    />
   );
 }
 
@@ -286,12 +285,20 @@ function Tokens() {
   const tokens = useQuery({ queryKey: tokensKey, queryFn: () => api<TokenEntry[]>("GET", "/account/tokens") });
   const [fresh, setFresh] = useState<FreshToken | null>(null);
   const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
   const refresh = () => queryClient.invalidateQueries({ queryKey: tokensKey });
 
+  // A second click while the first is under way would make a token whose secret is never shown.
   const create = attempt(async () => {
-    setFresh(await api<FreshToken>("POST", "/account/tokens", { name }));
-    setName("");
-    await refresh();
+    if (busy) return;
+    setBusy(true);
+    try {
+      setFresh(await api<FreshToken>("POST", "/account/tokens", { name }));
+      setName("");
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
   });
   const revoke = (token: TokenEntry) =>
     attempt(async () => {
@@ -330,7 +337,7 @@ function Tokens() {
         }}
       >
         <input type="text" maxLength={60} placeholder="Name it, e.g. MacBook" aria-label="Token name" value={name} onChange={(event) => setName(event.target.value)} />
-        <button className="btn" type="submit">
+        <button className="btn" type="submit" disabled={busy}>
           Create token
         </button>
       </form>
@@ -455,12 +462,14 @@ function PeopleLists({ data }: { data: PeopleData }) {
     await queryClient.invalidateQueries({ queryKey: overviewKey });
   };
   const byList = data.signup === "list";
+  const [opening, setOpening] = useState(false);
 
-  const setMode = (mode: string) =>
-    attempt(async () => {
-      await api("PUT", "/admin/signup", { mode });
-      await refresh();
-    })();
+  const putMode = async (mode: "open" | "list") => {
+    await api("PUT", "/admin/signup", { mode });
+    await refresh();
+  };
+  // A select also changes by an arrow key or a typed letter, so letting strangers in is asked first.
+  const setMode = (mode: string) => (mode === "open" ? setOpening(true) : attempt(() => putMode("list"))());
   const add = (address: string) =>
     attempt(async () => {
       await api("POST", "/admin/people", { email: address });
@@ -500,6 +509,21 @@ function PeopleLists({ data }: { data: PeopleData }) {
           </Row>
         </div>
       </Part>
+      {opening ? (
+        <Confirm
+          title="Let anyone sign in?"
+          action="Open sign-in"
+          running="Opening…"
+          run={async () => {
+            await putMode("open");
+            setOpening(false);
+            toast("Anyone with a Google account can sign in now.", "", 8000, { text: "Undo", run: attempt(() => putMode("list")) });
+          }}
+          onClose={() => setOpening(false)}
+        >
+          Anybody who finds this address could sign in with Google, make projects and render on your server.
+        </Confirm>
+      ) : null}
 
       <Part
         title="People"

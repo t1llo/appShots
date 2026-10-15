@@ -2,7 +2,7 @@
 // is set up with.
 
 import { LOCALE } from "./api.ts";
-import { toast } from "./ui/index.ts";
+import { Segmented, toast } from "./ui/index.ts";
 
 /** The localisations of App Store Connect under the codes it uses itself, so an exported folder carries the name of the place it goes. */
 export const STORE_LANGUAGES: [code: string, name: string][] = [
@@ -112,13 +112,7 @@ export function LanguageSwitch({ locales, value, onChange, onAdd }: { locales: s
           ))}
         </select>
       ) : (
-        <div className="segmented" role="radiogroup" aria-label="Language shown">
-          {locales.map((code) => (
-            <button key={code} className={code === value ? "on" : ""} type="button" role="radio" aria-checked={code === value} title={`Show the set in ${languageName(code)}`} onClick={() => onChange(code)}>
-              {code}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Language shown" choices={locales.map((code) => ({ id: code, text: code, title: `Show the set in ${languageName(code)}` }))} value={value} onChange={onChange} />
       )}
       {onAdd ? <AddLanguage taken={locales} onAdd={onAdd} /> : null}
     </div>

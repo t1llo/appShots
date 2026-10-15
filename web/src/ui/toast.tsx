@@ -1,6 +1,7 @@
 // Notes at the bottom of the window that go away by themselves.
 
 import { useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 
 interface ToastAction {
   text: string;
@@ -16,11 +17,35 @@ interface Toast {
 
 let toasts: Toast[] = [];
 let nextToast = 0;
+/** The modal dialogs that are open, the top one last. */
+let hosts: HTMLElement[] = [];
 const watchers = new Set<() => void>();
+
+function notifyAll() {
+  for (const notify of watchers) notify();
+}
 
 function setToasts(next: Toast[]) {
   toasts = next;
-  for (const notify of watchers) notify();
+  notifyAll();
+}
+
+const watch = (notify: () => void) => {
+  watchers.add(notify);
+  return () => void watchers.delete(notify);
+};
+
+/**
+ * Draws the toasts inside a modal dialog while it is open. A modal lies over the rest of the page and makes it
+ * inert, so a note about what the dialog did would otherwise sit under its backdrop. Hands back how to stop.
+ */
+export function hostToasts(dialog: HTMLElement): () => void {
+  hosts = [...hosts, dialog];
+  notifyAll();
+  return () => {
+    hosts = hosts.filter((entry) => entry !== dialog);
+    notifyAll();
+  };
 }
 
 /** Shows a note for a few seconds. With an `action` it carries a button, which also puts the note away. */
@@ -31,14 +56,9 @@ export function toast(message: string, kind: Toast["kind"] = "", ms = 4000, acti
 }
 
 export function Toasts() {
-  const list = useSyncExternalStore(
-    (notify) => {
-      watchers.add(notify);
-      return () => watchers.delete(notify);
-    },
-    () => toasts,
-  );
-  return (
+  const list = useSyncExternalStore(watch, () => toasts);
+  const host = useSyncExternalStore(watch, () => hosts.at(-1) ?? null);
+  const box = (
     <div className="toasts" aria-live="polite">
       {list.map((entry) => (
         <div key={entry.id} className={`toast ${entry.kind}`}>
@@ -59,4 +79,5 @@ export function Toasts() {
       ))}
     </div>
   );
+  return host ? createPortal(box, host) : box;
 }

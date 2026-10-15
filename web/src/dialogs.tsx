@@ -2,11 +2,11 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { createContext, type FormEvent, useContext, useState } from "react";
+import { createContext, type FormEvent, useContext, useEffect, useState } from "react";
 import { api, detailQuery, errorText, type Meta, type Project, projectsQuery } from "./api.ts";
 import { LanguageList } from "./languages.tsx";
 import { track } from "./track.ts";
-import { CopyBlock, Dialog, Field, toast } from "./ui/index.ts";
+import { Confirm, CopyBlock, Dialog, Field, toast } from "./ui/index.ts";
 
 type Named = { id: string; name: string };
 export type DialogKind = "new" | "connect" | { rename: Named } | { remove: Named };
@@ -26,19 +26,11 @@ export const useOpenDialog = () => useContext(OpenDialog);
 
 export function DialogHost({ kind, meta, close }: { kind: DialogKind | null; meta: Meta; close: () => void }) {
   if (kind == null) return null;
+  if (typeof kind === "object" && "remove" in kind) return <DeleteProject key="remove" project={kind.remove} close={close} />;
+  // Each kind is a dialog of its own, so one opened from another, as Connect opens New project, takes the focus.
   return (
-    <Dialog onClose={close}>
-      {typeof kind === "object" ? (
-        "rename" in kind ? (
-          <RenameProject project={kind.rename} close={close} />
-        ) : (
-          <DeleteProject project={kind.remove} close={close} />
-        )
-      ) : kind === "new" ? (
-        <NewProject close={close} />
-      ) : (
-        <Connect meta={meta} close={close} />
-      )}
+    <Dialog key={typeof kind === "object" ? "rename" : kind} onClose={close}>
+      {typeof kind === "object" ? <RenameProject project={kind.rename} close={close} /> : kind === "new" ? <NewProject close={close} /> : <Connect meta={meta} close={close} />}
     </Dialog>
   );
 }
@@ -68,9 +60,15 @@ function NewProject({ close }: { close: () => void }) {
   const [name, setName] = useState("");
   const [locales, setLocales] = useState(["en-US"]);
   const [error, setError] = useState("");
+  // The server numbers a second project of the same name instead of turning it down, so a double click made two.
+  const [busy, setBusy] = useState(false);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (busy) return;
+    // `required` lets a name of spaces through, which the server answers in its own words.
+    if (!name.trim()) return setError("Give the project a name.");
+    setBusy(true);
     try {
       const project = await api<Project>("POST", "/projects", {
         name: name.trim(),
@@ -83,6 +81,7 @@ function NewProject({ close }: { close: () => void }) {
       await navigate({ to: "/$projectId", params: { projectId: project.id } });
     } catch (failure) {
       setError(errorText(failure));
+      setBusy(false);
     }
   };
 
@@ -103,7 +102,7 @@ function NewProject({ close }: { close: () => void }) {
           <button className="btn" type="button" onClick={close}>
             Cancel
           </button>
-          <button className="btn primary" type="submit">
+          <button className="btn primary" type="submit" disabled={busy}>
             Create
           </button>
         </div>
@@ -160,12 +159,12 @@ function RenameProject({ project, close }: { project: Named; close: () => void }
 function DeleteProject({ project, close }: { project: Named; close: () => void }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
+  // The router says whether the project is on screen; only the slides view holds a draft whose saving has to stop.
+  const { projectId } = useParams({ strict: false });
 
   const remove = async () => {
-    setBusy(true);
-    const open = openProject.id === project.id;
-    const resume = open ? await openProject.quiesce() : null;
+    const open = projectId === project.id || openProject.id === project.id;
+    const resume = openProject.id === project.id ? await openProject.quiesce() : null;
     try {
       await api("DELETE", `/projects/${project.id}`);
       await queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey });
@@ -175,24 +174,14 @@ function DeleteProject({ project, close }: { project: Named; close: () => void }
       toast(`Deleted "${project.name}".`);
     } catch (failure) {
       resume?.();
-      toast(errorText(failure), "error");
-      setBusy(false);
+      throw failure;
     }
   };
 
   return (
-    <>
-      <h1>Delete "{project.name}"?</h1>
-      <p className="dialog-sub">Its slides, screenshots, images and renders are deleted with it. This cannot be undone.</p>
-      <div className="foot">
-        <button className="btn" type="button" data-autofocus onClick={close}>
-          Cancel
-        </button>
-        <button className="btn danger solid" type="button" disabled={busy} onClick={() => void remove()}>
-          {busy ? "Deleting…" : "Delete project"}
-        </button>
-      </div>
-    </>
+    <Confirm title={`Delete "${project.name}"?`} action="Delete project" running="Deleting…" danger run={remove} onClose={close}>
+      Its slides, screenshots, images and renders are deleted with it. This cannot be undone.
+    </Confirm>
   );
 }
 
@@ -274,15 +263,32 @@ function Connect({ meta, close }: { meta: Meta; close: () => void }) {
   const [agent, setAgent] = useState<Agent | null>(null);
   const [way, setWay] = useState<Way | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const origin = location.origin;
   // Without sign-in there is no token, and nothing to wait for.
   const ready = !meta.authEnabled || token != null;
 
-  const create = attempt(async () => {
-    setToken((await api<FreshToken>("POST", "/account/tokens", { name: agent?.id === "other" || !agent ? "Agent" : agent.name })).token);
-    track("connect_agent", { agent: agent?.id ?? "none" });
-    await queryClient.invalidateQueries({ queryKey: tokensKey });
-  });
+  // A failure shows here: the page under the dialog, where the notes are, is out of reach while it is open.
+  const create = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      setToken((await api<FreshToken>("POST", "/account/tokens", { name: agent?.id === "other" || !agent ? "Agent" : agent.name })).token);
+      track("connect_agent", { agent: agent?.id ?? "none" });
+      await queryClient.invalidateQueries({ queryKey: tokensKey });
+    } catch (failure) {
+      setError(errorText(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Each step takes the place of the last, button pressed and all, so the focus moves on to the new step.
+  useEffect(() => {
+    document.querySelector<HTMLElement>("dialog[open] [data-autofocus]")?.focus();
+  }, [agent, way, token]);
 
   if (way == null && agent == null) {
     return (
@@ -347,10 +353,11 @@ function Connect({ meta, close }: { meta: Meta; close: () => void }) {
         <>
           <p>An agent cannot sign in with Google, so it uses a token of yours. It reaches your projects only.</p>
           <div>
-            <button className="btn primary" type="button" data-autofocus onClick={create}>
+            <button className="btn primary" type="button" data-autofocus disabled={busy} onClick={() => void create()}>
               Create token
             </button>
           </div>
+          {error ? <div className="inline-error">{error}</div> : null}
         </>
       )}
     </li>

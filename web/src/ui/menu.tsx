@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { arrowMove } from "./keys.ts";
 
 export interface MenuItem {
   text: string;
@@ -7,12 +8,18 @@ export interface MenuItem {
   run: () => void;
 }
 
-/** A "more" button that opens a small menu under itself. The menu is drawn over the page, so a scrolling list cannot clip it. */
+/**
+ * A "more" button that opens a small menu under itself. The menu is drawn over the page, so a scrolling list cannot
+ * clip it. It takes the focus when it opens, the arrow keys, Home and End move through it, and Escape or Tab put it
+ * away and hand the focus back to the button.
+ */
 export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
   const button = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!at) return;
+    menu.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus({ preventScroll: true });
     const close = () => setAt(null);
     const onDown = (event: PointerEvent) => {
       const target = event.target as Element;
@@ -55,15 +62,38 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
       </button>
       {at
         ? createPortal(
-            <div className="menu" role="menu" style={{ left: at.left, top: at.top }}>
+            <div
+              ref={menu}
+              className="menu"
+              role="menu"
+              aria-label={label}
+              style={{ left: at.left, top: at.top }}
+              onKeyDown={(event) => {
+                // The menu sits at the end of the page, so Tab would wander off from there; it closes the menu instead.
+                if (event.key === "Tab") {
+                  event.preventDefault();
+                  setAt(null);
+                  button.current?.focus();
+                  return;
+                }
+                const entries = [...event.currentTarget.querySelectorAll<HTMLElement>("[role=menuitem]")];
+                const next = arrowMove(event.key, entries.indexOf(document.activeElement as HTMLElement), entries.length, "column");
+                if (next == null) return;
+                event.preventDefault();
+                entries[next].focus();
+              }}
+            >
               {items.map((item) => (
                 <button
                   key={item.text}
                   className={`menu-item${item.danger ? " danger" : ""}`}
                   type="button"
                   role="menuitem"
+                  tabIndex={-1}
                   onClick={() => {
                     setAt(null);
+                    // A dialog the item opens hands the focus back to whatever had it, and the item is about to go.
+                    button.current?.focus();
                     item.run();
                   }}
                 >
