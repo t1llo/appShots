@@ -134,6 +134,21 @@ test("languages the project no longer has are taken away, and old sizes on a ren
   assert.deepEqual(await contents(path.join(dir, "out")), { "de-de/iphone-6.9/01.png": "de", "en/iphone-6.9/01.png": "en", "en/notes/readme.txt": "not a size" });
 });
 
+test("a language taken out of the project while it rendered is neither put in place nor kept", async () => {
+  const dir = await projectFolder(["en"]);
+  await put(path.join(dir, "out"), { "en/iphone-6.9/01.png": "old en", "fr/iphone-6.9/01.png": "old fr", "fr/iphone-6.5/01.png": "old fr" });
+  await put(stagingDir(dir, "job1"), { "en/iphone-6.9/01.png": "new en", "fr/iphone-6.9/01.png": "new fr", "fr/creatives/header.png": "new fr header" });
+  const committed = await commitOutputs(
+    "main/p",
+    dir,
+    commit("job1", [set("en", "iphone-6.9", ["01.png"]), set("fr", "iphone-6.9", ["01.png"])], { creatives: [{ locale: "fr", placement: "header", path: "fr/creatives/header.png" }] }),
+  );
+  assert.equal(committed, true);
+  assert.deepEqual(await contents(path.join(dir, "out")), { "en/iphone-6.9/01.png": "new en" });
+  assert.deepEqual((await readManifest(dir)).sets.map((each) => `${each.locale}/${each.target} ${each.job}`), ["en/iphone-6.9 job1"]);
+  assert.deepEqual((await readdir(dir)).sort(), ["out", "outputs.json", "project.json"]);
+});
+
 test("assets are moved into place, and the ones the project dropped are removed", async () => {
   const dir = await projectFolder();
   await put(path.join(dir, "out"), { "en/creatives/header.png": "old header", "en/creatives/search.png": "old search" });

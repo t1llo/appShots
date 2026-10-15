@@ -59,6 +59,18 @@ export async function readManifest(dir: string): Promise<Manifest> {
 export const stagingDir = (dir: string, job: string) => path.join(dir, STAGING, job);
 
 /**
+ * The languages a project.json lists, in lower case: on a Mac's disk de-de and de-DE are one folder. None when it
+ * lists none that can be read.
+ */
+function languagesOf(text: string | undefined): Set<string> {
+  let locales: unknown;
+  try {
+    if (text !== undefined) locales = JSON.parse(text).locales;
+  } catch {}
+  return new Set((Array.isArray(locales) ? locales : []).map((code) => String(code).toLowerCase()));
+}
+
+/**
  * Lists what has been rendered so far, grouped by locale and size: every set folder with slides in it. A set the
  * manifest knows is dated by the run that drew it, so a run that redrew only some of its slides still shows as new.
  */
@@ -124,8 +136,10 @@ const same = (a: { locale: string; target: string }, b: { locale: string; target
  */
 export async function commitOutputs(key: string, dir: string, commit: Commit): Promise<boolean> {
   const stage = stagingDir(dir, commit.job);
-  // What is replaced goes into the staging folder first and is removed after the lock is let go.
+  // What is replaced goes into the staging folder first and is removed after the lock is let go. Each under a name of
+  // its own: a set and then the language it is in can both be retired, and the second must not land on the first.
   const replaced = path.join(stage, ".replaced");
+  let retired = 0;
   const out = path.join(dir, "out");
   const exists = (file: string) => stat(file).then(
     () => true,
@@ -133,103 +147,106 @@ export async function commitOutputs(key: string, dir: string, commit: Commit): P
   );
   const retire = async (relative: string) => {
     if (!(await exists(path.join(out, relative)))) return;
-    await mkdir(path.dirname(path.join(replaced, relative)), { recursive: true });
-    await rename(path.join(out, relative), path.join(replaced, relative));
+    await mkdir(replaced, { recursive: true });
+    await rename(path.join(out, relative), path.join(replaced, String(retired++)));
   };
 
   const committed = await withProjectLock(key, async () => {
     const text = await readFile(path.join(dir, "project.json"), "utf8").catch(() => undefined);
     if (text === undefined) return false;
-    let locales: unknown;
-    try {
-      locales = JSON.parse(text).locales;
-    } catch {}
+    const languages = languagesOf(text);
+    const current = (locale: string) => languages.size === 0 || languages.has(locale.toLowerCase());
+    // A language taken out of the project while the run drew it is not put in place.
+    const sets = commit.sets.filter((set) => current(set.locale));
     const manifest = await readManifest(dir);
     const now = Date.now();
+    const gone: { locale: string; target?: string }[] = [];
 
-    for (const set of commit.sets) {
-      const relative = path.join(set.locale, set.target);
-      const staged = path.join(stage, relative);
-      const live = path.join(out, relative);
-      if (!set.full) {
-        // Slides this run did not draw stay as they were, unless the set has since lost them.
-        for (const name of await readdir(live).catch(() => [])) {
-          if (!SLIDE_FILE.test(name) || Number(name.slice(0, 2)) > set.count || set.files.includes(name)) continue;
-          await link(path.join(live, name), path.join(staged, name)).catch(() => copyFile(path.join(live, name), path.join(staged, name)));
+    try {
+      for (const set of sets) {
+        const relative = path.join(set.locale, set.target);
+        const staged = path.join(stage, relative);
+        const live = path.join(out, relative);
+        if (!set.full) {
+          // Slides this run did not draw stay as they were, unless the set has since lost them.
+          for (const name of await readdir(live).catch(() => [])) {
+            if (!SLIDE_FILE.test(name) || Number(name.slice(0, 2)) > set.count || set.files.includes(name)) continue;
+            await link(path.join(live, name), path.join(staged, name)).catch(() => copyFile(path.join(live, name), path.join(staged, name)));
+          }
+        }
+        const files = (await readdir(staged)).filter((name) => SLIDE_FILE.test(name)).sort();
+        if (set.sheet) await writeFileAtomic(path.join(staged, "sheet.jpg"), await set.sheet(files.map((name) => path.join(staged, name))));
+        await retire(relative);
+        await mkdir(path.join(out, set.locale), { recursive: true });
+        await rename(staged, live);
+        manifest.sets = manifest.sets.filter((each) => !same(each, set));
+        manifest.sets.push({ locale: set.locale, target: set.target, files, design: set.design, renderedAt: now, job: commit.job });
+      }
+
+      for (const creative of commit.creatives.filter((each) => current(each.locale))) {
+        await mkdir(path.dirname(path.join(out, creative.path)), { recursive: true });
+        await rename(path.join(stage, creative.path), path.join(out, creative.path));
+        manifest.creatives = manifest.creatives.filter((each) => each.locale !== creative.locale || each.placement !== creative.placement);
+        manifest.creatives.push({ locale: creative.locale, placement: creative.placement, renderedAt: now, job: commit.job });
+      }
+      for (const creative of commit.remove) await rm(path.join(out, creative.path), { force: true });
+
+      // Languages the project no longer has.
+      for (const entry of languages.size ? await readdir(out).catch(() => []) : []) {
+        if (LOCALE.test(entry) && !current(entry)) {
+          await retire(entry);
+          gone.push({ locale: entry });
         }
       }
-      const files = (await readdir(staged)).filter((name) => SLIDE_FILE.test(name)).sort();
-      if (set.sheet) await writeFileAtomic(path.join(staged, "sheet.jpg"), await set.sheet(files.map((name) => path.join(staged, name))));
-      await retire(relative);
-      await mkdir(path.join(out, set.locale), { recursive: true });
-      await rename(staged, live);
-      manifest.sets = manifest.sets.filter((each) => !same(each, set));
-      manifest.sets.push({ locale: set.locale, target: set.target, files, design: set.design, renderedAt: now, job: commit.job });
-    }
-
-    for (const creative of commit.creatives) {
-      await mkdir(path.dirname(path.join(out, creative.path)), { recursive: true });
-      await rename(path.join(stage, creative.path), path.join(out, creative.path));
-      manifest.creatives = manifest.creatives.filter((each) => each.locale !== creative.locale || each.placement !== creative.placement);
-      manifest.creatives.push({ locale: creative.locale, placement: creative.placement, renderedAt: now, job: commit.job });
-    }
-    for (const creative of commit.remove) await rm(path.join(out, creative.path), { force: true });
-
-    const gone: { locale: string; target?: string }[] = [];
-    // Languages the project no longer has. Compared without case: on a Mac's disk de-de and de-DE are one folder.
-    const languages = new Set((Array.isArray(locales) ? locales : []).map((code) => String(code).toLowerCase()));
-    for (const entry of languages.size ? await readdir(out).catch(() => []) : []) {
-      if (LOCALE.test(entry) && !languages.has(entry.toLowerCase())) {
-        await retire(entry);
-        gone.push({ locale: entry });
-      }
-    }
-    if (commit.cleanup) {
-      for (const locale of commit.cleanup.locales) {
-        for (const target of await readdir(path.join(out, locale)).catch(() => [])) {
-          if (commit.deviceOf(target) && !commit.cleanup.targets.includes(target)) {
-            await retire(path.join(locale, target));
-            gone.push({ locale, target });
+      if (commit.cleanup) {
+        for (const locale of commit.cleanup.locales) {
+          for (const target of await readdir(path.join(out, locale)).catch(() => [])) {
+            if (commit.deviceOf(target) && !commit.cleanup.targets.includes(target)) {
+              await retire(path.join(locale, target));
+              gone.push({ locale, target });
+            }
           }
         }
       }
-    }
-    // Other sizes of a device in a language, drawn from a design this run has changed. A set from before the
-    // manifest has no design on record, and is left alone.
-    for (const set of commit.sets) {
-      for (const target of await readdir(path.join(out, set.locale)).catch(() => [])) {
-        if (commit.deviceOf(target) !== set.device || commit.sets.some((each) => same(each, { locale: set.locale, target }))) continue;
-        const known = manifest.sets.find((each) => same(each, { locale: set.locale, target }));
-        if (known?.design && known.design !== set.design) {
-          await retire(path.join(set.locale, target));
-          gone.push({ locale: set.locale, target });
+      // Other sizes of a device in a language, drawn from a design this run has changed. A set from before the
+      // manifest has no design on record, and is left alone.
+      for (const set of sets) {
+        for (const target of await readdir(path.join(out, set.locale)).catch(() => [])) {
+          if (commit.deviceOf(target) !== set.device || sets.some((each) => same(each, { locale: set.locale, target }))) continue;
+          const known = manifest.sets.find((each) => same(each, { locale: set.locale, target }));
+          if (known?.design && known.design !== set.design) {
+            await retire(path.join(set.locale, target));
+            gone.push({ locale: set.locale, target });
+          }
         }
       }
-    }
-    // Slides a set has lost, in the sizes this run did not draw, such as another device's after a render of the
-    // iPhone alone: the export must not carry a slide that was deleted. The contact sheet pictures them, so it goes too.
-    for (const locale of commit.counts ? await readdir(out).catch(() => []) : []) {
-      for (const target of await readdir(path.join(out, locale)).catch(() => [])) {
-        const count = commit.counts?.[commit.deviceOf(target) ?? ""];
-        if (count === undefined || commit.sets.some((each) => same(each, { locale, target }))) continue;
-        const names: string[] = await readdir(path.join(out, locale, target)).catch(() => []);
-        const slides = names.filter((name) => SLIDE_FILE.test(name));
-        const lost = slides.filter((name) => Number(name.slice(0, 2)) > count);
-        if (lost.length === 0) continue;
-        if (lost.length === slides.length) {
-          await retire(path.join(locale, target));
-          gone.push({ locale, target });
-          continue;
+      // Slides a set has lost, in the sizes this run did not draw, such as another device's after a render of the
+      // iPhone alone: the export must not carry a slide that was deleted. The contact sheet pictures them, so it goes too.
+      for (const locale of commit.counts ? await readdir(out).catch(() => []) : []) {
+        for (const target of await readdir(path.join(out, locale)).catch(() => [])) {
+          const count = commit.counts?.[commit.deviceOf(target) ?? ""];
+          if (count === undefined || sets.some((each) => same(each, { locale, target }))) continue;
+          const names: string[] = await readdir(path.join(out, locale, target)).catch(() => []);
+          const slides = names.filter((name) => SLIDE_FILE.test(name));
+          const lost = slides.filter((name) => Number(name.slice(0, 2)) > count);
+          if (lost.length === 0) continue;
+          if (lost.length === slides.length) {
+            await retire(path.join(locale, target));
+            gone.push({ locale, target });
+            continue;
+          }
+          for (const name of [...lost, ...(names.includes("sheet.jpg") ? ["sheet.jpg"] : [])]) await retire(path.join(locale, target, name));
+          const known = manifest.sets.find((each) => same(each, { locale, target }));
+          if (known) known.files = known.files.filter((name) => !lost.includes(name));
         }
-        for (const name of [...lost, ...(names.includes("sheet.jpg") ? ["sheet.jpg"] : [])]) await retire(path.join(locale, target, name));
-        const known = manifest.sets.find((each) => same(each, { locale, target }));
-        if (known) known.files = known.files.filter((name) => !lost.includes(name));
       }
+    } finally {
+      // Written even when a step fails part of the way, so that it says what out/ holds by then.
+      const kept = (each: { locale: string; target?: string }) => !gone.some((dropped) => dropped.locale === each.locale && (dropped.target == null || dropped.target === each.target));
+      manifest.sets = manifest.sets.filter(kept);
+      manifest.creatives = manifest.creatives.filter((each) => kept(each) && !commit.remove.some((removed) => removed.locale === each.locale && removed.placement === each.placement));
+      await writeFileAtomic(path.join(dir, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
     }
-    const kept = (each: { locale: string; target?: string }) => !gone.some((dropped) => dropped.locale === each.locale && (dropped.target == null || dropped.target === each.target));
-    manifest.sets = manifest.sets.filter(kept);
-    manifest.creatives = manifest.creatives.filter((each) => kept(each) && !commit.remove.some((removed) => removed.locale === each.locale && removed.placement === each.placement));
-    await writeFileAtomic(path.join(dir, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
     return true;
   });
   await discardStaging(dir, commit.job);
