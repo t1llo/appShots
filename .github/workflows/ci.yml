@@ -23,3 +23,11 @@ jobs:
       - run: npm run build
       # The CLI the server hands out is built from cli/src. This fails when the committed file was not rebuilt.
       - run: npm run check:cli
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # The image builds the web pages from only the files the Dockerfile copies in, so an import the
+      # Dockerfile does not copy passes the job above and still breaks a deploy. This builds that stage.
+      - run: docker build --target web .

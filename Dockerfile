@@ -7,6 +7,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY vite.config.ts ./
+# The Studio checks slides with the server's own schemas and picks stand-in screenshots with its code.
+COPY src ./src
 COPY web ./web
 RUN npm run build
 
