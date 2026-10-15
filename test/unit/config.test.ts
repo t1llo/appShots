@@ -9,7 +9,7 @@ const data = await tmpData("config");
 after(() => data.remove());
 for (const name of Object.keys(process.env)) if (/^(GOOGLE_|UMAMI_|USER_)|^(ADMIN_EMAIL|PUBLIC_URL|ALLOWED_HOSTS|TRUST_PROXY|HOST|PORT)$/.test(name)) delete process.env[name];
 process.env.DATA_DIR = data.dir;
-const { readSettings } = await import("../../src/config.ts");
+const { listenHost, readSettings } = await import("../../src/config.ts");
 
 test("unset and empty settings keep today's defaults", () => {
   for (const env of [{}, { PORT: "", HOST: "", PUBLIC_URL: "", ALLOWED_HOSTS: "", TRUST_PROXY: "", USER_MAX_PROJECTS: "", USER_MAX_SHOTS: " ", USER_RENDER_CREDITS: "" }]) {
@@ -42,8 +42,6 @@ test("a value that cannot be right stops the server with its name (srv-19)", () 
     { PORT: "abc" },
     { PORT: "0" },
     { PORT: "70000" },
-    { HOST: "192.168.1.20" },
-    { HOST: "localhost" },
     { PUBLIC_URL: "appshots.example.com" },
     { PUBLIC_URL: "https://appshots.example.com/studio" },
     { PUBLIC_URL: "ftp://appshots.example.com" },
@@ -56,6 +54,18 @@ test("a value that cannot be right stops the server with its name (srv-19)", () 
     const [name] = Object.keys(env);
     assert.throws(() => readSettings(env), new RegExp(`^Error: ${name} has to be`), JSON.stringify(env));
   }
+});
+
+test("HOST names an address that includes 127.0.0.1, and any other value is passed over with a warning", () => {
+  for (const host of ["127.0.0.1", "0.0.0.0", "::"]) assert.equal(listenHost(readSettings({ HOST: ` ${host} ` }).HOST), host);
+  // Shells and tools set HOST for themselves, and a start with it set has to work as it did before HOST was read.
+  for (const host of ["my-macbook.local", "localhost", "192.168.1.20"]) {
+    const warnings: string[] = [];
+    assert.equal(listenHost(readSettings({ HOST: host }).HOST, (message) => warnings.push(message)), undefined, host);
+    assert.equal(warnings.length, 1, host);
+    assert.match(warnings[0]!, new RegExp(`^HOST "${host}" is passed over, and the server listens on every address\\. HOST has to be `));
+  }
+  assert.equal(listenHost(readSettings({ HOST: "" }).HOST, () => assert.fail("an empty HOST is unset")), undefined);
 });
 
 test("PUBLIC_URL is kept as an origin", () => {

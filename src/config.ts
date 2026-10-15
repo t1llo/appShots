@@ -21,8 +21,8 @@ const PROXY_NAMES = new Set(["loopback", "linklocal", "uniquelocal"]);
 
 const settingsSchema = z.object({
   PORT: z.preprocess(blank, z.coerce.number().int().min(1).max(65535).default(3000)),
-  // The renderer reaches the server at 127.0.0.1, so only addresses that include it are offered.
-  HOST: z.preprocess(blank, z.enum(["127.0.0.1", "0.0.0.0", "::"]).optional()),
+  // Checked by listenHost() below, which passes over a value it cannot use instead of stopping the start.
+  HOST: z.preprocess(blank, z.string().trim().optional()),
   PUBLIC_URL: z.preprocess(
     blank,
     z
@@ -97,6 +97,20 @@ export function readSettings(env: Record<string, string | undefined>) {
   if (parsed.success) return parsed.data;
   const names = [...new Set(parsed.error.issues.map((issue) => String(issue.path[0])))] as (keyof typeof HAS_TO_BE)[];
   throw new Error(names.map((name) => `${name} has to be ${HAS_TO_BE[name]}, not "${env[name]}".`).join(" "));
+}
+
+/** The addresses HOST may name. The renderer reaches the server at 127.0.0.1, so each of them includes it. */
+const LISTEN_HOSTS = new Set(["127.0.0.1", "0.0.0.0", "::"]);
+
+/**
+ * The address to listen on. HOST is also a variable that shells and tools set for themselves, tcsh to the machine's
+ * name for one, and earlier versions of the server did not read it. So a value it cannot listen on is passed over with
+ * a warning rather than stopping a start that used to work, and the server listens on every address as it always has.
+ */
+export function listenHost(host: string | undefined, warn: (message: string) => void = console.warn): string | undefined {
+  if (host === undefined || LISTEN_HOSTS.has(host)) return host;
+  warn(`HOST "${host}" is passed over, and the server listens on every address. HOST has to be ${HAS_TO_BE.HOST}.`);
+  return undefined;
 }
 
 const settings = readSettings(process.env);
@@ -180,7 +194,7 @@ function visitorHeader(): string | null {
 export const config = {
   port: settings.PORT,
   /** The address to listen on. Unset, every address of the machine, which a container needs. */
-  host: settings.HOST,
+  host: listenHost(settings.HOST),
   dataDir,
   /** Whether people sign in. Off means no sign-in at all: whoever reaches the port works in the server's own space. */
   auth: enabled,

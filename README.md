@@ -174,7 +174,7 @@ With a hosting panel that builds and deploys a Compose file from a repository, o
 | `TRUST_PROXY` | `loopback, linklocal, uniquelocal` | Which proxies in front may say who the visitor is and whether they came over HTTPS, see below |
 | `ALLOWED_HOSTS` | none | More names the server answers to, besides `localhost`, IP addresses and the host of `PUBLIC_URL`, see below |
 | `PORT` | `3000` | The port the server listens on |
-| `HOST` | every address | The address the server listens on: `127.0.0.1` for this machine only, or `0.0.0.0` or `::` for every one |
+| `HOST` | every address | The address the server listens on: `127.0.0.1` for this machine only, or `0.0.0.0` or `::` for every one. Some shells set `HOST` to the machine's name, so any other value is passed over with a warning |
 | `DATA_DIR` | `data`, in the container `/data` | Where everything is stored |
 
 Set all three sign-in settings or none. With only one or two of them the server refuses to start, so a typo cannot leave a deployed server open. A value the server cannot use, such as a `PUBLIC_URL` without `https://` or a `PORT` that is no port, stops the start too, with the name of the setting. A limit of `0` means none: `USER_RENDER_CREDITS=0` gives accounts no renders until the admin hands some out.
