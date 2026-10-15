@@ -105,7 +105,7 @@ export function deviceHtml(options: DeviceOptions): string {
 
   const screen = options.url
     ? `<img src="${esc(options.url)}" alt=""${shot ? ` data-shot="${esc(shot.name)}"` : ""}>`
-    : `<div class="placeholder"${options.wanted ? ` data-missing="${esc(`screenshot:${options.wanted}`)}"` : ""}><span>${options.wanted ? `Upload a screenshot named<br><b>${esc(options.wanted)}</b>` : "No screenshot"}</span></div>`;
+    : `<div class="placeholder"><span>${options.wanted ? `Upload a screenshot named<br><b>${esc(options.wanted)}</b>` : "No screenshot"}</span></div>`;
   // A device on its side hides its status bar, as an iPhone does in landscape.
   const bar = options.url && options.status && !turned ? statusBarHtml(kind, options.status, merged, kind === "iphone" && hardware.home !== undefined) : "";
   // A status bar painted over the screenshot's own covers an island the screenshot shows, so that one is drawn again.

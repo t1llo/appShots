@@ -120,6 +120,8 @@ test("a quote is set in the quotation marks of its language", () => {
   assert.equal(quoted("Great app", "en"), "“Great app”");
   assert.equal(quoted("Tolle App", "de-DE"), "„Tolle App“");
   assert.equal(quoted("رائع", "ar"), "«رائع»");
+  // French keeps its guillemets on the line of the words they hold, with narrow spaces that do not break.
+  assert.equal(quoted("Super", "fr-FR"), "«\u202FSuper\u202F»");
   assert.equal(quoted("すごい", "ja"), "「すごい」");
   assert.equal(quoted("“Already quoted”", "de"), "“Already quoted”");
   assert.equal(quoted("", "en"), "");
@@ -161,14 +163,14 @@ test("an iPhone with a home button gets its own frame", async () => {
   assert.match(landscape!, /class="btn b" style="left:/);
 });
 
-test("what a slide names and cannot find is marked for the page to report", async () => {
+test("what a slide names and nobody uploaded is drawn as a placeholder or left out", async () => {
   const [device, features] = await draw([
-    { layout: "device-bottom", screenshot: "nowhere" },
+    { layout: "device-bottom", screenshot: "nowhere", logo: { image: "gone" }, images: [{ image: "lost" }] },
     { layout: "features", features: [{ title: "Pictured", screenshot: "absent" }, { title: "Drawn", image: "lost" }] },
   ]);
-  assert.match(device!, /data-missing="screenshot:nowhere"/);
-  assert.match(features!, /data-missing="screenshot:absent"/);
-  assert.match(features!, /data-missing="image:lost"/);
+  assert.match(device!, /<div class="placeholder"><span>Upload a screenshot named<br><b>nowhere<\/b>/);
+  assert.doesNotMatch(device!, /class="logo|<img/);
+  assert.doesNotMatch(features!, /<img/);
 });
 
 test("an asset is looked up only among the project's own", async () => {
@@ -204,12 +206,13 @@ test("a page says when it is ready, and what it could not show", renderTier, asy
       await page.waitForFunction(() => document.body.dataset.ready);
       return page.evaluate(() => ({ ready: document.body.dataset.ready, error: document.body.dataset.error ?? null }));
     };
-    const [clean, hole] = await draw([
+    const pages = await draw([
       { layout: "statement", headline: "Ready" },
-      { layout: "device-bottom", headline: "Hole", screenshot: "nowhere" },
+      // Names nothing was uploaded under are drawn as placeholders or left out, which the render has warned about already.
+      { layout: "device-bottom", headline: "Placeholder", screenshot: "nowhere", logo: { image: "gone" }, images: [{ image: "lost" }] },
+      { layout: "features", features: [{ title: "Pictured", screenshot: "absent" }, { title: "Drawn", image: "lost" }] },
     ]);
-    assert.deepEqual(await state(clean!), { ready: "1", error: null });
-    assert.deepEqual(await state(hole!), { ready: "error", error: "screenshot:nowhere missing" });
+    for (const html of pages) assert.deepEqual(await state(html), { ready: "1", error: null });
     const broken = await state(`<body><img src="/files/none/shots/home.png" alt="" data-shot="home"><script>${READY_SCRIPT}</script></body>`);
     assert.equal(broken.ready, "error");
     assert.match(broken.error!, /^screenshot:home (missing|undecodable)$/);

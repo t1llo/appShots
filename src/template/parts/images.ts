@@ -7,12 +7,6 @@ export const imageUrl = (projectId: string, image: StoredImage) => `/files/${pro
 
 export const shotUrl = (projectId: string, shot: Shot) => `/files/${projectId}/shots/${shot.file}?v=${shot.version}`;
 
-/**
- * Marks something a page names but cannot show. The page reports it once it is drawn, so a render can tell a
- * finished picture from one with a hole in it.
- */
-export const missingHtml = (kind: "screenshot" | "image", name: string) => `<i hidden data-missing="${esc(`${kind}:${name}`)}"></i>`;
-
 /** A wordmark is held to this width, in canvas units, however tall the logo was asked to be. */
 const LOGO_MAX_WIDTH = 58;
 
@@ -20,7 +14,7 @@ const LOGO_MAX_WIDTH = 58;
 export function logoHtml(logo: Logo | undefined, images: StoredImage[], projectId: string): string {
   if (!logo) return "";
   const image = images.find((entry) => entry.name === logo.image);
-  if (!image) return missingHtml("image", logo.image);
+  if (!image) return "";
   const shape = logo.shape ?? "plain";
   const aspect = shape === "plain" ? image.width / image.height : 1;
   const height = Math.min(LOGO_SIZES[logo.size ?? "medium"], LOGO_MAX_WIDTH / aspect);
@@ -34,7 +28,7 @@ export function placedHtml(placed: PlacedImage[], layer: "front" | "behind", ima
     .filter((entry) => (entry.layer ?? "front") === layer)
     .flatMap((entry) => {
       const image = images.find((candidate) => candidate.name === entry.image);
-      if (!image) return [missingHtml("image", entry.image)];
+      if (!image) return [];
       const style = [
         `left:${round(entry.x ?? 50)}%`,
         `top:${round(entry.y ?? 50)}%`,

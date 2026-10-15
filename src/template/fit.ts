@@ -5,12 +5,12 @@
  */
 
 /**
- * What the page reports when it is done: a marker left where a screenshot or an image was asked for and not found,
- * a picture that did not load, and anything that went wrong while fitting.
+ * What the page reports when it is done: a picture that did not load, and anything that went wrong while fitting.
+ * A name nothing was uploaded under is not one of them: the page draws a placeholder for it or leaves it out, and the
+ * render warns about it before the page is drawn.
  */
 const REPORT = `
   const report = (broken, problems) => {
-    for (const marker of document.querySelectorAll('[data-missing]')) problems.push(marker.dataset.missing + ' missing');
     for (const img of broken) {
       const name = img.dataset.shot ? 'screenshot:' + img.dataset.shot : 'image:' + (img.dataset.image || img.getAttribute('src'));
       // A picture the server could not find has a failed response; one it sent that the browser cannot read has none.

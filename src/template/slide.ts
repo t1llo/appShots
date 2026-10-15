@@ -118,7 +118,6 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
   const copyHtml = copyParts ? `<div class="copy">${copyParts}</div>` : "";
 
   let stageHtml = "";
-  let missing = "";
   if (hasDevice) {
     const group = [
       { shot, wanted: slide.screenshot },
@@ -128,12 +127,11 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
     const url = (s: Shot | undefined) => s && shotUrl(project.id, s);
     stageHtml = await deviceStage({ layout, group, style: deviceStyle, target: target.device, canvas, unit, side, wide, rtl, ids, url, dress });
   } else {
-    const scene: Scene = { canvas, unit, locale, fallback, projectId: project.id, shots, images, device: target.device, ids, missing: [] };
+    const scene: Scene = { canvas, unit, locale, fallback, projectId: project.id, shots, images, device: target.device, ids };
     if (layout === "stat") stageHtml = statHtml(features, scene);
     else if (layout === "steps") stageHtml = stepsHtml(features, scene);
     else if (reviews) stageHtml = reviewsHtml(wall, scene);
     else if (features.length) stageHtml = featuresHtml(features, cardStyle, slide.featureCards ?? {}, scene, !copyHtml);
-    missing = scene.missing.join("");
   }
 
   const board = !hasDevice && Boolean(stageHtml);
@@ -176,7 +174,7 @@ export async function slideHtml(ctx: SlideContext): Promise<string> {
 <div class="bg" style="${backgroundCss(background)}"></div>${noise}${DEFS}
 ${placedHtml(placed, "behind", images, project.id)}
 ${copyHtml}
-${stageHtml}${missing}
+${stageHtml}
 ${placedHtml(placed, "front", images, project.id)}
 </div>`,
     script: FIT_SCRIPT,
