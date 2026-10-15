@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { config } from "./config.ts";
 import { writeFileAtomic } from "./storage/atomic.ts";
@@ -104,6 +104,14 @@ const state: State = {
 };
 // Passwords are gone; their hashes have no business staying in the file.
 for (const user of state.users) delete (user as { password?: string }).password;
+
+/** Every token by its hash, so a request with a token finds its account at once rather than walking all of them. */
+let tokenIndex = new Map<string, { user: User; entry: ApiToken }>();
+/** Builds the index again. Called after anything that adds, removes or takes away tokens or accounts. */
+function indexTokens(): void {
+  tokenIndex = new Map(state.users.flatMap((user) => user.tokens.map((entry) => [entry.hash, { user, entry }] as const)));
+}
+indexTokens();
 
 let writing: Promise<void> = Promise.resolve();
 function save(): Promise<void> {
@@ -283,6 +291,7 @@ export async function logInWithGoogle(profile: { sub: string; email: string; nam
     sameAddress.googleSub = profile.sub;
     sameAddress.tokens = [];
     sameAddress.epoch++;
+    indexTokens();
     await save();
     return sameAddress;
   }
@@ -306,6 +315,7 @@ export async function deleteUser(id: string): Promise<void> {
   // The admin's projects are the server's own space, which no button should be able to wipe.
   if (isAdmin(user)) throw new InputError(ADMIN_STAYS);
   state.users = state.users.filter((entry) => entry !== user);
+  indexTokens();
   if (user.googleSub && (user.renders || user.renderAllowance != null)) {
     state.spent[sha256(user.googleSub)] = { renders: user.renders ?? 0, ...(user.renderAllowance != null ? { renderAllowance: user.renderAllowance } : {}) };
   }
@@ -314,11 +324,24 @@ export async function deleteUser(id: string): Promise<void> {
 }
 
 export async function confirmDelete(user: User, confirmation: unknown): Promise<void> {
-  if (confirmation !== user.email) throw new InputError("Type your email address to confirm.");
+  // Addresses are kept in lower case. What is typed may differ in case, or carry a space from a paste.
+  if (typeof confirmation !== "string" || confirmation.trim().toLowerCase() !== user.email) throw new InputError("Type your email address to confirm.");
   await deleteUser(user.id);
 }
 
 export const listUsers = () => state.users;
+
+/**
+ * The folder of projects the admin made with an ordinary account, before ADMIN_EMAIL named them. The admin works
+ * in the server's own space, so these stay on disk but out of sight. Null when there are none.
+ */
+export async function hiddenAdminProjects(): Promise<string | null> {
+  const admin = config.auth && config.adminEmail ? byEmail(config.adminEmail) : undefined;
+  if (!admin) return null;
+  const dir = path.join(userRoot(admin.id), "projects");
+  const entries = await readdir(dir).catch(() => []);
+  return entries.some((name) => !name.startsWith(".")) ? dir : null;
+}
 
 // ---------------------------------------------------------------- render credits
 
@@ -366,13 +389,14 @@ export function holdRender(spaceId: string): (used: boolean) => Promise<void> {
 
 const plural = (count: number) => `${count} ${count === 1 ? "render" : "renders"}`;
 
-/** The admin gives an account a number of renders to go, on top of the ones it has made. */
+/** The admin gives an account a number of renders to go, on top of the ones it has made and the ones it is making. */
 export async function setRendersLeft(input: unknown, left: number): Promise<void> {
   const email = normalizeEmail(input);
   const user = byEmail(email);
   if (!user) throw new NotFoundError("Nobody has signed in with that address yet.");
   if (isAdmin(user)) throw new InputError("The admin's renders are not counted.");
-  user.renderAllowance = (user.renders ?? 0) + left;
+  // Renders under way are set aside already: leaving them out would give the account fewer than the admin said.
+  user.renderAllowance = (user.renders ?? 0) + (held.get(user.id) ?? 0) + left;
   await save();
 }
 
@@ -380,21 +404,18 @@ export async function setRendersLeft(input: unknown, left: number): Promise<void
 
 export function userByToken(token: string): User | null {
   if (!token.startsWith("appshots_")) return null;
-  const hash = sha256(token);
-  for (const user of state.users) {
-    const entry = user.tokens.find((candidate) => candidate.hash === hash);
-    if (!entry) continue;
-    if (!hasAccess(user)) return null;
-    // Coarse on purpose: a busy token should not rewrite the accounts file on every request.
-    if (!entry.lastUsedAt || Date.now() - Date.parse(entry.lastUsedAt) > 3600_000) {
-      entry.lastUsedAt = new Date().toISOString();
-      // Nobody waits for this save. If the disk refuses it, the request still goes through and the date is saved
-      // with the next change; left uncaught, the failure would stop the whole server.
-      save().catch((error: unknown) => console.error("Could not save when a token was last used:", error));
-    }
-    return user;
+  const found = tokenIndex.get(sha256(token));
+  if (!found) return null;
+  const { user, entry } = found;
+  if (!hasAccess(user)) return null;
+  // Coarse on purpose: a busy token should not rewrite the accounts file on every request.
+  if (!entry.lastUsedAt || Date.now() - Date.parse(entry.lastUsedAt) > 3600_000) {
+    entry.lastUsedAt = new Date().toISOString();
+    // Nobody waits for this save. If the disk refuses it, the request still goes through and the date is saved
+    // with the next change; left uncaught, the failure would stop the whole server.
+    save().catch((error: unknown) => console.error("Could not save when a token was last used:", error));
   }
-  return null;
+  return user;
 }
 
 export const describeToken = ({ id, name, hint, createdAt, lastUsedAt }: ApiToken) => ({ id, name, hint, createdAt, lastUsedAt });
@@ -405,11 +426,13 @@ export async function createToken(user: User, nameInput: unknown): Promise<{ tok
   const token = `appshots_${randomBytes(24).toString("base64url")}`;
   const entry: ApiToken = { id: randomId("t"), name, hash: sha256(token), hint: token.slice(-4), createdAt: new Date().toISOString() };
   user.tokens.push(entry);
+  indexTokens();
   await save();
   return { token, entry };
 }
 
 export async function revokeToken(user: User, id: string): Promise<void> {
   user.tokens = user.tokens.filter((entry) => entry.id !== id);
+  indexTokens();
   await save();
 }

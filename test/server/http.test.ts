@@ -107,9 +107,9 @@ const SECRET = "0123456789abcdef".repeat(4);
 const DAY = 24 * 3600 * 1000;
 const SESSION_TTL = 30 * DAY;
 
-/** A session cookie as the server seals it, for account u1 at `epoch`, running out `left` milliseconds from now. */
-function sessionCookie(epoch: number, left: number): string {
-  const payload = Buffer.from(JSON.stringify({ u: "u1", k: epoch, _p: "session", _e: Date.now() + left })).toString("base64url");
+/** A session cookie as the server seals it, for an account at `epoch`, running out `left` milliseconds from now. */
+function sessionCookie(user: string, epoch: number, left: number): string {
+  const payload = Buffer.from(JSON.stringify({ u: user, k: epoch, _p: "session", _e: Date.now() + left })).toString("base64url");
   return `appshots_session=${payload}.${createHmac("sha256", SECRET).update(payload).digest("base64url")}`;
 }
 
@@ -131,7 +131,7 @@ describe("sessions", () => {
   });
 
   test("a session is renewed on the account's own answers only, never on public ones a CDN may keep (srv-5)", async () => {
-    const aged = sessionCookie(1, SESSION_TTL - 2 * DAY);
+    const aged = sessionCookie("u1", 1, SESSION_TTL - 2 * DAY);
     for (const route of ["/healthz", "/", "/home", "/icons.svg", "/fonts/fonts.css", "/og.jpg", "/skill.md", "/skill.json", "/cli/appshots.mjs", "/docs/api.md", "/auth/config", "/nothing-here"]) {
       const answer = await server.fetch(route, { headers: { Cookie: aged }, redirect: "manual" });
       assert.equal(answer.headers.get("set-cookie"), null, route);
@@ -141,12 +141,12 @@ describe("sessions", () => {
     assert.match(api.headers.get("set-cookie") ?? "", /^appshots_session=[^;]+;.*HttpOnly/);
     assert.match(api.headers.get("cache-control") ?? "", /private/);
     // A cookie from today is left as it is.
-    assert.equal((await server.fetch("/api/projects", { headers: { Cookie: sessionCookie(1, SESSION_TTL) } })).headers.get("set-cookie"), null);
+    assert.equal((await server.fetch("/api/projects", { headers: { Cookie: sessionCookie("u1", 1, SESSION_TTL) } })).headers.get("set-cookie"), null);
   });
 
   test("signing out ends the session in every browser, and API tokens keep working (srv-11)", async () => {
-    const here = sessionCookie(1, SESSION_TTL);
-    const there = sessionCookie(1, SESSION_TTL - DAY / 2);
+    const here = sessionCookie("u1", 1, SESSION_TTL);
+    const there = sessionCookie("u1", 1, SESSION_TTL - DAY / 2);
     // Another site cannot sign anybody out.
     const forged = await server.fetch("/logout", { method: "POST", headers: { Cookie: here, Origin: "https://elsewhere.example.com" }, redirect: "manual" });
     assert.equal(forged.status, 403);
@@ -158,7 +158,54 @@ describe("sessions", () => {
     for (const cookie of [here, there]) assert.equal((await server.fetch("/api/projects", { headers: { Cookie: cookie } })).status, 401);
     assert.equal((await server.fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } })).status, 200);
     // Signing in again starts a new session, which the sign-out does not touch.
-    assert.equal((await server.fetch("/api/projects", { headers: { Cookie: sessionCookie(2, SESSION_TTL) } })).status, 200);
+    assert.equal((await server.fetch("/api/projects", { headers: { Cookie: sessionCookie("u1", 2, SESSION_TTL) } })).status, 200);
+  });
+});
+
+describe("accounts", () => {
+  let server: TestServer;
+  let data: TmpData;
+  const account = (id: string, email: string) => ({ id, email, name: email.split("@")[0], createdAt: "2026-01-01T00:00:00.000Z", epoch: 1, tokens: [] });
+  const as = (user: string, init: RequestInit = {}): RequestInit => ({ ...init, headers: { Cookie: sessionCookie(user, 1, SESSION_TTL), Origin: server.url, "Content-Type": "application/json", ...init.headers } });
+  before(async () => {
+    data = await tmpData("accounts");
+    const users = [account("u0", "admin@example.com"), account("u2", "two@example.com")];
+    await writeFile(path.join(data.dir, "accounts.json"), JSON.stringify({ signup: "open", signupChosen: true, allowed: [], users, spent: {} }));
+    await writeFile(path.join(data.dir, "secret.key"), SECRET);
+    // The admin had an ordinary account, with a project of its own, before ADMIN_EMAIL named them.
+    await mkdir(path.join(data.dir, "users", "u0", "projects", "earlier"), { recursive: true });
+    server = await startServer({ dataDir: data.dir, env: { ...SIGN_IN, USER_RENDER_CREDITS: "0" } });
+  });
+  after(async () => {
+    await server?.stop();
+    await data?.remove();
+  });
+
+  test("the admin's projects from an ordinary account are named at startup, not lost from sight (store-15)", () => {
+    assert.match(server.output(), /admin's projects from before ADMIN_EMAIL named them are in .*users[/\\]u0[/\\]projects/);
+  });
+
+  test("a render limit of 0 leaves an account no renders, and the admin's are not counted (srv-19)", async () => {
+    assert.equal(((await (await server.fetch("/api/renders", as("u2"))).json()) as { rendersLeft: unknown }).rendersLeft, 0);
+    assert.equal(((await (await server.fetch("/api/renders", as("u0"))).json()) as { rendersLeft: unknown }).rendersLeft, null);
+  });
+
+  test("a token works from the moment it is made until it is revoked", async () => {
+    const made = await server.fetch("/api/account/tokens", as("u2", { method: "POST", body: JSON.stringify({ name: "Laptop" }) }));
+    assert.equal(made.status, 201);
+    const { token, id } = (await made.json()) as { token: string; id: string };
+    const bearer = { headers: { Authorization: `Bearer ${token}` } };
+    assert.equal((await server.fetch("/api/projects", bearer)).status, 200);
+    assert.equal((await server.fetch(`/api/account/tokens/${id}`, as("u2", { method: "DELETE" }))).status, 204);
+    assert.equal((await server.fetch("/api/projects", bearer)).status, 401);
+  });
+
+  test("deleting an account takes the address in any case and with spaces around it (srv-20)", async () => {
+    const wrong = await server.fetch("/api/account", as("u2", { method: "DELETE", body: JSON.stringify({ confirm: "someone@example.com" }) }));
+    assert.equal(wrong.status, 400);
+    const deleted = await server.fetch("/api/account", as("u2", { method: "DELETE", body: JSON.stringify({ confirm: " Two@Example.com " }) }));
+    assert.equal(deleted.status, 204);
+    assert.equal((await server.fetch("/api/projects", as("u2"))).status, 401);
   });
 });
 

@@ -1,4 +1,6 @@
+import path from "node:path";
 import express, { type Express } from "express";
+import { hiddenAdminProjects } from "./accounts.ts";
 import { config } from "./config.ts";
 import { renewSession, requireAuth } from "./http/auth.ts";
 import { errorHandler, type Log, notFound } from "./http/errors.ts";
@@ -29,6 +31,13 @@ export interface AppDeps {
  */
 export async function createApp(deps: AppDeps = {}): Promise<Express> {
   const log = deps.log ?? console;
+  const hidden = await hiddenAdminProjects();
+  if (hidden) {
+    log.warn(
+      `The admin's projects from before ADMIN_EMAIL named them are in ${hidden}, where the Studio does not show them. To see them again, move each folder in it into ${path.join(config.dataDir, "projects")}.`,
+    );
+  }
+
   const app = express();
   app.disable("x-powered-by");
   // The reverse proxy in front terminates TLS; trusting it makes req.protocol, req.ip and secure cookies correct.
