@@ -14,6 +14,11 @@ if ! command -v node >/dev/null 2>&1; then
   echo "appshots: Node.js 18 or newer is needed. Install it (https://nodejs.org, or 'brew install node') and run this again." >&2
   exit 1
 fi
+# The CLI uses fetch and other parts of Node.js that older versions lack, and would fail half way through setup.
+if ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0 : 1)' >/dev/null 2>&1; then
+  echo "appshots: Node.js 18 or newer is needed, and $(command -v node) is $(node --version 2>/dev/null || echo 'an older one'). Update it (https://nodejs.org, or 'brew upgrade node') and run this again." >&2
+  exit 1
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

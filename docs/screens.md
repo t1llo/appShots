@@ -53,7 +53,7 @@ appshots run
 appshots launch com.example.streaks --capture stats --to streaks -- -appshots stats
 ```
 
-`run` finds the Xcode project and scheme, boots the simulator the store sizes ask for (an iPhone Pro Max, the 13-inch iPad Pro with `--ipad`, or the iPhone Duo with `--duo`), and reuses the build Xcode already made. `launch` starts the installed app again with launch arguments, waits two seconds, captures with a clean status bar and uploads.
+`run` finds the Xcode project and scheme, boots the simulator the store sizes ask for (an iPhone Pro Max, the 13-inch iPad Pro with `--ipad`, or the iPhone Duo with `--duo`), and reuses the build Xcode already made. `launch` starts the installed app again with launch arguments, waits until the screen stops changing, captures with a clean status bar and uploads.
 
 To land on a screen, the agent uses what your app has already: launch arguments, a demo mode or deep links. If there are none and you agree, it adds a launch argument that only exists in debug builds. Otherwise it asks you to open the screen.
 

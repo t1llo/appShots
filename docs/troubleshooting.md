@@ -21,7 +21,7 @@ appshots check
 
 ## Connecting an agent
 
-**`appshots: command not found`.** The command is in `~/.local/bin`, which is not on your `PATH`. Open a new Terminal window, or add this line to `~/.zshrc`:
+**`appshots: command not found`.** The setup command makes `appshots` a command only when `~/.local/bin`, `~/bin` or the folder Claude Code sits in is already on your `PATH`. Otherwise it said `Command installed: node ~/.claude/skills/appshots/appshots.mjs`, and that is how you run it, as the skill does. To have the short command, add this line to `~/.zshrc`, open a new Terminal window and run the setup command again:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -33,13 +33,17 @@ export PATH="$HOME/.local/bin:$PATH"
 
 **401 Unauthorized.** The token was revoked, or it belongs to another server. Create a new one under **Connect an agent** and run the setup command again. See [Connect an agent](/docs/connect).
 
-**The setup command stops at "Node.js 18 or newer is needed".** Install Node.js 18 or newer from [nodejs.org](https://nodejs.org), then run it again.
+**The setup command stops at "Node.js 18 or newer is needed".** Node.js is missing, or the one first on your `PATH` is older; the message names its version. Install Node.js 18 or newer from [nodejs.org](https://nodejs.org) or with `brew install node`, then run it again. `node --version` says which one a new Terminal window finds.
 
 **You connected through a connector dialog and it asks for a sign-in page.** appShots has no OAuth. Add it with a header instead. See [Connect an agent](/docs/connect#only-the-mcp-connection).
 
 ## Capturing
 
 **"simctl failed" or no simulators.** Xcode is not installed, or it was never opened. Install it from the App Store, open it once, and let it install the iOS platform.
+
+**"xcrun simctl … did not answer within 60 seconds".** The simulator service has stopped answering, which happens most with many simulators booted at once. Shut down the ones you do not need, or all of them with `xcrun simctl shutdown all`. If that hangs too, `killall -9 com.apple.CoreSimulator.CoreSimulatorService` restarts the service. Then try again.
+
+**`appshots check` says no iPhone Pro Max simulator is installed.** The screenshots of the closest one are scaled to the store's sizes, which works but is less sharp. `appshots run --create` adds the model when this Xcode has it; at the Terminal, `run` asks first. Otherwise add a newer iOS in Xcode under **Settings → Components**.
 
 **No booted simulator.** Start your app from Xcode, or run `appshots run`. For an app made with Flutter, React Native, Expo, Capacitor or Tauri, run `appshots boot` and then the toolkit's own run command.
 
@@ -49,7 +53,9 @@ export PATH="$HOME/.local/bin:$PATH"
 
 **The status bar shows the wrong time.** Add `--clean`. It works in the simulator only.
 
-**The screenshot shows the launch screen.** The app needed longer to settle. Add `--wait 5`.
+**The screenshot shows the launch screen.** The app needed longer to settle. Without `--wait`, the capture waits until the screen stops changing, four seconds at most, and an app that shows a spinner or an animation for longer needs `--wait 5`.
+
+**`~/Library/Caches/appshots` takes a lot of space.** It holds the build logs of `appshots run`, and with `--fresh` the builds themselves. `appshots clean --builds --older-than 30` removes those of projects not built for a month, and `--dry-run` shows what that would be first.
 
 **"Could not capture the window" with `--mac`.** macOS only lets a program take pictures of windows with the Screen Recording permission. Switch on your terminal app under **System Settings → Privacy & Security → Screen & System Audio Recording**, then quit and reopen the terminal. Or take the window yourself with Shift-Command-4, Space and a click, and upload the file with `--as mac`. See [Mac apps](/docs/mac#get-the-screens-in).
 
@@ -61,7 +67,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 **`--web` says nothing answers at the address.** The dev server is not running, or it took another port than usual. Read the address off what it printed when it started.
 
-**`--web` finds no browser.** It draws pages with Google Chrome, Chromium, Microsoft Edge or Brave. Install one, or set `APPSHOTS_BROWSER` to the program of a Chromium browser.
+**`--web` finds no browser.** It draws pages with Google Chrome, Chromium, Microsoft Edge or Brave, or with the Chromium Playwright keeps in its cache. Install one, run `npx playwright install chromium` in a project that uses Playwright, or set `APPSHOTS_BROWSER` to the program of a Chromium browser.
 
 **A web page shows a sign-in or an empty state.** The browser the command starts has a profile of its own and knows none of your sign-ins. Put sample data in with `--init`, or keep a session between captures with `--profile`. See [Reach a screen](/docs/web-apps#reach-a-screen).
 

@@ -4,18 +4,18 @@ nav: Command line
 description: Reference for the appshots command line tool on the Mac. Setup, update, check, run an app in the iOS Simulator, capture and upload screens, capture a Mac app's window or a web app's pages, pull the finished set, download mockups, and call the server's tools.
 ---
 
-`appshots` is one small Node.js file with no dependencies. It runs your app in a simulator, captures screens from the simulator, a device, a Mac window or a web page, moves files between your Mac and the server, and can call every tool the server has. The [setup command](/docs/connect) installs it as `~/.local/bin/appshots`.
+`appshots` is one small Node.js file with no dependencies. It runs your app in a simulator, captures screens from the simulator, a device, a Mac window or a web page, moves files between your Mac and the server, and can call every tool the server has. The [setup command](/docs/connect) puts it next to the skill, as `~/.claude/skills/appshots/appshots.mjs` for Claude Code or `~/.agents/skills/appshots/appshots.mjs` for the other agents. When `~/.local/bin`, `~/bin` or the folder Claude Code sits in is on your `PATH`, it also links it there as the command `appshots`. Otherwise you run it as `node ~/.claude/skills/appshots/appshots.mjs`, which is how the skill runs it anyway.
 
-It needs Node.js 18 or newer. The simulator and plugged-in devices need Xcode. A web app's pages need Chrome, Edge or Brave instead.
+It needs Node.js 18 or newer, and the setup script says so before it starts when an older one is installed. The simulator and plugged-in devices need Xcode. A web app's pages need Chrome, Edge or Brave instead.
 
 ## Set up and keep current
 
 | Command | What it does |
 | --- | --- |
 | `appshots setup <url> [--agent <agent>]` | Saves the server and your token, installs the skill and this command, and connects the agent. Agents: `claude` (the default), `codex`, `opencode`, `pi`, `other`. `--token <token>` skips the question |
-| `appshots login <url>` | Saves the server address and the token only |
+| `appshots login <url>` | Saves the server address and the token only. `--token <token>` or `APPSHOTS_TOKEN` skips the question |
 | `appshots update` | Brings the installed skill and this command up to date with the server's. Needs no token |
-| `appshots check` | Reports the server, whether the skill is current, Xcode, the project in this folder, what it is made with and the commands that start it, simulators, installed apps and devices. Every line says what to do next |
+| `appshots check` | Reports the server, whether the skill is current, Xcode, the project in this folder, what it is made with and the commands that start it, simulators, installed apps and devices. Every line says what to do next. Each simulator comes with the size of its screenshots and the App Store display that size is for |
 
 When the server has a newer skill or command than this Mac, every other command says so in one line when it is done. See [Connect an agent](/docs/connect) and [Update](/docs/update).
 
@@ -38,11 +38,12 @@ appshots run --capture home --to streaks
 | `--ipad` | On the 13-inch iPad Pro instead of the iPhone Pro Max |
 | `--duo` | On the iPhone Duo instead. Needs an Xcode that has its simulator |
 | `--sim <name or udid>` | On this simulator instead. It is booted if need be |
+| `--create` | Creates the simulator of the store's size when none is installed and this Xcode has the model. At the Terminal, `run` and `boot` ask first; an agent passes `--create` |
 | `--dark`, `--light` | Sets the simulator's appearance first |
 | `--lang <code>` | Starts the app in this language, such as `de` or `pt-BR`. A screenshot taken with `--capture` is filed under that language in the project |
 | `--capture <name>` | Takes the screenshot as well, with a clean status bar |
 | `--to <project>` | Uploads that screenshot to this project |
-| `--wait <seconds>` | How long the app gets to settle before the capture. Default 2 |
+| `--wait <seconds>` | How long the app gets to settle before the capture. Left out, the capture waits until the screen stops changing, four seconds at most |
 | `-- <arguments>` | Handed to the app as they are, such as `-- -appshots stats` |
 
 ```bash
@@ -51,7 +52,9 @@ appshots launch com.example.streaks --capture stats --to streaks -- -appshots st
 
 `launch <bundle id>` starts an installed app again without building, to switch screen or language. It takes `--sim`, `--dark`, `--light`, `--lang`, `--capture`, `--to`, `--as` and `--wait`.
 
-`appshots boot` boots the simulator the store sizes ask for, without building anything, and prints its udid together with the run command of the toolkit in the current folder, such as `flutter run -d <udid>`. It takes `--ipad`, `--duo` and `--sim`.
+`appshots boot` boots the simulator the store sizes ask for, without building anything, and prints its udid together with the run command of the toolkit in the current folder, such as `flutter run -d <udid>`. It takes `--ipad`, `--duo`, `--sim` and `--create`.
+
+Without `--sim`, `run` and `boot` pick the simulator whose screenshots have the size the store asks for, by the size its model takes rather than by its name: the iPhone Pro Max at 1320×2868, the iPhone Duo, or the 13-inch iPad Pro at 2064×2752. A newer iOS goes first, then a newer model. When none is installed, they say so and use the closest one.
 
 `appshots simctl <arguments>` runs `xcrun simctl` with the right Xcode, for `openurl`, `ui`, `privacy` and `push`.
 
@@ -88,6 +91,7 @@ With `--web`:
 | `--eval <script or @file>` | JavaScript that runs in the loaded page before the picture: the click or scroll that brings up the screen |
 | `--viewport <width>x<height>` | The page's size in points instead of the device's |
 | `--profile <dir>` | Keeps cookies and storage in this folder between captures |
+| `--user-agent <text>` | The browser the page is told it is in. Left out, Safari on the device it is drawn as, or Chrome for `--as mac` |
 
 ## Upload and download
 
@@ -129,10 +133,12 @@ These put a finished set into App Store Connect from your Mac, with an API key o
 | `--version <number>` | Creates that version when none is being prepared. `text --set` takes it too |
 | `--render` | Renders first, as `pull --render` does |
 | `--from <folder>` | Takes the files of an earlier `appshots pull` |
-| `--lang <codes>` | Only these languages, such as `de-DE,fr-FR` |
+| `--lang <codes>` | Only these languages, such as `de-DE,fr-FR`. `en=en-GB` puts the files of `en` onto the store page's `en-GB`; `en=en-GB,de-DE` does that and takes `de-DE` as well |
 | `--only <devices or folders>` | Only these, such as `iphone,ipad` or `iphone-6.9,ipad-13` |
 | `--add-languages` | Adds a language the store page does not have yet. `text --set` takes it too |
 | `--dry-run` | Changes nothing and says what would be done. `text --set` takes it too |
+
+When a project language matches several of the store page's, such as `en` with `en-US` and `en-GB`, `push` takes the app's primary language among them, or else the code App Store Connect has for it (`en-US` for `en`), and says which it took. When it cannot tell, it leaves that language out and says how to name one with `--lang en=<code>`, listing the other languages after it. A language left out makes the command end with status 1.
 
 ## Mockups
 
@@ -172,6 +178,15 @@ appshots call set_slides @slides.json
 ```
 
 Arguments are JSON: inline, `@file.json`, or `-` for standard input. Pictures a tool returns are saved in a temporary folder, or in the folder after `--out`, and the command prints where. See [MCP tools](/docs/mcp).
+
+## Clean up
+
+```bash
+appshots clean --builds --older-than 30 --dry-run
+appshots clean --builds
+```
+
+`appshots run` keeps a build log for each project in `~/Library/Caches/appshots/build`, and with `--fresh` the build itself, which can take a few hundred megabytes. `clean --builds` removes them. `--older-than <days>` removes only those of projects not built for that many days, and `--dry-run` lists them with their size and removes nothing. Xcode's own build folder is left as it is.
 
 ## Where the settings live
 

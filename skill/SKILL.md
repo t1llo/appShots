@@ -158,7 +158,7 @@ appshots capture --name home --project <project> --device          # the plugged
    appshots run --duo              # the iPhone Duo, when a Duo set was asked for
    ```
 
-   It finds the project and scheme, boots the simulator, builds in Xcode's own build folder, installs and launches, and prints the bundle id. A first build can take several minutes, so give the command a long timeout and do not start a second one. If it says Xcode is building right now, wait and run it again. An app made with Flutter, React Native, Expo, Capacitor or Tauri is not built by `appshots run`: start it as in E, then carry on with 2.
+   It finds the project and scheme, boots the simulator, builds in Xcode's own build folder, installs and launches, and prints the bundle id. A first build can take several minutes, so give the command a long timeout and do not start a second one. If it says Xcode is building right now, wait and run it again. If it says the simulator of the store's size is not installed and `--create` adds one, run it again with `--create`. An app made with Flutter, React Native, Expo, Capacitor or Tauri is not built by `appshots run`: start it as in E, then carry on with 2.
 
 2. **Capture each screen with one command:**
 
@@ -166,7 +166,7 @@ appshots capture --name home --project <project> --device          # the plugged
    appshots launch <bundle id> --capture stats --to <project> -- <launch arguments>
    ```
 
-   It starts the app again with those arguments, waits two seconds (`--wait 5` for a slow screen), takes the screenshot with the 9:41 status bar, and uploads it. Add `--dark` or `--light`, `--lang de`, and `--sim "<name>"` when several simulators are booted. Run these one after the other, not at the same time.
+   It starts the app again with those arguments, waits until the screen stops changing, four seconds at most (`--wait 5` for a slow screen), takes the screenshot with the 9:41 status bar, and uploads it. Add `--dark` or `--light`, `--lang de`, and `--sim "<name>"` when several simulators are booted. Run these one after the other, not at the same time.
 
 3. **How to land on a screen,** in this order. Take the first that works:
 
@@ -366,7 +366,7 @@ appshots store login --issuer <issuer id> --key-id <key id> --key <path to the .
 
    It names the version, and for each language and display how many screenshots would go up and what they would replace. It takes the files of the last render; add `--render` only when the slides changed since.
 3. **If it says no version is being prepared,** a new one has to be created. Take the number from the app (`MARKETING_VERSION`, or the toolkit's own version setting) when that is higher than the latest version the message names. Otherwise ask the user which number the next version gets. Then add `--version <number>` to the dry run and the upload. A version number is not a build number, and no build is made or touched.
-4. **If it says a language is not on the store page,** ask the user whether to add it. `--add-languages` does.
+4. **If it says a language is not on the store page,** ask the user whether to add it. `--add-languages` does. If it says a language could go onto either of two, such as `en` onto `en-US` or `en-GB`, ask the user which, and name it with `--lang en=en-GB`. `--lang` uploads only the languages it names, so list the others after it, as in `--lang en=en-GB,de-DE`.
 5. **Wait for the user's yes to that plan,** unless they already told you to upload without asking. Then run the same command without `--dry-run`.
 6. **If Apple refuses a file,** the command says which and why, and ends with an error. Render again and run it once more. Do not work around it.
 
