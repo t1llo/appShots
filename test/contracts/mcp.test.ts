@@ -302,6 +302,14 @@ describe("tools", () => {
     assert.equal(jsonOf(result).headlne, undefined);
     assert.equal((await rest("/api/projects/mcp-app")).project.slides[0].headlne, undefined);
   });
+
+  test("a damaged project is reported without the parser's words", async () => {
+    await callTool(server, "create_project", { name: "MCP Damaged" });
+    await writeFile(path.join(server.dataDir, "projects", "mcp-damaged", "project.json"), '{"id": "mcp-damaged",');
+    const result = await callTool(server, "get_project", { project: "mcp-damaged" });
+    assertRefused(result);
+    assert.doesNotMatch(textOf(result), /JSON|position|\//);
+  });
 });
 
 describe("open bugs", () => {
@@ -315,14 +323,6 @@ describe("open bugs", () => {
     const result = await callTool(server, "update_slide", { project: "mcp-app", slide: 1, changes: { screenshot: "setings" }, remove: ["subheading"] });
     assert.match(textOf(result), /setings/);
     assert.match(textOf(result), /subheading/);
-  });
-
-  test("a damaged project is reported without the parser's words", { todo: "mcp-6" }, async () => {
-    await callTool(server, "create_project", { name: "MCP Damaged" });
-    await writeFile(path.join(server.dataDir, "projects", "mcp-damaged", "project.json"), '{"id": "mcp-damaged",');
-    const result = await callTool(server, "get_project", { project: "mcp-damaged" });
-    assertRefused(result);
-    assert.doesNotMatch(textOf(result), /JSON|position|\//);
   });
 });
 
