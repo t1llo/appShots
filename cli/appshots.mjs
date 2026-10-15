@@ -778,41 +778,36 @@ const overrides = (text) => text.split("\n").map((line) => line.trim()).filter((
 * @returns {Promise<T>}
 */
 async function withCleanStatusBar(simulator, work) {
-	const list = async () => overrides((await xcrun([
-		"simctl",
-		"status_bar",
-		simulator.udid,
-		"list"
-	])).stdout);
-	const before = await list();
+	const statusBar = async (args) => {
+		const { value, problem } = await attempt(() => xcrun([
+			"simctl",
+			"status_bar",
+			simulator.udid,
+			...args
+		], { timeout: 2e4 }));
+		return value ?? {
+			status: 1,
+			stdout: "",
+			stderr: problem,
+			stuck: true
+		};
+	};
+	const listed = await statusBar(["list"]);
+	const before = overrides(listed.stdout);
 	const time = new Date(2007, 0, 9, 9, 41).toISOString();
-	let result = await xcrun([
-		"simctl",
-		"status_bar",
-		simulator.udid,
+	let result = listed.stuck ? listed : await statusBar([
 		"override",
 		"--time",
 		time,
 		...CLEAN
 	]);
-	if (result.status !== 0) result = await xcrun([
-		"simctl",
-		"status_bar",
-		simulator.udid,
-		"override",
-		...PLAIN
-	]);
+	if (result.status !== 0 && !result.stuck) result = await statusBar(["override", ...PLAIN]);
 	if (result.status !== 0) console.error(`appshots: could not set the status bar of ${simulator.name}, so it shows as it is. ${result.stderr.trim().split("\n").pop()}`);
-	const ours = result.status === 0 && (before === "" || before === await list());
+	const ours = result.status === 0 && (before === "" || before === overrides((await statusBar(["list"])).stdout));
 	try {
 		return await work();
 	} finally {
-		if (ours) await xcrun([
-			"simctl",
-			"status_bar",
-			simulator.udid,
-			"clear"
-		]);
+		if (ours) await statusBar(["clear"]);
 	}
 }
 /**

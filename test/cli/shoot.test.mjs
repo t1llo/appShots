@@ -34,11 +34,14 @@ const HEADING = "Current Status Bar Overrides:\n=============================\n"
 
 /** What the status bar has, as simctl would list it. */
 let statusBar = "";
+/** Whether the status bar answers at all. */
+let stuck = false;
 
 const script = scriptedRunner((command, args) => {
   if (command !== "xcrun") return { status: 1, stderr: `${command} is not part of this test` };
   const [tool, verb, , action] = args;
   if (tool === "simctl" && verb === "list") return { stdout: LISTING };
+  if (tool === "simctl" && verb === "status_bar" && stuck) return { timedOut: true };
   if (tool === "simctl" && verb === "status_bar" && action === "list") return { stdout: `${HEADING}${statusBar}` };
   if (tool === "simctl" && verb === "status_bar" && action === "override") {
     statusBar = "Time: 9:41\nBattery: 100%, charged\n";
@@ -63,6 +66,7 @@ beforeEach(() => {
   script.calls.length = 0;
   server.requests.length = 0;
   statusBar = "";
+  stuck = false;
 });
 
 const shortly = (calls) => calls.map((call) => call.replace(BENCH.udid, "<sim>").replace(/ \S+\.png$/, " <file>").replace(/--time \S+ .*/, "--time …"));
@@ -99,6 +103,15 @@ test("q stops before the next screen and the status bar is still cleared", async
   await quietly(() => shoot(parseArgs(["demo", "home", "stats", "--clean"]), { keys: keys(["q"]) }));
   assert.equal(script.calls.filter((call) => call.includes(" io ")).length, 0);
   assert.ok(script.calls.at(-1)?.endsWith(" clear"));
+});
+
+test("a status bar that does not answer is left as it is, and the screens are still taken", async (t) => {
+  stuck = true;
+  const warned = t.mock.method(console, "error", () => {});
+  await quietly(() => shoot(parseArgs(["demo", "home", "--clean"]), { keys: keys(["\r"]) }));
+  const calls = shortly(script.calls).filter((call) => call !== "xcrun simctl list --json");
+  assert.deepEqual(calls, ["xcrun simctl status_bar <sim> list", "xcrun simctl io <sim> screenshot <file>"]);
+  assert.match(String(warned.mock.calls[0]?.arguments[0]), /could not set the status bar of Bench, so it shows as it is\. .*did not answer within 20 seconds/);
 });
 
 test("a word --sim took is a screen when no simulator has that name", async () => {

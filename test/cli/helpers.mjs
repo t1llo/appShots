@@ -42,8 +42,9 @@ export async function stubServer(answer) {
 
 /**
  * A runner for proc.mjs that answers from a script instead of starting programs, and keeps every call.
- * `answer` returns what the program would have: { status, stdout, stderr }, all optional.
- * @param {(command: string, args: string[]) => { status?: number, stdout?: string, stderr?: string } | Promise<{ status?: number, stdout?: string, stderr?: string }>} answer
+ * `answer` returns what the program would have: { status, stdout, stderr, timedOut }, all optional.
+ * @typedef {{ status?: number, stdout?: string, stderr?: string, timedOut?: boolean }} Answer
+ * @param {(command: string, args: string[]) => Answer | Promise<Answer>} answer
  */
 export function scriptedRunner(answer) {
   /** @type {string[]} */
@@ -51,8 +52,8 @@ export function scriptedRunner(answer) {
   /** @type {import("../../cli/src/proc.mjs").Runner} */
   const runner = async (command, args) => {
     calls.push([command, ...args].join(" "));
-    const { status = 0, stdout = "", stderr = "" } = (await answer(command, args)) ?? {};
-    return { status, signal: null, stdout, stderr, timedOut: false };
+    const { status = 0, stdout = "", stderr = "", timedOut = false } = (await answer(command, args)) ?? {};
+    return timedOut ? { status: null, signal: "SIGTERM", stdout: "", stderr: "", timedOut } : { status, signal: null, stdout, stderr, timedOut };
   };
   return { runner, calls };
 }

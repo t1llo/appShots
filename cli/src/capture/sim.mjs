@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { fail } from "../fail.mjs";
+import { attempt, fail } from "../fail.mjs";
 import { pause } from "../util.mjs";
 import { xcrun } from "../xcode.mjs";
 
@@ -31,18 +31,24 @@ const overrides = (text) =>
  * @returns {Promise<T>}
  */
 export async function withCleanStatusBar(simulator, work) {
-  const list = async () => overrides((await xcrun(["simctl", "status_bar", simulator.udid, "list"])).stdout);
-  const before = await list();
+  // The status bar goes through a part of the simulator service that can hang while screenshots still work, so
+  // it gets less time than other simctl commands, and a status bar that does not answer is left as it is.
+  const statusBar = async (args) => {
+    const { value, problem } = await attempt(() => xcrun(["simctl", "status_bar", simulator.udid, ...args], { timeout: 20000 }));
+    return value ?? { status: 1, stdout: "", stderr: problem, stuck: true };
+  };
+  const listed = await statusBar(["list"]);
+  const before = overrides(listed.stdout);
   // simctl reads the time as a moment and shows it in this Mac's time zone, so it is given as 9:41 here.
   const time = new Date(2007, 0, 9, 9, 41).toISOString();
-  let result = await xcrun(["simctl", "status_bar", simulator.udid, "override", "--time", time, ...CLEAN]);
-  if (result.status !== 0) result = await xcrun(["simctl", "status_bar", simulator.udid, "override", ...PLAIN]);
+  let result = listed.stuck ? listed : await statusBar(["override", "--time", time, ...CLEAN]);
+  if (result.status !== 0 && !result.stuck) result = await statusBar(["override", ...PLAIN]);
   if (result.status !== 0) console.error(`appshots: could not set the status bar of ${simulator.name}, so it shows as it is. ${result.stderr.trim().split("\n").pop()}`);
-  const ours = result.status === 0 && (before === "" || before === (await list()));
+  const ours = result.status === 0 && (before === "" || before === overrides((await statusBar(["list"])).stdout));
   try {
     return await work();
   } finally {
-    if (ours) await xcrun(["simctl", "status_bar", simulator.udid, "clear"]);
+    if (ours) await statusBar(["clear"]);
   }
 }
 
