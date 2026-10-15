@@ -222,7 +222,7 @@ app.get("/install.sh", (req, res) => {
   res.type("text/plain").set("Cache-Control", "no-cache").send(installer.replaceAll("{{SERVER}}", server));
 });
 app.get("/cli/appshots.mjs", (_req, res) => {
-  res.set("Content-Disposition", 'attachment; filename="appshots.mjs"').sendFile(path.join(root, "cli", "appshots.mjs"));
+  res.set("Content-Disposition", 'attachment; filename="appshots.mjs"').sendFile("appshots.mjs", { root: path.join(root, "cli") });
 });
 // The two files as short hashes: how a Mac learns that its copies are behind without fetching them.
 const stamp = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -238,7 +238,7 @@ app.get("/fonts/fonts.css", (_req, res) => {
 app.get("/fonts/:font/:file", (req, res) => {
   const font = FONTS[req.params.font as keyof typeof FONTS];
   if (!font || !/^[a-z0-9-]+\.woff2?$/.test(req.params.file)) return void res.status(404).end();
-  res.set("Cache-Control", "public, max-age=31536000, immutable").sendFile(path.join(root, "node_modules", font.pkg, "files", req.params.file));
+  res.set("Cache-Control", "public, max-age=31536000, immutable").sendFile(req.params.file, { root: path.join(root, "node_modules", font.pkg, "files") });
 });
 
 // Every icon as a symbol, for the Studio's picker: <use href="/icons.svg#rocket">.
@@ -833,18 +833,26 @@ app.use("/api", api);
 
 // ---------------------------------------------------------------- files and slide pages
 
+/**
+ * Sends a file from inside `dir`. The folder goes in as the root, so only the part below it is checked for hidden
+ * names: a data directory such as ~/.appshots must not hide every file in it.
+ */
+function sendFrom(res: Response, dir: string, relative: string): void {
+  res.sendFile(path.relative(dir, safeJoin(dir, relative)), { root: dir });
+}
+
 app.get("/files/:id/shots/:file", async (req, res) => {
   await getProject(spaceOf(res), req.params.id);
-  res.set("Cache-Control", "private, max-age=31536000, immutable").sendFile(safeJoin(shotsDir(spaceOf(res), req.params.id), req.params.file));
+  sendFrom(res.set("Cache-Control", "private, max-age=31536000, immutable"), shotsDir(spaceOf(res), req.params.id), req.params.file);
 });
 app.get("/files/:id/images/:file", async (req, res) => {
   await getProject(spaceOf(res), req.params.id);
-  res.set("Cache-Control", "private, max-age=31536000, immutable").sendFile(safeJoin(imagesDir(spaceOf(res), req.params.id), req.params.file));
+  sendFrom(res.set("Cache-Control", "private, max-age=31536000, immutable"), imagesDir(spaceOf(res), req.params.id), req.params.file);
 });
 app.get("/files/:id/out/*file", async (req, res) => {
   await getProject(spaceOf(res), req.params.id);
   const relative = (req.params.file as unknown as string[]).join("/");
-  res.set("Cache-Control", "private, no-cache").sendFile(safeJoin(outDir(spaceOf(res), req.params.id), relative));
+  sendFrom(res.set("Cache-Control", "private, no-cache"), outDir(spaceOf(res), req.params.id), relative);
 });
 
 /** What a slide page draws: the project as it is, or, for a page of a running render, as it was when the render was asked for. */

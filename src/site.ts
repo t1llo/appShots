@@ -391,7 +391,7 @@ export function siteRoutes(app: Express, baseUrl: (req: Request) => string): voi
 
   // The example set from the README, which is what a shared link shows.
   app.get("/og.jpg", (_req, res) => {
-    res.set("Cache-Control", "public, max-age=86400").sendFile(path.join(docsDir, "example.jpg"));
+    res.set("Cache-Control", "public, max-age=86400").sendFile("example.jpg", { root: docsDir });
   });
 
   app.get("/robots.txt", (req, res) => {
