@@ -1,7 +1,7 @@
 import express, { type Router } from "express";
 import { z } from "zod";
 import { rendersLeft } from "../../accounts.ts";
-import { cancelRender, getRender, listRenders, renderProject, startRender } from "../../render.ts";
+import { cancelRender, getRender, listRenders, renderProject, resolveLocales, startRender } from "../../render.ts";
 import { localeSchema } from "../../schema.ts";
 import { PLACEMENT_IDS, TARGET_IDS } from "../../sizes.ts";
 import { getProject, InputError, listOutputs, NotFoundError } from "../../store.ts";
@@ -27,9 +27,11 @@ export function renderRoutes(log: Log): Router {
     const { id } = req.params;
     const { background, ...request } = renderBody.parse(req.body ?? {});
     if (background) {
-      // A project that does not exist is answered here, not by a run that fails a moment later.
-      const { name } = await getProject(space, id);
-      const { job, finished } = startRender(space, id, request, name);
+      // A project that does not exist, or a language it does not have, is answered here, not by a run that fails a
+      // moment later.
+      const project = await getProject(space, id);
+      resolveLocales(project, request.locales);
+      const { job, finished } = startRender(space, id, request, project.name);
       finished.catch((error: unknown) => {
         if (!(error instanceof InputError || error instanceof NotFoundError)) log.error(error);
       });

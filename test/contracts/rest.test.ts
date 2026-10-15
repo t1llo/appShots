@@ -411,6 +411,12 @@ describe("rendering, without drawing", () => {
     assertError(await call(`/api/projects/no-such-project/render`, send("POST", { background: true })), 404);
   });
 
+  test("a language the project does not have is refused before anything is queued", async () => {
+    for (const background of [false, true]) {
+      assertError(await call(`/api/projects/${id}/render`, send("POST", { locales: ["fr"], background })), 400, /no language "fr"/);
+    }
+  });
+
   test("slides count from 0 here: index 3 of three slides is slide 4", async () => {
     assertError(await call(`/api/projects/${id}/render`, send("POST", { slides: [3] })), 400, /^Slide 4 does not exist; the project has 3\.$/);
   });
