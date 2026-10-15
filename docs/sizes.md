@@ -36,14 +36,17 @@ An empty list goes back to the standard sizes.
 
 ## One design, many sizes
 
-Displays of exactly the same shape get the same picture. The slide is drawn once at the largest size and scaled to the others, so a headline breaks on the same word and the device sits in the same place on every one of them.
+Displays of the same shape, to within a pixel or two, get the same picture. The slide is drawn once at the largest size and scaled to the others, so a headline breaks on the same word and the device sits in the same place on every one of them.
 
 | Drawn | Scaled from it |
 | --- | --- |
-| `ipad-13` | `ipad-10.5`, `ipad-9.7` |
+| `iphone-6.9` | `iphone-6.3` |
+| `iphone-6.5` | `iphone-6.1` |
+| `iphone-5.5` | `iphone-4.7`, `iphone-4` |
+| `ipad-13` | `ipad-12.9`, `ipad-10.5`, `ipad-9.7` |
 | `mac-2880` | `mac-2560`, `mac-1440`, `mac-1280` |
 
-Every other size has a shape of its own, if only by a few pixels, and is drawn at its own size so that nothing round comes out oval. That includes each iPhone size, `ipad-12.9`, `ipad-11` and the Duo's. The layout is the same and follows the shape, so a long headline can break on another word.
+The iPhones with Face ID, `iphone-6.5` and `iphone-6.1`, are some ten pixels off the shape of `iphone-6.9`, so they are drawn at a size of their own rather than squeezed, which would make circles oval. `iphone-3.5`, `iphone-duo`, `iphone-duo-cover` and `ipad-11` have a shape of their own too. The layout is the same and follows the shape, so a long headline can break on another word.
 
 ## Which device a screenshot counts as
 

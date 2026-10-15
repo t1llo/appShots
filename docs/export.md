@@ -58,7 +58,7 @@ You design the set once per device. The export holds it at every size:
 | iPad screenshots as well | `ipad-13` and `ipad-11` too |
 | Mac screenshots as well | `mac-2880` too |
 
-Sizes of exactly the same shape are the same picture scaled. The iPhone sizes each have a slightly different shape, so each is drawn at its own size with the same layout. The sizes for older devices are left out until you tick them under **Project → Export sizes**. See [Sizes](/docs/sizes).
+Sizes of the same shape are the same picture scaled, so they look alike on every display. The iPhones with Face ID, 6.5" and 6.1", are a little wider than the others and are drawn on their own with the same layout. The sizes for older devices are left out until you tick them under **Project → Export sizes**. See [Sizes](/docs/sizes).
 
 ## How long it takes
 

@@ -35,8 +35,8 @@ test("the export sizes are the ones they have always been", () => {
   assert.deepEqual(TARGETS, {
     "iphone-6.9": { label: 'iPhone 6.9"', slot: "iPhone with Dynamic Island (large display)", device: "iphone", width: 1320, height: 2868, standard: true },
     "iphone-6.3": { label: 'iPhone 6.3"', slot: "iPhone with Dynamic Island (medium display)", device: "iphone", width: 1206, height: 2622, standard: true, from: "iphone-6.9" },
-    "iphone-6.5": { label: 'iPhone 6.5"', slot: "iPhone with Face ID (large display)", device: "iphone", width: 1284, height: 2778, standard: true, from: "iphone-6.9" },
-    "iphone-6.1": { label: 'iPhone 6.1"', slot: "iPhone with Face ID (medium display)", device: "iphone", width: 1170, height: 2532, standard: true, from: "iphone-6.9" },
+    "iphone-6.5": { label: 'iPhone 6.5"', slot: "iPhone with Face ID (large display)", device: "iphone", width: 1284, height: 2778, standard: true },
+    "iphone-6.1": { label: 'iPhone 6.1"', slot: "iPhone with Face ID (medium display)", device: "iphone", width: 1170, height: 2532, standard: true, from: "iphone-6.5" },
     "iphone-5.5": { label: 'iPhone 5.5"', slot: "iPhone with Home Button (large display)", device: "iphone", width: 1242, height: 2208 },
     "iphone-4.7": { label: 'iPhone 4.7"', slot: "iPhone with Home Button (medium display)", device: "iphone", width: 750, height: 1334, from: "iphone-5.5" },
     "iphone-4": { label: 'iPhone 4"', slot: 'iPhone with Home Button (4" display)', device: "iphone", width: 640, height: 1136, from: "iphone-5.5" },

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { drawnAt, MAX_LOCALES, planRender, resolveLocales } from "../../src/render/plan.ts";
+import { MAX_LOCALES, planRender, resolveLocales } from "../../src/render/plan.ts";
 import { type Project, projectSchema } from "../../src/schema.ts";
-import { TARGET_IDS, TARGETS, type TargetId } from "../../src/sizes.ts";
+import { sourceOf, TARGET_IDS, TARGETS, type TargetId } from "../../src/sizes.ts";
 import type { Shot } from "../../src/store.ts";
 
 // What a render will draw, worked out without a browser: which languages, which passes of the browser, and what
@@ -31,29 +31,41 @@ test(`a render takes up to ${MAX_LOCALES} languages`, () => {
   assert.deepEqual(resolveLocales(project({ locales: ["en"] }), Array(MAX_LOCALES).fill("en")), ["en"]);
 });
 
-test("only a size of exactly the same shape is a scaled copy", () => {
+/** How far one size is from the shape of another, in pixels: the larger miss when either is scaled to the other's width or height. */
+const offShape = (a: TargetId, b: TargetId) => {
+  const [x, y] = [TARGETS[a], TARGETS[b]];
+  return Math.max(Math.abs(x.height - (y.height * x.width) / y.width), Math.abs(x.width - (y.width * x.height) / y.height));
+};
+
+test("a size is a scaled copy of another only when the two are of one shape, to within two pixels", () => {
+  const drawn = TARGET_IDS.filter((id) => sourceOf(id) === id);
   for (const id of TARGET_IDS) {
-    const from = drawnAt(id);
-    const [a, b] = [TARGETS[id], TARGETS[from]];
-    assert.equal(a.device, b.device, id);
-    assert.equal(a.width * b.height, a.height * b.width, `${id} is drawn at ${from}`);
+    const from = sourceOf(id);
+    assert.equal(TARGETS[from].device, TARGETS[id].device, id);
+    assert.ok(drawn.includes(from), `${id} copies ${from}, which is itself a copy`);
+    assert.ok(offShape(id, from) < 2, `${id} is ${offShape(id, from).toFixed(1)} px off the shape of ${from}`);
   }
-  // Each iPhone size Apple asks for has a shape of its own.
-  for (const id of ["iphone-6.9", "iphone-6.3", "iphone-6.5", "iphone-6.1", "iphone-5.5", "iphone-4.7", "iphone-4", "ipad-12.9"] as TargetId[]) assert.equal(drawnAt(id), id);
-  assert.equal(drawnAt("ipad-10.5"), "ipad-13");
-  assert.equal(drawnAt("ipad-9.7"), "ipad-13");
-  assert.equal(drawnAt("mac-1280"), "mac-2880");
+  // And the other way round: no two sizes that are drawn could have been one picture.
+  for (const [i, a] of drawn.entries()) {
+    for (const b of drawn.slice(i + 1)) if (TARGETS[a].device === TARGETS[b].device) assert.ok(offShape(a, b) >= 2, `${a} and ${b} are one shape`);
+  }
+  // The Face ID iPhones are some ten pixels off the shape of the 6.9", so they are drawn at a size of their own.
+  assert.equal(sourceOf("iphone-6.3"), "iphone-6.9");
+  assert.equal(sourceOf("iphone-6.5"), "iphone-6.5");
+  assert.equal(sourceOf("iphone-6.1"), "iphone-6.5");
+  assert.equal(sourceOf("ipad-12.9"), "ipad-13");
+  assert.equal(sourceOf("mac-1280"), "mac-2880");
 });
 
 test("sizes of one shape share a pass, and each device gets one contact sheet", () => {
-  const plan = planRender(project({ targets: ["iphone-6.9", "iphone-6.5", "ipad-13", "ipad-10.5", "ipad-12.9"] }), [], [], {});
+  const plan = planRender(project({ targets: ["iphone-6.9", "iphone-6.3", "iphone-6.5", "iphone-6.1", "ipad-13", "ipad-12.9", "ipad-11"] }), [], [], {});
   assert.deepEqual(
     plan.passes.map((pass) => [pass.source, pass.targets, pass.sheet]),
     [
-      ["iphone-6.9", ["iphone-6.9"], true],
-      ["iphone-6.5", ["iphone-6.5"], false],
-      ["ipad-13", ["ipad-13", "ipad-10.5"], true],
-      ["ipad-12.9", ["ipad-12.9"], false],
+      ["iphone-6.9", ["iphone-6.9", "iphone-6.3"], true],
+      ["iphone-6.5", ["iphone-6.5", "iphone-6.1"], false],
+      ["ipad-13", ["ipad-13", "ipad-12.9"], true],
+      ["ipad-11", ["ipad-11"], false],
     ],
   );
   // A scaled size asked for alone is still drawn at the size it copies, and that one is not written.

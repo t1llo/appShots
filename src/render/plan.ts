@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { CREATIVE_CAPACITY, creativeLayout } from "../creative.ts";
 import { LOCALE, type Project, type Slide, slidesFor } from "../schema.ts";
-import { DEVICE_LABELS, type DeviceKind, orderTargets, PLACEMENT_IDS, PLACEMENTS, type PlacementId, standardTargets, TARGET_IDS, TARGETS, type TargetId } from "../sizes.ts";
+import { DEVICE_LABELS, type DeviceKind, orderTargets, PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, standardTargets, TARGETS, type TargetId } from "../sizes.ts";
 import { findShot, InputError, type Shot } from "../store.ts";
 
 // What a render will draw, worked out before it waits for its turn: a request that cannot be drawn is refused at
@@ -25,15 +25,6 @@ export function defaultTargets(shots: Shot[], chosen?: TargetId[]): TargetId[] {
   const kinds = new Set<DeviceKind>(shots.map((shot) => shot.device));
   if (kinds.size === 0) kinds.add("iphone");
   return standardTargets(kinds);
-}
-
-/**
- * The size a target is drawn at: the first size of its device with exactly its proportions. Only a size of the very
- * same shape is a scaled copy; one that differs even slightly is drawn on its own, so nothing round comes out oval.
- */
-export function drawnAt(target: TargetId): TargetId {
-  const { device, width, height } = TARGETS[target];
-  return TARGET_IDS.find((id) => TARGETS[id].device === device && TARGETS[id].width * height === TARGETS[id].height * width)!;
 }
 
 /** The most languages one render takes, as many as a project can have. */
@@ -143,9 +134,10 @@ export function planRender(project: Project, shots: Shot[], images: { name: stri
     return placements.length && !everything ? [] : Array.from({ length: count }, (_, i) => i);
   };
 
-  // Sizes of one shape share a pass of the browser: it draws the first, and the others are that picture scaled.
+  // Sizes of one shape share a pass of the browser: it draws the size the others copy, and they are that picture
+  // scaled. The size table says which size copies which, so the Studio previews exactly the shapes drawn here.
   const grouped = new Map<TargetId, TargetId[]>();
-  for (const target of targets) grouped.set(drawnAt(target), [...(grouped.get(drawnAt(target)) ?? []), target]);
+  for (const target of targets) grouped.set(sourceOf(target), [...(grouped.get(sourceOf(target)) ?? []), target]);
   const sheeted = new Set<DeviceKind>();
   const passes: Pass[] = [...grouped].map(([source, wanted]) => {
     const device = TARGETS[source].device;

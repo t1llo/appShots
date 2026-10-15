@@ -325,8 +325,8 @@ export interface Target {
   /** Exported whenever the project has screenshots of this device, unless it picks its own sizes. */
   standard?: boolean;
   /**
-   * The size this one is a resized copy of, so the two cannot differ in design. The two are close in shape, not
-   * always equal: what the resize does with the difference is up to the renderer.
+   * A size of the same proportions, to within two pixels: a stretch nobody can see. This one is that render scaled,
+   * so the two cannot differ in design. A size further off is drawn at its own size, or circles would come out oval.
    */
   from?: string;
 }
@@ -348,8 +348,8 @@ interface Size {
 const SIZES = {
   "iphone-6.9": { model: "iphone-6.9", width: 1320, height: 2868, standard: true },
   "iphone-6.3": { model: "iphone-6.3", width: 1206, height: 2622, standard: true, from: "iphone-6.9" },
-  "iphone-6.5": { model: "iphone-6.5", width: 1284, height: 2778, standard: true, from: "iphone-6.9" },
-  "iphone-6.1": { model: "iphone-6.1", width: 1170, height: 2532, standard: true, from: "iphone-6.9" },
+  "iphone-6.5": { model: "iphone-6.5", width: 1284, height: 2778, standard: true },
+  "iphone-6.1": { model: "iphone-6.1", width: 1170, height: 2532, standard: true, from: "iphone-6.5" },
   "iphone-5.5": { model: "iphone-5.5", width: 1242, height: 2208 },
   "iphone-4.7": { model: "iphone-4.7", width: 750, height: 1334, from: "iphone-5.5" },
   "iphone-4": { model: "iphone-4", width: 640, height: 1136, from: "iphone-5.5" },

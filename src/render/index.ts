@@ -21,7 +21,7 @@ export { cancelRender, frozenFor, getRender, listRenders, renderProject, startRe
 export type { Mockup } from "./mockup.ts";
 export { mockupSheet, renderMockup } from "./mockup.ts";
 export type { RenderRequest } from "./plan.ts";
-export { defaultTargets, drawnAt } from "./plan.ts";
+export { defaultTargets, resolveLocales } from "./plan.ts";
 
 /**
  * Lets what is queued and running finish, for up to `timeoutMs`, and takes no more work meanwhile. Runs still going
