@@ -19,8 +19,8 @@ export async function cliHome(label) {
 
 /**
  * A stand-in for the server on a free port. `answer` gets each request with its body read, and returns
- * [status, body] or [status, body, headers].
- * @param {(request: { method: string, url: string, headers: import("node:http").IncomingHttpHeaders, body: Buffer }) => [number, unknown, Record<string, string>?]} answer
+ * [status, body] or [status, body, headers], or a promise of one.
+ * @param {(request: { method: string, url: string, headers: import("node:http").IncomingHttpHeaders, body: Buffer }) => [number, unknown, Record<string, string>?] | Promise<[number, unknown, Record<string, string>?]>} answer
  */
 export async function stubServer(answer) {
   /** @type {Array<{ method: string, url: string, headers: import("node:http").IncomingHttpHeaders, body: Buffer }>} */
@@ -30,7 +30,7 @@ export async function stubServer(answer) {
     for await (const chunk of incoming) chunks.push(chunk);
     const request = { method: incoming.method ?? "GET", url: incoming.url ?? "/", headers: incoming.headers, body: Buffer.concat(chunks) };
     requests.push(request);
-    const [status, body, headers = {}] = answer(request);
+    const [status, body, headers = {}] = await answer(request);
     const text = typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body);
     response.writeHead(status, { "content-type": typeof body === "string" ? "text/plain" : "application/json", ...headers });
     response.end(text);
