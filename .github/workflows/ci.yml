@@ -21,3 +21,5 @@ jobs:
       # The default tiers: no Chromium, so the render tests stay skipped here.
       - run: npm test
       - run: npm run build
+      # The CLI the server hands out is built from cli/src. This fails when the committed file was not rebuilt.
+      - run: npm run check:cli
