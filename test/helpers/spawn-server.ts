@@ -38,7 +38,7 @@ export interface ServerOptions {
 const root = path.resolve(import.meta.dirname, "..", "..");
 
 /** Settings the server reads, which the environment the tests run in must not hand it. */
-const SERVER_SETTINGS = /^(GOOGLE_|UMAMI_|USER_)|^(ADMIN_EMAIL|PUBLIC_URL|ALLOWED_HOSTS|TRUST_PROXY|HOST|CLIENT_IP_HEADER|CONTACT_EMAIL|OPERATOR_NAME|DATA_DIR|PORT|NODE_TEST_CONTEXT)$/;
+const SERVER_SETTINGS = /^(GOOGLE_|UMAMI_|USER_|RENDER_)|^(ADMIN_EMAIL|PUBLIC_URL|ALLOWED_HOSTS|TRUST_PROXY|HOST|CLIENT_IP_HEADER|CONTACT_EMAIL|OPERATOR_NAME|DATA_DIR|PORT|NODE_TEST_CONTEXT)$/;
 
 /** The test's environment without any of the server's settings: what a server process starts from. */
 export const cleanEnv = (): Record<string, string | undefined> => Object.fromEntries(Object.entries(process.env).filter(([name]) => !SERVER_SETTINGS.test(name)));
