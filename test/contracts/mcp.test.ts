@@ -25,8 +25,10 @@ const TOOLS: Record<string, string[]> = {
   set_creative_assets: ["project", "header", "search", "universal", "readme", "social", "link", "post", "remove"],
   render: ["project", "slides", "creatives", "targets", "locales"],
   render_mockups: ["project", "screenshots", "locale", "device", "width"],
+  list_revisions: ["project"],
+  restore_project: ["project", "revision"],
 };
-const READ_ONLY = ["get_design_guide", "list_projects", "get_project"];
+const READ_ONLY = ["get_design_guide", "list_projects", "get_project", "list_revisions"];
 const DESCRIBE_KEYS = ["id", "name", "locales", "theme", "slides", "deviceSlides", "creativeAssets", "mockups", "screenshots", "images", "exportSizes", "studio"];
 
 const THREE_SLIDES = [
@@ -256,10 +258,32 @@ describe("tools", () => {
     assertRefused(await callTool(server, "render_mockups", { project: "mcp-empty" }), /no screenshots yet/);
     assertRefused(await callTool(server, "render_mockups", { project: "mcp-app", screenshots: ["hme"] }), /No screenshot is uploaded under "hme"\. The project has: home, window\./);
   });
-});
 
-describe("open bugs", () => {
-  test("parallel update_slide calls on different slides keep every edit", { todo: "store-2" }, async () => {
+  test("list_revisions and restore_project bring back an earlier version", async () => {
+    await callTool(server, "create_project", { name: "MCP Undo" });
+    await callTool(server, "set_slides", { project: "mcp-undo", slides: [{ layout: "statement", headline: "Kept" }] });
+    await callTool(server, "update_slide", { project: "mcp-undo", slide: 1, changes: { headline: "Worse" } });
+    const listed = await callTool(server, "list_revisions", { project: "mcp-undo" });
+    assertSucceeded(listed);
+    const { revision, revisions } = jsonOf(listed);
+    assert.equal(revision, 3);
+    assert.deepEqual(
+      revisions.map((row: { revision: number; actor: string }) => [row.revision, row.actor]),
+      [
+        [3, "mcp"],
+        [2, "mcp"],
+        [1, "mcp"],
+      ],
+    );
+    for (const row of revisions) assertKeys(row, ["revision", "time", "actor", "size"]);
+    const restored = await callTool(server, "restore_project", { project: "mcp-undo", revision: 2 });
+    assertSucceeded(restored);
+    assert.match(textOf(restored), /^Restored revision 2 of "mcp-undo"\. It is revision 4 now/);
+    assert.equal(jsonOf(await callTool(server, "get_project", { project: "mcp-undo" })).slides[0].headline, "Kept");
+    assertRefused(await callTool(server, "restore_project", { project: "mcp-undo", revision: 40 }), /keeps no revision 40/);
+  });
+
+  test("parallel update_slide calls on different slides keep every edit", async () => {
     await callTool(server, "set_slides", { project: "mcp-app", slides: THREE_SLIDES });
     await Promise.all([1, 2, 3].map((slide) => callTool(server, "update_slide", { project: "mcp-app", slide, changes: { headline: `Parallel ${slide}` } })));
     const { project } = await rest("/api/projects/mcp-app");
@@ -269,6 +293,16 @@ describe("open bugs", () => {
     );
   });
 
+  test("update_slide names the fields a slide does not have, and leaves them out", async () => {
+    const result = await callTool(server, "update_slide", { project: "mcp-app", slide: 1, changes: { headlne: "typo" } });
+    assertSucceeded(result);
+    assert.match(textOf(result), /Ignored, because a slide has no such field: headlne\./);
+    assert.equal(jsonOf(result).headlne, undefined);
+    assert.equal((await rest("/api/projects/mcp-app")).project.slides[0].headlne, undefined);
+  });
+});
+
+describe("open bugs", () => {
   test("render_mockups saves nothing when it refuses", { todo: "mcp-10" }, async () => {
     const before = (await rest("/api/projects/mcp-app")).project.mockups;
     await callTool(server, "render_mockups", { project: "mcp-app", screenshots: ["hme"], device: { style: "clay" } });
@@ -279,10 +313,6 @@ describe("open bugs", () => {
     const result = await callTool(server, "update_slide", { project: "mcp-app", slide: 1, changes: { screenshot: "setings" }, remove: ["subheading"] });
     assert.match(textOf(result), /setings/);
     assert.match(textOf(result), /subheading/);
-  });
-
-  test("update_slide refuses fields that do not exist", { todo: "store-11" }, async () => {
-    assertRefused(await callTool(server, "update_slide", { project: "mcp-app", slide: 1, changes: { headlne: "typo" } }), /headlne/);
   });
 
   test("a damaged project is reported without the parser's words", { todo: "mcp-6" }, async () => {

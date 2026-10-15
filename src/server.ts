@@ -45,10 +45,13 @@ import { ICONS } from "./icons.ts";
 import { createMcpServer } from "./mcp.ts";
 import { mockupHtml, mockupName, mockupShots, mockupStage } from "./mockup.ts";
 import { cancelRender, closeBrowser, defaultTargets, frozenFor, getRender, listRenders, renderMockup, renderProject, startRender } from "./render.ts";
-import { creativesSchema, deviceSlidesSchema, localeSchema, type Mockups, mockupsSchema, type Project, slideSchema, slidesFor, targetsSchema, themeSchema } from "./schema.ts";
+import { creativesSchema, deviceSlidesSchema, localeSchema, localesSchema, type Mockups, mockupsSchema, type Project, slideSchema, slidesFor, targetsSchema, themeSchema, unknownFields } from "./schema.ts";
 import { homePage, siteRoutes, studioPage } from "./site.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, isDeviceKind, isPlacementId, isTargetId, orderTargets, PLACEMENT_IDS, PLACEMENTS, sourceOf, TARGET_IDS, type TargetId, TARGETS } from "./sizes.ts";
+import { sweepProjects } from "./storage/migrate.ts";
+import { projects, type WriteOptions } from "./storage/projects.ts";
 import {
+  ConflictError,
   creativeDir,
   type CreativeOutput,
   countProjects,
@@ -62,12 +65,12 @@ import {
   listCreativeOutputs,
   listImages,
   listOutputs,
-  listProjects,
   listShots,
   moveShot,
   NotFoundError,
   type OutputSet,
   outDir,
+  projectSummary,
   safeJoin,
   saveImage,
   saveShot,
@@ -383,7 +386,7 @@ api.use(express.json({ limit: "2mb" }));
 
 const projectPatch = z.object({
   name: z.string().min(1).max(80).optional(),
-  locales: z.array(localeSchema).min(1).max(40).optional(),
+  locales: localesSchema.optional(),
   targets: targetsSchema.nullable().optional(),
   theme: themeSchema.optional(),
   slides: z.array(slideSchema).max(10).optional(),
@@ -407,8 +410,51 @@ async function creativeOutputs(space: Space, id: string) {
 }
 
 async function projectDetail(space: Space, id: string) {
-  const [project, shots, images, outputs, creatives] = await Promise.all([getProject(space, id), listShots(space, id), listImages(space, id), listOutputs(space, id), creativeOutputs(space, id)]);
-  return { project, shots, images, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots, project.targets) };
+  const [stored, shots, images, outputs, creatives] = await Promise.all([projects.get(space, id), listShots(space, id), listImages(space, id), listOutputs(space, id), creativeOutputs(space, id)]);
+  const { project, revision, warnings } = stored;
+  return { project, revision, shots, images, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots, project.targets), ...(warnings.length ? { warnings } : {}) };
+}
+
+/**
+ * The revision is the ETag, for the If-Match of the next change. Not kept by anything: an upload changes the
+ * screenshots without a new revision, so a cached copy would be answered 304 while out of date.
+ */
+function sendDetail(res: Response, detail: Awaited<ReturnType<typeof projectDetail>>) {
+  res.set({ ETag: `"${detail.revision}"`, "Cache-Control": "private, no-store" }).json(detail);
+}
+
+/** The revision a change was made on, from If-Match: "5", W/"5" or 5. None, or "*", takes whatever is current. */
+function ifMatch(req: Request): number | undefined {
+  const header = req.get("if-match")?.trim();
+  if (!header || header === "*") return undefined;
+  const match = /^(?:W\/)?"?(\d{1,9})"?$/.exec(header);
+  if (!match) throw new InputError('If-Match takes the revision the change was made on, as the ETag of the project gave it, such as "5".');
+  return Number(match[1]);
+}
+
+/** Who saves, for the history. Browsers say where a request comes from; the CLI and scripts do not. */
+const actorOf = (req: Request) => (req.get("sec-fetch-site") ? "studio" : "api");
+
+/** Fields the detail carries that are not changed by sending them back. */
+const STORED_ONLY = new Set(["id", "createdAt", "updatedAt", "schemaVersion", "revision"]);
+
+/**
+ * Makes a change and answers with the project. One made on a revision that is no longer current is answered 409,
+ * with the project as it is now, so the caller can make it again on that.
+ */
+async function change(req: Request<{ id: string }>, res: Response, work: (options: WriteOptions) => Promise<unknown>, warnings: string[] = []) {
+  const space = spaceOf(res);
+  const options = { ifRevision: ifMatch(req), actor: actorOf(req) };
+  try {
+    await work(options);
+  } catch (error) {
+    if (!(error instanceof ConflictError)) throw error;
+    const current = await projectDetail(space, req.params.id);
+    return void res.status(409).set({ ETag: `"${current.revision}"`, "Cache-Control": "private, no-store" }).json({ error: error.message, revision: error.revision, project: current });
+  }
+  const detail = await projectDetail(space, req.params.id);
+  const all = [...(detail.warnings ?? []), ...warnings];
+  sendDetail(res, all.length ? { ...detail, warnings: all } : detail);
 }
 
 api.get("/meta", (_req, res) => {
@@ -452,9 +498,9 @@ api.get("/meta", (_req, res) => {
   });
 });
 
+// A project whose project.json cannot be read is listed too, with `damaged`, so it can be restored or deleted.
 api.get("/projects", async (_req, res) => {
-  const projects = await listProjects(spaceOf(res));
-  res.json(projects.map((p) => ({ id: p.id, name: p.name, slides: p.slides.length, ownSets: Object.keys(p.deviceSlides), locales: p.locales, updatedAt: p.updatedAt })));
+  res.json((await projects.list(spaceOf(res))).map(projectSummary));
 });
 /** How much the caller keeps here: what the settings page shows. */
 api.get("/usage", async (_req, res) => {
@@ -462,14 +508,26 @@ api.get("/usage", async (_req, res) => {
 });
 api.post("/projects", async (req, res) => {
   const body = projectPatch.extend({ name: z.string().min(1).max(80) }).parse(req.body);
-  res.status(201).json(await createProject(spaceOf(res), body));
+  res.status(201).json(await createProject(spaceOf(res), body, { actor: actorOf(req) }));
 });
 api.get("/projects/:id", async (req, res) => {
-  res.json(await projectDetail(spaceOf(res), req.params.id));
+  sendDetail(res, await projectDetail(spaceOf(res), req.params.id));
 });
 api.put("/projects/:id", async (req, res) => {
-  await updateProject(spaceOf(res), req.params.id, projectPatch.parse(req.body));
-  res.json(await projectDetail(spaceOf(res), req.params.id));
+  const patch = projectPatch.parse(req.body);
+  // Fields a project does not have are left out, as before, but said so: a misspelt one would otherwise go unnoticed.
+  const ignored = unknownFields(projectPatch, req.body).filter((field) => !STORED_ONLY.has(field));
+  const warnings = ignored.length ? [`Ignored, because a project has no such field: ${ignored.join(", ")}.`] : [];
+  await change(req, res, (options) => updateProject(spaceOf(res), req.params.id, patch, options), warnings);
+});
+/** The versions kept of a project, newest first: every change is one, the last 50 of them. */
+api.get("/projects/:id/revisions", async (req, res) => {
+  res.json(await projects.revisions(spaceOf(res), req.params.id));
+});
+/** Makes an earlier version current again, as a new revision. Works on a damaged project too. */
+api.post("/projects/:id/restore", async (req, res) => {
+  const { revision } = z.object({ revision: z.number().int().min(0) }).parse(req.body);
+  await change(req, res, (options) => projects.restore(spaceOf(res), req.params.id, revision, options));
 });
 api.delete("/projects/:id", async (req, res) => {
   await deleteProject(spaceOf(res), req.params.id);
@@ -840,6 +898,9 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error(error);
   res.status(500).json({ error: "Internal error" });
 });
+
+// Before the first request, so no write is under way while the files writes left behind are cleared.
+await sweepProjects(config.dataDir).catch((error: unknown) => console.warn(`Could not look the projects over: ${error instanceof Error ? error.message : String(error)}`));
 
 const server = app.listen(config.port, () => {
   console.log(`appShots listening on http://localhost:${config.port} (data in ${config.dataDir})`);

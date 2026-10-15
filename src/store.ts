@@ -1,12 +1,18 @@
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp, { type Sharp } from "sharp";
-import { allSlides, type Creatives, type Project, projectSchema, SLUG, type Slide, type Theme } from "./schema.ts";
+import { InputError, NotFoundError } from "./domain/errors.ts";
+import { allSlides, type Project, SLUG } from "./schema.ts";
 import { type DeviceKind, deviceKindOf, PLACEMENT_IDS, PLACEMENTS, type PlacementId } from "./sizes.ts";
-import { writeFileAtomic } from "./storage/atomic.ts";
+import { withProjectLock } from "./storage/mutex.ts";
+import { assertSlug, imagesDir, outDir, projectKey, projectsDir, SHOT_FILE, shotFile, shotsDir, type Space } from "./storage/paths.ts";
+import { type Damaged, type NewProject, projects, type Stored, type WriteOptions } from "./storage/projects.ts";
 
-export class NotFoundError extends Error {}
-export class InputError extends Error {}
+// The functions the server, the MCP tools and the renderer call keep their names and shapes here. Projects are read
+// and written by the repository in storage/projects.ts, which locks, counts revisions and keeps the history.
+export { ConflictError, DamagedError, InputError, NotFoundError } from "./domain/errors.ts";
+export { imagesDir, outDir, projectDir, safeJoin, shotsDir, type Space } from "./storage/paths.ts";
+export { countProjects, slugify } from "./storage/projects.ts";
 
 export interface Shot {
   name: string;
@@ -24,54 +30,11 @@ export interface Shot {
   corner?: number;
 }
 
-/**
- * One account's private storage. Every lookup below takes one, so a request can only ever
- * reach the files of the account it was authenticated as.
- */
-export interface Space {
-  id: string;
-  root: string;
-  /** Caps for accounts other than the admin. */
-  limits?: { projects: number; shots: number };
-}
-
-const projectsDir = (space: Space) => path.join(space.root, "projects");
-
-function assertSlug(value: string, what: string): void {
-  if (!SLUG.test(value)) throw new InputError(`Invalid ${what} "${value}": use lowercase letters, digits, - and _`);
-}
-
-export function projectDir(space: Space, id: string): string {
-  assertSlug(id, "project id");
-  return path.join(projectsDir(space), id);
-}
-
-export const shotsDir = (space: Space, id: string) => path.join(projectDir(space, id), "shots");
-export const imagesDir = (space: Space, id: string) => path.join(projectDir(space, id), "images");
-export const outDir = (space: Space, id: string) => path.join(projectDir(space, id), "out");
-
-export function slugify(input: string): string {
-  const slug = input
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48)
-    .replace(/-+$/, "");
-  return slug || "project";
-}
-
 async function exists(file: string): Promise<boolean> {
   return stat(file).then(
     () => true,
     () => false,
   );
-}
-
-export async function countProjects(space: Space): Promise<number> {
-  const entries = await readdir(projectsDir(space), { withFileTypes: true }).catch(() => []);
-  return entries.filter((entry) => entry.isDirectory() && SLUG.test(entry.name)).length;
 }
 
 /** How many files a folder holds with everything below it, and their bytes. */
@@ -126,97 +89,52 @@ export async function usageOf(space: Space): Promise<Usage> {
   return usage;
 }
 
+/** The projects that can be opened, newest change first. The repository's list also names the damaged ones. */
 export async function listProjects(space: Space): Promise<Project[]> {
-  const entries = await readdir(projectsDir(space), { withFileTypes: true }).catch(() => []);
-  const projects: Project[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !SLUG.test(entry.name)) continue;
-    const project = await getProject(space, entry.name).catch(() => null);
-    if (project) projects.push(project);
-  }
-  return projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return (await projects.list(space)).flatMap((entry) => ("project" in entry ? [entry.project] : []));
+}
+
+/**
+ * A project as the lists show it, to the Studio, the CLI and agents alike. One that cannot be read has the same
+ * keys, so a client that does not know `damaged` still lists it and can delete it.
+ */
+export function projectSummary(entry: Stored | Damaged) {
+  if (!("project" in entry)) return { id: entry.id, name: entry.id, slides: 0, ownSets: [] as string[], locales: [] as string[], updatedAt: entry.updatedAt, damaged: entry.damaged };
+  const { project } = entry;
+  return { id: project.id, name: project.name, slides: project.slides.length, ownSets: Object.keys(project.deviceSlides), locales: project.locales, updatedAt: project.updatedAt };
 }
 
 export async function getProject(space: Space, id: string): Promise<Project> {
-  const file = path.join(projectDir(space, id), "project.json");
-  const raw = await readFile(file, "utf8").catch(() => null);
-  if (raw === null) throw new NotFoundError(`No project "${id}"`);
-  return projectSchema.parse(JSON.parse(raw));
+  return (await projects.get(space, id)).project;
 }
 
-async function writeProject(space: Space, project: Project): Promise<void> {
-  const dir = projectDir(space, project.id);
-  await mkdir(dir, { recursive: true });
-  // Agents send their tool calls in parallel and the Studio saves while they work, so writes overlap: each one
-  // replaces the file whole, and none can leave it truncated or mixed with another.
-  await writeFileAtomic(path.join(dir, "project.json"), JSON.stringify(project, null, 2));
+export async function createProject(space: Space, input: NewProject, options?: Pick<WriteOptions, "actor">): Promise<Project> {
+  return (await projects.create(space, input, options)).project;
 }
 
-/** Pages of the Studio that stand where a project's id would: a project named so gets a number behind its id. */
-const RESERVED_IDS = new Set(["settings", "admin"]);
-
-export async function createProject(
-  space: Space,
-  input: { name: string; locales?: string[]; targets?: Project["targets"] | null; theme?: Theme; slides?: Slide[]; deviceSlides?: Project["deviceSlides"]; creatives?: Creatives },
-): Promise<Project> {
-  if (space.limits && (await countProjects(space)) >= space.limits.projects) {
-    throw new InputError(`This account is limited to ${space.limits.projects} projects. Delete one to make room.`);
-  }
-  const base = slugify(input.name);
-  let id = base;
-  for (let n = 2; RESERVED_IDS.has(id) || (await exists(projectDir(space, id))); n++) id = `${base}-${n}`;
-  const now = new Date().toISOString();
-  const project = projectSchema.parse({
-    id,
-    name: input.name,
-    createdAt: now,
-    updatedAt: now,
-    locales: input.locales?.length ? input.locales : ["en"],
-    ...(input.targets?.length ? { targets: input.targets } : {}),
-    theme: input.theme ?? {},
-    slides: input.slides ?? [],
-    deviceSlides: input.deviceSlides ?? {},
-    creatives: input.creatives ?? {},
-  });
-  await writeProject(space, project);
-  return project;
-}
-
+/**
+ * Replaces the fields given and keeps the rest, on the project as it is when the change gets its turn: two updates
+ * at once both land. With `ifRevision`, one made on an older revision is refused instead.
+ */
 export async function updateProject(
   space: Space,
   id: string,
   patch: Partial<Pick<Project, "name" | "locales" | "theme" | "slides" | "deviceSlides" | "creatives" | "mockups">> & { targets?: Project["targets"] | null },
+  options: WriteOptions = {},
 ): Promise<Project> {
-  const current = await getProject(space, id);
   const defined: Record<string, unknown> = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
   // An empty choice of sizes means the standard ones again.
   if (defined.targets === null || (Array.isArray(defined.targets) && defined.targets.length === 0)) defined.targets = undefined;
-  const next = projectSchema.parse({ ...current, ...defined, updatedAt: new Date().toISOString() });
-  if (next.locales[0] !== current.locales[0]) await refileShots(space, id, current.locales[0]!, next.locales);
-  await writeProject(space, next);
-  return next;
+  const { project } = await projects.mutate(space, id, (current) => ({ ...current, ...defined }), options);
+  return project;
 }
 
+/** Deletes a project with everything in it, one that cannot be read included. */
 export async function deleteProject(space: Space, id: string): Promise<void> {
-  await getProject(space, id);
-  await rm(projectDir(space, id), { recursive: true, force: true });
+  await projects.tombstone(space, id);
+  await projects.remove(space, id);
 }
 
-const SHOT_FILE = /^([a-z0-9][a-z0-9_-]{0,63})\.(iphone|duo|ipad|mac)(?:\.([a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*))?\.png$/;
-const shotFile = (name: string, device: DeviceKind, locale?: string) => `${name}.${device}${locale ? `.${locale}` : ""}.png`;
-
-/**
- * Keeps every language's screenshots its own when another language becomes the first: the old first language's
- * move under its code, provided the project still has it, and the new first language's become the ones without one.
- */
-async function refileShots(space: Space, id: string, was: string, locales: string[]): Promise<void> {
-  const dir = shotsDir(space, id);
-  const files = (await readdir(dir).catch(() => [])).map((file) => SHOT_FILE.exec(file)).filter((match) => match != null);
-  const first = locales[0]!.toLowerCase();
-  const move = (match: RegExpExecArray, locale?: string) => rename(path.join(dir, match[0]), path.join(dir, shotFile(match[1]!, match[2] as DeviceKind, locale)));
-  if (locales.includes(was)) for (const match of files) if (!match[3]) await move(match, was);
-  for (const match of files) if (match[3]?.toLowerCase() === first) await move(match);
-}
 
 /**
  * The language a screenshot is filed under. The project's first language has none: its screenshots are the ones
@@ -319,8 +237,8 @@ async function windowCapture(png: Buffer, width: number, height: number): Promis
 
 /** Stores a raw screenshot as PNG. One name can hold an iPhone, an iPhone Duo and an iPad variant side by side, and each of them once per language. */
 export async function saveShot(space: Space, id: string, name: string, data: Buffer, device?: DeviceKind, language?: string): Promise<Shot> {
-  const project = await getProject(space, id);
-  const locale = shotLocale(project, language);
+  // Refused before the picture is decoded: a project or a language that is not there.
+  shotLocale(await getProject(space, id), language);
   assertSlug(name, "screenshot name");
   let png: Buffer;
   let width: number;
@@ -339,25 +257,30 @@ export async function saveShot(space: Space, id: string, name: string, data: Buf
   }
   if (Math.min(width, height) < 300) throw new InputError(`Image is only ${width}×${height}; that is too small for a screenshot.`);
   const kind = device ?? (window ? "mac" : deviceKindOf(width, height));
-  const file = shotFile(name, kind, locale);
   const dir = shotsDir(space, id);
-  await mkdir(dir, { recursive: true });
-  if (space.limits && !(await exists(path.join(dir, file)))) {
-    // Counted per language, so that a project in many languages has room for each.
-    const count = (await readdir(dir)).map((entry) => SHOT_FILE.exec(entry)).filter((match) => match && match[3] === locale).length;
-    if (count >= space.limits.shots) throw new InputError(`A project is limited to ${space.limits.shots} screenshots${locale ? ` per language, and ${locale} has that many` : ""}. Delete some to make room.`);
-  }
-  await writeFile(path.join(dir, file), png);
-  // One filed under the first language while that was not the first yet would otherwise keep hiding this one.
-  if (!locale) await rm(path.join(dir, shotFile(name, kind, project.locales[0])), { force: true });
-  const info = await stat(path.join(dir, file));
+  // Filed under the project's lock: a change of its first language renames the files around this one.
+  const { file, locale, info } = await withProjectLock(projectKey(space, id), async () => {
+    const project = await getProject(space, id);
+    const locale = shotLocale(project, language);
+    const file = shotFile(name, kind, locale);
+    await mkdir(dir, { recursive: true });
+    if (space.limits && !(await exists(path.join(dir, file)))) {
+      // Counted per language, so that a project in many languages has room for each.
+      const count = (await readdir(dir)).map((entry) => SHOT_FILE.exec(entry)).filter((match) => match && match[3] === locale).length;
+      if (count >= space.limits.shots) throw new InputError(`A project is limited to ${space.limits.shots} screenshots${locale ? ` per language, and ${locale} has that many` : ""}. Delete some to make room.`);
+    }
+    await writeFile(path.join(dir, file), png);
+    // One filed under the first language while that was not the first yet would otherwise keep hiding this one.
+    if (!locale) await rm(path.join(dir, shotFile(name, kind, project.locales[0])), { force: true });
+    return { file, locale, info: await stat(path.join(dir, file)) };
+  });
   const corner = window ? await cornerRadius(sharp(png), width, height) : 0;
   return { name, device: kind, ...(locale ? { locale } : {}), file, width, height, bytes: info.size, version: Math.round(info.mtimeMs), ...(corner ? { corner } : {}) };
 }
 
 export async function deleteShot(space: Space, id: string, file: string): Promise<void> {
   if (!SHOT_FILE.test(file)) throw new InputError(`Invalid screenshot file "${file}"`);
-  await rm(path.join(shotsDir(space, id), file), { force: true });
+  await withProjectLock(projectKey(space, id), () => rm(path.join(shotsDir(space, id), file), { force: true }));
 }
 
 /**
@@ -365,17 +288,19 @@ export async function deleteShot(space: Space, id: string, file: string): Promis
  * (null: every language). It replaces what was there under the name.
  */
 export async function moveShot(space: Space, id: string, file: string, to: { device?: DeviceKind; locale?: string | null }): Promise<Shot> {
-  const project = await getProject(space, id);
-  const match = SHOT_FILE.exec(file);
-  if (!match) throw new InputError(`Invalid screenshot file "${file}"`);
-  const dir = shotsDir(space, id);
-  const device = to.device ?? (match[2] as DeviceKind);
-  const locale = to.locale === undefined ? match[3] : shotLocale(project, to.locale);
-  const moved = shotFile(match[1]!, device, locale);
-  if (!(await exists(path.join(dir, file)))) throw new NotFoundError(`No screenshot "${file}"`);
-  if (moved !== file) await rename(path.join(dir, file), path.join(dir, moved));
-  const [info, meta] = await Promise.all([stat(path.join(dir, moved)), sharp(path.join(dir, moved)).metadata()]);
-  return { name: match[1]!, device, ...(locale ? { locale } : {}), file: moved, width: meta.width, height: meta.height, bytes: info.size, version: Math.round(info.mtimeMs) };
+  return withProjectLock(projectKey(space, id), async () => {
+    const project = await getProject(space, id);
+    const match = SHOT_FILE.exec(file);
+    if (!match) throw new InputError(`Invalid screenshot file "${file}"`);
+    const dir = shotsDir(space, id);
+    const device = to.device ?? (match[2] as DeviceKind);
+    const locale = to.locale === undefined ? match[3] : shotLocale(project, to.locale);
+    const moved = shotFile(match[1]!, device, locale);
+    if (!(await exists(path.join(dir, file)))) throw new NotFoundError(`No screenshot "${file}"`);
+    if (moved !== file) await rename(path.join(dir, file), path.join(dir, moved));
+    const [info, meta] = await Promise.all([stat(path.join(dir, moved)), sharp(path.join(dir, moved)).metadata()]);
+    return { name: match[1]!, device, ...(locale ? { locale } : {}), file: moved, width: meta.width, height: meta.height, bytes: info.size, version: Math.round(info.mtimeMs) };
+  });
 }
 
 /** An uploaded image that is not a screenshot: a logo, a sticker, a character. Slides place it by name. */
@@ -497,13 +422,6 @@ export async function listCreativeOutputs(space: Space, id: string): Promise<Cre
     }
   }
   return found;
-}
-
-/** Resolves a file inside a project subdirectory, refusing anything that would escape it. */
-export function safeJoin(root: string, relative: string): string {
-  const full = path.resolve(root, relative);
-  if (full !== root && !full.startsWith(root + path.sep)) throw new InputError("Invalid path");
-  return full;
 }
 
 /** Which device's screenshot stands in when a name has none for the device asked for: the one closest in shape first. */

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -506,11 +506,125 @@ describe("parallel writes", () => {
     assert.match(saved.name, /^Parallel \d+$/);
     // The last write wins whole: its name and its slide belong together.
     assert.equal(saved.slides[0].headline, `Edit ${saved.name.split(" ")[1]}`);
+    // No temporary file is left behind; the history of the versions is kept beside it.
     assert.deepEqual(
-      (await readdir(dir)).filter((file) => file !== "project.json"),
+      (await readdir(dir)).filter((file) => file !== "project.json" && file !== ".history"),
       [],
     );
-    assert.equal((await call(`/api/projects/${id}`)).status, 200);
+    const detail = await call(`/api/projects/${id}`);
+    assert.equal(detail.status, 200);
+    assert.equal(detail.body.revision, 51);
+  });
+
+  test("parallel PUTs of different fields keep every one of them", async () => {
+    const id = await createProject({ name: "Fields" });
+    await Promise.all([
+      call(`/api/projects/${id}`, send("PUT", { name: "Renamed" })),
+      call(`/api/projects/${id}`, send("PUT", { locales: ["en", "de"] })),
+      call(`/api/projects/${id}`, send("PUT", { theme: { font: "inter" } })),
+      call(`/api/projects/${id}`, send("PUT", { slides: [{ layout: "statement", headline: "Kept" }] })),
+    ]);
+    const { project } = (await call(`/api/projects/${id}`)).body;
+    assert.equal(project.name, "Renamed");
+    assert.deepEqual(project.locales, ["en", "de"]);
+    assert.equal(project.theme.font, "inter");
+    assert.equal(project.slides[0].headline, "Kept");
+  });
+});
+
+describe("revisions", () => {
+  const ifMatch = (revision: string, body: unknown): RequestInit => ({ method: "PUT", headers: { "Content-Type": "application/json", "If-Match": revision }, body: JSON.stringify(body) });
+
+  test("a project carries its revision, as the ETag too, and is not kept by caches", async () => {
+    const id = await createProject({ name: "Tagged" });
+    const detail = await call(`/api/projects/${id}`);
+    assert.equal(detail.body.revision, 1);
+    assert.equal(detail.headers.get("etag"), '"1"');
+    assert.match(detail.headers.get("cache-control") ?? "", /no-store/);
+    const changed = await call(`/api/projects/${id}`, send("PUT", { name: "Tagged Again" }));
+    assert.equal(changed.body.revision, 2);
+    assert.equal(changed.headers.get("etag"), '"2"');
+  });
+
+  test("If-Match with the current revision saves; with an older one it is a 409 with the project as it is", async () => {
+    const id = await createProject({ name: "Matched" });
+    const saved = await call(`/api/projects/${id}`, ifMatch('"1"', { name: "First Edit" }));
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.revision, 2);
+    // W/"2" and a bare 2 are read the same.
+    assert.equal((await call(`/api/projects/${id}`, ifMatch('W/"2"', { name: "Second Edit" }))).body.revision, 3);
+    assert.equal((await call(`/api/projects/${id}`, ifMatch("3", { name: "Third Edit" }))).body.revision, 4);
+
+    const stale = await call(`/api/projects/${id}`, ifMatch('"2"', { name: "Lost" }));
+    assertError(stale, 409, /revision 2/);
+    assert.equal(stale.body.revision, 4);
+    assertKeys(stale.body.project, DETAIL_KEYS);
+    assert.equal(stale.body.project.project.name, "Third Edit");
+    assert.equal((await call(`/api/projects/${id}`)).body.project.name, "Third Edit");
+
+    assertError(await call(`/api/projects/${id}`, ifMatch("latest", { name: "Garbage" })), 400, /If-Match/);
+    // Without If-Match, or with *, a PUT saves on whatever is current, as before.
+    assert.equal((await call(`/api/projects/${id}`, ifMatch("*", { name: "Any" }))).body.revision, 5);
+  });
+
+  test("a PUT says which fields it left out", async () => {
+    const id = await createProject({ name: "Typos" });
+    const answer = await call(`/api/projects/${id}`, send("PUT", { nmae: "Typo", id, revision: 1, slides: [{ layout: "statement", headline: "Hi", headlne: "x" }] }));
+    assert.equal(answer.status, 200);
+    assert.deepEqual(answer.body.warnings, ["Ignored, because a project has no such field: nmae, slides[0].headlne."]);
+    assert.equal(answer.body.project.slides[0].headline, "Hi");
+    assert.equal((await call(`/api/projects/${id}`, send("PUT", { name: "Clean" }))).body.warnings, undefined);
+  });
+
+  test("the revisions are listed and an earlier one restored as a new one", async () => {
+    const id = await createProject({ name: "Undo" });
+    await call(`/api/projects/${id}`, send("PUT", { slides: [{ layout: "statement", headline: "Good" }] }));
+    await call(`/api/projects/${id}`, send("PUT", { slides: [{ layout: "statement", headline: "Worse" }] }));
+    const listed = await call(`/api/projects/${id}/revisions`);
+    assert.equal(listed.status, 200);
+    assert.match(listed.headers.get("cache-control") ?? "", /private|no-store/);
+    assert.equal(listed.body.revision, 3);
+    assert.deepEqual(
+      listed.body.revisions.map((row: { revision: number }) => row.revision),
+      [3, 2, 1],
+    );
+    for (const row of listed.body.revisions) {
+      assertKeys(row, ["revision", "time", "actor", "size"]);
+      assert.equal(row.actor, "api");
+    }
+
+    const restored = await call(`/api/projects/${id}/restore`, send("POST", { revision: 2 }));
+    assert.equal(restored.status, 200);
+    assertKeys(restored.body, DETAIL_KEYS);
+    assert.equal(restored.body.revision, 4);
+    assert.equal(restored.body.project.slides[0].headline, "Good");
+    assert.equal((await call(`/api/projects/${id}/revisions`)).body.revisions[0].revision, 4);
+
+    assertError(await call(`/api/projects/${id}/restore`, send("POST", { revision: 99 })), 404, /keeps no revision 99/);
+    assertError(await call(`/api/projects/${id}/restore`, send("POST", {})), 400);
+    assertError(await call("/api/projects/nope/revisions"), 404);
+  });
+
+  test("a damaged project is listed, restored from its history or deleted", async () => {
+    const id = await createProject({ name: "Broken" });
+    await call(`/api/projects/${id}`, send("PUT", { name: "Broken Kept" }));
+    await writeFile(path.join(server.dataDir, "projects", id, "project.json"), '{"id": "broken",');
+    const item = (await call("/api/projects")).body.find((each: { id: string }) => each.id === id);
+    assertKeys(item, LIST_KEYS);
+    assert.equal(item.damaged, "project.json is not valid JSON");
+    const opened = await call(`/api/projects/${id}`);
+    assertError(opened, 400, /damaged/);
+    assert.doesNotMatch(opened.body.error, /JSON|position/);
+    assert.equal((await call(`/api/projects/${id}/revisions`)).body.revision, null);
+
+    const restored = await call(`/api/projects/${id}/restore`, send("POST", { revision: 2 }));
+    assert.equal(restored.status, 200);
+    assert.equal(restored.body.project.name, "Broken Kept");
+    assert.equal(restored.body.revision, 3);
+
+    await writeFile(path.join(server.dataDir, "projects", id, "project.json"), "");
+    assert.equal((await call(`/api/projects/${id}`, { method: "DELETE" })).status, 204);
+    assert.ok(!(await call("/api/projects")).body.some((each: { id: string }) => each.id === id));
   });
 });
 

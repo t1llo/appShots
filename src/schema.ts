@@ -30,6 +30,16 @@ const slug = z.string().regex(SLUG, "lowercase letters, digits, - and _ only");
 const hex = z.string().regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/, "hex colour like #1E3A8A");
 const locale = z.string().regex(LOCALE, "BCP-47 code like en or de-CH");
 
+/**
+ * A project's languages, each once. Case does not tell two apart: screenshots are matched to a language without it,
+ * and a disk that ignores case files "de-DE" and "de-de" into one folder.
+ */
+const locales = z
+  .array(locale)
+  .min(1)
+  .max(40)
+  .refine((list) => new Set(list.map((code) => code.toLowerCase())).size === list.length, "each language only once, whatever its case");
+
 const text = z
   .union([z.string().max(400), z.record(locale, z.string().max(400))])
   .describe("A string, or {locale: string} for localized sets. In headlines *asterisks* mark words to tint with the accent colour and \\n forces a line break.");
@@ -224,7 +234,11 @@ export const projectSchema = z.object({
   name: z.string().min(1).max(80),
   createdAt: z.string(),
   updatedAt: z.string(),
-  locales: z.array(locale).min(1).max(40),
+  /** The shape project.json was written in. storage/migrate.ts brings older ones up to date as they are read. */
+  schemaVersion: z.number().int().min(0).optional(),
+  /** One up with every write. A client that sends it back with a change learns when it would save over another's. */
+  revision: z.number().int().min(0).optional(),
+  locales,
   targets: targetsSchema.optional(),
   theme: themeSchema,
   slides: z.array(slideSchema).max(10),
@@ -257,4 +271,27 @@ export const allSlides = (project: Pick<Project, "slides" | "deviceSlides">): Sl
 export const slidesFor = (project: Pick<Project, "slides" | "deviceSlides">, device: DeviceKind): Slide[] => project.deviceSlides?.[device] ?? project.slides;
 
 export const localeSchema = locale;
+export const localesSchema = locales;
 export const slugSchema = slug;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * The keys in `value` that `schema` has no place for, as paths such as `slides[0].headlne`. Parsing drops them
+ * without a word, so this is how a caller hears about a misspelt field: as a warning beside a change that went through.
+ */
+export function unknownFields(schema: z.ZodType, value: unknown, at = ""): string[] {
+  if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable || schema instanceof z.ZodDefault) return unknownFields(schema.unwrap() as z.ZodType, value, at);
+  if (schema instanceof z.ZodArray) return Array.isArray(value) ? value.flatMap((item, i) => unknownFields(schema.element as z.ZodType, item, `${at}[${i}]`)) : [];
+  if (schema instanceof z.ZodUnion) {
+    // Of a preset, a colour or a {type, colors} object, only the object has fields to misspell.
+    const objects = (schema.options as z.ZodType[]).filter((option) => option instanceof z.ZodObject);
+    return objects.length === 1 && isRecord(value) ? unknownFields(objects[0]!, value, at) : [];
+  }
+  if (!(schema instanceof z.ZodObject) || !isRecord(value)) return [];
+  const shape = schema.shape as Record<string, z.ZodType>;
+  return Object.entries(value).flatMap(([key, field]) => {
+    const where = at ? `${at}.${key}` : key;
+    return Object.hasOwn(shape, key) ? unknownFields(shape[key]!, field, where) : [where];
+  });
+}

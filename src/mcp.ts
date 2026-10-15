@@ -33,9 +33,10 @@ import {
 import { rendersLeft } from "./accounts.ts";
 import { mockupName, mockupShots } from "./mockup.ts";
 import { defaultTargets, type Mockup, mockupSheet, renderMockup, renderProject } from "./render.ts";
-import { allSlides, creativeSchema, localeSchema, mockupsSchema, type Project, slideSchema, slugSchema, targetsSchema, themeSchema } from "./schema.ts";
+import { allSlides, creativeSchema, localeSchema, localesSchema, mockupsSchema, type Project, type Slide, slideSchema, slugSchema, targetsSchema, themeSchema, unknownFields } from "./schema.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, PLACEMENT_IDS, PLACEMENTS, type PlacementId, placementsOf, sourceOf, type Target, TARGET_IDS, TARGETS } from "./sizes.ts";
-import { createProject, getProject, InputError, listImages, listProjects, listShots, outDir, type Shot, shotLocale, type Space, type StoredImage, updateProject } from "./store.ts";
+import { projects } from "./storage/projects.ts";
+import { createProject, getProject, InputError, listImages, listShots, outDir, projectSummary, type Shot, shotLocale, type Space, type StoredImage, updateProject } from "./store.ts";
 import { deviceShape } from "./template.ts";
 
 function uploadHelp(base: string, id: string): string {
@@ -67,7 +68,7 @@ function designGuide(base: string, space: Space): string {
 1. \`create_project\`, or \`list_projects\` / \`get_project\` to continue an existing one.
 2. Get raw screenshots into the project (see Uploading below), then check them with \`get_project\`.
 3. \`set_slides\` with the copy and design for the whole set. Put shared styling in \`theme\`; slides override it. Then give every other device the project has screenshots of a set composed for its own canvas (see A set for each device).
-4. \`render\`. It returns one contact sheet image per device: look at each, fix what is off with \`update_slide\`, render again.
+4. \`render\`. It returns one contact sheet image per device: look at each, fix what is off with \`update_slide\`, render again. Every change is kept as a revision: when one made things worse, or wiped out the user's own tuning, \`list_revisions\` shows the versions and \`restore_project\` brings one back.
 5. Optionally \`set_creative_assets\` for the product page header and the search results asset, or for a banner outside the store such as the picture at the top of a README (see Banners), and \`render\` again.
 6. The user downloads the PNGs from ${base}/#/<project> or with \`appshots pull <project>\`. \`appshots store push <project> --app <bundle id>\` puts them into App Store Connect instead, from the user's Mac with an API key of their own: that key never comes here, so no tool takes one, and nothing is submitted for review.${renderBudget(space)}
 When what is wanted is not store screenshots but the devices alone, for a website or a README, see Mockups at the end: that needs only steps 1 and 2. For a macOS app, read Mac apps before step 2; for a web app, or an app made with Flutter, React Native, Expo, Capacitor, Tauri or Electron, read Web apps and other toolkits.
@@ -301,7 +302,15 @@ function describe(project: Project, shots: Shot[], images: StoredImage[], base: 
     images: images.map((image) => ({ name: image.name, size: `${image.width}×${image.height}` })),
     exportSizes: defaultTargets(shots, project.targets),
     studio: `${base}/#/${project.id}`,
+    // The version this is, as list_revisions and restore_project count them.
+    revision: project.revision,
   };
+}
+
+/** Slide fields given that slides do not have, such as a misspelt `headlne`: dropped, and named so the call can be fixed. */
+function ignoredNote(slides: Array<{ slide: number; given: unknown }>): string {
+  const ignored = slides.flatMap(({ slide, given }) => unknownFields(slideSchema, given).map((field) => (slides.length > 1 ? `${field} (slide ${slide})` : field)));
+  return ignored.length ? `\nIgnored, because a slide has no such field: ${ignored.join(", ")}. The design guide lists the fields.` : "";
 }
 
 const text = (value: string): CallToolResult => ({ content: [{ type: "text", text: value }] });
@@ -395,12 +404,12 @@ export function createMcpServer(base: string, space: Space): McpServer {
 
   server.registerTool(
     "list_projects",
-    { title: "List projects", description: "Lists the screenshot projects of this account.", annotations: { readOnlyHint: true } },
-    () =>
-      guard(async () => {
-        const projects = await listProjects(space);
-        return json(projects.map((p) => ({ id: p.id, name: p.name, slides: p.slides.length, ownSets: Object.keys(p.deviceSlides), locales: p.locales, updatedAt: p.updatedAt })));
-      }),
+    {
+      title: "List projects",
+      description: "Lists the screenshot projects of this account. One whose stored file cannot be read says so under `damaged`: restore_project brings back an earlier revision of it.",
+      annotations: { readOnlyHint: true },
+    },
+    () => guard(async () => json((await projects.list(space)).map(projectSummary))),
   );
 
   server.registerTool(
@@ -410,13 +419,13 @@ export function createMcpServer(base: string, space: Space): McpServer {
       description: "Creates a project (one per app) and returns its id plus how to upload raw screenshots into it.",
       inputSchema: {
         name: z.string().min(1).max(80).describe("App or project name"),
-        locales: z.array(localeSchema).min(1).max(40).optional().describe('Locales to render, default ["en"]'),
+        locales: localesSchema.optional().describe('Locales to render, default ["en"]'),
         theme: themeSchema.optional().describe("Styling shared by every slide"),
       },
     },
     (input) =>
       guard(async () => {
-        const created = await createProject(space, input);
+        const created = await createProject(space, input, { actor: "mcp" });
         return text(`Created project "${created.id}".\n\n${uploadHelp(base, created.id)}\n\nStudio: ${base}/#/${created.id}`);
       }),
   );
@@ -440,12 +449,42 @@ export function createMcpServer(base: string, space: Space): McpServer {
       inputSchema: {
         project,
         name: z.string().min(1).max(80).optional(),
-        locales: z.array(localeSchema).min(1).max(40).optional(),
+        locales: localesSchema.optional(),
         theme: themeSchema.optional(),
         targets: targetsSchema.optional().describe("Sizes every render and the ZIP hold from now on. [] goes back to the standard sizes of the devices the project has screenshots of"),
       },
     },
-    ({ project: id, ...patch }) => guard(async () => json(describe(await updateProject(space, id, patch), await listShots(space, id), await listImages(space, id), base))),
+    ({ project: id, ...patch }) => guard(async () => json(describe(await updateProject(space, id, patch, { actor: "mcp" }), await listShots(space, id), await listImages(space, id), base))),
+  );
+
+  server.registerTool(
+    "list_revisions",
+    {
+      title: "List revisions",
+      description:
+        "Lists the versions of a project that are kept, newest first: every change to its name, theme, slides and assets is one, the last 50 of them. Each says when it was saved and by what (studio, api or mcp). Screenshots and images are not part of it.",
+      inputSchema: { project },
+      annotations: { readOnlyHint: true },
+    },
+    (input) => guard(async () => json(await projects.revisions(space, input.project))),
+  );
+
+  server.registerTool(
+    "restore_project",
+    {
+      title: "Restore project",
+      description:
+        "Brings back an earlier revision from list_revisions, as a new revision, so a restore can be undone the same way. For when a change made things worse or wiped out the user's own edits, and for a project whose stored file is damaged.",
+      inputSchema: {
+        project,
+        revision: z.number().int().min(0).describe("The revision to bring back, from list_revisions"),
+      },
+    },
+    ({ project: id, revision }) =>
+      guard(async () => {
+        const restored = await projects.restore(space, id, revision, { actor: "mcp" });
+        return text(`Restored revision ${revision} of "${id}". It is revision ${restored.revision} now; call get_project to see it and render to draw it.${await missingNote(space, restored.project)}`);
+      }),
   );
 
   server.registerTool(
@@ -456,26 +495,35 @@ export function createMcpServer(base: string, space: Space): McpServer {
         "Replaces a whole slide set, in store order, and optionally the theme. Without `device` it is the project's shared set, which every device draws that has none of its own. With `device` it is that device's own set, composed for its canvas; an empty list there takes the device's own set away again. Nothing is rendered until you call render.",
       inputSchema: {
         project,
-        slides: z.array(slideSchema).max(10),
+        // Loose, so that a field slides do not have reaches the tool and can be named in the answer.
+        slides: z.array(slideSchema.loose()).max(10),
         device: deviceKind.optional().describe("The device this set is for: it then draws these slides in place of the shared ones. Left out, the shared set is replaced"),
         theme: themeSchema.optional().describe("Replaces the project theme when given"),
       },
     },
     ({ project: id, slides, device, theme }) =>
       guard(async () => {
+        const ignored = ignoredNote(slides.map((given, i) => ({ slide: i + 1, given })));
         if (!device) {
           if (slides.length === 0) throw new Error("Give at least one slide.");
-          const updated = await updateProject(space, id, { slides, theme });
+          const updated = await updateProject(space, id, { slides, theme }, { actor: "mcp" });
           const own = DEVICE_KINDS.filter((kind) => updated.deviceSlides[kind]);
           const note = own.length ? ` ${own.map((kind) => DEVICE_LABELS[kind]).join(" and ")} ${own.length === 1 ? "has a set of its own and does" : "have sets of their own and do"} not show these.` : "";
-          return text(`Saved ${slides.length} slide${slides.length === 1 ? "" : "s"}.${note} Call render to see them.${await missingNote(space, updated)}`);
+          return text(`Saved ${slides.length} slide${slides.length === 1 ? "" : "s"}.${note} Call render to see them.${await missingNote(space, updated)}${ignored}`);
         }
-        const current = await getProject(space, id);
-        const { [device]: _own, ...others } = current.deviceSlides;
-        const updated = await updateProject(space, id, { deviceSlides: slides.length ? { ...others, [device]: slides } : others, theme });
+        // The other devices' sets are taken as they are when the change gets its turn, not as they were read before.
+        const { project: updated } = await projects.mutate(
+          space,
+          id,
+          (current) => {
+            const { [device]: _own, ...others } = current.deviceSlides;
+            return { ...current, deviceSlides: slides.length ? { ...others, [device]: slides } : others, ...(theme ? { theme } : {}) };
+          },
+          { actor: "mcp" },
+        );
         const label = DEVICE_LABELS[device];
         if (slides.length === 0) return text(`The ${label} has no slide set of its own any more and shows the shared one.`);
-        return text(`Saved ${slides.length} slide${slides.length === 1 ? "" : "s"} for the ${label} alone. Call render to see them.${await missingNote(space, updated)}`);
+        return text(`Saved ${slides.length} slide${slides.length === 1 ? "" : "s"} for the ${label} alone. Call render to see them.${await missingNote(space, updated)}${ignored}`);
       }),
   );
 
@@ -489,25 +537,37 @@ export function createMcpServer(base: string, space: Space): McpServer {
         project,
         slide: slideNumber,
         of: deviceKind.optional().describe("Change the slide in this device's own set (see A set for each device). Left out, the shared set"),
-        changes: slideSchema.optional(),
+        // Loose, so that a field slides do not have reaches the tool and can be named in the answer.
+        changes: slideSchema.loose().optional(),
         remove: z.array(z.string()).optional().describe("Slide fields to clear, e.g. [\"subheadline\", \"badges\"]"),
       },
     },
     ({ project: id, slide, of, changes, remove }) =>
       guard(async () => {
-        const current = await getProject(space, id);
-        const set = of ? current.deviceSlides[of] : current.slides;
-        if (!set) throw new Error(`The ${DEVICE_LABELS[of!]} has no slide set of its own. Give it one with set_slides and "device", or leave "of" out to change the shared slide.`);
-        const existing = set[slide - 1];
-        if (!existing) throw new Error(`Slide ${slide} does not exist; ${of ? `the ${DEVICE_LABELS[of]} set` : "the project"} has ${set.length}.`);
-        const next: Record<string, unknown> = { ...existing, ...changes };
-        if (changes?.device) next.device = { ...existing.device, ...changes.device };
-        for (const field of remove ?? []) delete next[field];
-        const slides = set.map((s, i) => (i === slide - 1 ? slideSchema.parse(next) : s));
-        await updateProject(space, id, of ? { deviceSlides: { ...current.deviceSlides, [of]: slides } } : { slides });
-        const missing = unknownImages({ ...current, slides: [slides[slide - 1]!], deviceSlides: {}, creatives: {} }, await listImages(space, id));
-        const result = json({ slide, ...(of ? { of } : {}), ...slides[slide - 1] });
+        let changed: Slide | undefined;
+        // Merged into the slide as it is when the change gets its turn: parallel calls on other slides all land.
+        const { project: updated } = await projects.mutate(
+          space,
+          id,
+          (current) => {
+            const set = of ? current.deviceSlides[of] : current.slides;
+            if (!set) throw new Error(`The ${DEVICE_LABELS[of!]} has no slide set of its own. Give it one with set_slides and "device", or leave "of" out to change the shared slide.`);
+            const existing = set[slide - 1];
+            if (!existing) throw new Error(`Slide ${slide} does not exist; ${of ? `the ${DEVICE_LABELS[of]} set` : "the project"} has ${set.length}.`);
+            const next: Record<string, unknown> = { ...existing, ...changes };
+            if (changes?.device) next.device = { ...existing.device, ...changes.device };
+            for (const field of remove ?? []) delete next[field];
+            changed = slideSchema.parse(next);
+            const slides = set.map((s, i) => (i === slide - 1 ? changed! : s));
+            return of ? { ...current, deviceSlides: { ...current.deviceSlides, [of]: slides } } : { ...current, slides };
+          },
+          { actor: "mcp" },
+        );
+        const missing = unknownImages({ ...updated, slides: [changed!], deviceSlides: {}, creatives: {} }, await listImages(space, id));
+        const result = json({ slide, ...(of ? { of } : {}), ...changed });
         if (missing.length) result.content.push({ type: "text", text: `No image is uploaded under these names, so they will be left out: ${missing.join(", ")}.` });
+        const ignored = ignoredNote([{ slide, given: changes }]);
+        if (ignored) result.content.push({ type: "text", text: ignored.trim() });
         return result;
       }),
   );
@@ -532,11 +592,17 @@ export function createMcpServer(base: string, space: Space): McpServer {
     },
     ({ project: id, remove, ...given }) =>
       guard(async () => {
-        const current = await getProject(space, id);
-        const creatives = { ...current.creatives };
-        for (const placement of PLACEMENT_IDS) if (given[placement]) creatives[placement] = given[placement];
-        for (const placement of remove ?? []) delete creatives[placement];
-        const updated = await updateProject(space, id, { creatives });
+        const { project: updated } = await projects.mutate(
+          space,
+          id,
+          (current) => {
+            const creatives = { ...current.creatives };
+            for (const placement of PLACEMENT_IDS) if (given[placement]) creatives[placement] = given[placement];
+            for (const placement of remove ?? []) delete creatives[placement];
+            return { ...current, creatives };
+          },
+          { actor: "mcp" },
+        );
         const shots = await listShots(space, id);
         const lines = PLACEMENT_IDS.filter((placement) => updated.creatives[placement]).map((placement) => {
           const creative = updated.creatives[placement]!;
@@ -623,13 +689,22 @@ export function createMcpServer(base: string, space: Space): McpServer {
     },
     ({ project: id, screenshots, locale, device, width }) =>
       guard(async () => {
-        let current = await getProject(space, id);
-        if (device !== undefined || width !== undefined) {
-          const mockups = { ...current.mockups, ...(device ? { device } : {}) };
-          if (width === null) delete mockups.width;
-          else if (width !== undefined) mockups.width = width;
-          current = await updateProject(space, id, { mockups });
-        }
+        const current =
+          device === undefined && width === undefined
+            ? await getProject(space, id)
+            : (
+                await projects.mutate(
+                  space,
+                  id,
+                  (stored) => {
+                    const mockups = { ...stored.mockups, ...(device ? { device } : {}) };
+                    if (width === null) delete mockups.width;
+                    else if (width !== undefined) mockups.width = width;
+                    return { ...stored, mockups };
+                  },
+                  { actor: "mcp" },
+                )
+              ).project;
         const shots = await listShots(space, id);
         if (shots.length === 0) throw new InputError(`This project has no screenshots yet, so there is nothing to make mockups of.\n\n${uploadHelp(base, id)}`);
         const language = locale ? (shotLocale(current, locale) ?? current.locales[0]!) : current.locales[0]!;
