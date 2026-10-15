@@ -274,24 +274,34 @@ export type ModelId = keyof typeof MODELS;
 
 export const MODEL_IDS = Object.keys(MODELS) as [ModelId, ...ModelId[]];
 
+/** Whether a picture has one of these sizes, either way round when `turned` allows it. */
+const sized = (sizes: readonly (readonly [number, number])[] | undefined, width: number, height: number, turned: boolean) =>
+  (sizes ?? []).some(([w, h]) => (w === width && h === height) || (turned && w === height && h === width));
+
 /**
- * The display class a screenshot of this size is from, or none when the size is not one Apple lists. An iPhone, a
+ * The display class a screenshot of this size is from, or none when the size is not one of its models'. An iPhone, a
  * Duo or an iPad screenshot counts turned either way; a Mac's is landscape only. Where two classes share a size, the
  * first one listed, the current hardware, wins.
  */
 export function modelOf(width: number, height: number): ModelId | undefined {
   return MODEL_IDS.find((id) => {
     const model: DeviceModel = MODELS[id];
-    return [...model.sizes, ...(model.native ?? [])].some(([w, h]) => (w === width && h === height) || (model.device !== "mac" && w === height && h === width));
+    return sized([...model.sizes, ...(model.native ?? [])], width, height, model.device !== "mac");
   });
 }
 
 /**
- * The family a screenshot belongs to. A size Apple lists decides it. Otherwise a picture wider than it is tall is a
- * Mac's, and a portrait one goes by its proportions: phones are roughly 0.46 wide per unit of height, tablets 0.70 to 0.75.
+ * The family a screenshot belongs to. A size Apple lists decides it, either way round. Otherwise a picture wider than
+ * it is tall is a Mac's, and a portrait one goes by its proportions: phones are roughly 0.46 wide per unit of height,
+ * tablets 0.70 to 0.75.
  */
 export function deviceKindOf(width: number, height: number): DeviceKind {
-  const model = modelOf(width, height);
+  // A size a model's screen has without Apple listing it counts upright only: on its side, 1920 × 1080 is far more
+  // often a desktop's than an iPhone's.
+  const model = MODEL_IDS.find((id) => {
+    const model: DeviceModel = MODELS[id];
+    return sized(model.sizes, width, height, model.device !== "mac") || sized(model.native, width, height, false);
+  });
   if (model) return MODELS[model].device;
   if (width > height) return "mac";
   return width / height < 0.6 ? "iphone" : "ipad";

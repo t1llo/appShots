@@ -25,6 +25,17 @@ test("landscape screenshots at sizes Apple accepts keep their device", () => {
   assert.equal(deviceKindOf(2266, 1488), "ipad");
 });
 
+test("a landscape picture at a size Apple does not list stays a Mac's", () => {
+  // 1920 × 1080 is an iPhone Plus screen turned, and far more often a desktop or a web page.
+  assert.equal(deviceKindOf(1920, 1080), "mac");
+  assert.equal(deviceKindOf(1792, 828), "mac");
+  assert.equal(deviceKindOf(2160, 1620), "mac");
+  // Upright, they are a phone's and a tablet's.
+  assert.equal(deviceKindOf(1080, 1920), "iphone");
+  assert.equal(deviceKindOf(828, 1792), "iphone");
+  assert.equal(deviceKindOf(1620, 2160), "ipad");
+});
+
 test("a 3.5-inch iPhone screenshot is an iPhone's", () => {
   assert.equal(deviceKindOf(640, 960), "iphone");
 });

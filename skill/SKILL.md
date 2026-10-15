@@ -120,7 +120,7 @@ appshots upload <project> home.png stats.png
 appshots upload <project> IMG_0412.png --name home
 ```
 
-Then `get_project` lists what is there. Open the files to see what each one shows, and use those names in the slides. iPhone, iPhone Duo and iPad are told apart by the size of the image, and one name can hold one of each. A picture that is wider than tall, or a captured window, counts as a Mac's. `get_project` says which device each one counts as; if that is wrong, upload it again with `--as iphone`, `--as duo`, `--as ipad` or `--as mac`.
+Then `get_project` lists what is there. Open the files to see what each one shows, and use those names in the slides. iPhone, iPhone Duo and iPad are told apart by the size of the image, and one name can hold one of each. A picture that is wider than tall counts as a Mac's unless it has the exact size of an iPhone or iPad screenshot turned on its side, and so does a captured window. `get_project` says which device each one counts as; if that is wrong, upload it again with `--as iphone`, `--as duo`, `--as ipad` or `--as mac`.
 
 ### B. The user opens each screen
 
