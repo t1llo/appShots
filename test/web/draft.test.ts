@@ -332,17 +332,19 @@ test("closing the page sends what is unsaved in a request that outlives it, and 
   assert.equal(small.sent[0]!.keepalive, true);
   assert.equal(small.sent[0]!.revision, 1);
   assert.equal(small.store.unload(), "warn", "a save that is still out may not land");
+  assert.equal(small.sent.length, 1, "what is on its way already is not sent again");
 
+  // Edits too large for that go out in an ordinary save, which may still get out before the page goes.
   const large = harness(remote(doc(["One"]), 1));
   large.store.edit((value) => void (value.slides[0]!.headline = "x".repeat(70_000)));
   assert.equal(large.store.unload(), "warn");
-  assert.equal(large.sent.length, 0);
+  assert.deepEqual(large.sent.map((save) => save.keepalive), [false]);
 
   // The limit is on bytes: 25,000 characters of Japanese take 75,000 of them.
   const wide = harness(remote(doc(["One"]), 1));
   wide.store.edit((value) => void (value.slides[0]!.headline = "語".repeat(25_000)));
   assert.equal(wide.store.unload(), "warn");
-  assert.equal(wide.sent.length, 0);
+  assert.deepEqual(wide.sent.map((save) => save.keepalive), [false]);
 });
 
 test("projects closing together share the browser's room for requests that outlive the page", () => {
@@ -353,7 +355,7 @@ test("projects closing together share the browser's room for requests that outli
   second.store.edit((value) => void (value.slides[0]!.headline = "y".repeat(35_000)));
   assert.equal(first.store.unload(room), "sent");
   assert.equal(second.store.unload(room), "warn");
-  assert.equal(second.sent.length, 0);
+  assert.deepEqual(second.sent.map((save) => save.keepalive), [false]);
 });
 
 test("closing the page during a save sends the newer edits beside it only where the server keeps revisions", async () => {
@@ -374,6 +376,41 @@ test("closing the page during a save sends the newer edits beside it only where 
       assert.equal(sent[1]!.keepalive, true);
     }
   }
+});
+
+test("a save the browser drops as the page closes may still land, so without revisions nothing goes out after it", async () => {
+  for (const revision of [1, null]) {
+    const { store, sent, wait } = harness(remote(doc(["One"]), revision, 1));
+    store.edit((value) => void (value.name = "Renamed"), true);
+    await wait(0);
+    store.edit((value) => void (value.name = "Renamed again"));
+    // The page asks before it closes, then drops the save under way, which the server may have had already, and
+    // saves what it can once more as it goes.
+    assert.equal(store.unload(), "warn");
+    sent.shift()!.fail(new SaveError("Failed to fetch"));
+    await settle();
+    assert.equal(store.unload(), "warn");
+    if (revision == null) assert.equal(sent.length, 0);
+    else assert.deepEqual(sent.map((save) => [save.changes.name, save.revision, save.keepalive]), [["Renamed again", null, true]], "sent once, beside it");
+  }
+  // The browser drops even a request that outlives the page as far as the page can tell, and it is not sent twice.
+  const { store, sent } = harness(remote(doc(["One"]), 1));
+  store.edit((value) => void (value.name = "Renamed"));
+  assert.equal(store.unload(), "sent");
+  sent.shift()!.fail(new SaveError("Failed to fetch"));
+  await settle();
+  assert.equal(store.unload(), "warn");
+  assert.equal(sent.length, 0);
+});
+
+test("a save that failed before the page began to close is tried once more as it closes", async () => {
+  const { store, sent, wait } = harness(remote(doc(["One"]), null, 1));
+  store.edit((value) => void (value.name = "Renamed"), true);
+  await wait(0);
+  sent.shift()!.fail(new SaveError("Failed to fetch"));
+  await settle();
+  assert.equal(store.unload(), "warn");
+  assert.deepEqual(sent.map((save) => [save.changes.name, save.keepalive]), [["Renamed", true]]);
 });
 
 test("lists merge by index while both sides only change items in place or add at the end", () => {

@@ -219,6 +219,15 @@ export class DraftStore<D extends object> {
   #inflight: Partial<D> | null = null;
   /** The newest copy that arrived while a save was under way. It is merged once that save has answered. */
   #held: Remote<D> | null = null;
+  /** The page has begun to close, as far as the store knows until a save is answered. */
+  #closing = false;
+  /**
+   * The keys of a save that failed without an answer while the page was closing, as the browser drops the ones under
+   * way. The server may have it all the same, and it may still land.
+   */
+  #unanswered: Partial<D> | null = null;
+  /** The keys last sent while the page was closing. Sending them again would only take up the browser's room. */
+  #parting: Partial<D> | null = null;
   #failures = 0;
   #refusals = 0;
   #paused = false;
@@ -337,21 +346,31 @@ export class DraftStore<D extends object> {
    */
   unload(room = { bytes: KEEPALIVE_LIMIT }): "clean" | "sent" | "warn" {
     if (this.#paused || this.#state.save.kind === "gone") return "clean";
+    this.#closing = true;
     const changes = this.#changes();
     if (!changes) return this.#inflight ? "warn" : "clean";
+    // A save under way, or one the browser dropped as the page closed, may still land.
+    const out = this.#inflight ?? this.#unanswered;
+    if (same(out, changes) || same(this.#parting, changes)) return "warn";
     const bytes = new TextEncoder().encode(JSON.stringify(changes)).length;
-    if (bytes > room.bytes) return "warn";
-    if (this.#inflight) {
-      // Sent beside the save under way only where the server keeps revisions: that save was made on the revision
-      // before, so it is refused if it lands last. Elsewhere it would put its older values back, so it is not sent.
-      if (this.#state.base.revision != null) {
+    if (out) {
+      // The newer edits go out beside it only where the server keeps revisions: that save was made on the revision
+      // before, so it is refused if it lands last. Elsewhere it would put its older values back, so they are not sent.
+      if (this.#state.base.revision != null && bytes <= room.bytes) {
         room.bytes -= bytes;
+        this.#parting = changes;
         this.#send(changes, null, true).catch(() => {});
       }
       return "warn";
     }
+    if (bytes > room.bytes) {
+      // Too large to outlive the page, but an ordinary save may still get out before it goes.
+      this.#begin(changes, false);
+      return "warn";
+    }
     const failing = this.#state.save.kind === "retrying" || this.#state.save.kind === "failed";
     room.bytes -= bytes;
+    this.#parting = changes;
     this.#begin(changes, true);
     return failing ? "warn" : "sent";
   }
@@ -428,12 +447,14 @@ export class DraftStore<D extends object> {
     this.#set({ save: { kind: "saving" } });
     this.#send(changes, this.#state.base.revision, keepalive).then(
       (remote) => this.#saved(changes, remote),
-      (error: unknown) => this.#refused(error),
+      (error: unknown) => this.#refused(changes, error),
     );
   }
 
   #saved(sent: Partial<D>, remote: Remote<D>): void {
     this.#inflight = null;
+    this.#closing = false;
+    this.#unanswered = this.#parting = null;
     this.#failures = 0;
     this.#refusals = 0;
     const { draft, base } = this.#state;
@@ -452,9 +473,10 @@ export class DraftStore<D extends object> {
     this.#answered();
   }
 
-  #refused(error: unknown): void {
+  #refused(sent: Partial<D>, error: unknown): void {
     this.#inflight = null;
     const { status, remote } = error instanceof SaveError ? (error as SaveError<D>) : { status: undefined, remote: undefined };
+    this.#unanswered = this.#closing && status === undefined ? sent : null;
     const message = messageOf(error);
     if (status === 409 && remote) {
       // Someone else wrote first. Their copy is merged in, and the result goes out on their revision.

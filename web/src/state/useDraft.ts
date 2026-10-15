@@ -108,18 +108,28 @@ let watching = false;
 /**
  * Leaving the Studio sends what is not saved yet, in a request that outlives the page, and asks first where that
  * may not be enough. Hiding the tab saves at once, since a phone can close a tab in the background without asking.
+ * A page on its way out, which may not have been asked first, sends the way leaving does: an ordinary save may not
+ * get out, and the browser has just given up on the one under way, which may still land.
  */
 function watchLeaving(): void {
   if (watching) return;
   watching = true;
-  window.addEventListener("beforeunload", (event) => {
+  let leaving = false;
+  const leave = () => {
     const room = { bytes: KEEPALIVE_LIMIT };
     let warn = false;
     for (const store of stores.values()) if (store.unload(room) === "warn") warn = true;
-    if (warn) event.preventDefault();
+    return warn;
+  };
+  window.addEventListener("beforeunload", (event) => {
+    if (leave()) event.preventDefault();
   });
+  window.addEventListener("pagehide", () => (leaving = true));
+  window.addEventListener("pageshow", () => (leaving = false));
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) for (const store of stores.values()) void store.flush();
+    if (!document.hidden) return;
+    if (leaving) leave();
+    else for (const store of stores.values()) void store.flush();
   });
 }
 
