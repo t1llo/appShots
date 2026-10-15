@@ -58,6 +58,20 @@ describe("changes", () => {
     assert.equal((await projects.get(space, project.id)).revision, 1);
   });
 
+  test("screenshots are filed under the new first language only once it is saved", async () => {
+    const { project } = await projects.create(space, { name: "Languages", locales: ["en", "de"] });
+    const shots = path.join(projectDir(space, project.id), "shots");
+    await mkdir(shots);
+    await writeFile(path.join(shots, "home.iphone.png"), "en");
+    await writeFile(path.join(shots, "home.iphone.de.png"), "de");
+    // Refused by the schema: nothing is saved, so nothing moves.
+    await assert.rejects(projects.mutate(space, project.id, (current) => ({ ...current, locales: ["de", "DE"] })));
+    assert.deepEqual((await readdir(shots)).sort(), ["home.iphone.de.png", "home.iphone.png"]);
+    await projects.mutate(space, project.id, (current) => ({ ...current, locales: ["de", "en"] }));
+    assert.equal(await readFile(path.join(shots, "home.iphone.png"), "utf8"), "de");
+    assert.equal(await readFile(path.join(shots, "home.iphone.en.png"), "utf8"), "en");
+  });
+
   test("two projects created at once under one name get an id each", async () => {
     const made = await Promise.all(Array.from({ length: 5 }, () => projects.create(space, { name: "Twin" })));
     assert.deepEqual(made.map((each) => each.project.id).sort(), ["twin", "twin-2", "twin-3", "twin-4", "twin-5"]);
