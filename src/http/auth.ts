@@ -51,7 +51,7 @@ export function sameOrigin(req: Request): boolean {
 }
 
 const READ_ONLY = new Set(["GET", "HEAD", "OPTIONS"]);
-export const refuseCrossSite = (res: Response) => void res.status(403).json({ error: "Cross-site request refused" });
+export const refuseCrossSite = (res: Response) => void res.status(403).set("Cache-Control", "no-store").json({ error: "Cross-site request refused" });
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const identity = identify(req);
@@ -63,7 +63,8 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   // Only a browser navigation prefers HTML; curl and fetch send */* and should get the 401.
   const wantsPage = req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/mcp") && req.accepts(["json", "html"]) === "html";
   if (wantsPage) return res.redirect("/");
-  res.status(401).set("WWW-Authenticate", "Bearer").json({ error: "Unauthorized: send Authorization: Bearer <token>" });
+  // Refused before the routes that mark their answers private, so it says so itself.
+  res.status(401).set({ "WWW-Authenticate": "Bearer", "Cache-Control": "no-store" }).json({ error: "Unauthorized: send Authorization: Bearer <token>" });
 }
 
 export const identityOf = (res: Response) => res.locals.identity as Identity;

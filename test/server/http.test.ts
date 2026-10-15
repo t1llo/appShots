@@ -144,6 +144,21 @@ describe("sessions", () => {
     assert.equal((await server.fetch("/api/projects", { headers: { Cookie: sessionCookie("u1", 1, SESSION_TTL) } })).headers.get("set-cookie"), null);
   });
 
+  test("refusing someone who is not signed in, or a write from another site, keeps the answer out of caches", async () => {
+    for (const route of ["/api/projects", "/mcp", "/files/any/shots/home.png", "/render/any/0"]) {
+      const answer = await server.fetch(route, { headers: { Accept: "application/json" } });
+      assert.equal(answer.status, 401, route);
+      assert.equal(answer.headers.get("cache-control"), "no-store", route);
+    }
+    const crossSite = await server.fetch("/api/projects", {
+      method: "POST",
+      headers: { Cookie: sessionCookie("u1", 1, SESSION_TTL), Origin: "https://elsewhere.example.com", "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Elsewhere" }),
+    });
+    assert.equal(crossSite.status, 403);
+    assert.equal(crossSite.headers.get("cache-control"), "no-store");
+  });
+
   test("signing out ends the session in every browser, and API tokens keep working (srv-11)", async () => {
     const here = sessionCookie("u1", 1, SESSION_TTL);
     const there = sessionCookie("u1", 1, SESSION_TTL - DAY / 2);
