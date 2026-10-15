@@ -74,6 +74,7 @@ export function CreativeEditor({ project, placement, change, remove }: { project
         <StyleFields owner={creative} change={change} inherits asset />
       </Section>
       <JsonSection
+        kind="creative"
         value={creative}
         hint="Everything an agent can set on this asset, including custom gradients."
         onApply={(parsed) =>

@@ -108,6 +108,7 @@ export function SlideEditor({ project, slides, index, change, actions }: { proje
         <StyleFields owner={slide} change={change} inherits placed />
       </Section>
       <JsonSection
+        kind="slide"
         value={slide}
         hint="Everything an agent can set on this slide, including custom gradients and device offsets."
         onApply={(parsed) =>
