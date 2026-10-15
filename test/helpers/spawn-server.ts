@@ -1,12 +1,16 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import http from "node:http";
 import { createServer } from "node:net";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { format } from "node:util";
 import { type TmpData, tmpData } from "./tmp-data.ts";
 
-// src/server.ts listens as soon as it is imported, so a test runs it as its own process, on a free port and with a
-// data directory of its own, and talks to it over HTTP. Tests use only what TestServer offers: once the app can be
-// built without listening (createApp), startServer can build it in-process instead and no test has to change.
+// A test talks to the server over HTTP, on a free port and with a data directory of its own. By default the server
+// runs as its own process, started the way the container starts it, so every test can give it settings of its own.
+// With `inProcess` the app is built with createApp() inside the test's process instead: quicker, and a debugger or
+// a stack trace reaches into the routes. The settings are read once per process, so that works for one server per
+// test file. Tests use only what TestServer offers, whichever way it runs.
 
 export interface TestServer {
   /** Such as http://127.0.0.1:49152, without a slash at the end. */
@@ -27,6 +31,8 @@ export interface ServerOptions {
   env?: Record<string, string>;
   /** How long to wait for /healthz. */
   timeoutMs?: number;
+  /** Builds the app in this process rather than starting src/server.ts. One such server per test file. */
+  inProcess?: boolean;
 }
 
 const root = path.resolve(import.meta.dirname, "..", "..");
@@ -59,6 +65,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 /** Starts the server with sign-in off and resolves once /healthz answers. Rejects with its output if it stops first. */
 export async function startServer(options: ServerOptions = {}): Promise<TestServer> {
+  if (options.inProcess) return startInProcess(options);
   const made = options.dataDir ? undefined : await tmpData("server");
   const dataDir = options.dataDir ?? made!.dir;
   // A free port can be taken again before the server binds it, by another test's server or by an outgoing
@@ -134,6 +141,58 @@ async function launch(dataDir: string, options: ServerOptions, made: TmpData | u
     output: () => output,
     stop: async () => {
       await halt();
+      await made?.remove();
+    },
+  };
+}
+
+let builtHere = false;
+
+/** The app from createApp(), listening on 127.0.0.1 in this process. */
+async function startInProcess(options: ServerOptions): Promise<TestServer> {
+  // The settings are read when src/config.ts is first imported, and they stay for the life of the process.
+  if (builtHere) throw new Error("This process has built its server already. Start another one with inProcess off, as a process of its own.");
+  builtHere = true;
+  const made = options.dataDir ? undefined : await tmpData("server");
+  const dataDir = options.dataDir ?? made!.dir;
+  let output = "";
+  const write =
+    (stream: NodeJS.WriteStream) =>
+    (...args: unknown[]) => {
+      const line = `${format(...args)}\n`;
+      output += line;
+      stream.write(line);
+    };
+  const log = { log: write(process.stdout), warn: write(process.stderr), error: write(process.stderr) };
+
+  // Listen first: the renderer reaches the server at 127.0.0.1 on PORT, which has to be known before the app loads.
+  let handle: http.RequestListener = (_req, res) => void res.writeHead(503).end();
+  const server = http.createServer((req, res) => handle(req, res));
+  await new Promise<void>((resolve, reject) => server.once("error", reject).listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as { port: number };
+  for (const name of Object.keys(process.env)) if (SERVER_SETTINGS.test(name) && name !== "NODE_TEST_CONTEXT") delete process.env[name];
+  Object.assign(process.env, options.env, { DATA_DIR: dataDir, PORT: String(port) });
+  try {
+    const { createApp } = await import("../../src/app.ts");
+    handle = await createApp({ log });
+  } catch (error) {
+    server.close();
+    await made?.remove();
+    throw error;
+  }
+
+  const url = `http://127.0.0.1:${port}`;
+  return {
+    url,
+    dataDir,
+    fetch: (route, init) => fetch(`${url}${route}`, init),
+    output: () => output,
+    stop: async () => {
+      const closed = new Promise((resolve) => server.close(resolve));
+      server.closeAllConnections();
+      await closed;
+      const { closeBrowser } = await import("../../src/render.ts");
+      await closeBrowser();
       await made?.remove();
     },
   };

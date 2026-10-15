@@ -17,7 +17,7 @@ const renderTier = { skip: RENDER ? false : "draws with Chromium; run with RENDE
 
 let server: TestServer;
 before(async () => {
-  server = await startServer();
+  server = await startServer({ inProcess: true });
 });
 after(async () => {
   await server?.stop();

@@ -39,7 +39,7 @@ const THREE_SLIDES = [
 
 let server: TestServer;
 before(async () => {
-  server = await startServer();
+  server = await startServer({ inProcess: true });
 });
 after(async () => {
   await server?.stop();
