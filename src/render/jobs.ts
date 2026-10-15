@@ -5,6 +5,7 @@ import { holdRender } from "../accounts.ts";
 import type { Project } from "../schema.ts";
 import { getProject, InputError, listImages, listShots, NotFoundError, projectDir, type Shot, shotsDir, type Space } from "../store.ts";
 import { commitOutputs, discardStaging, sweepStaging } from "../storage/outputs.ts";
+import { projectKey } from "../storage/paths.ts";
 import { PageStatusError } from "./capture.ts";
 import { noteError, scheduler } from "./engine.ts";
 import { Cancelled, draw, type RenderResult } from "./output.ts";
@@ -213,7 +214,7 @@ async function renderNow(run: Run, space: Space, plan: RenderPlan): Promise<Rend
     const { result, commit } = await draw(run, space, project, plan);
     // A cancel that came while the last pictures were encoded still counts: nothing has been put in place yet.
     if (run.cancelled) throw new Cancelled();
-    if (!(await commitOutputs(`${space.id}/${id}`, dir, commit))) throw deletedError();
+    if (!(await commitOutputs(projectKey(space, id), dir, commit))) throw deletedError();
     return result;
   } catch (error) {
     await discardStaging(dir, run.job.id);
