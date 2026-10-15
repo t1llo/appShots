@@ -9,7 +9,7 @@ Sign in with a Google account on the [home page](/home). There is no password to
 
 Your projects are yours alone. No account can see another's.
 
-You stay signed in on that browser for 30 days after your last visit, so you are not signed out while you keep coming back. The [home page](/home) knows you too and takes you straight to your projects. **Sign out** under **Settings** ends it.
+You stay signed in on that browser for 30 days after your last visit, so you are not signed out while you keep coming back. The [home page](/home) knows you too and takes you straight to your projects. **Sign out** under **Settings** signs you out on every browser at once. Your API tokens keep working; revoke them one by one below.
 
 ## Who can sign in
 

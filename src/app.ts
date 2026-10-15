@@ -35,7 +35,6 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
   app.set("trust proxy", config.trustProxy);
 
   app.use(securityHeaders);
-  app.use(renewSession);
 
   // Public: the health check, the skill, the CLI and the installer, fonts and icons, the pages and signing in.
   app.use(await publicRoutes());
@@ -51,6 +50,7 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
 
   const api = express.Router();
   api.use(privateCache);
+  api.use(renewSession);
   api.use(express.json({ limit: LIMITS.json }));
   api.use(projectRoutes());
   api.use(uploadRoutes());

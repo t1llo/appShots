@@ -73,9 +73,13 @@ export function setSession(req: Request, res: Response, value: string): void {
   res.cookie(SESSION_COOKIE, value, { httpOnly: true, sameSite: "lax", secure: req.secure, maxAge: SESSION_TTL, path: "/" });
 }
 
-/** A session lasts 30 days from the last visit: a cookie more than a day old is swapped for a fresh one. */
+/**
+ * A session lasts 30 days from the last visit: a cookie more than a day old is swapped for a fresh one. This runs
+ * on /api only, whose answers are private to one account and which the Studio calls on every visit. A public answer,
+ * such as a font or the icons, may be kept by a CDN and handed to the next visitor with the Set-Cookie in it.
+ */
 export function renewSession(req: Request, res: Response, next: NextFunction): void {
-  if (config.auth && req.method === "GET") {
+  if (config.auth && req.method === "GET" && identityOf(res).session) {
     const fresh = renewedSession(cookie(req, SESSION_COOKIE));
     if (fresh) setSession(req, res, fresh);
   }

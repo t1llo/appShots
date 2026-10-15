@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import express, { type Request, type Response, type Router } from "express";
-import { allow, AuthError, logInWithGoogle, safeEqual, seal, sessionHolder, signupMode, unseal, userSession } from "../../accounts.ts";
+import { allow, AuthError, endSessions, logInWithGoogle, safeEqual, seal, sessionHolder, signupMode, unseal, userSession } from "../../accounts.ts";
 import { config } from "../../config.ts";
 import type { Log } from "../errors.ts";
 import { cookie, OAUTH_COOKIE, refuseCrossSite, sameOrigin, SESSION_COOKIE, setSession } from "../auth.ts";
@@ -86,8 +86,11 @@ export function oauthRoutes(log: Log): Router {
   return auth;
 }
 
-export function logout(req: Request, res: Response): void {
+/** Signs out: this browser loses its cookie, and every other browser signed in to the account loses its session. */
+export async function logout(req: Request, res: Response): Promise<void> {
   if (!sameOrigin(req)) return refuseCrossSite(res);
+  const holder = config.auth ? sessionHolder(cookie(req, SESSION_COOKIE)) : null;
+  if (holder) await endSessions(holder);
   res.clearCookie(SESSION_COOKIE, { path: "/" });
   res.redirect("/");
 }

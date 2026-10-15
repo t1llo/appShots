@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { createServer } from "node:net";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { png } from "../helpers/images.ts";
 import { cleanEnv, startServer, type TestServer } from "../helpers/spawn-server.ts";
-import { tmpData } from "../helpers/tmp-data.ts";
+import { type TmpData, tmpData } from "../helpers/tmp-data.ts";
 
 // How the server answers over HTTP in setups the contract tests do not cover: other settings, other folders, sign-in
 // on. Everything is made up for the test: example.com and .test names, and accounts that never reach Google.
@@ -97,6 +98,67 @@ describe("host names (srv-4, mcp-8)", () => {
 
   test("public pages and the health check answer to any name", async () => {
     for (const route of ["/healthz", "/skill.md", "/docs/api.md"]) assert.equal((await asHost(server, "rebound.example.com", route)).status, 200, route);
+  });
+});
+
+/** The settings that turn sign-in on. No request in these tests goes to Google. */
+const SIGN_IN = { GOOGLE_CLIENT_ID: "test-client", GOOGLE_CLIENT_SECRET: "test-secret", ADMIN_EMAIL: "admin@example.com" };
+const SECRET = "0123456789abcdef".repeat(4);
+const DAY = 24 * 3600 * 1000;
+const SESSION_TTL = 30 * DAY;
+
+/** A session cookie as the server seals it, for account u1 at `epoch`, running out `left` milliseconds from now. */
+function sessionCookie(epoch: number, left: number): string {
+  const payload = Buffer.from(JSON.stringify({ u: "u1", k: epoch, _p: "session", _e: Date.now() + left })).toString("base64url");
+  return `appshots_session=${payload}.${createHmac("sha256", SECRET).update(payload).digest("base64url")}`;
+}
+
+describe("sessions", () => {
+  let server: TestServer;
+  let data: TmpData;
+  const token = `appshots_${randomBytes(24).toString("base64url")}`;
+  before(async () => {
+    data = await tmpData("sessions");
+    const tokens = [{ id: "t1", name: "Test", hash: createHash("sha256").update(token).digest("hex"), hint: token.slice(-4), createdAt: "2026-01-01T00:00:00.000Z" }];
+    const user = { id: "u1", email: "person@example.com", name: "Person", createdAt: "2026-01-01T00:00:00.000Z", epoch: 1, tokens };
+    await writeFile(path.join(data.dir, "accounts.json"), JSON.stringify({ signup: "open", signupChosen: true, allowed: [], users: [user], spent: {} }));
+    await writeFile(path.join(data.dir, "secret.key"), SECRET);
+    server = await startServer({ dataDir: data.dir, env: SIGN_IN });
+  });
+  after(async () => {
+    await server?.stop();
+    await data?.remove();
+  });
+
+  test("a session is renewed on the account's own answers only, never on public ones a CDN may keep (srv-5)", async () => {
+    const aged = sessionCookie(1, SESSION_TTL - 2 * DAY);
+    for (const route of ["/healthz", "/", "/home", "/icons.svg", "/fonts/fonts.css", "/og.jpg", "/skill.md", "/skill.json", "/cli/appshots.mjs", "/docs/api.md", "/auth/config", "/nothing-here"]) {
+      const answer = await server.fetch(route, { headers: { Cookie: aged }, redirect: "manual" });
+      assert.equal(answer.headers.get("set-cookie"), null, route);
+    }
+    const api = await server.fetch("/api/projects", { headers: { Cookie: aged } });
+    assert.equal(api.status, 200);
+    assert.match(api.headers.get("set-cookie") ?? "", /^appshots_session=[^;]+;.*HttpOnly/);
+    assert.match(api.headers.get("cache-control") ?? "", /private/);
+    // A cookie from today is left as it is.
+    assert.equal((await server.fetch("/api/projects", { headers: { Cookie: sessionCookie(1, SESSION_TTL) } })).headers.get("set-cookie"), null);
+  });
+
+  test("signing out ends the session in every browser, and API tokens keep working (srv-11)", async () => {
+    const here = sessionCookie(1, SESSION_TTL);
+    const there = sessionCookie(1, SESSION_TTL - DAY / 2);
+    // Another site cannot sign anybody out.
+    const forged = await server.fetch("/logout", { method: "POST", headers: { Cookie: here, Origin: "https://elsewhere.example.com" }, redirect: "manual" });
+    assert.equal(forged.status, 403);
+    assert.equal((await server.fetch("/api/projects", { headers: { Cookie: there } })).status, 200);
+
+    const out = await server.fetch("/logout", { method: "POST", headers: { Cookie: here, Origin: server.url }, redirect: "manual" });
+    assert.equal(out.status, 302);
+    assert.match(out.headers.get("set-cookie") ?? "", /^appshots_session=;/);
+    for (const cookie of [here, there]) assert.equal((await server.fetch("/api/projects", { headers: { Cookie: cookie } })).status, 401);
+    assert.equal((await server.fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } })).status, 200);
+    // Signing in again starts a new session, which the sign-out does not touch.
+    assert.equal((await server.fetch("/api/projects", { headers: { Cookie: sessionCookie(2, SESSION_TTL) } })).status, 200);
   });
 });
 

@@ -223,6 +223,15 @@ export function renewedSession(cookie: string | undefined): string | null {
   return holder && userSession(holder);
 }
 
+/**
+ * Signs the account out of every browser. A copied session cookie would otherwise stay good for 30 days after the
+ * sign-out. API tokens are not sessions and keep working; they are revoked one by one.
+ */
+export async function endSessions(user: User): Promise<void> {
+  user.epoch++;
+  await save();
+}
+
 /** Who a session cookie belongs to, if it is still good. */
 export function sessionHolder(cookie: string | undefined): User | null {
   const session = unseal<{ u: string; k: number }>("session", cookie);
