@@ -338,6 +338,42 @@ test("closing the page sends what is unsaved in a request that outlives it, and 
   assert.equal(large.store.unload(), "warn");
   assert.equal(large.sent.length, 0);
 
+  // The limit is on bytes: 25,000 characters of Japanese take 75,000 of them.
+  const wide = harness(remote(doc(["One"]), 1));
+  wide.store.edit((value) => void (value.slides[0]!.headline = "語".repeat(25_000)));
+  assert.equal(wide.store.unload(), "warn");
+  assert.equal(wide.sent.length, 0);
+});
+
+test("projects closing together share the browser's room for requests that outlive the page", () => {
+  const room = { bytes: 60_000 };
+  const first = harness(remote(doc(["One"]), 1));
+  const second = harness(remote(doc(["One"]), 1));
+  first.store.edit((value) => void (value.slides[0]!.headline = "x".repeat(35_000)));
+  second.store.edit((value) => void (value.slides[0]!.headline = "y".repeat(35_000)));
+  assert.equal(first.store.unload(room), "sent");
+  assert.equal(second.store.unload(room), "warn");
+  assert.equal(second.sent.length, 0);
+});
+
+test("closing the page during a save sends the newer edits beside it only where the server keeps revisions", async () => {
+  for (const revision of [1, null]) {
+    const { store, sent, wait } = harness(remote(doc(["One"]), revision, 1));
+    store.edit((value) => void (value.name = "Renamed"), true);
+    await wait(0);
+    store.edit((value) => void (value.name = "Renamed again"));
+    assert.equal(store.unload(), "warn");
+    if (revision == null) {
+      // An older save that lands after the newer one would put its values back, and nothing on the server stops it.
+      assert.equal(sent.length, 1);
+    } else {
+      // That older save is refused if the newer one lands first, since it was made on the revision before.
+      assert.equal(sent.length, 2);
+      assert.deepEqual(sent[1]!.changes, { name: "Renamed again" });
+      assert.equal(sent[1]!.revision, null);
+      assert.equal(sent[1]!.keepalive, true);
+    }
+  }
 });
 
 test("lists merge by index while both sides only change items in place or add at the end", () => {

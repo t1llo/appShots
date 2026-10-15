@@ -5,7 +5,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useEffect, useSyncExternalStore } from "react";
 import { ApiError, type Detail, detailQuery, type DeviceKind, errorText, type Project, projectsQuery, revisionOf, saveProject, type TargetId } from "../api.ts";
 import { openProject } from "../dialogs.tsx";
-import { type DraftState, DraftStore, type Remote, SaveError } from "./draft.ts";
+import { type DraftState, DraftStore, KEEPALIVE_LIMIT, type Remote, SaveError } from "./draft.ts";
 import { writeQuery } from "./sequence.ts";
 
 /** The part of a project the Studio edits and sends back. */
@@ -113,8 +113,9 @@ function watchLeaving(): void {
   if (watching) return;
   watching = true;
   window.addEventListener("beforeunload", (event) => {
+    const room = { bytes: KEEPALIVE_LIMIT };
     let warn = false;
-    for (const store of stores.values()) if (store.unload() === "warn") warn = true;
+    for (const store of stores.values()) if (store.unload(room) === "warn") warn = true;
     if (warn) event.preventDefault();
   });
   document.addEventListener("visibilitychange", () => {

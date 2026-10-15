@@ -69,8 +69,8 @@ export interface DraftOptions<D> {
 /** Edits closer together than this are typing: they are saved after the pause and undone as one step. */
 const TYPING_MS = 600;
 const UNDO_LIMIT = 100;
-/** Browsers refuse a keepalive request whose body is over 64 KiB. */
-const KEEPALIVE_LIMIT = 60_000;
+/** Browsers refuse keepalive requests once the bodies of those under way come to more than 64 KiB, counted in bytes. */
+export const KEEPALIVE_LIMIT = 60_000;
 /** Refusals in a row that are merged and sent again at once, before the store backs off like any failure. */
 const REFUSALS = 5;
 
@@ -333,18 +333,25 @@ export class DraftStore<D extends object> {
   /**
    * For a page that is closing: sends what is not saved yet in a request that outlives the page, and says whether
    * the browser should ask first. It should when a save is under way or failing, or the edits are too large to send so.
+   * `room` is what the browser still takes of such requests, shared by every store saving as the page closes.
    */
-  unload(): "clean" | "sent" | "warn" {
+  unload(room = { bytes: KEEPALIVE_LIMIT }): "clean" | "sent" | "warn" {
     if (this.#paused || this.#state.save.kind === "gone") return "clean";
     const changes = this.#changes();
     if (!changes) return this.#inflight ? "warn" : "clean";
-    if (JSON.stringify(changes).length > KEEPALIVE_LIMIT) return "warn";
+    const bytes = new TextEncoder().encode(JSON.stringify(changes)).length;
+    if (bytes > room.bytes) return "warn";
     if (this.#inflight) {
-      // Sent beside the save under way, without its revision, which that save is about to move on.
-      this.#send(changes, null, true).catch(() => {});
+      // Sent beside the save under way only where the server keeps revisions: that save was made on the revision
+      // before, so it is refused if it lands last. Elsewhere it would put its older values back, so it is not sent.
+      if (this.#state.base.revision != null) {
+        room.bytes -= bytes;
+        this.#send(changes, null, true).catch(() => {});
+      }
       return "warn";
     }
     const failing = this.#state.save.kind === "retrying" || this.#state.save.kind === "failed";
+    room.bytes -= bytes;
     this.#begin(changes, true);
     return failing ? "warn" : "sent";
   }
