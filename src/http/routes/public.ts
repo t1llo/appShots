@@ -76,8 +76,9 @@ export async function publicRoutes(): Promise<Router> {
     res.type("css").set("Cache-Control", "public, max-age=86400").send(fontCss);
   });
   routes.get("/fonts/:font/:file", (req, res) => {
-    const font = FONTS[req.params.font as keyof typeof FONTS];
-    if (!font || !/^[a-z0-9-]+\.woff2?$/.test(req.params.file)) return void res.status(404).end();
+    // Own keys only: "constructor" or "toString" would find what every object has.
+    const font = Object.hasOwn(FONTS, req.params.font) ? FONTS[req.params.font as keyof typeof FONTS] : undefined;
+    if (!font || !/^[a-z0-9-]+\.woff2?$/.test(req.params.file)) return void res.status(404).set("Cache-Control", "no-store").end();
     res.set("Cache-Control", "public, max-age=31536000, immutable").sendFile(req.params.file, { root: path.join(root, "node_modules", font.pkg, "files") });
   });
 

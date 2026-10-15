@@ -11,8 +11,8 @@ Everything the Studio does goes through a small JSON API. Use it from a script o
 | --- | --- |
 | Base address | `{{SERVER}}/api` |
 | Sign-in | The header `Authorization: Bearer <token>` |
-| Bodies | JSON, except file uploads, which send the file itself as the body |
-| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404, or 409 for a change made on an older revision |
+| Bodies | JSON up to 2 MB, except file uploads, which send the file itself as the body |
+| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404 or 413, or 409 for a change made on an older revision. A body over its limit gets 413, and the sentence names the limit |
 
 Create the token under **Connect an agent** in the Studio. The examples expect it in `APPSHOTS_TOKEN`.
 
@@ -78,7 +78,7 @@ curl -s -X PUT {{SERVER}}/api/projects/streaks/shots/home \
 | `PATCH /api/projects/:id/shots/:file` | Files one under another device, another language, or both. Body: `{ "device": "ipad" }`, `{ "locale": "de-DE" }`, or `{ "locale": null }` for the first language. Replaces what was there under the name |
 | `DELETE /api/projects/:id/shots/:file` | Deletes one. `:file` is the `file` value from the project's `shots` list |
 
-iPhone, iPhone Duo, iPad or Mac is read from the size and shape of the image. Add `?device=iphone`, `?device=duo`, `?device=ipad` or `?device=mac` to the upload to say it yourself. See [Sizes](/docs/sizes#which-device-a-screenshot-counts-as).
+iPhone, iPhone Duo, iPad or Mac is read from the size and shape of the image. Add `?device=iphone`, `?device=duo`, `?device=ipad` or `?device=mac` to the upload to say it yourself. Any other value is refused with status 400. See [Sizes](/docs/sizes#which-device-a-screenshot-counts-as).
 
 A captured Mac window is stored without the shadow macOS adds, so its `width` and `height` in the `shots` list are those of the window. Its entry has `corner`, the radius of its round corners in pixels. See [Mac apps](/docs/mac).
 

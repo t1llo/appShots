@@ -25,7 +25,8 @@ export function renderPageRoutes(): Router {
     const space = spaceOf(res);
     const { project, shots } = await drawn(space, req);
     const { placement } = req.params;
-    if (!isPlacementId(placement) || !project.creatives[placement]) throw new NotFoundError(`This project has no "${placement}" asset`);
+    // Own keys only: "constructor" passes isPlacementId and is found on every object.
+    if (!isPlacementId(placement) || !Object.hasOwn(project.creatives, placement) || !project.creatives[placement]) throw new NotFoundError(`This project has no "${placement}" asset`);
     const locale = localeSchema.safeParse(req.query.locale).data ?? project.locales[0]!;
     res.set("Cache-Control", "no-store").type("html").send(await creativeHtml({ space, project, shots, placement, locale, guides: req.query.guides === "1" }));
   });

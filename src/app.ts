@@ -51,9 +51,9 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
   const api = express.Router();
   api.use(privateCache);
   api.use(renewSession);
+  api.use(uploadRoutes());
   api.use(express.json({ limit: LIMITS.json }));
   api.use(projectRoutes());
-  api.use(uploadRoutes());
   api.use(assetRoutes());
   api.use(renderRoutes(log));
   api.use(exportRoutes());

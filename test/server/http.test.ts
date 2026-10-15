@@ -162,6 +162,54 @@ describe("sessions", () => {
   });
 });
 
+describe("errors and uploads", () => {
+  let server: TestServer;
+  let id: string;
+  before(async () => {
+    server = await startServer();
+    const created = await server.fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Errors" }) });
+    ({ id } = (await created.json()) as { id: string });
+  });
+  after(() => server?.stop());
+
+  test("a missing file is a 404 that is not kept and names no path on the server (srv-15)", async () => {
+    const css = await (await server.fetch("/fonts/fonts.css")).text();
+    const font = /\/fonts\/([^/]+)\//.exec(css)![1];
+    for (const route of [`/fonts/${font}/missing.woff2`, `/files/${id}/shots/missing.png`, `/files/${id}/images/missing.png`, `/files/${id}/out/iphone-6.9/missing.png`, "/fonts/nothing/a.woff2"]) {
+      const answer = await server.fetch(route);
+      assert.equal(answer.status, 404, route);
+      assert.equal(answer.headers.get("cache-control"), "no-store", route);
+      assert.equal(answer.headers.get("content-disposition"), null, route);
+      const text = await answer.text();
+      assert.doesNotMatch(text, /ENOENT|node_modules|appshots-test|\/(Users|home|tmp|var|private)\//, route);
+    }
+    const missing = await server.fetch("/api/projects/nothing-here");
+    assert.equal(missing.status, 404);
+    assert.equal(missing.headers.get("cache-control"), "no-store");
+  });
+
+  test("a body over its limit is told the limit of its own kind (srv-17)", async () => {
+    const big = JSON.stringify({ name: "x".repeat(3 * 1024 * 1024) });
+    for (const route of ["/api/projects", "/mcp"]) {
+      const answer = await server.fetch(route, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: big });
+      assert.equal(answer.status, 413, route);
+      assert.equal(((await answer.json()) as { error: string }).error, "Request body too large (limit 2 MB)", route);
+    }
+  });
+
+  test("an upload names a device it knows, in any case, or is refused (srv-17)", async () => {
+    const image = new Uint8Array(await png(1320, 2868));
+    const refused = await server.fetch(`/api/projects/${id}/shots/home?device=phone`, { method: "PUT", body: image });
+    assert.equal(refused.status, 400);
+    assert.match(((await refused.json()) as { error: string }).error, /iphone, duo, ipad, mac/);
+    const filed = await server.fetch(`/api/projects/${id}/shots/home?device=iPad`, { method: "PUT", body: image });
+    assert.equal(filed.status, 201);
+    assert.equal(((await filed.json()) as { device: string }).device, "ipad");
+    // No device, or an empty one, is still told from the picture.
+    for (const query of ["", "?device="]) assert.equal((await server.fetch(`/api/projects/${id}/shots/home${query}`, { method: "PUT", body: image })).status, 201, query);
+  });
+});
+
 describe("files", { concurrency: true }, () => {
   test("files are served from a data directory inside a hidden folder", async () => {
     const data = await tmpData("hidden");

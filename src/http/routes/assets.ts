@@ -1,17 +1,25 @@
 import express, { type Router } from "express";
 import { z } from "zod";
 import { localeSchema } from "../../schema.ts";
-import { DEVICE_KINDS, isDeviceKind } from "../../sizes.ts";
+import { DEVICE_KINDS, type DeviceKind, isDeviceKind } from "../../sizes.ts";
 import { deleteImage, deleteShot, getProject, InputError, moveShot, saveImage, saveShot } from "../../store.ts";
 import { spaceOf } from "../auth.ts";
 import { LIMITS } from "../limits.ts";
 
-/** Uploading screenshots and images, which arrive as raw bytes. */
+/** The device a screenshot is filed under, when the upload names one. A name that is no device is refused, not ignored. */
+function deviceOf(query: unknown): DeviceKind | undefined {
+  if (query == null || query === "") return undefined;
+  const device = typeof query === "string" ? query.toLowerCase() : query;
+  if (isDeviceKind(device)) return device;
+  throw new InputError(`device has to be one of ${DEVICE_KINDS.join(", ")}.`);
+}
+
+/** Uploading screenshots and images, which arrive as raw bytes. They are mounted before the JSON parser, which would read a PNG sent as application/json. */
 export function uploadRoutes(): Router {
   const api = express.Router();
   api.put("/projects/:id/shots/:name", express.raw({ type: () => true, limit: LIMITS.shot }), async (req, res) => {
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new InputError("Send the image file as the request body.");
-    const device = isDeviceKind(req.query.device) ? req.query.device : undefined;
+    const device = deviceOf(req.query.device);
     const locale = req.query.locale == null || req.query.locale === "" ? undefined : localeSchema.parse(req.query.locale);
     res.status(201).json(await saveShot(spaceOf(res), req.params.id, req.params.name, req.body, device, locale));
   });

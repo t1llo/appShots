@@ -639,14 +639,14 @@ describe("revisions", () => {
 });
 
 describe("open bugs", () => {
-  test("a lookup by a name every object has is a 404, not a 500", { todo: "srv-16" }, async () => {
+  test("a lookup by a name every object has is a 404, not a 500 (srv-16)", async () => {
     assert.equal((await call("/fonts/constructor/a.woff2")).status, 404);
     assert.equal((await call("/fonts/toString/a.woff2")).status, 404);
     const id = await createProject({ name: "Lookup" });
     assert.equal((await call(`/render/${id}/creative/constructor`)).status, 404);
   });
 
-  test("a missing file is a 404 that names no server path and is not kept", { todo: "srv-15" }, async () => {
+  test("a missing file is a 404 that names no server path and is not kept (srv-15)", async () => {
     const id = await createProject({ name: "Missing File" });
     const answer = await call(`/files/${id}/shots/missing.png`);
     assert.equal(answer.status, 404);
@@ -654,13 +654,13 @@ describe("open bugs", () => {
     assert.doesNotMatch(answer.headers.get("cache-control") ?? "", /immutable|max-age=[1-9]/);
   });
 
-  test("an upload sent as JSON is stored as the image it is", { todo: "srv-17" }, async () => {
+  test("an upload sent as JSON is stored as the image it is (srv-17)", async () => {
     const id = await createProject({ name: "Typed Upload" });
     const answer = await call(`/api/projects/${id}/shots/home`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: new Uint8Array(await png(1320, 2868)) });
     assert.equal(answer.status, 201, JSON.stringify(answer.body));
   });
 
-  test("a file over the limit is told the limit of its kind", { todo: "docs-6" }, async () => {
+  test("a file over the limit is told the limit of its kind (docs-6)", async () => {
     const id = await createProject({ name: "Too Large" });
     const answer = await call(`/api/projects/${id}/images/big`, upload(Buffer.alloc(21 * 1024 * 1024)));
     assertError(answer, 413, /20 MB/);
