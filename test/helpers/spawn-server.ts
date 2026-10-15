@@ -92,7 +92,8 @@ async function launch(dataDir: string, options: ServerOptions, made: TmpData | u
   const env = cleanEnv();
   const child = spawn(process.execPath, ["src/server.ts"], {
     cwd: root,
-    env: { ...env, ...options.env, DATA_DIR: dataDir, PORT: String(port) },
+    // The browser starts with the first render: most test servers never draw, and would each start one for nothing.
+    env: { ...env, RENDER_PREWARM: "off", ...options.env, DATA_DIR: dataDir, PORT: String(port) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   running.add(child);

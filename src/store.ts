@@ -5,7 +5,8 @@ import { InputError, NotFoundError } from "./domain/errors.ts";
 import { allSlides, type Project, SLUG } from "./schema.ts";
 import { type DeviceKind, deviceKindOf, PLACEMENT_IDS, PLACEMENTS, type PlacementId } from "./sizes.ts";
 import { withProjectLock } from "./storage/mutex.ts";
-import { assertSlug, imagesDir, outDir, projectKey, projectsDir, SHOT_FILE, shotFile, shotsDir, type Space } from "./storage/paths.ts";
+import { listSets } from "./storage/outputs.ts";
+import { assertSlug, imagesDir, outDir, projectDir, projectKey, projectsDir, SHOT_FILE, shotFile, shotsDir, type Space } from "./storage/paths.ts";
 import { type Damaged, type NewProject, projects, type Stored, type WriteOptions } from "./storage/projects.ts";
 
 // The functions the server, the MCP tools and the renderer call keep their names and shapes here. Projects are read
@@ -385,18 +386,7 @@ export interface OutputSet {
 
 /** Lists what has been rendered so far, grouped by locale and size. */
 export async function listOutputs(space: Space, id: string): Promise<OutputSet[]> {
-  const root = outDir(space, id);
-  const sets: OutputSet[] = [];
-  for (const locale of (await readdir(root).catch(() => [])).sort()) {
-    for (const target of (await readdir(path.join(root, locale)).catch(() => [])).sort()) {
-      const dir = path.join(root, locale, target);
-      const files = (await readdir(dir).catch(() => [])).filter((name) => /^\d{2}\.png$/.test(name)).sort();
-      if (files.length === 0) continue;
-      const info = await stat(path.join(dir, files[0]!));
-      sets.push({ locale, target, files, version: Math.round(info.mtimeMs) });
-    }
-  }
-  return sets;
+  return listSets(projectDir(space, id));
 }
 
 /** Where the wide pictures of one locale are written, inside the output directory: the App Store's in one folder, the banners in another. */

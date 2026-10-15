@@ -235,3 +235,22 @@ export const config = {
     renders: settings.USER_RENDER_CREDITS,
   },
 };
+
+// ---------------------------------------------------------------- rendering
+
+/** A whole number from `low` to `high`, or the fallback when the setting is unset or out of range. */
+function between(value: string | undefined, low: number, high: number, fallback: number): number {
+  if (value == null || value.trim() === "") return fallback;
+  const number = Number(value);
+  return Number.isInteger(number) && number >= low && number <= high ? number : fallback;
+}
+
+/** How the renderer uses the machine. The defaults suit a small server, and none of them changes what is drawn. */
+export const renderSettings = {
+  /** Renders drawn side by side, each in a browser window of its own. Every one more wants a CPU core and some 300 MB. */
+  concurrency: between(process.env.RENDER_CONCURRENCY, 1, Number.MAX_SAFE_INTEGER, 1),
+  /** Starts the browser with the server, so the first render does not wait for it. */
+  prewarm: !/^(0|off|false|no)$/i.test((process.env.RENDER_PREWARM ?? "").trim()),
+  /** How hard PNGs are compressed, 0 to 9. At 6 they are encoded about twice as fast and come out some 17% larger. */
+  pngLevel: between(process.env.RENDER_PNG_LEVEL, 0, 9, 9),
+};
