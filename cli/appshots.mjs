@@ -226,7 +226,7 @@ function exists(file) {
 }
 //#endregion
 //#region cli/src/api.mjs
-/** @typedef {import("./config.mjs").Config} Config */
+/** @typedef {Config} Config */
 /**
 * The route of a project. Its id goes in encoded, so that a mistyped one is a project the server does not
 * have rather than another route.
@@ -585,7 +585,7 @@ function stuck(args) {
 * Runs xcrun with the right Xcode. Fails when it cannot start or stops answering; any other outcome is the
 * caller's to judge.
 * @param {string[]} args
-* @param {import("./proc.mjs").RunOptions} [options]
+* @param {RunOptions} [options]
 */
 async function xcrun(args, options = {}) {
 	if (host.platform !== "darwin") fail("This needs a Mac with Xcode. 'appshots capture --web <address>' takes a web app's pages anywhere, and 'appshots upload' takes screenshots you already have.");
@@ -601,7 +601,7 @@ async function xcrun(args, options = {}) {
 }
 /**
 * @param {string[]} args
-* @param {import("./proc.mjs").RunOptions} [options]
+* @param {RunOptions} [options]
 */
 async function xcodebuild(args, options = {}) {
 	if (host.platform !== "darwin") fail("Building an app needs a Mac with Xcode.");
@@ -3005,9 +3005,9 @@ async function check() {
 * @param {Promise<string>} probes.server
 * @param {Promise<string | null>} probes.skill
 * @param {Promise<string>} probes.store
-* @param {Promise<import("./proc.mjs").Result> | null} probes.version
+* @param {Promise<Result> | null} probes.version
 * @param {Promise<{ value?: string[], problem?: string }> | null} probes.schemes
-* @param {Promise<{ value?: import("./sim.mjs").Simulator[], problem?: string }> | null} probes.simulators
+* @param {Promise<{ value?: Simulator[], problem?: string }> | null} probes.simulators
 * @param {Promise<{ value?: Array<{ name: string, udid: string, model: string, transport: string }>, problem?: string }> | null} probes.devices
 */
 async function report(probes) {
@@ -3177,7 +3177,7 @@ function clean(flags) {
 }
 //#endregion
 //#region cli/src/upload.mjs
-/** @typedef {import("./config.mjs").Config} Config */
+/** @typedef {Config} Config */
 /** How many files go to the server at once. A few keep the line busy without crowding a small server. */
 const UPLOADS = 4;
 /**
@@ -3429,7 +3429,7 @@ async function bootCommand(flags) {
 }
 //#endregion
 //#region cli/src/pull.mjs
-/** @typedef {import("./config.mjs").Config} Config */
+/** @typedef {Config} Config */
 /** What the last download put into a folder, so that what the next one no longer has can be taken out again. */
 const MANIFEST = ".appshots-files.json";
 /**
@@ -3799,7 +3799,7 @@ function terminalKeys() {
 * Where the screenshots come from, settled once and up front, so a missing or unclear source is said before the
 * first screen, not after it. A word that --sim or --device took is a screen's name when no simulator or device
 * goes by it: in `shoot streaks --device home settings`, home is a screen.
-* @param {import("./args.mjs").Args} args
+* @param {Args} args
 * @returns {Promise<{ sim?: { name: string, udid: string }, flags: Record<string, string | true> }>}
 */
 async function settleSource(args) {
@@ -3829,7 +3829,7 @@ async function settleSource(args) {
 /**
 * For a person at the Terminal: names the screens one after the other, waits for a key while they open each,
 * then captures and uploads it.
-* @param {import("./args.mjs").Args} args The project, then the names of the screens.
+* @param {Args} args The project, then the names of the screens.
 * @param {{ keys?: { next: () => Promise<string>, close: () => void } }} [options] keys: a test's keys instead of the terminal's.
 */
 async function shoot(args, { keys } = {}) {
@@ -4188,7 +4188,7 @@ function exportSets(root, flags) {
 }
 /**
 * Sends one file where Apple says and tells it the file is there. Returns the screenshot's id.
-* @param {import("./asc.mjs").Account} account
+* @param {Account} account
 * @param {string} set
 * @param {string} file
 * @param {Buffer} data What is in the file, read once for its checksum and for this.
@@ -4234,7 +4234,7 @@ async function uploadScreenshot(account, set, file, data, checksum) {
 }
 /**
 * Apple checks each file once it has arrived. Waits for that, three minutes at most, and returns what it refused.
-* @param {import("./asc.mjs").Account} account
+* @param {Account} account
 * @param {Array<{ label: string, set: string, names: Map<string, string> }>} uploads
 */
 async function settle(account, uploads) {
@@ -4410,7 +4410,7 @@ async function storePush(project, flags) {
 }
 //#endregion
 //#region cli/src/tools.mjs
-/** @typedef {import("./config.mjs").Config} Config */
+/** @typedef {Config} Config */
 /**
 * @param {Config} config
 * @param {string} [name]
@@ -4510,8 +4510,8 @@ function checkedTexts(texts) {
 }
 /**
 * The platform whose version holds the texts. An app on both has two sets of them.
-* @param {import("./asc.mjs").Account} account
-* @param {import("./asc.mjs").App} app
+* @param {Account} account
+* @param {App} app
 * @param {Record<string, string | true>} flags
 */
 async function textPlatform(account, app, flags) {
@@ -4531,8 +4531,8 @@ async function textPlatform(account, app, flags) {
 }
 /**
 * The app's own page, which holds the name and the subtitle. While a version is being prepared there are two, and it is the new one.
-* @param {import("./asc.mjs").Account} account
-* @param {import("./asc.mjs").App} app
+* @param {Account} account
+* @param {App} app
 */
 async function appInfo(account, app) {
 	const infos = await appleList(account, `/v1/apps/${app.id}/appInfos?limit=200`, `read the page of ${app.name}`);
@@ -4540,7 +4540,7 @@ async function appInfo(account, app) {
 	return infos.find((info) => STORE_OPEN.has(state(info))) ?? infos.find((info) => !/^READY_FOR_(DISTRIBUTION|SALE)$/.test(state(info))) ?? infos[0] ?? null;
 }
 /**
-* @param {import("./asc.mjs").Account} account
+* @param {Account} account
 * @param {any} info
 */
 const appNames = async (account, info) => info ? appleList(account, `/v1/appInfos/${info.id}/appInfoLocalizations?limit=200`, "read the names and subtitles") : [];
@@ -4641,7 +4641,7 @@ async function storeText(flags) {
 /**
 * @typedef {object} Command
 * @property {string[]} flags The options it takes, so that one it does not take is pointed out rather than ignored.
-* @property {(args: import("./args.mjs").Args) => Promise<unknown> | unknown} run
+* @property {(args: Args) => Promise<unknown> | unknown} run
 * @property {boolean} [quiet] It sets the skill up, brings it up to date or reports on it itself, so the
 *   notice that the skill is out of date is left out.
 */

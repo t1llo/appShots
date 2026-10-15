@@ -44,14 +44,18 @@ await bundle.close();
 
 const [chunk, ...more] = output;
 if (more.length > 0 || chunk.type !== "chunk") throw new Error(`The CLI came out as ${output.length} files; it has to be one.`);
-const imports = [...chunk.code.matchAll(/^import .* from "([^"]+)";$/gm)].map((match) => match[1]).filter((name) => !name.startsWith("node:"));
+// A type in a comment that names another module, as in {import("./config.mjs").Config}, names one that is not
+// there any more, and reads like an import to whoever checks that the file stands alone. Within one file the
+// type's own name is enough.
+const code = chunk.code.replace(/\bimport\("\.{1,2}\/[^"]+\.mjs"\)\./g, "");
+const imports = [...code.matchAll(/(?:^import\s[^;]*?from\s*|(?<![\w.])import\()\s*["']([^"']+)["']/gm)].map((match) => match[1]).filter((name) => !name.startsWith("node:"));
 if (imports.length > 0) throw new Error(`The CLI imports ${imports.join(", ")}, and it has to stand alone.`);
-if (!chunk.code.startsWith("#!/usr/bin/env node\n")) throw new Error("The CLI has to start with #!/usr/bin/env node: older copies check for it before they replace themselves.");
+if (!code.startsWith("#!/usr/bin/env node\n")) throw new Error("The CLI has to start with #!/usr/bin/env node: older copies check for it before they replace themselves.");
 
 let before = "";
 try {
   before = readFileSync(out, "utf8");
 } catch {}
-if (before !== chunk.code) writeFileSync(out, chunk.code);
+if (before !== code) writeFileSync(out, code);
 chmodSync(out, 0o755);
-console.log(`${before === chunk.code ? "Unchanged" : "Wrote"} ${path.relative(root, out)} (${Math.round(chunk.code.length / 1024)} KB)`);
+console.log(`${before === code ? "Unchanged" : "Wrote"} ${path.relative(root, out)} (${Math.round(code.length / 1024)} KB)`);
