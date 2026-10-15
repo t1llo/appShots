@@ -4,8 +4,8 @@
 // the Studio shows. An edit changes the draft and saves after a pause. A save sends only the top-level keys that
 // differ from the base, with the base's revision, so the server can refuse it when someone else wrote in between.
 // A refused save, and every newer copy that arrives, is merged three ways against the base: per key, per list
-// index, down to single fields. Where both sides changed the same field, the local value stays and the conflict is
-// reported, so nothing is dropped without a word either way.
+// item, wherever one side moved it, down to single fields. Where both sides changed the same field, the local value
+// stays and the conflict is reported, so nothing is dropped without a word either way.
 
 export type Path = (string | number)[];
 
@@ -121,9 +121,19 @@ export function share<T>(prev: T, next: T): T {
 }
 
 /**
- * Merges what two sides made of `base`. Objects merge key by key. Lists merge index by index while each side kept
- * the length or only added at the end; an insert, a removal or a move cannot be lined up by index, so it is a
- * conflict of the whole list. A conflict keeps `ours` and is added to `conflicts`.
+ * Whether a list as long as the base has items moved: an item found again where another item of the base was.
+ * Without it a move would be taken for changes in place, and a change merged into it would land on the wrong item.
+ */
+function shuffled(base: unknown[], list: unknown[]): boolean {
+  const changed = [...base.keys()].filter((index) => !same(base[index], list[index]));
+  return changed.some((index) => changed.some((other) => other !== index && same(list[index], base[other])));
+}
+
+/**
+ * Merges what two sides made of `base`. Objects merge key by key. Lists merge index by index while each side only
+ * changed items in place or added at the end. Where one side inserted, removed or moved items, the other side's
+ * changes follow the items it kept (see rearranged); where both did, or that does not work out, the whole list is a
+ * conflict. A conflict keeps `ours` and is added to `conflicts`.
  */
 export function merge3(base: unknown, ours: unknown, theirs: unknown, path: Path = [], conflicts: Conflict[] = []): unknown {
   if (same(ours, theirs) || same(base, theirs)) return ours;
@@ -138,16 +148,41 @@ export function merge3(base: unknown, ours: unknown, theirs: unknown, path: Path
   }
   if (Array.isArray(base) && Array.isArray(ours) && Array.isArray(theirs)) {
     const length = base.length;
-    const linedUp = (list: unknown[]) => list.length === length || (list.length > length && base.every((item, index) => same(item, list[index])));
+    const linedUp = (list: unknown[]) => (list.length > length ? base.every((item, index) => same(item, list[index])) : list.length === length && !shuffled(base, list));
     if (linedUp(ours) && linedUp(theirs)) {
       const merged = base.map((item, index) => merge3(item, ours[index], theirs[index], [...path, index], conflicts));
       const added = ours.slice(length);
       for (const item of theirs.slice(length)) if (!added.some((other) => same(other, item))) added.push(item);
       return [...merged, ...added];
     }
+    const merged = linedUp(ours) ? rearranged(base, theirs, ours) : linedUp(theirs) ? rearranged(base, ours, theirs) : undefined;
+    if (merged) return merged;
   }
   conflicts.push({ path, theirs });
   return ours;
+}
+
+/**
+ * Merges a list one side rearranged with one the other side only changed in place or added to at the end. Each item
+ * the rearranging side kept as it was is found in the base by its value, and takes the other side's change to it
+ * where it now stands. An item it changed counts as one removed and a new one put in. Undefined when the other side
+ * changed an item the rearranging side removed, since that change has nowhere to go.
+ */
+function rearranged(base: unknown[], moved: unknown[], inPlace: unknown[]): unknown[] | undefined {
+  const left = new Set(base.keys());
+  const added: unknown[] = [];
+  const merged = moved.map((item) => {
+    const from = [...left].find((index) => same(base[index], item));
+    if (from === undefined) {
+      added.push(item);
+      return item;
+    }
+    left.delete(from);
+    return inPlace[from];
+  });
+  if ([...left].some((index) => !same(base[index], inPlace[index]))) return undefined;
+  for (const item of inPlace.slice(base.length)) if (!added.some((other) => same(other, item))) merged.push(item);
+  return merged;
 }
 
 /** Sets the value at a path, or removes it for undefined. A path that no longer leads anywhere is left alone. */
@@ -240,8 +275,9 @@ export class DraftStore<D extends object> {
   }
 
   /**
-   * Takes back the last step. What changed since in the same places, by a later edit or by someone else, stays as
-   * it is: the step is merged back out rather than the whole document put back.
+   * Takes back the last step. The step is merged back out rather than the whole document put back, so what someone
+   * else changed since in other places stays. Where they changed what the step changed, the undo wins, since it was
+   * asked for, and the value it replaced is reported like any conflict, so it can be put back.
    */
   undo(): void {
     this.#step(this.#undo, this.#redo, (step) => [step.after, step.before]);
@@ -258,8 +294,9 @@ export class DraftStore<D extends object> {
     to.push(step);
     const [was, becomes] = direction(step);
     const { draft } = this.#state;
+    const conflicts: Conflict[] = [];
     this.#lastEdit = -Infinity;
-    this.#set({ draft: share(draft, merge3(was, draft, becomes) as D) });
+    this.#set({ draft: share(draft, merge3(was, becomes, draft, [], conflicts) as D), conflicts: this.#withConflicts(conflicts) });
     this.#queue(this.#wait.first);
   }
 

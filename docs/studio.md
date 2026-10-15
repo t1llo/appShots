@@ -9,7 +9,7 @@ Changes save by themselves. There is no Save button.
 
 - **Undo and redo:** ⌘Z and ⇧⌘Z, or Ctrl+Z and Ctrl+Shift+Z, or the two arrows in the bar at the top.
 - **When a save fails,** the bar says why and the Studio tries again by itself. Closing the page while something is not saved asks first.
-- **When the project changes elsewhere** while you work, in another tab, by an agent or through the API, both sets of changes are kept. If both changed the same field, yours stays and a note under the bar offers **Use theirs**.
+- **When the project changes elsewhere** while you work, in another tab, by an agent or through the API, both sets of changes are kept, also when one side adds, moves or deletes slides. If both changed the same field, both changed the order of the same slides, or one changed a slide the other deleted, yours stays and a note under the bar offers **Use theirs**. Undo takes back your last step even where it was changed elsewhere since, and the same note offers that version back.
 
 ## Projects
 

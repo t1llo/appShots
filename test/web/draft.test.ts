@@ -252,6 +252,36 @@ test("undo leaves alone what someone else changed since", () => {
   assert.deepEqual(store.getState().draft.theme, { font: "lora" });
 });
 
+test("undo brings back a removed slide after someone else changed another one", async () => {
+  const { store, wait, accept } = harness(remote(doc(["A", "B", "C"]), 1));
+  store.edit((value) => void value.slides.splice(1, 1), true);
+  await wait(0);
+  const { next } = await accept(remote(doc(["A", "B", "C"]), 1));
+  const agent = structuredClone(next.doc);
+  agent.slides[1]!.layout = "hero";
+  store.receive(remote(agent, 3));
+  store.undo();
+  assert.deepEqual(store.getState().draft.slides, [{ headline: "A" }, { headline: "B" }, { headline: "C", layout: "hero" }]);
+  assert.deepEqual(store.getState().conflicts, []);
+  store.redo();
+  assert.deepEqual(store.getState().draft.slides, [{ headline: "A" }, { headline: "C", layout: "hero" }]);
+});
+
+test("undo wins where someone else changed the same field since, and what it replaced is offered back", async () => {
+  const { store, sent, wait, accept } = harness(remote(doc(["One"]), 1));
+  store.edit((value) => void (value.slides[0]!.headline = "Mine"), true);
+  await wait(0);
+  await accept(remote(doc(["One"]), 1));
+  store.receive(remote(doc(["Agent"]), 3));
+  store.undo();
+  assert.equal(store.getState().draft.slides[0]!.headline, "One");
+  assert.deepEqual(store.getState().conflicts, [{ path: ["slides", 0, "headline"], theirs: "Agent" }]);
+  await wait(500);
+  assert.deepEqual(headlines(sent.at(-1)!.changes as Doc), ["One"]);
+  store.keep("theirs");
+  assert.equal(store.getState().draft.slides[0]!.headline, "Agent");
+});
+
 test("against a server that keeps no revisions it saves without one and goes by updatedAt", async () => {
   const { store, sent, wait, accept } = harness(remote(doc(["One", "Two"]), null, 1));
   store.edit((value) => void (value.slides[0]!.headline = "Mine"));
@@ -307,6 +337,7 @@ test("closing the page sends what is unsaved in a request that outlives it, and 
   large.store.edit((value) => void (value.slides[0]!.headline = "x".repeat(70_000)));
   assert.equal(large.store.unload(), "warn");
   assert.equal(large.sent.length, 0);
+
 });
 
 test("lists merge by index while both sides only change items in place or add at the end", () => {
@@ -314,11 +345,39 @@ test("lists merge by index while both sides only change items in place or add at
   const theirs = { slides: [{ headline: "A" }, { headline: "B" }, { headline: "Theirs" }] };
   assert.deepEqual(merge3(base, { slides: [{ headline: "A!" }, { headline: "B" }] }, theirs), { slides: [{ headline: "A!" }, { headline: "B" }, { headline: "Theirs" }] });
   assert.deepEqual(merge3(base, { slides: [{ headline: "A" }, { headline: "B" }, { headline: "Mine" }] }, theirs), { slides: [{ headline: "A" }, { headline: "B" }, { headline: "Mine" }, { headline: "Theirs" }] });
-  // An insert in front shifts every index: the whole list is a conflict, and ours stays.
+  // Where both sides inserted, removed or moved items, no order is right: the whole list is a conflict, and ours stays.
   const conflicts: { path: (string | number)[]; theirs: unknown }[] = [];
   const shifted = { slides: [{ headline: "New" }, { headline: "A" }, { headline: "B" }] };
-  assert.deepEqual(merge3(base, { slides: [{ headline: "A?" }, { headline: "B" }] }, shifted, [], conflicts), { slides: [{ headline: "A?" }, { headline: "B" }] });
+  assert.deepEqual(merge3(base, { slides: [{ headline: "B" }, { headline: "A" }] }, shifted, [], conflicts), { slides: [{ headline: "B" }, { headline: "A" }] });
   assert.deepEqual(conflicts, [{ path: ["slides"], theirs: shifted.slides }]);
+});
+
+test("a list one side rearranged keeps the other side's changes to the items it kept", () => {
+  const base = { slides: [{ headline: "A" }, { headline: "B" }, { headline: "C" }] };
+  const removed = { slides: [{ headline: "A" }, { headline: "C" }] };
+  const edited = { slides: [{ headline: "A" }, { headline: "B" }, { headline: "C", layout: "hero" }] };
+  const conflicts: { path: (string | number)[]; theirs: unknown }[] = [];
+  assert.deepEqual(merge3(base, removed, edited, [], conflicts), { slides: [{ headline: "A" }, { headline: "C", layout: "hero" }] });
+  // An insert in front, against a change in place.
+  const shifted = { slides: [{ headline: "New" }, ...base.slides] };
+  assert.deepEqual(merge3(base, edited, shifted, [], conflicts), { slides: [{ headline: "New" }, ...edited.slides] });
+  // Moving a slide swaps it with its neighbour. That keeps the length, but is no change in place: the other side's
+  // change goes with the slide that moved, not to the one now at its index.
+  const inPlace = { slides: [{ headline: "A" }, { headline: "B", layout: "hero" }, { headline: "C" }] };
+  assert.deepEqual(merge3(base, { slides: [{ headline: "B" }, { headline: "A" }, { headline: "C" }] }, inPlace, [], conflicts), {
+    slides: [{ headline: "B", layout: "hero" }, { headline: "A" }, { headline: "C" }],
+  });
+  // An item changed in the same go counts as the old one removed and a new one put in.
+  const moved = { slides: [{ headline: "C" }, { headline: "A!" }, { headline: "B" }] };
+  assert.deepEqual(merge3(base, inPlace, moved, [], conflicts), { slides: [{ headline: "C" }, { headline: "A!" }, { headline: "B", layout: "hero" }] });
+  assert.deepEqual(conflicts, []);
+  // A copy added at the end is not taken for an item the list already has.
+  assert.deepEqual(merge3(base, removed, { slides: [...base.slides, { headline: "A" }] }), { slides: [{ headline: "A" }, { headline: "C" }, { headline: "A" }] });
+  assert.deepEqual(merge3({ locales: ["en", "de"] }, { locales: ["en"] }, { locales: ["en", "de", "fr"] }), { locales: ["en", "fr"] });
+  // A change to an item the other side removed cannot go anywhere: the whole list is a conflict, and ours stays.
+  const gone = { slides: [{ headline: "A" }, { headline: "B!" }, { headline: "C" }] };
+  assert.deepEqual(merge3(base, removed, gone, [], conflicts), removed);
+  assert.deepEqual(conflicts, [{ path: ["slides"], theirs: gone.slides }]);
 });
 
 test("equal values are equal whatever their key order, and unchanged parts keep their identity", () => {
