@@ -1,6 +1,6 @@
 import path from "node:path";
 import express, { type Response, type Router } from "express";
-import { getProject, imagesDir, outDir, safeJoin, shotsDir } from "../../store.ts";
+import { getProject, imagesDir, NotFoundError, outDir, safeJoin, shotsDir } from "../../store.ts";
 import { spaceOf } from "../auth.ts";
 
 /**
@@ -8,7 +8,10 @@ import { spaceOf } from "../auth.ts";
  * names: a data directory such as ~/.appshots must not hide every file in it.
  */
 function sendFrom(res: Response, dir: string, relative: string): void {
-  res.sendFile(path.relative(dir, safeJoin(dir, relative)), { root: dir });
+  const file = path.relative(dir, safeJoin(dir, relative));
+  // "." names the folder itself, which is no file, and an empty path would make the file sender throw.
+  if (!file) throw new NotFoundError("Not found");
+  res.sendFile(file, { root: dir });
 }
 
 /** A project's uploaded and rendered files, under /files. */

@@ -654,6 +654,26 @@ describe("open bugs", () => {
     assert.doesNotMatch(answer.headers.get("cache-control") ?? "", /immutable|max-age=[1-9]/);
   });
 
+  test("a request that names a folder rather than a file is a 404", async () => {
+    const id = await createProject({ name: "Folder" });
+    // fetch() reads %2E as "." and drops it from the path, so these go out by hand, as curl sends them.
+    const { port } = new URL(server.url);
+    for (const route of [`/files/${id}/out/%2E`, `/files/${id}/out/%2E/`, `/files/${id}/shots/%2E`, `/files/${id}/images/%2E`]) {
+      const answer = await new Promise<{ status: number; cacheControl: unknown; body: string }>((resolve, reject) => {
+        http
+          .get({ host: "127.0.0.1", port, path: route }, (response) => {
+            let body = "";
+            response.setEncoding("utf8").on("data", (chunk: string) => (body += chunk));
+            response.on("end", () => resolve({ status: response.statusCode!, cacheControl: response.headers["cache-control"], body }));
+          })
+          .on("error", reject);
+      });
+      assert.equal(answer.status, 404, `${route}: ${answer.body}`);
+      assert.deepEqual(JSON.parse(answer.body), { error: "Not found" }, route);
+      assert.equal(answer.cacheControl, "no-store", route);
+    }
+  });
+
   test("an upload sent as JSON is stored as the image it is (srv-17)", async () => {
     const id = await createProject({ name: "Typed Upload" });
     const answer = await call(`/api/projects/${id}/shots/home`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: new Uint8Array(await png(1320, 2868)) });
