@@ -171,10 +171,17 @@ With a hosting panel that builds and deploys a Compose file from a repository, o
 | `OPERATOR_NAME`, `CONTACT_EMAIL` | none | Who runs the server and where to write, as the privacy policy and the terms name them |
 | `UMAMI_URL`, `UMAMI_WEBSITE_ID`, `UMAMI_RECORDER` | off | Page analytics, see [Analytics](#analytics) |
 | `CLIENT_IP_HEADER` | none | The request header a CDN in front puts the visitor's address in, see below |
+| `TRUST_PROXY` | `loopback, linklocal, uniquelocal` | Which proxies in front may say who the visitor is and whether they came over HTTPS, see below |
+| `ALLOWED_HOSTS` | none | More names the server answers to, besides `localhost`, IP addresses and the host of `PUBLIC_URL`, see below |
 | `PORT` | `3000` | The port the server listens on |
+| `HOST` | every address | The address the server listens on: `127.0.0.1` for this machine only, or `0.0.0.0` or `::` for every one |
 | `DATA_DIR` | `data`, in the container `/data` | Where everything is stored |
 
-Set all three sign-in settings or none. With only one or two of them the server refuses to start, so a typo cannot leave a deployed server open.
+Set all three sign-in settings or none. With only one or two of them the server refuses to start, so a typo cannot leave a deployed server open. A value the server cannot use, such as a `PUBLIC_URL` without `https://` or a `PORT` that is no port, stops the start too, with the name of the setting. A limit of `0` means none: `USER_RENDER_CREDITS=0` gives accounts no renders until the admin hands some out.
+
+`TRUST_PROXY` lists the proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` the server believes. The default trusts a proxy on the same machine or on a private network, which covers a reverse proxy on the host and one in Docker. A proxy that reaches the server from a public address needs that address here, and a server with no proxy in front can set `false`. Set it as Express takes it: addresses, ranges such as `10.0.0.0/8`, the names `loopback`, `linklocal` and `uniquelocal`, the number of proxies, or `true` for any.
+
+With sign-in off, the API, MCP and the files answer only to `localhost`, IP addresses, the host of `PUBLIC_URL` and the names in `ALLOWED_HOSTS`. A web page could otherwise point a name of its own at your machine and reach the server through it. If you open the server by another name, such as `appshots.lan` or the name of your Mac, add it to `ALLOWED_HOSTS`, separated by commas. With sign-in on, the session cookie never travels to another name, so the names are checked only once `ALLOWED_HOSTS` is set.
 
 With a CDN or a second proxy in front of your reverse proxy, set `CLIENT_IP_HEADER` to the header that service puts the visitor's address in, such as `CF-Connecting-IP`. Sign-in attempts are counted per address, and without it they would all count against that service. Set it only when every request comes through that service, since anyone else could send the header themselves.
 
@@ -193,7 +200,7 @@ While the OAuth consent screen is in "Testing", Google itself only lets in the t
 
 ### People and accounts
 
-- **The admin** is the Google address in `ADMIN_EMAIL`. The admin is always let in, works in the server's own space without limits, and decides who else gets in. To hand the server to someone else, change the variable and redeploy.
+- **The admin** is the Google address in `ADMIN_EMAIL`. The admin is always let in, works in the server's own space without limits, and decides who else gets in. To hand the server to someone else, change the variable and redeploy. The new admin gets the server's own space, and the previous admin keeps an ordinary account that starts empty. Projects the new admin made earlier with an ordinary account stay on disk in `users/<id>/projects` under the data directory, out of sight: the server names that folder when it starts, and moving its folders into `projects` brings them back.
 - **Everyone else** gets a private space on their first sign-in: their own projects, screenshots, renders and API tokens. Nobody sees anybody else's work, the admin included.
 
 Who can sign in is set on the **Admin** page, which only the admin has in the sidebar:

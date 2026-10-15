@@ -23,6 +23,14 @@ test("unset and empty settings keep today's defaults", () => {
   }
 });
 
+test("what docker-compose.yaml and the Dockerfile pass when only the sign-in is set is accepted as before", () => {
+  const settings = readSettings({ PORT: "3000", PUBLIC_URL: "", CLIENT_IP_HEADER: "", USER_MAX_PROJECTS: "20", USER_MAX_SHOTS: "40", USER_RENDER_CREDITS: "10" });
+  assert.equal(settings.PORT, 3000);
+  assert.equal(settings.HOST, undefined);
+  assert.equal(settings.PUBLIC_URL, undefined);
+  assert.deepEqual([settings.USER_MAX_PROJECTS, settings.USER_MAX_SHOTS, settings.USER_RENDER_CREDITS], [20, 40, 10]);
+});
+
 test("a limit of 0 is a limit, not the default (srv-19)", () => {
   const settings = readSettings({ USER_RENDER_CREDITS: "0", USER_MAX_PROJECTS: "0" });
   assert.equal(settings.USER_RENDER_CREDITS, 0);

@@ -43,6 +43,8 @@ services:
       # With a CDN or a second proxy in front of your reverse proxy: the request header it puts the visitor's address
       # in, e.g. CF-Connecting-IP. Leave it empty unless every request comes through that service.
       CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
+      # TRUST_PROXY and ALLOWED_HOSTS keep their defaults here, which suit a reverse proxy on the host or in Docker.
+      # See the README to change them.
       # Caps for every account other than the admin.
       USER_MAX_PROJECTS: ${USER_MAX_PROJECTS:-20}
       USER_MAX_SHOTS: ${USER_MAX_SHOTS:-40}
