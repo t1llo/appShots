@@ -85,7 +85,7 @@ export const FRAMES: Record<FrameId, Frame> = {
     inner: 0,
     aspect: [1242, 2208],
     bare: 0,
-    fits: [0.5, 0.62],
+    fits: [0.5, 0.7],
     cutout: "none",
     home: 0.15,
     buttons: [
