@@ -14,7 +14,17 @@ const blank = (value: unknown) => (typeof value === "string" && value.trim() ===
 /** A whole number from 0 up. 0 is a real value: USER_RENDER_CREDITS=0 hands out no renders until the admin gives some. */
 const count = (fallback: number) => z.preprocess(blank, z.coerce.number().int().min(0).default(fallback));
 
-const HOST_NAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
+/**
+ * The host name in a Host header or an ALLOWED_HOSTS entry: lower case, without port, brackets or a closing dot.
+ * Both go through the URL parser, so any name a request can arrive with can also be listed, a container's name with an
+ * underscore among them. Null for anything that is more than a host and a port, such as an address with a path.
+ */
+export function hostName(value: string): string | null {
+  const url = URL.parse(`http://${value.trim()}`);
+  if (!url || url.href !== `http://${url.host}/`) return null;
+  const name = url.hostname.replace(/^\[(.*)\]$/, "$1").replace(/\.$/, "");
+  return /^[\w.-]+$/.test(name) || isIP(name) !== 0 ? name : null;
+}
 
 /** The subnets Express knows by name. */
 const PROXY_NAMES = new Set(["loopback", "linklocal", "uniquelocal"]);
@@ -40,11 +50,8 @@ const settingsSchema = z.object({
     z
       .string()
       .transform((value, ctx) => {
-        const names = value
-          .split(/[\s,]+/)
-          .filter(Boolean)
-          .map((name) => name.toLowerCase().replace(/:\d+$/, ""));
-        if (names.every((name) => HOST_NAME.test(name))) return names;
+        const names = value.split(/[\s,]+/).filter(Boolean).map(hostName);
+        if (names.every((name) => name !== null)) return names;
         ctx.addIssue({ code: "custom", message: "not a host name" });
         return z.NEVER;
       })

@@ -72,7 +72,7 @@ function asHost(server: TestServer, host: string, route: string, method = "GET",
 describe("host names (srv-4, mcp-8)", () => {
   let server: TestServer;
   before(async () => {
-    server = await startServer({ env: { PUBLIC_URL: "https://appshots.example.com", ALLOWED_HOSTS: "studio.test" } });
+    server = await startServer({ env: { PUBLIC_URL: "https://appshots.example.com", ALLOWED_HOSTS: "studio.test, app_shots" } });
   });
   after(() => server?.stop());
 
@@ -80,10 +80,10 @@ describe("host names (srv-4, mcp-8)", () => {
 
   test("while sign-in is off, the API, MCP, files and pages answer only to the server's own names", async () => {
     const { port } = new URL(server.url);
-    for (const host of [`localhost:${port}`, `app.localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, "192.168.1.20", "appshots.example.com", "studio.test:8080", "STUDIO.test"]) {
+    for (const host of [`localhost:${port}`, `app.localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, "192.168.1.20", "appshots.example.com", "appshots.example.com.", "studio.test:8080", "STUDIO.test", "app_shots:3000"]) {
       assert.equal((await asHost(server, host, "/api/projects")).status, 200, host);
     }
-    for (const host of [`rebound.example.com:${port}`, "example.com", "appshots.example.com.rebound.test", "studio.test.example.com"]) {
+    for (const host of [`rebound.example.com:${port}`, "example.com", "appshots.example.com.rebound.test", "studio.test.example.com", "other_shots", "localhost/x"]) {
       const answer = await asHost(server, host, "/api/projects");
       assert.equal(answer.status, 403, host);
       assert.match(JSON.parse(answer.text).error, /ALLOWED_HOSTS/);

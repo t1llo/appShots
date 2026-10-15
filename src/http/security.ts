@@ -1,6 +1,6 @@
 import { isIP } from "node:net";
 import type { NextFunction, Request, Response } from "express";
-import { config } from "../config.ts";
+import { config, hostName } from "../config.ts";
 
 /** Headers every answer carries. Slide previews are framed by the Studio only. */
 export function securityHeaders(_req: Request, res: Response, next: NextFunction): void {
@@ -17,13 +17,7 @@ export function visitorAddress(req: Request): string | undefined {
   return claimed && isIP(claimed) ? claimed : req.ip;
 }
 
-/** The host name a request was sent to, lower case and without port or brackets. */
-function hostnameOf(req: Request): string | null {
-  const url = URL.parse(`http://${req.get("host") ?? ""}`);
-  return url ? url.hostname.replace(/^\[(.*)\]$/, "$1") : null;
-}
-
-const publicHost = config.publicUrl ? new URL(config.publicUrl).hostname : "";
+const publicHost = config.publicUrl ? (hostName(new URL(config.publicUrl).host) ?? "") : "";
 
 /**
  * Whether a name may reach the routes that act on an account. DNS rebinding points a name the attacker owns at this
@@ -42,7 +36,7 @@ function knownHost(name: string): boolean {
  */
 export function allowedHost(req: Request, res: Response, next: NextFunction): void {
   if (config.auth && config.allowedHosts.length === 0) return next();
-  const name = hostnameOf(req);
+  const name = hostName(req.get("host") ?? "");
   if (name && knownHost(name)) return next();
   res.status(403).set("Cache-Control", "no-store").json({ error: "This server does not answer to that host name. Open it at its own address, or add the name to ALLOWED_HOSTS." });
 }

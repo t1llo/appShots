@@ -9,7 +9,7 @@ const data = await tmpData("config");
 after(() => data.remove());
 for (const name of Object.keys(process.env)) if (/^(GOOGLE_|UMAMI_|USER_)|^(ADMIN_EMAIL|PUBLIC_URL|ALLOWED_HOSTS|TRUST_PROXY|HOST|PORT)$/.test(name)) delete process.env[name];
 process.env.DATA_DIR = data.dir;
-const { listenHost, readSettings } = await import("../../src/config.ts");
+const { hostName, listenHost, readSettings } = await import("../../src/config.ts");
 
 test("unset and empty settings keep today's defaults", () => {
   for (const env of [{}, { PORT: "", HOST: "", PUBLIC_URL: "", ALLOWED_HOSTS: "", TRUST_PROXY: "", USER_MAX_PROJECTS: "", USER_MAX_SHOTS: " ", USER_RENDER_CREDITS: "" }]) {
@@ -46,6 +46,8 @@ test("a value that cannot be right stops the server with its name (srv-19)", () 
     { PUBLIC_URL: "https://appshots.example.com/studio" },
     { PUBLIC_URL: "ftp://appshots.example.com" },
     { ALLOWED_HOSTS: "appshots.lan, https://studio.example.com" },
+    { ALLOWED_HOSTS: "studio.example.com/studio" },
+    { ALLOWED_HOSTS: "*.example.com" },
     { TRUST_PROXY: "somewhere" },
     { USER_MAX_SHOTS: "-1" },
     { USER_RENDER_CREDITS: "2.5" },
@@ -75,6 +77,15 @@ test("PUBLIC_URL is kept as an origin", () => {
 
 test("ALLOWED_HOSTS takes names separated by commas or spaces, with or without a port", () => {
   assert.deepEqual(readSettings({ ALLOWED_HOSTS: "Appshots.lan, studio.example.com:8443 mac-mini" }).ALLOWED_HOSTS, ["appshots.lan", "studio.example.com", "mac-mini"]);
+});
+
+test("ALLOWED_HOSTS takes every name a request can arrive with, as the Host header check reads it", () => {
+  // Container and service names may hold an underscore, and a name may end in the dot of the DNS root.
+  assert.deepEqual(readSettings({ ALLOWED_HOSTS: "app_shots, appshots_web_1:3000, Studio.Example.com." }).ALLOWED_HOSTS, ["app_shots", "appshots_web_1", "studio.example.com"]);
+  assert.equal(hostName("app_shots:3000"), "app_shots");
+  assert.equal(hostName("Studio.Example.com.:8443"), "studio.example.com");
+  assert.equal(hostName("[::1]:3000"), "::1");
+  for (const host of ["", ":3000", "evil.test/x", "someone@evil.test", "evil.test?x"]) assert.equal(hostName(host), null, host);
 });
 
 test("TRUST_PROXY takes what Express takes (srv-18)", () => {
