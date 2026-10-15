@@ -169,7 +169,10 @@ export function createProjectRepository(options: { now?: () => Date; keepHistory
   /** Writes `changed` as the revision after `current`. Called under the project's lock. */
   async function write(space: Space, id: string, current: Stored, changed: Project, actor: string, keepCurrent = true): Promise<Stored> {
     const revision = current.revision + 1;
-    const parsed = projectSchema.parse({ ...changed, id, createdAt: current.project.createdAt, updatedAt: now(), schemaVersion: SCHEMA_VERSION, revision });
+    // One a newer build wrote stays at its version: the fields this one does not know are kept as they are, and
+    // marking them older would have that build migrate them a second time.
+    const schemaVersion = Math.max(SCHEMA_VERSION, changed.schemaVersion ?? current.project.schemaVersion ?? 0);
+    const parsed = projectSchema.parse({ ...changed, id, createdAt: current.project.createdAt, updatedAt: now(), schemaVersion, revision });
     const next = withUnknownKeys(changed, parsed);
     const text = JSON.stringify(next, null, 2);
     if (keepCurrent && !(await kept(space, id)).some((version) => version.revision === current.revision)) {

@@ -127,6 +127,27 @@ describe("reading what is on disk", () => {
     assert.deepEqual(JSON.parse(await readFile(path.join(historyDir(space, id), "0-unknown.json"), "utf8")), written);
   });
 
+  test("a project a newer build wrote keeps its version when this one changes it", async () => {
+    const { project } = await projects.create(space, { name: "Newer" });
+    // As a newer build saves it: a later version, with a field this one does not know.
+    await writeFile(projectFile(space, project.id), JSON.stringify({ ...(await stored(project.id)), schemaVersion: 2, revision: 2, movedHere: { by: "the newer build" } }));
+    const read = await projects.get(space, project.id);
+    assert.equal(read.revision, 2);
+    assert.equal(read.project.schemaVersion, 2);
+
+    await projects.mutate(space, project.id, (current) => ({ ...current, name: "Newer Changed" }));
+    const now = await stored(project.id);
+    assert.equal(now.revision, 3);
+    assert.equal(now.schemaVersion, 2);
+    assert.deepEqual(now.movedHere, { by: "the newer build" });
+    // A version this build wrote, brought back, is marked as this build's again.
+    await projects.restore(space, project.id, 1);
+    const restored = await stored(project.id);
+    assert.equal(restored.revision, 4);
+    assert.equal(restored.schemaVersion, 1);
+    assert.equal(restored.movedHere, undefined);
+  });
+
   test("a damaged project.json is listed with what is wrong, refused without the parser's words, and can be deleted", async () => {
     const { project } = await projects.create(space, { name: "Damaged" });
     await writeFile(projectFile(space, project.id), '{"id": "damaged",');
