@@ -363,7 +363,7 @@ A project has three parts: **Slides**, **Assets** (screenshots, logos and images
 A project has a theme and up to ten slides. Every style field can be set on the theme and overridden per slide. `slides` is the set every device shares, drawn again for each canvas; a device can have a set of its own in `deviceSlides`.
 
 - **Layouts:** one device (`device-bottom`, `device-top`, `device-center`, `tilted`, `closeup`, `floating`, `hero` with badges above the headline), the device beside a column of copy (`device-right`, `device-left`), several devices (`duo`, `side-by-side`, `trio`), and five with no device at all: `features` (cards), `statement` (the headline as the picture), `stat` (one giant figure and a row of smaller ones), `steps` (numbered steps joined by a line) and `reviews` (a wall of quote cards)
-- **Feature cards and points:** up to six things the app does, as cards with an icon or a figure on a `features` slide, or as a short list next to the headline on every other layout
+- **Feature cards and points:** up to eight things the app does, as cards with an icon or a figure on a `features` slide, or as a short list next to the headline on every other layout
 - **Badges:** `laurel` (wreath), `stars`, `rating` (the figure with five stars), `review` (a quote with its author), `icon`, `pill`; plain or in `gold`
 - **Icon and logo rows:** up to eight icons or logos under the copy with an optional label such as "Works with"
 - **Your own artwork:** a logo over the headline, and up to ten uploaded images placed anywhere on a slide

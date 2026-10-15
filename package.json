@@ -21,6 +21,8 @@
     "dev": "node --watch src/server.ts",
     "dev:web": "vite",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web",
+    "test": "node --test --test-concurrency=4 \"test/**/*.test.ts\" \"test/**/*.test.mjs\"",
+    "test:render": "RENDER_TESTS=1 npm test",
     "browser": "playwright install chromium --only-shell",
     "icons": "node scripts/icons.mjs"
   },

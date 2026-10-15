@@ -1,7 +1,8 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { config } from "./config.ts";
+import { writeFileAtomic } from "./storage/atomic.ts";
 import { InputError, NotFoundError, type Space } from "./store.ts";
 
 // Everybody signs in with Google. The admin is the address in ADMIN_EMAIL and works in the server's own space,
@@ -63,7 +64,33 @@ export class AuthError extends Error {
 }
 
 const file = path.join(config.dataDir, "accounts.json");
-const saved = JSON.parse(await readFile(file, "utf8").catch(() => "{}")) as Partial<State>;
+
+const REFUSED = "The server does not start without its accounts, because the first sign-in would save an empty list over them.";
+
+/**
+ * The accounts as they were last saved. Only a missing file means a server nobody has signed in to yet. A file that
+ * cannot be read or understood stops the start instead: running on with no accounts, the first sign-in would save
+ * that empty list over everybody's accounts, tokens and renders.
+ */
+async function load(): Promise<Partial<State>> {
+  let text: string;
+  try {
+    text = await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw new Error(`Cannot read ${file}: ${(error as Error).message}. ${REFUSED} Fix the file or its permissions and start again.`);
+  }
+  let saved: unknown;
+  try {
+    saved = JSON.parse(text);
+  } catch {}
+  if (saved === null || typeof saved !== "object" || Array.isArray(saved)) {
+    throw new Error(`${file} is not a valid accounts file. ${REFUSED} Restore it from a backup, or remove it to start with no accounts.`);
+  }
+  return saved as Partial<State>;
+}
+
+const saved = await load();
 // Open unless the admin narrowed it. Earlier versions wrote their own default into the file ("invite", then "list"),
 // so a list counts only when the admin picked it or put somebody on it.
 const signupChosen = saved.signupChosen === true;
@@ -84,9 +111,7 @@ function save(): Promise<void> {
     .catch(() => {})
     .then(async () => {
       await mkdir(config.dataDir, { recursive: true });
-      const tmp = `${file}.${process.pid}.tmp`;
-      await writeFile(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
-      await rename(tmp, file);
+      await writeFileAtomic(file, JSON.stringify(state, null, 2), { mode: 0o600 });
     });
   return writing;
 }
@@ -354,7 +379,9 @@ export function userByToken(token: string): User | null {
     // Coarse on purpose: a busy token should not rewrite the accounts file on every request.
     if (!entry.lastUsedAt || Date.now() - Date.parse(entry.lastUsedAt) > 3600_000) {
       entry.lastUsedAt = new Date().toISOString();
-      void save();
+      // Nobody waits for this save. If the disk refuses it, the request still goes through and the date is saved
+      // with the next change; left uncaught, the failure would stop the whole server.
+      save().catch((error: unknown) => console.error("Could not save when a token was last used:", error));
     }
     return user;
   }

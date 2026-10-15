@@ -1,7 +1,7 @@
 ---
 title: The appshots skill
 nav: The skill
-description: What the appshots skill makes a coding agent do, step by step. It checks the setup, asks five questions, captures the screens, writes the headlines, then builds and renders the set.
+description: What the appshots skill makes a coding agent do, step by step. It checks the setup, asks a few questions, captures the screens, writes the headlines, then builds and renders the set.
 ---
 
 The skill is a page of instructions your agent follows to turn the app in the current folder into a finished set. It works the same way every time, which is what keeps a set to ten or twenty minutes. You can read it at [`/skill.md`](/skill.md).

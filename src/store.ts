@@ -3,6 +3,7 @@ import path from "node:path";
 import sharp, { type Sharp } from "sharp";
 import { allSlides, type Creatives, type Project, projectSchema, SLUG, type Slide, type Theme } from "./schema.ts";
 import { type DeviceKind, deviceKindOf, PLACEMENT_IDS, PLACEMENTS, type PlacementId } from "./sizes.ts";
+import { writeFileAtomic } from "./storage/atomic.ts";
 
 export class NotFoundError extends Error {}
 export class InputError extends Error {}
@@ -146,10 +147,9 @@ export async function getProject(space: Space, id: string): Promise<Project> {
 async function writeProject(space: Space, project: Project): Promise<void> {
   const dir = projectDir(space, project.id);
   await mkdir(dir, { recursive: true });
-  // Write-then-rename so a crash mid-write cannot leave a truncated project file behind.
-  const tmp = path.join(dir, `project.json.${process.pid}.tmp`);
-  await writeFile(tmp, JSON.stringify(project, null, 2));
-  await rename(tmp, path.join(dir, "project.json"));
+  // Agents send their tool calls in parallel and the Studio saves while they work, so writes overlap: each one
+  // replaces the file whole, and none can leave it truncated or mixed with another.
+  await writeFileAtomic(path.join(dir, "project.json"), JSON.stringify(project, null, 2));
 }
 
 /** Pages of the Studio that stand where a project's id would: a project named so gets a number behind its id. */
