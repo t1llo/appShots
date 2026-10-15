@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -156,16 +156,26 @@ describe("reading what is on disk", () => {
       const sweep = createProjectRepository({ log: () => {} });
       const { project } = await sweep.create(main, { name: "Swept" });
       const other = await sweep.create(user, { name: "Theirs" });
-      await writeFile(path.join(projectDir(main, project.id), "project.json.0b6f6c1e-8a37-4c1a-9a51-2f0e5d9c1b11.tmp"), "{");
-      await writeFile(path.join(historyDir(main, project.id), "2-api.json.0b6f6c1e-8a37-4c1a-9a51-2f0e5d9c1b11.tmp"), "{");
-      await writeFile(path.join(projectDir(user, other.project.id), "project.json.12345.tmp"), "{");
+      const leftovers = [
+        path.join(projectDir(main, project.id), "project.json.0b6f6c1e-8a37-4c1a-9a51-2f0e5d9c1b11.tmp"),
+        path.join(historyDir(main, project.id), "2-api.json.0b6f6c1e-8a37-4c1a-9a51-2f0e5d9c1b11.tmp"),
+        path.join(projectDir(user, other.project.id), "project.json.12345.tmp"),
+      ];
+      const anHourAgo = new Date(Date.now() - 3_600_000);
+      for (const file of leftovers) {
+        await writeFile(file, "{");
+        await utimes(file, anHourAgo, anHourAgo);
+      }
+      // Just written: another process on the same data may be about to rename it into place.
+      const underWay = path.join(historyDir(main, project.id), "3-api.json.5d1c0a4e-2b7f-4e8a-9c3d-6f1e2a7b8c90.tmp");
+      await writeFile(underWay, "{");
       await writeFile(projectFile(user, other.project.id), "");
       const lines: string[] = [];
       const result = await sweepProjects(dir, (line) => lines.push(line));
       assert.equal(result.removed, 3);
       assert.deepEqual(result.damaged, [path.join("users", "someone", "projects", "theirs")]);
       assert.deepEqual((await readdir(projectDir(main, project.id))).sort(), [".history", "project.json"]);
-      assert.deepEqual(await readdir(historyDir(main, project.id)), ["1-api.json"]);
+      assert.deepEqual((await readdir(historyDir(main, project.id))).sort(), ["1-api.json", path.basename(underWay)]);
       assert.ok(lines.some((line) => line.includes("is empty")));
     } finally {
       await rm(dir, { recursive: true, force: true });

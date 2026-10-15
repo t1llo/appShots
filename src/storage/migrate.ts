@@ -59,13 +59,18 @@ export async function loadRaw(file: string): Promise<Loaded | null> {
 /** What writeFileAtomic leaves behind when the process stops midway, and what the code before it left. */
 const LEFTOVER = /^(?:project\.json|\d{1,9}-[a-z]{1,16}\.json)\.[0-9a-f-]+\.tmp$/;
 
+/** How long a temporary file is left alone. A write takes milliseconds; one older than this was cut short. */
+const LEFTOVER_AGE = 60_000;
+
 /**
- * Runs once before the server takes requests, so no write is under way: removes the temporary files that writes cut
- * short left behind, and names the projects that can no longer be read, in the log, before anybody opens one.
+ * Runs once before the server takes requests: removes the temporary files that writes cut short left behind, and
+ * names the projects that can no longer be read, in the log, before anybody opens one. Only old temporary files go,
+ * because this process may not be the only one on the data: the one it replaces can still be finishing a write.
  */
 export async function sweepProjects(dataDir: string, log: (message: string) => void = console.warn): Promise<{ removed: number; damaged: string[] }> {
   const users = await readdir(path.join(dataDir, "users")).catch(() => []);
   const roots = [dataDir, ...users.map((user) => path.join(dataDir, "users", user))];
+  const before = Date.now() - LEFTOVER_AGE;
   let removed = 0;
   const damaged: string[] = [];
   for (const root of roots) {
@@ -75,7 +80,10 @@ export async function sweepProjects(dataDir: string, log: (message: string) => v
       for (const folder of [project, path.join(project, ".history")]) {
         for (const name of await readdir(folder).catch(() => [])) {
           if (!LEFTOVER.test(name)) continue;
-          await rm(path.join(folder, name), { force: true });
+          const file = path.join(folder, name);
+          const info = await stat(file).catch(() => null);
+          if (!info || info.mtimeMs > before) continue;
+          await rm(file, { force: true });
           removed++;
         }
       }
