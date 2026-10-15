@@ -38,7 +38,10 @@ export interface ServerOptions {
 const root = path.resolve(import.meta.dirname, "..", "..");
 
 /** Settings the server reads, which the environment the tests run in must not hand it. */
-const SERVER_SETTINGS = /^(GOOGLE_|UMAMI_|USER_)|^(ADMIN_EMAIL|PUBLIC_URL|CLIENT_IP_HEADER|CONTACT_EMAIL|OPERATOR_NAME|DATA_DIR|PORT|NODE_TEST_CONTEXT)$/;
+const SERVER_SETTINGS = /^(GOOGLE_|UMAMI_|USER_)|^(ADMIN_EMAIL|PUBLIC_URL|ALLOWED_HOSTS|TRUST_PROXY|HOST|CLIENT_IP_HEADER|CONTACT_EMAIL|OPERATOR_NAME|DATA_DIR|PORT|NODE_TEST_CONTEXT)$/;
+
+/** The test's environment without any of the server's settings: what a server process starts from. */
+export const cleanEnv = (): Record<string, string | undefined> => Object.fromEntries(Object.entries(process.env).filter(([name]) => !SERVER_SETTINGS.test(name)));
 
 /** A port nobody listens on, picked by the system. */
 export async function freePort(): Promise<number> {
@@ -86,7 +89,7 @@ class PortTaken extends Error {}
 
 async function launch(dataDir: string, options: ServerOptions, made: TmpData | undefined): Promise<TestServer> {
   const port = await freePort();
-  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !SERVER_SETTINGS.test(name)));
+  const env = cleanEnv();
   const child = spawn(process.execPath, ["src/server.ts"], {
     cwd: root,
     env: { ...env, ...options.env, DATA_DIR: dataDir, PORT: String(port) },
@@ -114,8 +117,7 @@ async function launch(dataDir: string, options: ServerOptions, made: TmpData | u
   exited.then(() => (gone = true));
   while (true) {
     if (gone) {
-      // It says it listens even when the port was taken, and then has nothing left to do.
-      if (child.exitCode === 0 && output.includes("appShots listening")) throw new PortTaken(`Port ${port} was taken before the server could have it:\n${output}`);
+      if (/port \d+ is in use/.test(output)) throw new PortTaken(`Port ${port} was taken before the server could have it:\n${output}`);
       throw new Error(`The server stopped before it was ready (exit code ${child.exitCode}):\n${output}`);
     }
     if (Date.now() > deadline) {
@@ -128,8 +130,7 @@ async function launch(dataDir: string, options: ServerOptions, made: TmpData | u
         (response) => response.ok,
         () => false,
       );
-      // A server that could not have the port says so too, and then stops: give it that moment.
-      if (healthy && !(await Promise.race([exited.then(() => true), sleep(50, false, { ref: false })]))) break;
+      if (healthy) break;
     }
     await sleep(50);
   }

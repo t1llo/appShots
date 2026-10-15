@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import { config } from "./config.ts";
 import { renewSession, requireAuth } from "./http/auth.ts";
 import { errorHandler, type Log, notFound } from "./http/errors.ts";
 import { LIMITS } from "./http/limits.ts";
@@ -30,8 +31,8 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
   const log = deps.log ?? console;
   const app = express();
   app.disable("x-powered-by");
-  // The reverse proxy in front terminates TLS; trusting that one hop makes req.protocol, req.ip and secure cookies correct.
-  app.set("trust proxy", 1);
+  // The reverse proxy in front terminates TLS; trusting it makes req.protocol, req.ip and secure cookies correct.
+  app.set("trust proxy", config.trustProxy);
 
   app.use(securityHeaders);
   app.use(renewSession);
