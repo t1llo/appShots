@@ -40,7 +40,7 @@ describe("rendering, compared with a plain browser", renderTier, () => {
 
   before(async () => {
     server = await startServer({ env: { RENDER_PREWARM: "on" } });
-    const created = await call("/api/projects", send("POST", { name: "Same", locales: ["en", "de"], targets: ["iphone-6.9", "iphone-6.5", "ipad-13", "ipad-10.5"] }));
+    const created = await call("/api/projects", send("POST", { name: "Same", locales: ["en", "de"], targets: ["iphone-6.9", "iphone-6.3", "iphone-6.5", "iphone-6.1", "ipad-13", "ipad-10.5"] }));
     id = created.body.id;
     const slides = [
       { layout: "device-bottom", headline: { en: "Plan your *week*", de: "Plane deine *Woche*" }, subheadline: { en: "All in one place", de: "Alles an einem Ort" }, screenshot: "home" },
@@ -84,13 +84,16 @@ describe("rendering, compared with a plain browser", renderTier, () => {
       const scaled = (picture: Buffer, width: number, height: number) => sharp(picture).resize(width, height, { fit: "fill" }).removeAlpha().png({ compressionLevel: 9 }).toBuffer();
 
       const iphone = await drawn("iphone-6.9", 1320, 2868);
-      // 6.5" is not quite the shape of 6.9", so it is drawn at its own size rather than squeezed.
+      // 6.5" is some ten pixels off the shape of 6.9", so it is drawn at its own size rather than squeezed, and 6.1" is
+      // scaled from it.
       const iphone65 = await drawn("iphone-6.5", 1284, 2778);
       const ipad = await drawn("ipad-13", 2064, 2752);
       for (const [i, name] of ["01.png", "02.png", "03.png"].entries()) {
         assert.equal(sha(await file(`/files/${id}/out/en/iphone-6.9/${name}`)), sha(iphone[i]!), `iphone-6.9/${name}`);
+        assert.equal(sha(await file(`/files/${id}/out/en/iphone-6.3/${name}`)), sha(await scaled(iphone[i]!, 1206, 2622)), `iphone-6.3/${name}`);
         assert.equal(sha(await file(`/files/${id}/out/en/iphone-6.5/${name}`)), sha(iphone65[i]!), `iphone-6.5/${name}`);
         assert.notEqual(sha(await file(`/files/${id}/out/en/iphone-6.5/${name}`)), sha(await scaled(iphone[i]!, 1284, 2778)), `iphone-6.5/${name} is not 6.9" scaled`);
+        assert.equal(sha(await file(`/files/${id}/out/en/iphone-6.1/${name}`)), sha(await scaled(iphone65[i]!, 1170, 2532)), `iphone-6.1/${name}`);
         assert.equal(sha(await file(`/files/${id}/out/en/ipad-13/${name}`)), sha(ipad[i]!), `ipad-13/${name}`);
         assert.equal(sha(await file(`/files/${id}/out/en/ipad-10.5/${name}`)), sha(await scaled(ipad[i]!, 1668, 2224)), `ipad-10.5/${name}`);
       }
@@ -115,23 +118,46 @@ describe("rendering, compared with a plain browser", renderTier, () => {
   test("sizes and languages drawn from an older design are not listed or exported", async () => {
     assert.equal((await call(`/api/projects/${id}/render`, send("POST", {}))).status, 200);
     const listed = async () => ((await call(`/api/projects/${id}`)).body.outputs as { locale: string; target: string }[]).map((set) => `${set.locale}/${set.target}`).sort();
-    assert.deepEqual(await listed(), ["de/ipad-10.5", "de/ipad-13", "de/iphone-6.5", "de/iphone-6.9", "en/ipad-10.5", "en/ipad-13", "en/iphone-6.5", "en/iphone-6.9"]);
+    assert.deepEqual(await listed(), [
+      "de/ipad-10.5",
+      "de/ipad-13",
+      "de/iphone-6.1",
+      "de/iphone-6.3",
+      "de/iphone-6.5",
+      "de/iphone-6.9",
+      "en/ipad-10.5",
+      "en/ipad-13",
+      "en/iphone-6.1",
+      "en/iphone-6.3",
+      "en/iphone-6.5",
+      "en/iphone-6.9",
+    ]);
 
-    // The English iPhone headline changes, and only the 6.9" size is drawn again: the English 6.5" set shows the old one.
+    // The English iPhone headline changes, and only the 6.9" size is drawn again: the other English iPhone sets show the old one.
     const { body } = await call(`/api/projects/${id}`);
     const slides = body.project.slides;
     slides[0].headline.en = "Plan your *month*";
     await call(`/api/projects/${id}`, send("PUT", { slides }));
     assert.equal((await call(`/api/projects/${id}/render`, send("POST", { targets: ["iphone-6.9"] }))).status, 200);
-    assert.deepEqual(await listed(), ["de/ipad-10.5", "de/ipad-13", "de/iphone-6.5", "de/iphone-6.9", "en/ipad-10.5", "en/ipad-13", "en/iphone-6.9"]);
+    assert.deepEqual(await listed(), ["de/ipad-10.5", "de/ipad-13", "de/iphone-6.1", "de/iphone-6.3", "de/iphone-6.5", "de/iphone-6.9", "en/ipad-10.5", "en/ipad-13", "en/iphone-6.9"]);
     const zip = Buffer.from(await (await server.fetch(`/api/projects/${id}/export.zip`)).arrayBuffer()).toString("latin1");
     assert.ok(zip.includes("en/iphone-6.9/01.png"));
-    assert.ok(!zip.includes("en/iphone-6.5/"));
+    for (const size of ["6.3", "6.5", "6.1"]) assert.ok(!zip.includes(`en/iphone-${size}/`), size);
 
     // A language the project no longer has goes with the next render.
     await call(`/api/projects/${id}`, send("PUT", { locales: ["en"] }));
     assert.equal((await call(`/api/projects/${id}/render`, send("POST", { targets: ["iphone-6.9"] }))).status, 200);
     assert.deepEqual(await listed(), ["en/ipad-10.5", "en/ipad-13", "en/iphone-6.9"]);
+
+    // A slide is deleted and one slide of one size drawn again: no size keeps the deleted slide, the iPad's neither.
+    await call(`/api/projects/${id}`, send("PUT", { slides: slides.slice(0, 2) }));
+    assert.equal((await call(`/api/projects/${id}/render`, send("POST", { slides: [0], targets: ["iphone-6.9"] }))).status, 200);
+    const sets = (await call(`/api/projects/${id}`)).body.outputs as { locale: string; target: string; files: string[] }[];
+    assert.deepEqual(
+      sets.map((set) => `${set.target} ${set.files.join(" ")}`),
+      ["ipad-10.5 01.png 02.png", "ipad-13 01.png 02.png", "iphone-6.9 01.png 02.png"],
+    );
+    assert.equal((await server.fetch(`/files/${id}/out/en/ipad-13/03.png`)).status, 404);
   });
 
   test("the same mockup asked for many times at once is drawn once, at the width asked for", async () => {

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Project } from "../schema.ts";
-import { DEVICE_LABELS, PLACEMENT_IDS, PLACEMENTS, type PlacementId, TARGETS, type TargetId } from "../sizes.ts";
+import { type Project, slidesFor } from "../schema.ts";
+import { DEVICE_KINDS, DEVICE_LABELS, PLACEMENT_IDS, PLACEMENTS, type PlacementId, TARGETS, type TargetId } from "../sizes.ts";
 import { creativeDir, InputError, projectDir, type Space } from "../store.ts";
 import { type Commit, type StagedSet, stagingDir } from "../storage/outputs.ts";
 import { openWindow } from "./capture.ts";
@@ -194,6 +194,7 @@ export async function draw(run: Drawing, space: Space, project: Project, plan: R
       creatives: drawnCreatives.map(({ locale, placement, path }) => ({ locale, placement, path })),
       remove,
       ...(plan.cleanup ? { cleanup: { locales: plan.locales, targets: plan.targets } } : {}),
+      counts: Object.fromEntries(DEVICE_KINDS.map((kind) => [kind, slidesFor(project, kind).length])),
       deviceOf: (target: string) => (Object.hasOwn(TARGETS, target) ? TARGETS[target as TargetId].device : undefined),
     },
   };

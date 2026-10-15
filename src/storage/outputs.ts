@@ -108,6 +108,8 @@ export interface Commit {
   remove: { locale: string; placement: string; path: string }[];
   /** For a render of everything at the project's own sizes: the sizes each language keeps. */
   cleanup?: { locales: string[]; targets: string[] };
+  /** How many slides each device's set has. A size the run did not draw keeps no file past that. */
+  counts?: Record<string, number>;
   /** The device of a size folder's name, or nothing for a folder that is no size. */
   deviceOf: (target: string) => string | undefined;
 }
@@ -116,8 +118,9 @@ const same = (a: { locale: string; target: string }, b: { locale: string; target
 
 /**
  * Moves a finished run's pictures into out/ under the project's lock, and clears what they make out of date: other
- * sizes of the same device and language drawn from another design, languages the project no longer has, and on a
- * render of everything its old sizes. False when the project was deleted meanwhile; nothing is written then.
+ * sizes of the same device and language drawn from another design, languages the project no longer has, slides
+ * the sets no longer have, and on a render of everything its old sizes. False when the project was deleted
+ * meanwhile; nothing is written then.
  */
 export async function commitOutputs(key: string, dir: string, commit: Commit): Promise<boolean> {
   const stage = stagingDir(dir, commit.job);
@@ -201,6 +204,26 @@ export async function commitOutputs(key: string, dir: string, commit: Commit): P
           await retire(path.join(set.locale, target));
           gone.push({ locale: set.locale, target });
         }
+      }
+    }
+    // Slides a set has lost, in the sizes this run did not draw, such as another device's after a render of the
+    // iPhone alone: the export must not carry a slide that was deleted. The contact sheet pictures them, so it goes too.
+    for (const locale of commit.counts ? await readdir(out).catch(() => []) : []) {
+      for (const target of await readdir(path.join(out, locale)).catch(() => [])) {
+        const count = commit.counts?.[commit.deviceOf(target) ?? ""];
+        if (count === undefined || commit.sets.some((each) => same(each, { locale, target }))) continue;
+        const names: string[] = await readdir(path.join(out, locale, target)).catch(() => []);
+        const slides = names.filter((name) => SLIDE_FILE.test(name));
+        const lost = slides.filter((name) => Number(name.slice(0, 2)) > count);
+        if (lost.length === 0) continue;
+        if (lost.length === slides.length) {
+          await retire(path.join(locale, target));
+          gone.push({ locale, target });
+          continue;
+        }
+        for (const name of [...lost, ...(names.includes("sheet.jpg") ? ["sheet.jpg"] : [])]) await retire(path.join(locale, target, name));
+        const known = manifest.sets.find((each) => same(each, { locale, target }));
+        if (known) known.files = known.files.filter((name) => !lost.includes(name));
       }
     }
     const kept = (each: { locale: string; target?: string }) => !gone.some((dropped) => dropped.locale === each.locale && (dropped.target == null || dropped.target === each.target));

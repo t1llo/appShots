@@ -100,6 +100,32 @@ test("other sizes of the device drawn from another design are taken away", async
   assert.deepEqual((await readManifest(dir)).sets.map((each) => each.target).sort(), ["ipad-13", "iphone-6.1", "iphone-6.9"]);
 });
 
+test("slides a set has lost go from the sizes the run did not draw as well", async () => {
+  const dir = await projectFolder(["en", "de"]);
+  const three = (text: string) => ({ "01.png": `${text} 1`, "02.png": `${text} 2`, "03.png": `${text} 3`, "sheet.jpg": `${text} sheet` });
+  const layout = (prefix: string, files: Record<string, string>) => Object.fromEntries(Object.entries(files).map(([name, text]) => [`${prefix}/${name}`, text]));
+  await put(path.join(dir, "out"), { ...layout("en/iphone-6.9", three("phone")), ...layout("en/ipad-13", three("pad")), ...layout("de/ipad-13", three("pad de")), "en/mac-2880/03.png": "mac 3" });
+  await put(stagingDir(dir, "job1"), { "en/ipad-13/01.png": "a" });
+  await commitOutputs("main/p", dir, commit("job1", [set("en", "ipad-13", ["01.png"], { full: false, count: 3 })]));
+  // The set is cut to two slides and only the first iPhone slide is drawn again: no size keeps slide 3, and an
+  // iPad set that is cut keeps no sheet of the slides it had. A size left with no slide at all goes.
+  await put(stagingDir(dir, "job2"), { "en/iphone-6.9/01.png": "new phone 1" });
+  await commitOutputs("main/p", dir, commit("job2", [set("en", "iphone-6.9", ["01.png"], { full: false, count: 2 })], { counts: { iphone: 2, ipad: 2, mac: 2, duo: 2 } }));
+  assert.deepEqual(await contents(path.join(dir, "out")), {
+    "en/iphone-6.9/01.png": "new phone 1",
+    "en/iphone-6.9/02.png": "phone 2",
+    "en/ipad-13/01.png": "a",
+    "en/ipad-13/02.png": "pad 2",
+    "de/ipad-13/01.png": "pad de 1",
+    "de/ipad-13/02.png": "pad de 2",
+  });
+  assert.deepEqual(
+    (await readManifest(dir)).sets.map((each) => `${each.locale}/${each.target} ${each.files.join(" ")}`).sort(),
+    ["en/ipad-13 01.png 02.png", "en/iphone-6.9 01.png 02.png"],
+  );
+  assert.deepEqual((await listSets(dir)).map((each) => `${each.locale}/${each.target} ${each.files.join(" ")}`), ["de/ipad-13 01.png 02.png", "en/ipad-13 01.png 02.png", "en/iphone-6.9 01.png 02.png"]);
+});
+
 test("languages the project no longer has are taken away, and old sizes on a render of everything", async () => {
   const dir = await projectFolder(["en", "de-DE"]);
   await put(path.join(dir, "out"), { "fr/iphone-6.9/01.png": "fr", "de-de/iphone-6.9/01.png": "de", "en/iphone-6.5/01.png": "old size", "en/notes/readme.txt": "not a size" });
