@@ -7,6 +7,10 @@ The Studio is the editor at [{{SERVER}}](/studio). It shows every slide as a liv
 
 Changes save by themselves. There is no Save button.
 
+- **Undo and redo:** ⌘Z and ⇧⌘Z, or Ctrl+Z and Ctrl+Shift+Z, or the two arrows in the bar at the top.
+- **When a save fails,** the bar says why and the Studio tries again by itself. Closing the page while something is not saved asks first.
+- **When the project changes elsewhere** while you work, in another tab, by an agent or through the API, both sets of changes are kept. If both changed the same field, yours stays and a note under the bar offers **Use theirs**.
+
 ## Projects
 
 One project per app. **All projects** lists them with their slides, their languages and when they last changed, and the sidebar keeps them one click away.
@@ -89,7 +93,7 @@ With a language other than the first picked, **Assets** shows that language's ow
 
 **Export ZIP** renders the whole project and downloads it: every slide of every set for every language and every display of App Store Connect, plus the header and search results images and the banners. **Project → Export sizes** lists the sizes and lets you add the older ones. See [Render and export](/docs/export).
 
-The render runs on the server, in the background. You can keep editing, open another project or switch to another tab while it works. What you change after pressing the button is not in that render.
+The render runs on the server, in the background. It starts once your latest changes are saved. You can keep editing, open another project or switch to another tab while it works. What you change after pressing the button is not in that render.
 
 - **Renders** in the sidebar shows each render with its progress. The × beside a running one cancels it.
 - When it is done, the ZIP downloads by itself. If you were on another tab, the tab's title says so and the download starts when you come back. **Download ZIP** in the list fetches it again.
