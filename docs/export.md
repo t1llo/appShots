@@ -58,23 +58,23 @@ You design the set once per device. The export holds it at every size:
 | iPad screenshots as well | `ipad-13` and `ipad-11` too |
 | Mac screenshots as well | `mac-2880` too |
 
-Sizes of the same shape are the same picture scaled, so they look alike on every display. The sizes for older devices are left out until you tick them under **Project → Export sizes**. See [Sizes](/docs/sizes).
+Sizes of exactly the same shape are the same picture scaled. The iPhone sizes each have a slightly different shape, so each is drawn at its own size with the same layout. The sizes for older devices are left out until you tick them under **Project → Export sizes**. See [Sizes](/docs/sizes).
 
 ## How long it takes
 
-Every language and every device is a full pass over the set. A set in three languages takes about three times as long as the same set in one. The extra sizes of a device cost next to nothing, because they are the same picture scaled.
+Every language and every size of its own shape is a full pass over the set. A set in three languages takes about three times as long as the same set in one. A size of the same shape as another costs next to nothing, because it is the same picture scaled.
 
-The server renders one job at a time. Yours waits its turn if somebody else's is running. One account can have one render running and one waiting. A third is refused with "Two renders are already under way for this account", so wait for one to finish.
+The server renders one job at a time unless whoever runs it allows more. Yours waits its turn if somebody else's is running, and accounts take turns, so a queue of somebody else's renders does not hold yours up. Mockups have a queue of their own. One account can have one render running and one waiting. A third is refused with "Two renders are already under way for this account", so wait for one to finish.
 
 ## In the background
 
 A render started in the Studio runs on the server and does not need the page. Keep editing, open another project, switch to another tab or close the laptop lid: the render goes on.
 
 - **It draws the project as it was when you pressed the button.** What you change while it runs is in the next render, not in this one.
-- **Renders** in the sidebar shows the progress, and the × beside a running render cancels it.
+- **Renders** in the sidebar shows the progress, and the × beside a running render cancels it. A render that is cancelled or fails keeps nothing it drew: the files of the last finished render stay as they were.
 - When it is done, the ZIP downloads by itself. If the tab was in the background, its title says the render is done and the download starts when you look at it again.
 - **Notify me when it is done** lets your browser show a notification. It asks for permission once.
-- A finished render stays in the list for ten minutes, and **Download ZIP** fetches the files again. They are kept until the next render replaces them.
+- A finished render stays in the list for ten minutes, and **Download ZIP** fetches the files again. They are kept until the next render replaces them. A render of some sizes also takes away the other sizes of that device and language that still show an older design, so the ZIP never mixes two versions.
 
 A render stops if the server restarts, for instance for an update. The Studio says so, and you start it again. It has not used a render.
 

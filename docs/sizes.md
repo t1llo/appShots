@@ -36,16 +36,14 @@ An empty list goes back to the standard sizes.
 
 ## One design, many sizes
 
-Displays of the same shape get the same picture. The slide is drawn once at the largest size and scaled to the others, so a headline breaks on the same word and the device sits in the same place on every one of them.
+Displays of exactly the same shape get the same picture. The slide is drawn once at the largest size and scaled to the others, so a headline breaks on the same word and the device sits in the same place on every one of them.
 
 | Drawn | Scaled from it |
 | --- | --- |
-| `iphone-6.9` | `iphone-6.3`, `iphone-6.5`, `iphone-6.1` |
-| `iphone-5.5` | `iphone-4.7`, `iphone-4` |
-| `ipad-13` | `ipad-12.9`, `ipad-10.5`, `ipad-9.7` |
+| `ipad-13` | `ipad-10.5`, `ipad-9.7` |
 | `mac-2880` | `mac-2560`, `mac-1440`, `mac-1280` |
 
-`iphone-3.5`, `iphone-duo`, `iphone-duo-cover` and `ipad-11` have a shape of their own and are drawn on their own. The layout is the same and follows the shape.
+Every other size has a shape of its own, if only by a few pixels, and is drawn at its own size so that nothing round comes out oval. That includes each iPhone size, `ipad-12.9`, `ipad-11` and the Duo's. The layout is the same and follows the shape, so a long headline can break on another word.
 
 ## Which device a screenshot counts as
 

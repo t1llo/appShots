@@ -176,6 +176,9 @@ With a hosting panel that builds and deploys a Compose file from a repository, o
 | `PORT` | `3000` | The port the server listens on |
 | `HOST` | every address | The address the server listens on: `127.0.0.1` for this machine only, or `0.0.0.0` or `::` for every one. Some shells set `HOST` to the machine's name, so any other value is passed over with a warning |
 | `DATA_DIR` | `data`, in the container `/data` | Where everything is stored |
+| `RENDER_CONCURRENCY` | `1` | Renders drawn at the same time. Each takes a browser window and about a CPU core |
+| `RENDER_PREWARM` | on | Starts the browser with the server, so the first render does not wait for it. `off` starts it with the first render |
+| `RENDER_PNG_LEVEL` | `9` | PNG compression of the rendered files, `0` to `9`. Lower is faster and makes larger files |
 
 Set all three sign-in settings or none. With only one or two of them the server refuses to start, so a typo cannot leave a deployed server open. A value the server cannot use, such as a `PUBLIC_URL` without `https://` or a `PORT` that is no port, stops the start too, with the name of the setting. A limit of `0` means none: `USER_RENDER_CREDITS=0` gives accounts no renders until the admin hands some out.
 

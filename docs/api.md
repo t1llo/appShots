@@ -105,7 +105,7 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/render \
 | `POST /api/projects/:id/render` | Renders and answers when it is done. Body, all optional: `targets`, `locales`, `slides`, `creatives`, `background`. Without `targets`, every size the project exports |
 | `GET /api/renders` | Your renders that are waiting, running or ended in the last hour, newest first, and `rendersLeft` |
 | `GET /api/renders/:job` | One of them |
-| `DELETE /api/renders/:job` | Cancels one that is waiting or running |
+| `DELETE /api/renders/:job` | Cancels one that is waiting or running. It keeps nothing it drew |
 | `GET /api/projects/:id/export.zip` | The files of the last render as a ZIP. `?render=1` renders everything first |
 | `GET /files/:id/out/<language>/<size>/<number>.png` | One rendered file |
 | `GET /files/:id/out/<language>/creative-assets/<name>.png` | One header or search results image |
@@ -137,7 +137,9 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/render \
 { "job": { "id": "5f0c…", "project": "streaks", "name": "Streaks", "state": "queued", "done": 0, "total": 0 }, "rendersLeft": 6 }
 ```
 
-Ask `GET /api/renders/<id>` until `state` is no longer `queued` or `running`. It ends as `done`, `failed` (with `error`) or `cancelled`. `done` of `total` is how many pictures are drawn so far. Then fetch `export.zip`. The render draws the project as it was when you asked, so changes made while it runs are not in it.
+Ask `GET /api/renders/<id>` until `state` is no longer `queued` or `running`. It ends as `done`, `failed` (with `error`) or `cancelled`. `done` of `total` is how many pictures are drawn so far. Then fetch `export.zip`. The render draws the project as it was when you asked, so changes made while it runs are not in it. Its files replace the old ones all at once when it is done; one that fails or is cancelled leaves the old ones as they were.
+
+`locales` takes the project's own languages, matched without regard to case, and `de` finds `de-DE`. A language the project does not have is refused with status 400 before anything is drawn or counted.
 
 ### Counted renders
 
