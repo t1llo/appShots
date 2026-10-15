@@ -126,6 +126,7 @@ const VALUES: Record<string, string> = {
 /** What `<!-- if name -->` asks about. */
 const FLAGS: Record<string, boolean> = {
   analytics: config.umami != null,
+  recorder: config.umami?.recorder === true,
   operator: config.operator.name !== "",
   contact: config.operator.email !== "",
 };

@@ -2,7 +2,7 @@
 title: Privacy policy
 nav: Privacy
 description: What appShots stores about you, why, for how long, and who else receives it. In short, your email and name from Google, your projects and screenshots, and nothing sold or shared for ads.
-updated: 2026-10-11
+updated: 2026-10-15
 ---
 
 This page says what this appShots server stores about you and what happens to it. It applies to {{SERVER}}.
@@ -48,6 +48,8 @@ That is all the server keeps. It writes no log of the pages you open or the requ
 | `appshots_oauth` | Cookie | Protects the sign-in while you are on Google's page | 10 minutes |
 | `appshots.theme` | Local storage | Your choice of light or dark | Until you clear it |
 | `appshots.guides` | Local storage | Whether the safe area guides are shown | Until you clear it |
+| `appshots.zoom` | Local storage | How large the Studio shows the slide previews | Until you clear it |
+| `appshots.backdrop` | Local storage | The backdrop behind the mockups in the Studio | Until you clear it |
 
 These are needed for the site to work. None of them follows you to other sites.
 
@@ -58,14 +60,28 @@ When you sign in, your browser goes to Google and comes back. The server asks Go
 <!-- if analytics -->
 ## Analytics
 
-This server uses PostHog (`{{ANALYTICS_HOST}}`) to see how the site is used: which pages are opened, which buttons are clicked, and what kind of browser and screen is used. PostHog keeps an anonymous id in a cookie and in your browser's storage for this, and sees your IP address when your browser contacts it.
+This server counts how the site is used with Umami, at `{{ANALYTICS_HOST}}`. Umami sets no cookie and keeps no id in your browser. When a page opens, your browser sends it the page's address and title, the page you came from, your browser's language and the size of your screen. The Umami server sees your IP address when your browser contacts it, and works out your country and your kind of browser and device from the request.
 
-- You are **not identified**. Your email address and name are never sent to PostHog.
-- On the public pages, PostHog may record the session: how the page was scrolled and clicked.
-- **In the Studio, session recording is switched off.** Your projects and screenshots are not recorded.
+It counts the pages opened on the home page, in the docs and in the Studio, and seven actions. Each action carries at most one word from a fixed list:
+
+| Action | Counted when | What goes with it |
+| --- | --- | --- |
+| `open_studio` | A link to the Studio is followed | Where on the page the link is |
+| `open_github` | A link to the source code on GitHub is followed | Where on the page the link is |
+| `pick_agent` | An agent is picked on the home page | Which agent |
+| `copy_command` | A setup command is copied | On the home page, the agent it is for |
+| `create_project` | A project is created in the Studio | Nothing |
+| `connect_agent` | A token is made under **Connect an agent** | Which agent |
+| `export` | The screenshots or the mockups are downloaded | Which of the two |
+
+- You are **not identified**. Your email address and name are never sent to Umami.
+- **In the Studio, Umami learns only that the Studio was opened** and which of the actions above happened. Every page there is sent with the title "appShots Studio", and the part of the address after the `#`, which names the open project, stays in your browser. Your projects, your screenshots and what you type are never sent.
+<!-- endif -->
+<!-- if recorder -->
+- On the home page and in the docs, Umami also **records visits**: how the page was scrolled and clicked, so that a visit can be replayed. Where the home page shows the name of whoever is signed in, the name is hidden in the recording. **The Studio never loads the recorder**, so your projects and screenshots are never recorded.
+<!-- endif -->
+<!-- if analytics -->
 - A browser's tracking protection or a content blocker stops all of it, and the site works the same.
-
-[PostHog's privacy policy](https://posthog.com/privacy) covers their side.
 <!-- else -->
 ## Analytics
 
@@ -85,7 +101,7 @@ This server uses no analytics and no tracking.
 | --- | --- | --- |
 | Google | That you signed in to this site | Sign-in |
 <!-- if analytics -->
-| PostHog | Anonymous usage data and your IP address | Analytics |
+| The Umami server at `{{ANALYTICS_HOST}}`, used by whoever runs this server | The pages you open, the actions above and your IP address | Analytics |
 <!-- endif -->
 | The hosting provider of this server | Everything stored, as files on its disks | Running the server |
 
