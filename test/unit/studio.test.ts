@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { isBuiltin } from "node:module";
+import path from "node:path";
 import { test } from "node:test";
 import { check } from "../../web/src/editor/check.ts";
 import { arrowMove } from "../../web/src/ui/keys.ts";
@@ -35,4 +38,28 @@ test("JSON for a slide is checked the way the server checks it", () => {
 test("JSON for an asset is checked against the asset's own fields", () => {
   assert.ok("error" in check("creative", { layout: "device-bottom" }));
   assert.ok("item" in check("creative", { headline: "Track every habit" }));
+});
+
+// An import a built file keeps: `import type` and `export type` go when it is built, a dynamic import stays.
+const RUNTIME_IMPORT = /^\s*(?:import|export)\s+(?!type\s)(?:[^;"'`]*?\bfrom\s*)?["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/gm;
+
+test("what the JSON check brings into the Studio from the server's sources loads in a browser", async () => {
+  // The check uses the server's own schemas, so src/schema.ts and every module it imports end up in the Studio's
+  // bundle, where a Node built-in such as node:fs or node:path cannot load.
+  const root = path.resolve(import.meta.dirname, "..", "..");
+  const seen = new Set<string>();
+  const builtins: string[] = [];
+  const queue = [path.join(root, "web", "src", "editor", "check.ts")];
+  while (queue.length) {
+    const file = queue.pop()!;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    for (const match of (await readFile(file, "utf8")).matchAll(RUNTIME_IMPORT)) {
+      const specifier = match[1] ?? match[2]!;
+      if (specifier.startsWith(".")) queue.push(path.resolve(path.dirname(file), specifier));
+      else if (isBuiltin(specifier)) builtins.push(`${path.relative(root, file)} imports ${specifier}`);
+    }
+  }
+  assert.ok(seen.has(path.join(root, "src", "schema.ts")), "the check no longer reads src/schema.ts");
+  assert.deepEqual(builtins, []);
 });
