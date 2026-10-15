@@ -2,7 +2,7 @@
 // is set up with.
 
 import { LOCALE } from "./api.ts";
-import { toast } from "./ui.tsx";
+import { toast } from "./ui/index.ts";
 
 /** The localisations of App Store Connect under the codes it uses itself, so an exported folder carries the name of the place it goes. */
 export const STORE_LANGUAGES: [code: string, name: string][] = [

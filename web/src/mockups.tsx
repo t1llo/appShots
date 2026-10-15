@@ -4,11 +4,11 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Detail, detailQuery, type DeviceStyle, errorText, fetchFile, label, type Meta, type MockupItem, type Mockups, mockupsQuery, plural, put, saveFile, type Shot, slugify } from "./api.ts";
-import { DEVICE_LOOKS, ids, Slider, STATUS_BARS, TimeInput } from "./editor.tsx";
+import { DEVICE_LOOKS, ids, Slider, STATUS_BARS, TimeInput } from "./editor/index.ts";
 import { languageName, LanguageSwitch } from "./languages.tsx";
 import { dropTarget, ProjectBar, shotsKey, Stage, UPLOAD } from "./project.tsx";
 import { track } from "./track.ts";
-import { CopyBlock, Field, Icon, NumberInput, Select, toast } from "./ui.tsx";
+import { CopyBlock, Field, Icon, NumberInput, Select, toast } from "./ui/index.ts";
 
 const DOWNLOAD = "M8 2.6v7.8M4.9 7.5L8 10.6l3.1-3.1M2.8 10.4v2.8h10.4v-2.8";
 const COPY = "M5.6 5.6V3h7.4v7.4h-2.6M3 5.6h7.4V13H3z";

@@ -29,11 +29,11 @@ import {
   type TargetId,
 } from "./api.ts";
 import { openProject, useOpenDialog } from "./dialogs.tsx";
-import { type Change, CreativeEditor, ProjectEditor, Scope, SlideEditor } from "./editor.tsx";
+import { type Change, CreativeEditor, ProjectEditor, Scope, SlideEditor } from "./editor/index.ts";
 import { languageName, LanguageSwitch } from "./languages.tsx";
 import { rendersQuery, startRender, working } from "./renders.tsx";
 import { track } from "./track.ts";
-import { Icon, Menu, toast } from "./ui.tsx";
+import { Icon, Menu, toast } from "./ui/index.ts";
 
 export const UPLOAD = "M8 10.6V2.8M4.9 5.7L8 2.6l3.1 3.1M2.8 10.4v2.8h10.4v-2.8";
 

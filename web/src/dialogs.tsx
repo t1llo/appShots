@@ -6,7 +6,7 @@ import { createContext, type FormEvent, useContext, useState } from "react";
 import { api, detailQuery, errorText, type Meta, type Project, projectsQuery } from "./api.ts";
 import { LanguageList } from "./languages.tsx";
 import { track } from "./track.ts";
-import { CopyBlock, Dialog, Field, toast } from "./ui.tsx";
+import { CopyBlock, Dialog, Field, toast } from "./ui/index.ts";
 
 type Named = { id: string; name: string };
 export type DialogKind = "new" | "connect" | { rename: Named } | { remove: Named };

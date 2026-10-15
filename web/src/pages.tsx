@@ -7,7 +7,7 @@ import { api, day, errorText, type Meta, plural, projectsQuery } from "./api.ts"
 import { attempt, type FreshToken, type TokenEntry, tokensKey, useOpenDialog } from "./dialogs.tsx";
 import { rendersQuery } from "./renders.tsx";
 import { type Appearance, readAppearance, setAppearance } from "./theme.ts";
-import { CopyBlock, Icon, Menu, Select, toast } from "./ui.tsx";
+import { CopyBlock, Icon, Menu, Select, toast } from "./ui/index.ts";
 
 /** A page of its own: its name in the bar, and under it a column that holds a heading and sections. */
 export function Page({ name, title, sub, actions, wide, children }: { name: string; title: string; sub?: ReactNode; actions?: ReactNode; wide?: boolean; children?: ReactNode }) {

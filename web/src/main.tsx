@@ -12,7 +12,7 @@ import { MockupsPage } from "./mockups.tsx";
 import { AdminPage, ProjectsPage, SettingsPage } from "./pages.tsx";
 import { dropTarget, ProjectPage } from "./project.tsx";
 import { RenderList, useRenderNotes, useRenders } from "./renders.tsx";
-import { Icon, Menu, Toasts } from "./ui.tsx";
+import { Icon, Menu, Toasts } from "./ui/index.ts";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 

@@ -5,7 +5,7 @@ import { type QueryClient, queryOptions, useQuery, useQueryClient } from "@tanst
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { api, errorText, plural, type RenderJob, type Renders } from "./api.ts";
-import { toast } from "./ui.tsx";
+import { toast } from "./ui/index.ts";
 
 export const rendersQuery = queryOptions({ queryKey: ["renders"], queryFn: () => api<Renders>("GET", "/renders") });
 
