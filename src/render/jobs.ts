@@ -192,13 +192,20 @@ function missingError(shots: Shot[]): InputError {
   );
 }
 
+/** Whether the project is gone from the disk, deleted since its render was asked for. */
+const deleted = (dir: string) => stat(path.join(dir, "project.json")).then(
+  () => false,
+  () => true,
+);
+const deletedError = () => new NotFoundError("The project was deleted while it rendered.");
+
 async function renderNow(run: Run, space: Space, plan: RenderPlan): Promise<RenderResult> {
   const { project } = run.frozen!;
   const { id } = project;
   const dir = projectDir(space, id);
   // A screenshot deleted since the render was asked for cannot be drawn. Say which before drawing anything.
   const gone = await missingShots(space, id, plan.shots);
-  if (gone.length) throw missingError(gone);
+  if (gone.length) throw (await deleted(dir)) ? deletedError() : missingError(gone);
   const running = new Set([...runs.values()].filter((each) => !ended(each)).map((each) => each.job.id));
   await sweepStaging(dir, running);
 
@@ -206,10 +213,13 @@ async function renderNow(run: Run, space: Space, plan: RenderPlan): Promise<Rend
     const { result, commit } = await draw(run, space, project, plan);
     // A cancel that came while the last pictures were encoded still counts: nothing has been put in place yet.
     if (run.cancelled) throw new Cancelled();
-    if (!(await commitOutputs(`${space.id}/${id}`, dir, commit))) throw new NotFoundError("The project was deleted while it rendered.");
+    if (!(await commitOutputs(`${space.id}/${id}`, dir, commit))) throw deletedError();
     return result;
   } catch (error) {
     await discardStaging(dir, run.job.id);
+    // A project deleted while it rendered stops the run wherever it was, such as on a page whose screenshots went
+    // with it. That is the reason to give, not the error it happened to stop with.
+    if (await deleted(dir)) throw deletedError();
     // A page the server could not make, most likely because a screenshot went missing on the way.
     if (error instanceof PageStatusError) {
       const missing = await missingShots(space, id, plan.shots);

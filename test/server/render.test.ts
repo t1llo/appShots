@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readdir } from "node:fs/promises";
 import http from "node:http";
+import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { chromium } from "playwright";
@@ -163,6 +165,32 @@ describe("rendering, compared with a plain browser", renderTier, () => {
       ["ipad-10.5 01.png 02.png", "ipad-13 01.png 02.png", "iphone-6.9 01.png 02.png"],
     );
     assert.equal((await server.fetch(`/files/${id}/out/en/ipad-13/03.png`)).status, 404);
+  });
+
+  test("a project deleted while it renders is named as the reason the render stopped", async () => {
+    const created = await call("/api/projects", send("POST", { name: "Deleted", locales: ["en", "de"] }));
+    const gone = created.body.id;
+    const slides = Array.from({ length: 4 }, (_, i) => ({ layout: "statement", headline: { en: `Slide *${i + 1}*`, de: `Folie *${i + 1}*` } }));
+    await call(`/api/projects/${gone}`, send("PUT", { slides }));
+    const started = await call(`/api/projects/${gone}/render`, send("POST", { background: true }));
+    assert.equal(started.status, 202, JSON.stringify(started.body));
+    const job = () => call(`/api/renders/${started.body.job.id}`).then((answer) => answer.body);
+    const live = (seen: { state: string }) => seen.state === "queued" || seen.state === "running";
+    // Deleted after the first picture, while the others are still to draw.
+    let seen = await job();
+    while (seen.done < 1 && live(seen)) seen = await sleep(20).then(job);
+    assert.equal(seen.state, "running", JSON.stringify(seen));
+    const deleting = await call(`/api/projects/${gone}`, { method: "DELETE" });
+    assert.equal(deleting.status, 204, JSON.stringify(deleting.body));
+    let ended = await job();
+    while (live(ended)) ended = await sleep(50).then(job);
+    assert.equal(ended.state, "failed");
+    assert.equal(ended.error, "The project was deleted while it rendered.");
+    assert.equal((await call(`/api/projects/${gone}`)).status, 404);
+    assert.doesNotMatch(server.output(), /ENOENT/);
+    // Neither the project's folder nor the run's staging folder is left behind.
+    const left = await readdir(path.join(server.dataDir, "projects"));
+    assert.ok(!left.includes(gone) && !left.includes(".staging"), left.join(" "));
   });
 
   test("the same mockup asked for many times at once is drawn once, at the width asked for", async () => {

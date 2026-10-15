@@ -12,9 +12,9 @@ const data = await tmpData("outputs");
 after(() => data.remove());
 
 let projects = 0;
-/** A project folder with a project.json in the given languages. */
+/** A project folder with a project.json in the given languages, in an account of its own: its runs stage beside it. */
 async function projectFolder(locales = ["en"]): Promise<string> {
-  const dir = path.join(data.dir, "projects", `p${++projects}`);
+  const dir = path.join(data.dir, `account${++projects}`, "projects", "p");
   await mkdir(dir, { recursive: true });
   await writeFile(path.join(dir, "project.json"), JSON.stringify({ locales }));
   return dir;
@@ -56,6 +56,7 @@ test("a finished run replaces its sets and records them", async () => {
 
   assert.deepEqual(await contents(path.join(dir, "out")), { "en/iphone-6.9/01.png": "new 1", "en/iphone-6.9/02.png": "new 2", "en/iphone-6.9/sheet.jpg": "sheet" });
   assert.deepEqual((await readdir(dir)).sort(), ["out", "outputs.json", "project.json"]);
+  assert.deepEqual(await readdir(path.dirname(dir)), ["p"]);
   const manifest = await readManifest(dir);
   assert.deepEqual(
     manifest.sets.map(({ locale, target, files, design, job }) => ({ locale, target, files, design, job })),
@@ -73,6 +74,7 @@ test("a run that is thrown away leaves out/ as it was", async () => {
   await discardStaging(dir, "job1");
   assert.deepEqual(await contents(path.join(dir, "out")), { "en/iphone-6.9/01.png": "old 1" });
   assert.deepEqual((await readdir(dir)).sort(), ["out", "project.json"]);
+  assert.deepEqual(await readdir(path.dirname(dir)), ["p"]);
 });
 
 test("a run of some slides keeps the others, but none the set no longer has", async () => {
@@ -170,6 +172,7 @@ test("a project deleted while it rendered is not brought back", async () => {
   await rm(path.join(dir, "project.json"));
   assert.equal(await commitOutputs("main/p", dir, commit("job1", [set("en", "iphone-6.9", ["01.png"])])), false);
   await assert.rejects(readdir(dir));
+  assert.deepEqual(await readdir(path.dirname(dir)), []);
 });
 
 test("staging folders no run is using are swept away", async () => {
@@ -177,7 +180,7 @@ test("staging folders no run is using are swept away", async () => {
   await put(stagingDir(dir, "gone"), { "en/iphone-6.9/01.png": "left over" });
   await put(stagingDir(dir, "running"), { "en/iphone-6.9/01.png": "drawing" });
   await sweepStaging(dir, new Set(["running"]));
-  assert.deepEqual(await readdir(path.join(dir, ".staging")), ["running"]);
+  assert.deepEqual(await readdir(path.join(path.dirname(dir), ".staging")), ["running"]);
 });
 
 test("a manifest that cannot be read counts as none", async () => {

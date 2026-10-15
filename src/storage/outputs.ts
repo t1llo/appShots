@@ -8,6 +8,10 @@ import { withProjectLock } from "./mutex.ts";
 // own, outside out/, and only a finished run moves its folders into place, all at once under the project's lock.
 // A run that fails or is cancelled is thrown away whole, so out/ keeps what the last good run left there.
 //
+// The staging folders sit beside the projects, in projects/.staging, which no listing of projects takes for one. Kept
+// out of the project's own folder, a run never writes into it while it draws, so deleting the project meanwhile does
+// not race with the run's files.
+//
 // outputs.json, next to project.json, says which run drew each set and from what design. out/ keeps the layout it
 // always had, so a server without this file reads it as before.
 
@@ -55,8 +59,8 @@ export async function readManifest(dir: string): Promise<Manifest> {
   return { version: 1, sets: [], creatives: [] };
 }
 
-/** Where a run draws before its pictures are moved into place. */
-export const stagingDir = (dir: string, job: string) => path.join(dir, STAGING, job);
+/** Where a run draws before its pictures are moved into place: on the same disk as out/, for they are moved, not copied. */
+export const stagingDir = (dir: string, job: string) => path.join(path.dirname(dir), STAGING, job);
 
 /**
  * The languages a project.json lists, in lower case: on a Mac's disk de-de and de-DE are one folder. None when it
@@ -261,13 +265,17 @@ export async function commitOutputs(key: string, dir: string, commit: Commit): P
 export async function discardStaging(dir: string, job: string): Promise<void> {
   await rm(stagingDir(dir, job), { recursive: true, force: true });
   // Both only go when empty: another run may be staging, and a deleted project's folder must not come back.
-  await rmdir(path.join(dir, STAGING)).catch(() => {});
+  await rmdir(path.join(path.dirname(dir), STAGING)).catch(() => {});
   await stat(path.join(dir, "project.json")).catch(() => rmdir(dir).catch(() => {}));
 }
 
-/** Removes staging folders no run is using, such as those of a server that stopped in the middle of a render. */
+/**
+ * Removes staging folders no run is using, such as those of a server that stopped in the middle of a render. They
+ * are shared by an account's projects, so `running` holds every run that has not ended.
+ */
 export async function sweepStaging(dir: string, running: Set<string>): Promise<void> {
-  for (const job of await readdir(path.join(dir, STAGING)).catch(() => [])) {
-    if (!running.has(job)) await rm(path.join(dir, STAGING, job), { recursive: true, force: true });
+  const root = path.join(path.dirname(dir), STAGING);
+  for (const job of await readdir(root).catch(() => [])) {
+    if (!running.has(job)) await rm(path.join(root, job), { recursive: true, force: true });
   }
 }
