@@ -53,13 +53,13 @@ Each raw screenshot belongs to one device:
 
 | The image is | It counts as |
 | --- | --- |
-| Exactly 2007 × 2853 or 1398 × 2034 | iPhone Duo |
-| Wider than it is tall, such as 2880 × 1800 | Mac |
 | A captured Mac window, which has see-through round corners | Mac, whatever its shape |
-| Tall and narrow, such as 1320 × 2868 | iPhone |
-| Tall and wider than that, such as 2064 × 2752 | iPad |
+| Exactly a size App Store Connect takes for a display, such as 2007 × 2853 or 2868 × 1320 | That display's device: the iPhone Duo and the iPhone here |
+| Any other picture wider than it is tall | Mac |
+| Any other picture, tall and narrow | iPhone |
+| Any other picture, tall and wider than that | iPad |
 
-A picture at the exact size of an iPhone or iPad screenshot stays with that device when it is turned on its side.
+An iPhone, Duo or iPad size counts upright and turned on its side. A Mac size counts in landscape only.
 
 The iPhone Duo is told by its exact size because its shape is close to an iPad's. When a screenshot lands under the wrong device, change it with the small menu on its thumbnail under **Assets** in the Studio, or say it at upload: `appshots upload streaks home.png --as duo`. `--as` takes `iphone`, `duo`, `ipad` and `mac`.
 
@@ -67,7 +67,11 @@ Upload each device's screenshot under the same name. A slide that uses `home` th
 
 ## Raw screenshots
 
-Any resolution from 300 pixels on the short side works. The screenshot is scaled to the device's screen. For the sharpest result, capture on the simulators the largest sizes are made for: an iPhone Pro Max, the iPhone Duo and the 13-inch iPad Pro. `appshots run` picks them for you. A Mac app is captured from its own window. See [Mac apps](/docs/mac).
+Any resolution from 300 pixels on the short side works. The screenshot is scaled to the device's screen.
+
+The frame follows the screenshot's size. A screenshot from a 6.5" or 6.1" iPhone sits in a phone with a notch, and one from a 5.5", 4.7" or 4" iPhone, or from an iPad with a home button, sits under a deep forehead with a home button below. A phone screenshot of a size Apple does not list, but as wide as those older ones, gets the home button frame too.
+
+A screenshot taken in landscape is drawn whole, in a device turned on its side, inside the upright slide. Nothing of it is cut off. For the sharpest result, capture on the simulators the largest sizes are made for: an iPhone Pro Max, the iPhone Duo and the 13-inch iPad Pro. `appshots run` picks them for you. A Mac app is captured from its own window. See [Mac apps](/docs/mac).
 
 ## Header and search results
 
@@ -83,4 +87,4 @@ Wide pictures for outside the store. See [Banners](/docs/banners).
 
 ## What appShots does not make
 
-Landscape screenshots of an iPhone or iPad app, app previews (videos), and Apple Watch, Apple TV or Vision Pro sizes.
+Landscape sets for an iPhone or iPad app (a landscape screenshot goes into an upright slide, in a turned device), app previews (videos), and Apple Watch, Apple TV or Vision Pro sizes.

@@ -30,6 +30,8 @@ Layouts with two or three devices read `screenshot2` and `screenshot3` as well.
 
 The last five have no device. See [Slides without a device](#slides-without-a-device).
 
+In a language read from right to left, such as Arabic or Hebrew, every layout is mirrored: `device-left` puts the device on the right, a group of devices fans out the other way, and steps and points start on the right. The screenshots inside the devices are not flipped. See [Languages](/docs/languages#right-to-left).
+
 ## Copy
 
 | Field | What it is |
@@ -57,7 +59,7 @@ These fields can be set once in the project's **theme** and again on any slide. 
 | `textColor` | A hex colour | Black or white, whichever reads on the background |
 | `accentColor` | A hex colour, for tinted words, the eyebrow and badge stars | |
 | `font` | A font id. See below | |
-| `align` | `center` or `left` | `center` |
+| `align` | `center` or `left`. `left` is the start of the line, so the right in a language read from right to left | `center` |
 | `textScale` | 0.5 to 1.5. A multiplier for the headline size | 1 |
 | `emphasis` | `tint`, `marker`, `underline`. How a headline shows its `*marked*` words | `tint` |
 | `device` | The device options. See below | |
@@ -83,7 +85,7 @@ These fields can be set once in the project's **theme** and again on any slide. 
 
 | Field | Values | Default |
 | --- | --- | --- |
-| `frame` | `auto`, `iphone`, `duo`, `ipad`, `mac`, `none`. `auto` matches the screenshot, `duo` is the unfolded iPhone Duo, `mac` is a MacBook, and `none` shows the bare rounded screen, which for a Mac screenshot is the window alone. See [Mac apps](/docs/mac#a-window-or-a-macbook) | `auto` |
+| `frame` | `auto`, `iphone`, `duo`, `ipad`, `mac`, `none`. `auto` matches the screenshot, down to a notch or a home button for an older iPhone or iPad. See [Sizes](/docs/sizes#raw-screenshots). `duo` is the unfolded iPhone Duo, `mac` is a MacBook, and `none` shows the bare rounded screen, which for a Mac screenshot is the window alone. See [Mac apps](/docs/mac#a-window-or-a-macbook) | `auto` |
 | `style` | `real`, `clay`, `outline`, `sketch`. How the frame is drawn. See [Device look](#device-look) | `real` |
 | `color` | {{DEVICE_COLORS}} | `black` |
 | `scale` | 0.4 to 1.6 | 1 |
@@ -218,7 +220,7 @@ Five layouts show no device. They carry what a screenshot cannot: a claim, a num
 
 ### Reviews
 
-The `reviews` layout draws up to {{REVIEWS_SHOWN}} badges of the type `review` as its wall. `title` is the quote, `subtitle` is who said it, and `stars` adds the row of stars. A publication works the same way, with its name as the `subtitle`. Badges of other types stay with the copy as on any slide.
+The `reviews` layout draws up to {{REVIEWS_SHOWN}} badges of the type `review` as its wall. `title` is the quote, `subtitle` is who said it, and `stars` adds the row of stars. A publication works the same way, with its name as the `subtitle`. Badges of other types stay with the copy as on any slide. Review badges past the {{REVIEWS_SHOWN}}th are left out: they never move into the copy.
 
 ```json
 {

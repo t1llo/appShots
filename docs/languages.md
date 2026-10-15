@@ -3,7 +3,7 @@ title: Languages
 description: Make one App Store screenshot set in several languages with appShots. Pick the languages of a project, translate each headline, give each language its own screenshots of the app, and export one folder per language.
 ---
 
-One project holds the set in every language. The layout and the look stay the same. The words change, and so can the screenshots inside the devices.
+One project holds the set in every language. The layout and the look stay the same, mirrored for a language read from right to left. The words change, and so can the screenshots inside the devices.
 
 ## Pick the languages
 
@@ -70,7 +70,8 @@ With `run` and `launch`, `--lang` also starts the app in that language, so one c
 
 | Follows the language | Stays the same |
 | --- | --- |
-| Every text on a slide | The layout and the look |
+| Every text on a slide | The look |
+| The direction of the layout, mirrored for a language read from right to left | The layout itself |
 | Every text on a header or search results image | Logos and images you placed |
 | The screenshots inside the devices, where the language has its own | |
 
@@ -81,6 +82,12 @@ With `run` and `launch`, `--lang` also starts the app in that language, so one c
 ## Remove a language
 
 The × beside it under **Project → Languages**. Its folder leaves the export. Its texts and screenshots are kept, so adding the language again brings them back.
+
+## Right to left
+
+Arabic, Hebrew, Persian, Urdu and the other languages written from right to left get slides that read that way. The copy starts on the right, and the whole layout is mirrored: `device-left` puts the device on the right, a group of devices fans out the other way, and steps, points and feature cards start on the right. `align: left` means the start of the line, so the right here. Header and search results images and banners are mirrored the same way. The screenshots inside the devices are not flipped, and neither are logos and images.
+
+Review quotes take the quotation marks of the language, such as „…“ in German, « … » in French and 「…」 in Japanese. A quote you typed with its own marks keeps them.
 
 ## Long words
 
