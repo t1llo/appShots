@@ -347,7 +347,7 @@ describe("rendering, drawn with Chromium", renderTier, () => {
     assert.equal((await rest("/api/projects/mcp-app")).project.mockups.width, 600);
   });
 
-  test("render refuses languages the project does not have", { todo: "mcp-3" }, async () => {
+  test("render refuses languages the project does not have", async () => {
     assertRefused(await callTool(server, "render", { project: "mcp-app", locales: ["fr"], targets: ["iphone-6.9"] }), /fr/);
   });
 });

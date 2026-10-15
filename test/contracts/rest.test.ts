@@ -760,7 +760,7 @@ describe("rendering, drawn with Chromium", renderTier, () => {
     assert.equal(zip.headers.get("content-type"), "application/zip");
   });
 
-  test("a cancelled render leaves the previous files as they were", { todo: "render-1" }, async () => {
+  test("a cancelled render leaves the previous files as they were", async () => {
     const statement = (headline: string) => ({ layout: "statement", headline });
     const names = Array.from({ length: 10 }, (_, i) => String(i + 1).padStart(2, "0"));
     const other = await createProject({ name: "Kept", targets: ["iphone-6.9"], slides: names.map((n) => statement(`Before ${n}`)) });
@@ -780,7 +780,7 @@ describe("rendering, drawn with Chromium", renderTier, () => {
     assert.deepEqual(await files(), before);
   });
 
-  test("a screenshot that is gone fails the render with its name", { todo: "render-3" }, async () => {
+  test("a screenshot that is gone fails the render with its name", async () => {
     const other = await createProject({ name: "Gone", slides: [{ layout: "device-bottom", headline: "Gone", screenshot: "home" }] });
     await call(`/api/projects/${other}/shots/home`, upload(await png(1320, 2868)));
     const started = await call(`/api/projects/${other}/render`, send("POST", { background: true, targets: ["iphone-6.9"] }));
@@ -790,7 +790,7 @@ describe("rendering, drawn with Chromium", renderTier, () => {
     assert.match(job.error, /home/);
   });
 
-  test("rendering fewer slides leaves none of the old ones behind", { todo: "render-11" }, async () => {
+  test("rendering fewer slides leaves none of the old ones behind", async () => {
     const slides = ["One", "Two", "Three"].map((headline) => ({ layout: "statement", headline }));
     const other = await createProject({ name: "Fewer", targets: ["iphone-6.9"], slides });
     await call(`/api/projects/${other}/render`, send("POST", {}));
