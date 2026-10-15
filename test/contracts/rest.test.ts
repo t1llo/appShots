@@ -644,6 +644,11 @@ describe("open bugs", () => {
     assert.equal((await call("/fonts/toString/a.woff2")).status, 404);
     const id = await createProject({ name: "Lookup" });
     assert.equal((await call(`/render/${id}/creative/constructor`)).status, 404);
+    // An export size by such a name is no size, and the slide is drawn at the project's own.
+    assert.equal((await call(`/api/projects/${id}`, send("PUT", { slides: THREE_SLIDES }))).status, 200);
+    const named = await server.fetch(`/render/${id}/0?target=constructor`);
+    assert.equal(named.status, 200);
+    assert.equal(await named.text(), await (await server.fetch(`/render/${id}/0`)).text());
   });
 
   test("a missing file is a 404 that names no server path and is not kept (srv-15)", async () => {

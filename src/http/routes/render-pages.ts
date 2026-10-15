@@ -44,7 +44,8 @@ export function renderPageRoutes(): Router {
     const { project, shots } = await drawn(space, req);
     const index = Number(req.params.index);
     const wanted = String(req.query.target ?? "");
-    const target = isTargetId(wanted) ? wanted : sourceOf(defaultTargets(shots, project.targets)[0]!);
+    // Own keys only, as for the assets above: "constructor" passes isTargetId.
+    const target = Object.hasOwn(TARGETS, wanted) && isTargetId(wanted) ? wanted : sourceOf(defaultTargets(shots, project.targets)[0]!);
     if (!Number.isInteger(index) || index < 0 || index >= slidesFor(project, TARGETS[target].device).length) throw new NotFoundError(`Slide ${req.params.index} does not exist`);
     const locale = localeSchema.safeParse(req.query.locale).data ?? project.locales[0]!;
     res.set("Cache-Control", "no-store").type("html").send(await slideHtml({ space, project, shots, index, target, locale }));
