@@ -144,10 +144,15 @@ describe("rendering, compared with a plain browser", renderTier, () => {
     assert.ok(zip.includes("en/iphone-6.9/01.png"));
     for (const size of ["6.3", "6.5", "6.1"]) assert.ok(!zip.includes(`en/iphone-${size}/`), size);
 
-    // A language the project no longer has goes with the next render.
+    // A language the project no longer has leaves the list and the ZIP at once, and the disk with the next render.
     await call(`/api/projects/${id}`, send("PUT", { locales: ["en"] }));
+    assert.deepEqual(await listed(), ["en/ipad-10.5", "en/ipad-13", "en/iphone-6.9"]);
+    const dropped = Buffer.from(await (await server.fetch(`/api/projects/${id}/export.zip`)).arrayBuffer()).toString("latin1");
+    for (const size of ["iphone-6.9", "ipad-13"]) assert.ok(!dropped.includes(`de/${size}/`), size);
+    assert.equal((await server.fetch(`/files/${id}/out/de/iphone-6.9/01.png`)).status, 200);
     assert.equal((await call(`/api/projects/${id}/render`, send("POST", { targets: ["iphone-6.9"] }))).status, 200);
     assert.deepEqual(await listed(), ["en/ipad-10.5", "en/ipad-13", "en/iphone-6.9"]);
+    assert.equal((await server.fetch(`/files/${id}/out/de/iphone-6.9/01.png`)).status, 404);
 
     // A slide is deleted and one slide of one size drawn again: no size keeps the deleted slide, the iPad's neither.
     await call(`/api/projects/${id}`, send("PUT", { slides: slides.slice(0, 2) }));

@@ -74,7 +74,7 @@ A render started in the Studio runs on the server and does not need the page. Ke
 - **Renders** in the sidebar shows the progress, and the × beside a running render cancels it. A render that is cancelled or fails keeps nothing it drew: the files of the last finished render stay as they were.
 - When it is done, the ZIP downloads by itself. If the tab was in the background, its title says the render is done and the download starts when you look at it again.
 - **Notify me when it is done** lets your browser show a notification. It asks for permission once.
-- A finished render stays in the list for ten minutes, and **Download ZIP** fetches the files again. They are kept until the next render replaces them. A render of some sizes also takes away the other sizes of that device and language that still show an older design, so the ZIP never mixes two versions. A slide you deleted goes from every size with the next render, even from the sizes it does not draw.
+- A finished render stays in the list for ten minutes, and **Download ZIP** fetches the files again. They are kept until the next render replaces them. A render of some sizes also takes away the other sizes of that device and language that still show an older design, so the sizes of one device in one language never show two versions. Other devices and languages keep what their last render drew: when a change reaches them too, such as a headline the iPad shares, render them as well. A slide you deleted goes from every size with the next render, even from the sizes it does not draw. A language you take out of the project leaves the list and the ZIP at once.
 
 A render stops if the server restarts, for instance for an update. The Studio says so, and you start it again. It has not used a render.
 

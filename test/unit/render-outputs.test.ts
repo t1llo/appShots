@@ -149,6 +149,12 @@ test("a language taken out of the project while it rendered is neither put in pl
   assert.deepEqual((await readdir(dir)).sort(), ["out", "outputs.json", "project.json"]);
 });
 
+test("a language the project no longer has is not listed, before a render takes it away", async () => {
+  const dir = await projectFolder(["en", "de-DE"]);
+  await put(path.join(dir, "out"), { "en/iphone-6.9/01.png": "en", "de-de/iphone-6.9/01.png": "de", "fr/iphone-6.9/01.png": "fr" });
+  assert.deepEqual((await listSets(dir)).map((each) => each.locale), ["de-de", "en"]);
+});
+
 test("assets are moved into place, and the ones the project dropped are removed", async () => {
   const dir = await projectFolder();
   await put(path.join(dir, "out"), { "en/creatives/header.png": "old header", "en/creatives/search.png": "old search" });

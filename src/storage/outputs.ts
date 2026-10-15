@@ -71,13 +71,17 @@ function languagesOf(text: string | undefined): Set<string> {
 }
 
 /**
- * Lists what has been rendered so far, grouped by locale and size: every set folder with slides in it. A set the
- * manifest knows is dated by the run that drew it, so a run that redrew only some of its slides still shows as new.
+ * Lists what has been rendered so far, grouped by locale and size: every set folder with slides in it, in the
+ * languages the project has. A language it no longer has is left out at once, though its folder stays until the next
+ * render. A set the manifest knows is dated by the run that drew it, so a run that redrew only some of its slides
+ * still shows as new.
  */
 export async function listSets(dir: string): Promise<OutputSet[]> {
   const root = path.join(dir, "out");
+  const languages = languagesOf(await readFile(path.join(dir, "project.json"), "utf8").catch(() => undefined));
   const sets: OutputSet[] = [];
   for (const locale of (await readdir(root).catch(() => [])).sort()) {
+    if (languages.size && !languages.has(locale.toLowerCase())) continue;
     for (const target of (await readdir(path.join(root, locale)).catch(() => [])).sort()) {
       const folder = path.join(root, locale, target);
       const files = (await readdir(folder).catch(() => [])).filter((name) => SLIDE_FILE.test(name)).sort();

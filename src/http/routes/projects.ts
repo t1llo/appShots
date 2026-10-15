@@ -22,10 +22,14 @@ const projectPatch = z.object({
   mockups: mockupsSchema.optional(),
 });
 
-/** Renders of assets the project no longer defines stay on disk until the next full render, but are not offered. */
+/**
+ * Renders of assets the project no longer defines stay on disk until the next full render, but are not offered. Nor
+ * are those of a language it no longer has, which go with the next render, as its slides do.
+ */
 export async function creativeOutputs(space: Space, id: string) {
   const [project, outputs] = await Promise.all([getProject(space, id), listCreativeOutputs(space, id)]);
-  return outputs.filter((output) => project.creatives[output.placement]);
+  const languages = new Set(project.locales.map((code) => code.toLowerCase()));
+  return outputs.filter((output) => project.creatives[output.placement] && languages.has(output.locale.toLowerCase()));
 }
 
 async function projectDetail(space: Space, id: string) {
