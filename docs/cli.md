@@ -43,7 +43,7 @@ appshots run --capture home --to streaks
 | `--lang <code>` | Starts the app in this language, such as `de` or `pt-BR`. A screenshot taken with `--capture` is filed under that language in the project |
 | `--capture <name>` | Takes the screenshot as well, with a clean status bar |
 | `--to <project>` | Uploads that screenshot to this project |
-| `--wait <seconds>` | How long the app gets to settle before the capture. Left out, the capture waits until the screen stops changing, four seconds at most |
+| `--wait <seconds>` | How long the app gets to settle before the capture. Left out, the capture waits until the screen stops changing, four seconds at most, and up to fifteen while the app has drawn nothing yet |
 | `-- <arguments>` | Handed to the app as they are, such as `-- -appshots stats` |
 
 ```bash
@@ -131,7 +131,7 @@ appshots shoot --plan --again                      # take again what the project
 | `locales` | The languages, of those the project has. Default: all of them |
 | `appearances` | `light`, `dark` or both. The second one is added to the screen's name, as in `home-dark`. Left out, the simulator stays as it is |
 | `statusBar` | `clean`, the default, for 9:41 with full battery and signal, or `as-is` |
-| `wait` | Seconds each screen gets before it is taken. Left out, it is taken once it stops changing, four seconds at most |
+| `wait` | Seconds each screen gets before it is taken. Left out, it is taken once it stops changing, four seconds at most, and up to fifteen while the app has drawn nothing yet |
 | `out` | Where the PNGs are kept, as `<out>/<language>/<display>/<id>.png`. Default `raw-shots` next to the plan |
 | `screens[].id` | The screenshot's name, which the slides refer to |
 | `screens[].launch` | `args`, launch arguments after the app's, and `url`, a link opened once the app runs. A list on its own is `args`. A link with no app to start is opened by whatever the simulator opens it with |
@@ -139,7 +139,7 @@ appshots shoot --plan --again                      # take again what the project
 | `screens[].uitest` | A UI test that brings the screen up, as `Target/Class/method`. See below |
 | `screens[].wait`, `screens[].devices` | The screen's own wait, and the plan's displays it is taken on when not all of them |
 
-Each launch is in the screen's language, with `-AppleLanguages` and `-AppleLocale` as `appshots launch --lang` does it. What the project has already under a screen's name, family and language is skipped, so a run that stopped half way goes on where it stopped, and a screenshot deleted in the Studio is taken again. A screen that fails does not stop the others. After three failures in a row on one simulator its remaining screens are left, and the command lists what it did not take and exits with 1. A simulator the run booted keeps running.
+Each launch is in the screen's language, with `-AppleLanguages` and `-AppleLocale` as `appshots launch --lang` does it. An app the screen before started is closed first when this one starts another, so the status bar shows no link back to it. What the project has already under a screen's name, family and language is skipped, so a run that stopped half way goes on where it stopped, and a screenshot deleted in the Studio is taken again. A screen that fails does not stop the others. After three failures in a row on one simulator its remaining screens are left, and the command lists what it did not take and exits with 1. A simulator the run booted keeps running.
 
 ### Screens a UI test brings up
 

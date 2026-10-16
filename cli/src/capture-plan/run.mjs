@@ -97,8 +97,19 @@ async function checkInstalled(simulator, apps, plan) {
 }
 
 /**
+ * @typedef {object} Run
+ * @property {Plan} plan
+ * @property {Config} config
+ * @property {string} project
+ * @property {string} [bundleId]
+ * @property {string} [xcodeProject]
+ * @property {string} [scheme]
+ * @property {Map<string, string>} started The app the last screen started on each simulator, by its udid.
+ */
+
+/**
  * Brings up the screen of one job, takes it once it has come to rest, and uploads it.
- * @param {{ plan: Plan, config: Config, project: string, bundleId?: string, xcodeProject?: string, scheme?: string }} run
+ * @param {Run} run
  * @param {Job} job
  * @param {Simulator} simulator
  */
@@ -107,16 +118,24 @@ async function take(run, job, simulator) {
   const { screen } = job;
   const wait = screen.wait ?? plan.wait;
   mkdirSync(path.dirname(job.file), { recursive: true });
+  const app = screenApp(plan, screen, run.bundleId);
+  // An app started while another is in front shows a link back to that one in the status bar, so the one the last
+  // screen started is closed first, unless it is the same.
+  const before = run.started.get(simulator.udid);
+  if (before && before !== app) {
+    await xcrun(["simctl", "terminate", simulator.udid, before]);
+    run.started.delete(simulator.udid);
+  }
   if (screen.uitest && run.xcodeProject && run.scheme) {
     const options = { project: run.xcodeProject, scheme: run.scheme, test: screen.uitest, simulator, locale: job.locale };
     await runUITest(options, () => captureSettled(simulator, job.file, wait));
   } else {
-    const app = screenApp(plan, screen, run.bundleId);
     if (app) {
       const args = [...(screen.app ? [] : plan.app.args), ...screen.args, ...languageArguments(job.locale)];
       // One that is still running would come to the front with the arguments it was started with.
       const result = await xcrun(["simctl", "launch", "--terminate-running-process", simulator.udid, app, ...args]);
       if (result.status !== 0) fail(`Could not launch ${app} on ${simulator.name}:\n${result.stderr.trim()}`);
+      run.started.set(simulator.udid, app);
     }
     if (screen.url) {
       const result = await xcrun(["simctl", "openurl", simulator.udid, screen.url]);
@@ -219,8 +238,8 @@ export async function shootPlan(args) {
   const launched = todo.filter((job) => !job.screen.uitest);
   const builds = Boolean(plan.app.xcode) && launched.some((job) => !job.screen.app);
   const tests = todo.some((job) => job.screen.uitest);
-  /** @type {{ plan: Plan, config: Config, project: string, bundleId?: string, xcodeProject?: string, scheme?: string }} */
-  const run = { plan, config, project, bundleId: plan.app.bundleId };
+  /** @type {Run} */
+  const run = { plan, config, project, bundleId: plan.app.bundleId, started: new Map() };
   if (builds || tests) {
     run.xcodeProject = planXcodeProject(plan, tests ? "A UI test" : "Building the app");
     run.scheme = await pickScheme(run.xcodeProject, plan.app.scheme);

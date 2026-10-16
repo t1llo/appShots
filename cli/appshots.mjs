@@ -17,6 +17,7 @@ import { chmodSync, closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, m
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { inflateSync } from "node:zlib";
 import readline from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash, createPrivateKey, sign } from "node:crypto";
@@ -732,8 +733,79 @@ async function captureMac(window, file) {
 	console.log(`Captured ${window.app} -> ${file}`);
 }
 //#endregion
+//#region cli/src/capture/blank.mjs
+/**
+* Whether a screenshot shows nothing yet: one colour from below the status bar to above the home indicator and
+* the toolbars, as an app shows it from its launch until its first screen is drawn. That can stay the same for
+* seconds, so two frames alike do not mean the screen is up. Null for a PNG this does not read: one of another
+* depth, an interlaced one, or one too small to be a screen.
+* @param {Buffer} png
+* @returns {boolean | null}
+*/
+function blankScreen(png) {
+	if (png.length < 33 || png.readUInt32BE(0) !== 2303741511 || png.toString("latin1", 12, 16) !== "IHDR") return null;
+	const width = png.readUInt32BE(16);
+	const height = png.readUInt32BE(20);
+	const channels = png[25] === 6 ? 4 : png[25] === 2 ? 3 : 0;
+	if (png[24] !== 8 || channels === 0 || png[28] !== 0 || Math.min(width, height) < 300) return null;
+	const parts = [];
+	for (let at = 8; at + 8 <= png.length;) {
+		const length = png.readUInt32BE(at);
+		const kind = png.toString("latin1", at + 4, at + 8);
+		if (kind === "IEND") break;
+		if (kind === "IDAT") parts.push(png.subarray(at + 8, at + 8 + length));
+		at += 12 + length;
+	}
+	let data;
+	try {
+		data = inflateSync(Buffer.concat(parts));
+	} catch {
+		return null;
+	}
+	const stride = width * channels;
+	if (data.length < height * (stride + 1)) return null;
+	const top = Math.round(height * .1);
+	const bottom = Math.round(height * .88);
+	let above = new Uint8Array(stride);
+	/** @type {number[] | null} */
+	let first = null;
+	for (let y = 0; y < bottom; y++) {
+		const start = y * (stride + 1) + 1;
+		const filter = data[start - 1];
+		const row = new Uint8Array(data.subarray(start, start + stride));
+		for (let x = 0; x < stride; x++) {
+			const left = x >= channels ? row[x - channels] : 0;
+			const up = above[x];
+			const corner = x >= channels ? above[x - channels] : 0;
+			if (filter === 1) row[x] += left;
+			else if (filter === 2) row[x] += up;
+			else if (filter === 3) row[x] += left + up >> 1;
+			else if (filter === 4) {
+				const guess = left + up - corner;
+				const [a, b, c] = [
+					Math.abs(guess - left),
+					Math.abs(guess - up),
+					Math.abs(guess - corner)
+				];
+				row[x] += a <= b && a <= c ? left : b <= c ? up : corner;
+			}
+		}
+		above = row;
+		if (y < top) continue;
+		first ??= [
+			row[0],
+			row[1],
+			row[2]
+		];
+		for (let x = 0; x < stride; x += channels) if (Math.abs(row[x] - first[0]) > 2 || Math.abs(row[x + 1] - first[1]) > 2 || Math.abs(row[x + 2] - first[2]) > 2) return false;
+	}
+	return true;
+}
+//#endregion
 //#region cli/src/capture/sim.mjs
 /** @typedef {{ name: string, udid: string }} Booted */
+/** How long after a launch a screen that is still blank is taken as it is. */
+const BLANK_WAIT = 15e3;
 const CLEAN = [
 	"--dataNetwork",
 	"wifi",
@@ -837,7 +909,7 @@ async function captureSim(simulator, file) {
 /**
 * Captures an app that has just been started once its screen has come to rest: two frames in a row the same, the
 * first a second after the launch. A screen that keeps moving, such as one with a video, is taken as it is after
-* four seconds. `wait`, when given, is a fixed time instead.
+* four seconds, and one still blank after fifteen. `wait`, when given, is a fixed time instead.
 * @param {Booted} simulator
 * @param {string} file
 * @param {number | null} wait Seconds, or null to wait for the screen.
@@ -853,7 +925,8 @@ async function captureSettled(simulator, file, wait) {
 	for (let frames = 1;; frames++) {
 		await screenshot(simulator, file);
 		const frame = readFileSync(file);
-		if (last?.equals(frame) || frames >= 2 && Date.now() - started > 4e3) break;
+		const blank = blankScreen(frame) === true;
+		if (last?.equals(frame) && !blank || frames >= 2 && Date.now() - started > (blank ? BLANK_WAIT : 4e3)) break;
 		last = frame;
 	}
 	console.log(`Captured ${simulator.name} -> ${file}`);
@@ -4842,8 +4915,18 @@ async function checkInstalled(simulator, apps, plan) {
 	}
 }
 /**
+* @typedef {object} Run
+* @property {Plan} plan
+* @property {Config} config
+* @property {string} project
+* @property {string} [bundleId]
+* @property {string} [xcodeProject]
+* @property {string} [scheme]
+* @property {Map<string, string>} started The app the last screen started on each simulator, by its udid.
+*/
+/**
 * Brings up the screen of one job, takes it once it has come to rest, and uploads it.
-* @param {{ plan: Plan, config: Config, project: string, bundleId?: string, xcodeProject?: string, scheme?: string }} run
+* @param {Run} run
 * @param {Job} job
 * @param {Simulator} simulator
 */
@@ -4852,6 +4935,17 @@ async function take(run, job, simulator) {
 	const { screen } = job;
 	const wait = screen.wait ?? plan.wait;
 	mkdirSync(path.dirname(job.file), { recursive: true });
+	const app = screenApp(plan, screen, run.bundleId);
+	const before = run.started.get(simulator.udid);
+	if (before && before !== app) {
+		await xcrun([
+			"simctl",
+			"terminate",
+			simulator.udid,
+			before
+		]);
+		run.started.delete(simulator.udid);
+	}
 	if (screen.uitest && run.xcodeProject && run.scheme) await runUITest({
 		project: run.xcodeProject,
 		scheme: run.scheme,
@@ -4860,7 +4954,6 @@ async function take(run, job, simulator) {
 		locale: job.locale
 	}, () => captureSettled(simulator, job.file, wait));
 	else {
-		const app = screenApp(plan, screen, run.bundleId);
 		if (app) {
 			const args = [
 				...screen.app ? [] : plan.app.args,
@@ -4876,6 +4969,7 @@ async function take(run, job, simulator) {
 				...args
 			]);
 			if (result.status !== 0) fail(`Could not launch ${app} on ${simulator.name}:\n${result.stderr.trim()}`);
+			run.started.set(simulator.udid, app);
 		}
 		if (screen.url) {
 			const result = await xcrun([
@@ -4988,12 +5082,13 @@ async function shootPlan(args) {
 	const launched = todo.filter((job) => !job.screen.uitest);
 	const builds = Boolean(plan.app.xcode) && launched.some((job) => !job.screen.app);
 	const tests = todo.some((job) => job.screen.uitest);
-	/** @type {{ plan: Plan, config: Config, project: string, bundleId?: string, xcodeProject?: string, scheme?: string }} */
+	/** @type {Run} */
 	const run = {
 		plan,
 		config,
 		project,
-		bundleId: plan.app.bundleId
+		bundleId: plan.app.bundleId,
+		started: new Map()
 	};
 	if (builds || tests) {
 		run.xcodeProject = planXcodeProject(plan, tests ? "A UI test" : "Building the app");

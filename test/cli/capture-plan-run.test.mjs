@@ -105,6 +105,7 @@ async function runner(command, args, options) {
     case "launch":
       return launchStatus === 0 ? answer() : answer(launchStatus, "", "The app could not be started.");
     case "openurl":
+    case "terminate":
       return answer();
     case "io":
       writeFileSync(args[4], PIXEL);
@@ -284,6 +285,25 @@ test("a UI test brings its screen up and waits while the screenshot is taken", a
   assert.ok(calls.indexOf(run ?? "") < calls.findIndex((call) => call.includes(" io ")));
   assert.ok(!calls.some((call) => call.includes(" launch ")), "a UI test starts the app itself");
   assert.deepEqual(uploads(), ["share?device=iphone&locale=de"]);
+});
+
+test("the app the last screen started is closed before another one starts, so that no link back to it shows", async () => {
+  const file = writePlan({
+    ...NOTES,
+    locales: ["en"],
+    screens: [{ id: "home" }, { id: "web", app: "com.apple.mobilesafari", launch: { url: "https://appshots.example.com" } }, { id: "stats", launch: ["-tab", "stats"] }, { id: "board" }],
+  });
+  await shootWith(["--plan", file]);
+  const steps = calls.filter((call) => / (launch|terminate|openurl) /.test(call)).map((call) => call.replace("xcrun simctl ", "").replace(" --terminate-running-process", "").replace(/ -AppleLanguages .*$/, ""));
+  assert.deepEqual(steps, [
+    "launch <phone> com.example.notes -demo",
+    "terminate <phone> com.example.notes",
+    "launch <phone> com.apple.mobilesafari",
+    "openurl <phone> https://appshots.example.com",
+    "terminate <phone> com.apple.mobilesafari",
+    "launch <phone> com.example.notes -demo -tab stats",
+    "launch <phone> com.example.notes -demo",
+  ]);
 });
 
 test("a screen that fails is reported at the end, and a device is given up after three in a row", async (t) => {

@@ -2,8 +2,12 @@ import { readFileSync } from "node:fs";
 import { attempt, fail } from "../fail.mjs";
 import { pause } from "../util.mjs";
 import { xcrun } from "../xcode.mjs";
+import { blankScreen } from "./blank.mjs";
 
 /** @typedef {{ name: string, udid: string }} Booted */
+
+/** How long after a launch a screen that is still blank is taken as it is. */
+const BLANK_WAIT = 15000;
 
 // Full battery and signal, no carrier, and Wi-Fi, as Apple's own screenshots show them.
 const CLEAN = ["--dataNetwork", "wifi", "--wifiMode", "active", "--wifiBars", "3", "--cellularMode", "active", "--cellularBars", "4", "--operatorName", "", "--batteryState", "charged", "--batteryLevel", "100"];
@@ -74,7 +78,7 @@ export async function captureSim(simulator, file) {
 /**
  * Captures an app that has just been started once its screen has come to rest: two frames in a row the same, the
  * first a second after the launch. A screen that keeps moving, such as one with a video, is taken as it is after
- * four seconds. `wait`, when given, is a fixed time instead.
+ * four seconds, and one still blank after fifteen. `wait`, when given, is a fixed time instead.
  * @param {Booted} simulator
  * @param {string} file
  * @param {number | null} wait Seconds, or null to wait for the screen.
@@ -90,8 +94,10 @@ export async function captureSettled(simulator, file, wait) {
   for (let frames = 1; ; frames++) {
     await screenshot(simulator, file);
     const frame = readFileSync(file);
+    // A launch screen of one colour can stay up for seconds before the app draws, and is waited out longer.
+    const blank = blankScreen(frame) === true;
     // A slow simulator takes a while over each frame, so the second one is late enough by then.
-    if (last?.equals(frame) || (frames >= 2 && Date.now() - started > 4000)) break;
+    if ((last?.equals(frame) && !blank) || (frames >= 2 && Date.now() - started > (blank ? BLANK_WAIT : 4000))) break;
     last = frame;
   }
   console.log(`Captured ${simulator.name} -> ${file}`);
