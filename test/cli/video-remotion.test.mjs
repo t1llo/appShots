@@ -147,7 +147,13 @@ test("files the user changed stay as they are, and --again puts the template bac
   assert.match(kept, /stay as they are:\n {2}src\/Caption\.tsx\nTo put the template back over them: appshots video remotion --again/);
 
   const calls = recorder();
-  const again = await quietly(() => scaffoldRemotion(root, { yes: true, install: false, again: true }));
+  // The yes to the licence is not one to losing the user's changes: that is asked apart, through --replace.
+  await assert.rejects(
+    quietly(() => scaffoldRemotion(root, { yes: true, install: false, again: true })),
+    (error) => error instanceof Failure && /loses the changes in them:\n {2}src\/Caption\.tsx\n\nThis needs the user's yes/.test(error.message) && /after a yes, run: appshots video remotion --yes --again --replace --no-install$/.test(error.message),
+  );
+  assert.equal(readFileSync(caption, "utf8"), "// mine\n");
+  const again = await quietly(() => scaffoldRemotion(root, { yes: true, install: false, again: true, replace: true }));
   assert.equal(readFileSync(caption, "utf8"), asset("remotion/src/Caption.tsx"));
   assert.match(again, /loses the changes in them:\n {2}src\/Caption\.tsx/);
   assert.match(again, /Wrote 1 file into .*: src\/Caption\.tsx/);
@@ -304,6 +310,49 @@ test("the music is brought to the previews' loudness once, and the template fade
 
   ctx.plan = { ...ctx.plan, music: { file: "music/missing.m4a" } };
   await assert.rejects(remotionProps(ctx, segments, publicDir), (error) => error instanceof Failure && /The music file music\/missing\.m4a is not there/.test(error.message));
+});
+
+test("previews composed side by side prepare the music once, and one that failed is tried again", async () => {
+  const { root, ctx, segments, publicDir } = fixture();
+  const repo = path.dirname(root);
+  mkdirSync(path.join(repo, "music"));
+  writeFileSync(path.join(repo, "music", "theme.m4a"), "music");
+  ctx.plan = { ...ctx.plan, music: { file: "music/theme.m4a" } };
+  // ffmpeg holds on until a second one starts, or for a moment when none does.
+  let started = () => {};
+  let status = 1;
+  const calls = recorder(async (command, args) => {
+    if (command !== ctx.tools.ffmpeg) return {};
+    const other = started;
+    other();
+    await new Promise((resolve) => {
+      started = resolve;
+      setTimeout(resolve, 200);
+    });
+    writeFileSync(args.at(-1), "normalised");
+    return { status, stderr: status === 0 ? "" : "Invalid data found when processing input" };
+  });
+  await assert.rejects(remotionProps(ctx, segments, publicDir), (error) => error instanceof Failure && /^ffmpeg could not read the music file music\/theme\.m4a:\nInvalid data/.test(error.message));
+  assert.deepEqual(readdirSync(path.join(publicDir, "music")), []);
+
+  status = 0;
+  const [first, second] = await Promise.all([remotionProps(ctx, segments, publicDir), remotionProps(ctx, segments, publicDir)]);
+  assert.equal(calls.filter((call) => call.command === ctx.tools.ffmpeg).length, 2);
+  assert.deepEqual(first.music, second.music);
+  assert.deepEqual(readdirSync(path.join(publicDir, "music")), [path.basename(first.music.file)]);
+  assert.equal(readFileSync(path.join(publicDir, ...first.music.file.split("/")), "utf8"), "normalised");
+});
+
+test("a manifest whose names would lead out of the layers' folder is refused", async () => {
+  const { set, ctx, segments, publicDir } = fixture();
+  ctx.layers = { ...ctx.layers, layers: ctx.layers.layers.map((layer) => (layer.id === "intro-text" ? { ...layer, id: "../../../victim" } : layer)) };
+  await assert.rejects(
+    remotionProps(ctx, segments, publicDir),
+    (error) => error instanceof Failure && error.message === `The layers' manifest names a layer "${set}/en/../../../victim", which is not a layer's name. Fetch the layers again: appshots video layers --display iphone`,
+  );
+  const other = fixture();
+  other.ctx.layers = { ...other.ctx.layers, set: "../../outside" };
+  await assert.rejects(remotionProps(other.ctx, other.segments, other.publicDir), (error) => error instanceof Failure && /names a layer "\.\.\/\.\.\/outside\/en\/caption-inbox"/.test(error.message));
 });
 
 test("compose renders with npx remotion in the project, from the props it wrote", async () => {

@@ -6,7 +6,7 @@
 // Apple's specification as it does its own.
 
 import { createHash } from "node:crypto";
-import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { projectRoute, request } from "../api.mjs";
 import { asset } from "../assets.mjs";
@@ -95,15 +95,16 @@ async function inProject(command, args, folder, timeout) {
  * Writes the Remotion project into appshots-video/remotion/ and installs it, once the user has agreed to
  * Remotion's licence: at the Terminal, or in a chat with their agent, which then passes `yes`. Files that are
  * there already stay as they are, the user's changes with them; `again` puts appShots' template back over the
- * ones that differ, after saying which they are and asking.
+ * ones that differ, after saying which they are and asking. That is a question of its own, as the yes to the
+ * licence does not give away the user's changes: `replace` passes the user's answer to it from a chat.
  * @param {string} root The work folder, appshots-video/ next to the plan.
- * @param {{ yes?: boolean, install?: boolean, again?: boolean }} [options] `install: false` writes the files only.
+ * @param {{ yes?: boolean, install?: boolean, again?: boolean, replace?: boolean }} [options] `install: false` writes the files only.
  * @returns {Promise<{ folder: string, written: string[], installed: boolean }>}
  */
-export async function scaffoldRemotion(root, { yes = false, install = true, again = false } = {}) {
+export async function scaffoldRemotion(root, { yes = false, install = true, again = false, replace = false } = {}) {
   const folder = path.join(root, "remotion");
-  if (!yes && !process.stdin.isTTY)
-    fail(`${REMOTION_LICENCE}\n\nThis needs the user's yes. Show them the text above and ask whether to go on; after a yes, run: appshots video remotion --yes${again ? " --again" : ""}${install ? "" : " --no-install"}`);
+  const rerun = (/** @type {boolean} */ replacing) => `appshots video remotion --yes${again ? " --again" : ""}${again && replacing ? " --replace" : ""}${install ? "" : " --no-install"}`;
+  if (!yes && !process.stdin.isTTY) fail(`${REMOTION_LICENCE}\n\nThis needs the user's yes. Show them the text above and ask whether to go on; after a yes, run: ${rerun(replace)}`);
   console.log(REMOTION_LICENCE);
   if (!yes && !(await agrees("Continue?"))) {
     console.log("Nothing was written.");
@@ -117,19 +118,22 @@ export async function scaffoldRemotion(root, { yes = false, install = true, agai
     return { file, target, text, state: current === null ? "new" : current === text ? "same" : "changed" };
   });
   const changed = files.filter((entry) => entry.state === "changed");
-  let replace = false;
+  let replacing = false;
   if (changed.length > 0) {
     const list = changed.map((entry) => `  ${entry.file}`).join("\n");
+    const losing = `These differ from appShots' template, and putting it back loses the changes in them:\n${list}`;
     if (!again) console.log(`${shown(folder)} is there already. These differ from appShots' template and stay as they are:\n${list}\nTo put the template back over them: appshots video remotion --again`);
+    else if (!replace && !process.stdin.isTTY)
+      fail(`${losing}\n\nThis needs the user's yes, apart from the one to Remotion's licence. Show them the list and ask whether to replace these files; after a yes, run: ${rerun(true)}`);
     else {
-      console.log(`These differ from appShots' template, and putting it back loses the changes in them:\n${list}`);
-      replace = yes || (await agrees(`Replace ${changed.length === 1 ? "it" : `these ${changed.length}`} with the template?`));
-      if (!replace) console.log("They stay as they are.");
+      console.log(losing);
+      replacing = replace || (await agrees(`Replace ${changed.length === 1 ? "it" : `these ${changed.length}`} with the template?`));
+      if (!replacing) console.log("They stay as they are.");
     }
   }
   const written = [];
   for (const entry of files) {
-    if (entry.state === "same" || (entry.state === "changed" && !replace)) continue;
+    if (entry.state === "same" || (entry.state === "changed" && !replacing)) continue;
     mkdirSync(path.dirname(entry.target), { recursive: true });
     writeFileSync(entry.target, entry.text);
     written.push(entry.file);
@@ -177,6 +181,36 @@ export async function scaffoldRemotion(root, { yes = false, install = true, agai
  * @typedef {{ family: string, file: string, weight?: string, style?: string, unicodeRange?: string }} Font
  */
 
+let partials = 0;
+
+/**
+ * The name a file is made under before it is put in place: one of its own for each file being made, in this
+ * process and in any other making the same file at the same time.
+ * @param {string} file
+ */
+const partialOf = (file) => `${file}.${process.pid}-${++partials}.partial`;
+
+/**
+ * What `work` makes for `key`, made once however many previews ask for it at the same time, as compose makes
+ * several side by side. A failure is not kept, so that the next to ask tries again.
+ * @template T
+ * @param {Map<string, Promise<T>>} made
+ * @param {string} key
+ * @param {() => Promise<T>} work
+ * @returns {Promise<T>}
+ */
+function once(made, key, work) {
+  let promise = made.get(key);
+  if (!promise) {
+    promise = work().catch((error) => {
+      made.delete(key);
+      throw error;
+    });
+    made.set(key, promise);
+  }
+  return promise;
+}
+
 /**
  * Puts a file into the project's public/ folder, where the render reads it, and returns its path there. A copy
  * that is there already and not older than the file is kept; on the Mac's own disks a copy is a clone and takes
@@ -190,7 +224,7 @@ function place(file, publicDir, name) {
   const source = statSync(file);
   if (!existsSync(target) || statSync(target).size !== source.size || statSync(target).mtimeMs < source.mtimeMs) {
     mkdirSync(path.dirname(target), { recursive: true });
-    const partial = `${target}.${process.pid}.partial`;
+    const partial = partialOf(target);
     copyFileSync(file, partial, constants.COPYFILE_FICLONE);
     renameSync(partial, target);
   }
@@ -204,7 +238,7 @@ function place(file, publicDir, name) {
  */
 function writeWhole(file, content) {
   mkdirSync(path.dirname(file), { recursive: true });
-  const partial = `${file}.${process.pid}.partial`;
+  const partial = partialOf(file);
   writeFileSync(partial, content);
   renameSync(partial, file);
 }
@@ -230,7 +264,7 @@ export function facesOf(css, id) {
   return faces;
 }
 
-/** The project's fonts as this run fetched them, by Remotion project and appShots project, so each is asked of the server once. */
+/** @type {Map<string, Promise<Font[]>>} The project's fonts by Remotion project and appShots project, so each is asked of the server once a run. */
 const fontsFetched = new Map();
 
 /**
@@ -238,11 +272,15 @@ const fontsFetched = new Map();
  * server's public /fonts once and kept there, so that a render needs no network.
  * @param {any} plan
  * @param {string} publicDir
+ */
+const projectFonts = (plan, publicDir) => once(fontsFetched, `${publicDir}\n${plan.project}`, () => fetchFonts(plan, publicDir));
+
+/**
+ * @param {any} plan
+ * @param {string} publicDir
  * @returns {Promise<Font[]>}
  */
-async function projectFonts(plan, publicDir) {
-  const key = `${publicDir}\n${plan.project}`;
-  if (fontsFetched.has(key)) return fontsFetched.get(key);
+async function fetchFonts(plan, publicDir) {
   const config = readConfig();
   if (!config.url) fail("No server configured. Run the setup command from Connect in the Studio, or 'appshots login <url>'.");
   const { project } = await (await request(config, "GET", projectRoute(plan.project))).json();
@@ -259,9 +297,7 @@ async function projectFonts(plan, publicDir) {
     }
     writeWhole(record, `${JSON.stringify(faces, null, 2)}\n`);
   }
-  const fonts = faces.map(({ name, ...face }) => ({ ...face, file: `fonts/${id}/${name}` }));
-  fontsFetched.set(key, fonts);
-  return fonts;
+  return faces.map(({ name, ...face }) => ({ ...face, file: `fonts/${id}/${name}` }));
 }
 
 /**
@@ -280,19 +316,39 @@ async function prepareMusic(ctx, publicDir) {
   const key = createHash("sha256").update(JSON.stringify({ version: MUSIC_VERSION, file, size: stat.size, mtime: Math.round(stat.mtimeMs) })).digest("hex").slice(0, 16);
   const name = `music/${key}.m4a`;
   const target = path.join(publicDir, "music", `${key}.m4a`);
-  if (!existsSync(target)) {
-    mkdirSync(path.dirname(target), { recursive: true });
-    const partial = `${target}.${process.pid}.partial.m4a`;
-    const result = await run(
-      ctx.tools.ffmpeg,
-      ["-nostdin", "-hide_banner", "-y", "-i", file, "-vn", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo", "-c:a", "aac", "-b:a", "256k", partial],
-      { timeout: 5 * 60000 },
-    );
-    if (result.status !== 0) fail(`ffmpeg could not read the music file ${music.file}:\n${result.stderr.trim().split("\n").slice(-10).join("\n")}`);
-    renameSync(partial, target);
-  }
+  if (!existsSync(target)) await once(musicPrepared, target, () => normalise(ctx.tools.ffmpeg, file, music.file, target));
   return { file: name, volume: music.volume ?? 0.8, start: music.start ?? 0, fadeOut: music.fadeOut ?? 1.5 };
 }
+
+/** @type {Map<string, Promise<void>>} The music files being prepared, by where they go. */
+const musicPrepared = new Map();
+
+/**
+ * Makes the prepared music at `target` under another name first, so that a render never reads half of it, and
+ * leaves nothing behind when ffmpeg fails.
+ * @param {string} ffmpeg
+ * @param {string} file The plan's music file.
+ * @param {string} asWritten Its path as the plan writes it.
+ * @param {string} target
+ */
+async function normalise(ffmpeg, file, asWritten, target) {
+  mkdirSync(path.dirname(target), { recursive: true });
+  // The extension tells ffmpeg what to write.
+  const partial = `${partialOf(target)}.m4a`;
+  const result = await run(
+    ffmpeg,
+    ["-nostdin", "-hide_banner", "-y", "-i", file, "-vn", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo", "-c:a", "aac", "-b:a", "256k", partial],
+    { timeout: 5 * 60000 },
+  );
+  if (result.status !== 0) {
+    rmSync(partial, { force: true });
+    fail(`ffmpeg could not read the music file ${asWritten}:\n${result.stderr.trim().split("\n").slice(-10).join("\n")}`);
+  }
+  renameSync(partial, target);
+}
+
+/** A layer set's id, a language code or a layer's id: the names a layer's file is found by. */
+const LAYER_NAME = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
 
 /** @param {any} scene */
 const hasCaption = (scene) => scene.caption !== undefined && scene.caption !== null && scene.caption !== false;
@@ -317,7 +373,11 @@ export async function remotionProps(ctx, segments, publicDir) {
     return layers.layers.find((layer) => fits(layer) && layer.locale === locale) ?? layers.layers.find((layer) => fits(layer) && layer.locale === null) ?? null;
   };
   const fileOf = (/** @type {Layer} */ layer) => {
-    const parts = [layers.set, ...(layer.locale ? [layer.locale] : []), `${layer.id}.png`];
+    const folders = [layers.set, ...(layer.locale ? [layer.locale] : [])];
+    // The names become folders and files, so a manifest that came apart must not reach outside layers/ and public/.
+    if (![...folders, layer.id].every((part) => typeof part === "string" && LAYER_NAME.test(part)))
+      fail(`The layers' manifest names a layer ${JSON.stringify([...folders, layer.id].join("/"))}, which is not a layer's name. Fetch the layers again: appshots video layers --display ${display}`);
+    const parts = [...folders, `${layer.id}.png`];
     const file = path.join(ctx.root, "layers", ...parts);
     if (!existsSync(file)) fail(`The layer ${layer.id}${layer.locale ? ` for ${layer.locale}` : ""} is not in ${path.dirname(file)}. Fetch the layers again: appshots video layers --display ${display}`);
     return place(file, publicDir, ["layers", ...parts].join("/"));
