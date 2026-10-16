@@ -37,7 +37,7 @@ Every `render` uses one of the account's renders, whatever it draws. So an agent
 
 Returns the guide the server is built around: the workflow, how to upload screenshots, every layout, background, font, device option and badge, what differs for a Mac app, and the rules for header and search results images and banners. It always matches the server's version.
 
-Without arguments it is the whole guide. `topic` asks for one part of it, for an agent that knows what it is looking for, and the answer names the others: `workflow`, `uploading`, `sizes`, `device-sets`, `mac`, `web`, `layouts`, `no-screenshot`, `feature-slides`, `feature-points`, `backgrounds`, `fonts`, `device`, `badges`, `icon-rows`, `images`, `icons`, `copy`, `store-assets`, `banners` or `mockups`.
+Without arguments it is the whole guide. `topic` asks for one part of it, for an agent that knows what it is looking for, and the answer names the others: `workflow`, `uploading`, `sizes`, `device-sets`, `mac`, `web`, `layouts`, `no-screenshot`, `feature-slides`, `feature-points`, `backgrounds`, `fonts`, `device`, `badges`, `icon-rows`, `images`, `icons`, `copy`, `store-assets`, `banners` or `mockups`. A topic the guide does not have gets the whole guide, with the topics named first.
 
 ### list_projects
 

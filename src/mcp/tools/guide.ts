@@ -11,10 +11,12 @@ export const registerGuideTools: RegisterTools = (server, tools) => {
       description:
         "How to use this server: the workflow, how screenshots get uploaded, what differs for a Mac app, every layout, background, font, device option and badge, the rules for header and search results assets, and banners and mockups for outside the store. Read this before building a set.",
       inputSchema: {
+        // The tool took no input before it took a topic and ignored whatever came, so nothing sent here is refused.
         topic: z
-          .enum(TOPIC_IDS)
+          .string()
           .optional()
-          .describe("One part of the guide, to look something up again later, such as \"mockups\" or \"badges\". Left out, the whole guide, which is what to read first"),
+          .catch(undefined)
+          .describe(`One part of the guide, to look something up again later: ${TOPIC_IDS.join(", ")}. Left out, the whole guide, which is what to read first`),
       },
       annotations: { readOnlyHint: true },
     },

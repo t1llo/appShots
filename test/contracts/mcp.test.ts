@@ -136,7 +136,15 @@ describe("tools", () => {
     // The part is the guide's own section, word for word.
     assert.ok(guide.includes(topic.slice(0, topic.indexOf("\n\nThis is one topic"))));
     assert.match(textOf(await callTool(server, "get_design_guide", { topic: "uploading" })), /^## Uploading\n/);
-    assertRefused(await callTool(server, "get_design_guide", { topic: "everything" }));
+  });
+
+  test("get_design_guide answers a topic it does not have with the whole guide, as before it took topics", async () => {
+    const guide = textOf(await callTool(server, "get_design_guide"));
+    const result = await callTool(server, "get_design_guide", { topic: "layouts and badges" });
+    assertSucceeded(result);
+    assert.match(textOf(result), /^The design guide has no topic "layouts and badges".*\bmockups\b/);
+    assert.ok(textOf(result).endsWith(guide));
+    for (const topic of [5, null, ["mockups"]]) assert.equal(textOf(await callTool(server, "get_design_guide", { topic })), guide, String(topic));
   });
 
   test("create_project returns the id and how to upload into it", async () => {
