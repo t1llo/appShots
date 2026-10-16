@@ -35,7 +35,9 @@ Every `render` uses one of the account's renders, whatever it draws. So an agent
 
 ### get_design_guide
 
-Returns the guide the server is built around: the workflow, how to upload screenshots, every layout, background, font, device option and badge, what differs for a Mac app, and the rules for header and search results images and banners. No arguments. It always matches the server's version.
+Returns the guide the server is built around: the workflow, how to upload screenshots, every layout, background, font, device option and badge, what differs for a Mac app, and the rules for header and search results images and banners. It always matches the server's version.
+
+Without arguments it is the whole guide. `topic` asks for one part of it, for an agent that knows what it is looking for, and the answer names the others: `workflow`, `uploading`, `sizes`, `device-sets`, `mac`, `web`, `layouts`, `no-screenshot`, `feature-slides`, `feature-points`, `backgrounds`, `fonts`, `device`, `badges`, `icon-rows`, `images`, `icons`, `copy`, `store-assets`, `banners` or `mockups`.
 
 ### list_projects
 
@@ -105,7 +107,7 @@ With `device` and an empty `slides` list, the device's own set is removed and it
 { "project": "streaks", "slide": 3, "changes": { "headline": "See your *progress*", "device": { "offsetY": 6 } } }
 ```
 
-A field slides do not have, such as a misspelt `headlne`, is left out, and the answer names it. `set_slides` does the same.
+A field slides do not have, such as a misspelt `headlne`, is left out, and the answer names it. `set_slides` does the same. The answer also names a screenshot the slide uses that is not uploaded yet, and a name in `remove` that slides do not have. The [HTTP API](/docs/api#one-slide) changes one slide the same way, counting from 0.
 
 ### set_creative_assets
 
@@ -121,7 +123,7 @@ Sets the wide pictures of `project`: `header`, `search` or `universal` for App S
 | `targets` | Sizes for this render only. Left out: every size the project exports, which is the standard sizes of each device it has screenshots of. See [Sizes](/docs/sizes) |
 | `locales` | Languages. Default: all of the project's |
 
-Returns a contact sheet per device as a picture, a preview of each wide image, the store's with their safe area marked, a link to every PNG, a link to the ZIP, warnings such as a missing screenshot, and how many renders the account has left.
+Returns the contact sheets of the first language as pictures, one per device first and four at most, with links to any it leaves out, a preview of each wide image, the store's with their safe area marked, a link to every PNG, a link to the ZIP, warnings such as a missing screenshot, and how many renders the account has left.
 
 ### render_mockups
 
@@ -132,14 +134,14 @@ Draws each raw screenshot in its device with nothing behind it: one transparent 
 | `project` | The id |
 | `screenshots` | Names of the screenshots to draw. Left out: all of them |
 | `locale` | The language whose screenshots to draw. Default: the first |
-| `device` | How every mockup is drawn: `frame`, `style`, `color`, `shadow`, `rotate`, `perspective`, `statusBar`, `statusBarTime`, `statusBarColor`. Given, it is laid over what the project had |
+| `device` | How every mockup is drawn: `frame`, `style`, `color`, `shadow`, `rotate`, `perspective`, `statusBar`, `statusBarTime`, `statusBarColor`. Given, it is laid over what the project had, so a call can change one field. `{}` goes back to the defaults |
 | `width` | The width of each PNG in pixels. Left out: the screenshot pixel for pixel. `null` goes back to that |
 
 ```json
 { "project": "streaks", "device": { "style": "clay", "shadow": "soft", "rotate": -8 }, "width": 1200 }
 ```
 
-What is given is saved with the project, so the Studio's Mockups page shows the same. Returns a link to every PNG, a link to the ZIP and a picture of the mockups to check. See [Mockups](/docs/mockups).
+What is given is saved with the project, so the Studio's Mockups page shows the same. A call that is refused, such as for a screenshot the project does not have, saves nothing. Returns a link to every PNG, a link to the ZIP and a picture of the mockups to check. See [Mockups](/docs/mockups).
 
 ## Try it without an agent
 
@@ -160,4 +162,6 @@ curl -s {{SERVER}}/mcp \
 
 ## Errors
 
-A tool that cannot do what was asked answers with a plain sentence saying why: an unknown project, a slide that does not exist, a value outside its range. A missing or revoked token gets HTTP 401. See [Troubleshooting](/docs/troubleshooting).
+A tool that cannot do what was asked answers with a plain sentence saying why: an unknown project, a slide that does not exist, a value outside its range. Something the server did not expect is answered with a reference, such as `Something went wrong on the server (ref 1a2b3c4d); try again.`, and whoever runs the server finds the details under it in the log. A missing or revoked token gets HTTP 401, and a request other than `POST` gets 405. See [Troubleshooting](/docs/troubleshooting).
+
+The answers that hold data, such as those of `get_project` and `list_projects`, are JSON without indentation: they are read by the model, and spaces cost tokens.

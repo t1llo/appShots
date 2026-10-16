@@ -12,7 +12,7 @@ Everything the Studio does goes through a small JSON API. Use it from a script o
 | Base address | `{{SERVER}}/api` |
 | Sign-in | The header `Authorization: Bearer <token>` |
 | Bodies | JSON up to 2 MB, except file uploads, which send the file itself as the body |
-| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404 or 413, or 409 for a change made on an older revision. A body over its limit gets 413, and the sentence names the limit, as does a picture with too many pixels or an upload the account has no room left for |
+| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404 or 413, or 409 for a change made on an older revision. A body over its limit gets 413, and the sentence names the limit, as does a picture with too many pixels or an upload the account has no room left for. Something the server did not expect is a 500, `{ "error": "Internal error", "ref": "1a2b3c4d" }`: whoever runs the server finds the details under `ref` in its log |
 
 Create the token under **Connect an agent** in the Studio. The examples expect it in `APPSHOTS_TOKEN`.
 
@@ -24,10 +24,12 @@ Create the token under **Connect an agent** in the Studio. The examples expect i
 | `POST /api/projects` | Creates one. Body: `name`, and optionally `locales`, `targets`, `theme`, `slides`, `deviceSlides`, `creatives` |
 | `GET /api/projects/:id` | Returns the project with its screenshots, images and rendered files, and its `revision`, also sent as the `ETag` |
 | `PUT /api/projects/:id` | Changes any of `name`, `locales`, `targets`, `theme`, `slides`, `deviceSlides`, `creatives`, `mockups`. Each one given is replaced as a whole. Answers like `GET`, with the new `revision` |
+| `PATCH /api/projects/:id/slides/:index` | Changes one slide, counting from 0. See [One slide](#one-slide) |
 | `GET /api/projects/:id/revisions` | Lists the versions kept of the project, newest first. See [Revisions](#revisions) |
 | `POST /api/projects/:id/restore` | Makes an earlier version current again. Body: `{ "revision": 4 }` |
 | `DELETE /api/projects/:id` | Deletes it with everything in it, its earlier versions too, and a damaged one as well |
 | `GET /api/usage` | What the account keeps on the server: the number of `projects`, `slides`, `shots` and `images`, and their size in `bytes`. `uploadBytes` is the part that is screenshots and images, and `uploadLimit` the room the account has for those, where it has a limit. See [Limits](#limits) |
+| `GET /api/meta` | The options the Studio offers: layouts, fonts, backgrounds, sizes and the rest. `deviceCatalog` lists each device with its models, and for each model its `sizes` in pixels and the export sizes made for it under `targets` |
 
 ```bash
 curl -s {{SERVER}}/api/projects \
@@ -39,6 +41,25 @@ curl -s {{SERVER}}/api/projects \
 The answer holds the project's `id`, which every other request uses. The shape of `slides`, `theme` and `creatives` is on [Slides](/docs/slides), [Header and search results](/docs/store-assets) and [Banners](/docs/banners). `deviceSlides` holds the sets single devices have of their own, by `iphone`, `duo`, `ipad` and `mac`, such as `{ "ipad": [ … ] }`. A device that is not in it draws `slides`. See [A set for each device](/docs/slides#a-set-for-each-device). `creatives` holds both, by name: `header`, `search`, `universal`, `readme`, `social`, `link`, `post`. `targets` is the list of sizes the project exports, such as `["iphone-6.9","iphone-5.5"]`. Leave it out, or send `null` or `[]`, for the standard sizes. See [Sizes](/docs/sizes). `locales` holds each language once, and `en` and `EN` count as the same one: a language given twice is kept in its first spelling, and the answer to a `PUT` says so under `warnings`.
 
 A field a project or a slide does not have, such as a misspelt `headlne`, is left out and the change goes through. The answer then names it under `warnings`, such as `["Ignored, because a project has no such field: slides[0].headlne."]`. `warnings` is only there when there is something to say.
+
+### One slide
+
+`PATCH /api/projects/:id/slides/:index` changes one slide and leaves the others as they are, as the MCP tool `update_slide` does. `:index` counts from 0, so `/slides/2` is the third slide. The body:
+
+| Field | What it is |
+| --- | --- |
+| `changes` | Fields to set. They are merged over the slide, `device` included |
+| `remove` | Names of fields to clear, such as `["subheadline", "badges"]` |
+| `of` | `iphone`, `duo`, `ipad` or `mac`: the slide is in this device's own set. Left out, it is in the shared set |
+
+```bash
+curl -s -X PATCH {{SERVER}}/api/projects/streaks/slides/2 \
+  -H "Authorization: Bearer $APPSHOTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"changes":{"headline":"See your *progress*","device":{"offsetY":6}}}'
+```
+
+It answers like `GET`, with the slide as it is now under `slide`. A slide that is not there is a 400, such as `Slide 4 does not exist; the project has 3.` Under `warnings` it names a field the slide does not have, a screenshot that is not uploaded yet and a name in `remove` that slides do not have. It takes `If-Match` like `PUT`.
 
 ### Revisions
 
@@ -60,7 +81,7 @@ curl -s -X PUT {{SERVER}}/api/projects/streaks \
 
 `If-Match` takes the `ETag` as `GET` sent it, such as `"7"`, or the bare number. Without it, a change is saved on whatever revision is current, as it always was.
 
-`GET /api/projects/:id/revisions` answers `{ "revision": 8, "revisions": [ … ] }`, with one entry per version kept, newest first: its `revision`, the `time` it was saved, the `actor` that saved it (`studio`, `api` or `mcp`, and `unknown` for one saved before revisions were counted) and its `size` in bytes. `revision` is `null` while the project is damaged.
+`GET /api/projects/:id/revisions` answers `{ "revision": 8, "revisions": [ … ] }`, with one entry per version kept, newest first: its `revision`, the `time` it was saved, the `actor` that saved it (`studio`, `api` or `mcp`, and `unknown` for one saved before revisions were counted; the Studio says it is the Studio with the header `X-Appshots-Client: studio`) and its `size` in bytes. `revision` is `null` while the project is damaged.
 
 `POST /api/projects/:id/restore` with `{ "revision": 4 }` saves revision 4 again as a new revision, so a restore can be undone the same way. It answers like `GET`, and takes `If-Match` too. It is also how a damaged project gets its work back: it opens again at the version restored.
 
@@ -193,5 +214,5 @@ These need no token:
 | `/skill.json` | A short hash of the skill and one of the command, which `appshots` compares its own copies with |
 | `/install.sh` | The setup script |
 | `/cli/appshots.mjs` | The `appshots` command |
-| `/docs/<page>.md` | Any page of these docs as Markdown |
+| `/docs/<page>.md` | Any page of these docs as Markdown. Pages come with an `ETag`, so a reader that sends it back in `If-None-Match` gets a 304 while the page is the same |
 | `/llms.txt`, `/llms-full.txt` | The docs as an index, and in one file, for language models |
