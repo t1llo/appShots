@@ -59,7 +59,7 @@ curl -s -X PATCH {{SERVER}}/api/projects/streaks/slides/2 \
   -d '{"changes":{"headline":"See your *progress*","device":{"offsetY":6}}}'
 ```
 
-It answers like `GET`, with the slide as it is now under `slide`. A slide that is not there is a 400, such as `Slide 4 does not exist; the project has 3.` So is a body with neither `changes` nor `remove`, such as `{"headline": "…"}` with the slide's field outside `changes`. Under `warnings` it names a field the slide does not have, a screenshot that is not uploaded yet, a name in `remove` that slides do not have and a field of the body other than these three. It takes `If-Match` like `PUT`.
+It answers like `GET`, with the slide as it is now under `slide`. A slide that is not there is a 400, such as `Slide 4 does not exist; the project has 3.` So is a body with neither `changes` nor `remove`, or with both empty, such as `{"headline": "…"}` with the slide's field outside `changes`. A change that leaves the slide as it was, such as one with only a misspelt field, is answered like any other but saves no revision. Under `warnings` it names a field the slide does not have, a screenshot that is not uploaded yet, a name in `remove` that slides do not have and a field of the body other than these three. It takes `If-Match` like `PUT`.
 
 ### Revisions
 

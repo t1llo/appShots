@@ -343,8 +343,26 @@ describe("projects", () => {
     ]);
     assertError(await call(`/api/projects/${id}/slides/3`, send("PATCH", { changes: { headline: "x" } })), 400, /^Slide 4 does not exist; the project has 3\.$/);
     assertError(await call(`/api/projects/${id}/slides/0`, send("PATCH", { of: "ipad", changes: { headline: "x" } })), 400, /no slide set of its own/);
-    assertError(await call(`/api/projects/${id}/slides/one`, send("PATCH", { changes: {} })), 400);
-    assertError(await call(`/api/projects/nope/slides/0`, send("PATCH", { changes: {} })), 404);
+    assertError(await call(`/api/projects/${id}/slides/one`, send("PATCH", { changes: { headline: "x" } })), 400);
+    assertError(await call(`/api/projects/nope/slides/0`, send("PATCH", { changes: { headline: "x" } })), 404);
+  });
+
+  test("a slide PATCH that changes nothing saves no revision", async () => {
+    const id = await createProject({ name: "Unchanged", slides: THREE_SLIDES });
+    assertError(await call(`/api/projects/${id}/slides/1`, send("PATCH", { changes: {} })), 400, /"changes"/);
+    assertError(await call(`/api/projects/${id}/slides/1`, send("PATCH", { changes: {}, remove: [] })), 400, /"changes"/);
+    // Taken, and said so, but the slide is as it was: the history keeps no version of it.
+    const same = await call(`/api/projects/${id}/slides/1`, send("PATCH", { changes: { headline: THREE_SLIDES[1]!.headline, headlne: "x" }, remove: ["subheading"] }));
+    assert.equal(same.status, 200);
+    assert.equal(same.body.revision, 1);
+    assert.equal(same.headers.get("etag"), '"1"');
+    assert.equal(same.body.slide.headline, THREE_SLIDES[1]!.headline);
+    assert.deepEqual(same.body.warnings, ["Ignored, because a slide has no such field: headlne.", "Not cleared, because a slide has no such field: subheading."]);
+    assert.equal((await call(`/api/projects/${id}/revisions`)).body.revisions.length, 1);
+    // A stale If-Match is refused all the same.
+    await call(`/api/projects/${id}/slides/0`, send("PATCH", { changes: { headline: "Moved on" } }));
+    const stale = await call(`/api/projects/${id}/slides/1`, { ...send("PATCH", { changes: { headline: THREE_SLIDES[1]!.headline } }), headers: { "Content-Type": "application/json", "If-Match": '"1"' } });
+    assert.equal(stale.status, 409);
   });
 
   test("a PATCH with the slide's fields outside changes is refused, and one beside them named", async () => {

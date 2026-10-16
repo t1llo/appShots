@@ -107,7 +107,7 @@ With `device` and an empty `slides` list, the device's own set is removed and it
 { "project": "streaks", "slide": 3, "changes": { "headline": "See your *progress*", "device": { "offsetY": 6 } } }
 ```
 
-A field slides do not have, such as a misspelt `headlne`, is left out, and the answer names it. `set_slides` does the same. The answer also names a screenshot the slide uses that is not uploaded yet, and a name in `remove` that slides do not have. The [HTTP API](/docs/api#one-slide) changes one slide the same way, counting from 0.
+A field slides do not have, such as a misspelt `headlne`, is left out, and the answer names it. `set_slides` does the same. The answer also names a screenshot the slide uses that is not uploaded yet, and a name in `remove` that slides do not have. A change that leaves the slide as it was saves no revision. The [HTTP API](/docs/api#one-slide) changes one slide the same way, counting from 0.
 
 ### set_creative_assets
 

@@ -332,6 +332,16 @@ describe("tools", () => {
     assert.equal((await rest("/api/projects/mcp-app")).project.slides[0].headlne, undefined);
   });
 
+  test("update_slide takes a change of nothing and saves no revision for it", async () => {
+    const before = await rest("/api/projects/mcp-app");
+    for (const edit of [{}, { changes: {} }, { changes: {}, remove: [] }, { changes: { headline: before.project.slides[0].headline } }]) {
+      const result = await callTool(server, "update_slide", { project: "mcp-app", slide: 1, ...edit });
+      assertSucceeded(result);
+      assert.equal(jsonOf(result).headline, before.project.slides[0].headline);
+    }
+    assert.equal((await rest("/api/projects/mcp-app")).revision, before.revision);
+  });
+
   test("a damaged project is reported without the parser's words", async () => {
     await callTool(server, "create_project", { name: "MCP Damaged" });
     await writeFile(path.join(server.dataDir, "projects", "mcp-damaged", "project.json"), '{"id": "mcp-damaged",');

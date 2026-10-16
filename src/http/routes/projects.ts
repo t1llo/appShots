@@ -139,7 +139,8 @@ export function projectRoutes(): Router {
     const body = slideEdit.parse(req.body ?? {});
     // A slide field sent beside `changes` instead of inside it would otherwise be dropped without a word.
     const misplaced = unknownFields(slideEdit, req.body ?? {});
-    if (!body.changes && !body.remove) throw new InputError(misplaced.length ? `Put the slide's fields under "changes": ${misplaced.join(", ")}.` : 'Give the fields to set under "changes", or those to clear under "remove".');
+    // Empty ones count as not given: a change of nothing is a mistake of the caller, and would answer as if it worked.
+    if (!Object.keys(body.changes ?? {}).length && !body.remove?.length) throw new InputError(misplaced.length ? `Put the slide's fields under "changes": ${misplaced.join(", ")}.` : 'Give the fields to set under "changes", or those to clear under "remove".');
     const ignored: Warning[] = misplaced.length ? [{ kind: "field", names: misplaced, text: `Ignored, because a slide change takes only changes, remove and of: ${misplaced.join(", ")}.` }] : [];
     await change(
       req,

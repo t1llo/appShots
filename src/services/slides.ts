@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { InputError } from "../domain/errors.ts";
 import { type Project, type Slide, slideSchema, type Theme, unknownFields } from "../schema.ts";
@@ -63,6 +64,9 @@ export interface SlideAt {
   of?: DeviceKind;
 }
 
+/** Thrown out of a change that leaves the slide as it was, so that nothing is written. */
+const UNCHANGED = Symbol("unchanged");
+
 /**
  * Changes one slide, merged into it as it is when the change gets its turn: parallel changes to other slides all
  * land. Warns about what the changed slide names without having it, and about fields it cannot set or clear.
@@ -72,29 +76,40 @@ export async function updateSlide(ctx: Ctx, id: string, at: SlideAt, edit: Slide
   const changes = edit.changes === undefined ? undefined : slideSchema.loose().parse(edit.changes);
   const remove = edit.remove ?? [];
   let changed: Slide | undefined;
-  const { project } = await projects.mutate(
-    ctx.space,
-    id,
-    (current) => {
-      const set = of ? current.deviceSlides[of] : current.slides;
-      if (!set) throw new InputError(`The ${DEVICE_LABELS[of!]} has no slide set of its own. Give it one with set_slides and "device", or leave "of" out to change the shared slide.`);
-      const existing = set[index];
-      if (!existing) throw new InputError(`Slide ${index + 1} does not exist; ${of ? `the ${DEVICE_LABELS[of]} set` : "the project"} has ${set.length}.`);
-      const next: Record<string, unknown> = { ...existing, ...changes };
-      if (changes?.device) next.device = { ...existing.device, ...changes.device };
-      for (const field of remove) if (Object.hasOwn(slideSchema.shape, field)) delete next[field];
-      changed = slideSchema.parse(next);
-      const slides = set.map((slide, i) => (i === index ? changed! : slide));
-      return of ? { ...current, deviceSlides: { ...current.deviceSlides, [of]: slides } } : { ...current, slides };
-    },
-    writeOptions(ctx),
-  );
+  let project: Project | undefined;
+  try {
+    ({ project } = await projects.mutate(
+      ctx.space,
+      id,
+      (current) => {
+        const set = of ? current.deviceSlides[of] : current.slides;
+        if (!set) throw new InputError(`The ${DEVICE_LABELS[of!]} has no slide set of its own. Give it one with set_slides and "device", or leave "of" out to change the shared slide.`);
+        const existing = set[index];
+        if (!existing) throw new InputError(`Slide ${index + 1} does not exist; ${of ? `the ${DEVICE_LABELS[of]} set` : "the project"} has ${set.length}.`);
+        const next: Record<string, unknown> = { ...existing, ...changes };
+        if (changes?.device) next.device = { ...existing.device, ...changes.device };
+        for (const field of remove) if (Object.hasOwn(slideSchema.shape, field)) delete next[field];
+        changed = slideSchema.parse(next);
+        // An edit that sets nothing new, such as empty changes or only misspelt fields, saves no revision: the
+        // history keeps the last 50, and an empty one would push out a version somebody may want back.
+        if (isDeepStrictEqual(changed, existing)) {
+          project = current;
+          throw UNCHANGED;
+        }
+        const slides = set.map((slide, i) => (i === index ? changed! : slide));
+        return of ? { ...current, deviceSlides: { ...current.deviceSlides, [of]: slides } } : { ...current, slides };
+      },
+      writeOptions(ctx),
+    ));
+  } catch (error) {
+    if (error !== UNCHANGED) throw error;
+  }
   const alone = { slides: [changed!], deviceSlides: {}, creatives: {} };
-  const [shots, images] = await Promise.all([listShots(ctx.space, id, project.locales), listImages(ctx.space, id)]);
+  const [shots, images] = await Promise.all([listShots(ctx.space, id, project!.locales), listImages(ctx.space, id)]);
   const unknownRemove = remove.filter((field) => !Object.hasOwn(slideSchema.shape, field));
   return {
     slide: changed!,
-    project,
+    project: project!,
     warnings: [
       ...missingScreenshots(unknownScreenshots(alone, shots)),
       ...missingImages(unknownImages(alone, images)),
