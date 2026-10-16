@@ -8,8 +8,19 @@ export function securityHeaders(_req: Request, res: Response, next: NextFunction
   next();
 }
 
-/** The address this server is reached at: PUBLIC_URL, or what the request says. */
-export const baseUrl = (req: Request) => config.publicUrl || `${req.protocol}://${req.get("host")}`;
+/** An address that can stand in a page, a script or a link as it is: a scheme, a host and port, maybe a path. */
+const PLAIN_ADDRESS = /^https?:\/\/[\w.:[\]-]+(\/[\w./~-]*)?$/;
+
+/**
+ * The address this server is reached at: PUBLIC_URL, or what the request says. Without PUBLIC_URL that is whatever
+ * Host the request claims, which ends up in the skill, the docs and the MCP answers; one that is not a plain host
+ * name and port gets the server's own local address instead.
+ */
+export function baseUrl(req: Request): string {
+  if (config.publicUrl) return config.publicUrl;
+  const claimed = `${req.protocol}://${req.get("host")}`;
+  return PLAIN_ADDRESS.test(claimed) ? claimed : `http://localhost:${config.port}`;
+}
 
 /** The visitor's address: what the reverse proxy reports, or what CLIENT_IP_HEADER carries when a CDN stands in front of it. */
 export function visitorAddress(req: Request): string | undefined {

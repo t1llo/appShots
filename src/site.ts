@@ -4,6 +4,7 @@
 // Every page is a Markdown file in docs/. It is shown inside the shell that Vite builds from web/docs.html, and
 // handed out as plain Markdown too, at the page's address with .md on the end, for readers that prefer that.
 
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type { Express, Request, Response } from "express";
@@ -169,9 +170,12 @@ const anchor = (text: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "section";
 
-function render(markdown: string): { html: string; headings: Heading[] } {
+/** The ids web/docs.html gives its own parts. A heading of a page never takes one: it gets `content-2` and so on. */
+export const SHELL_IDS = ["content", "pages", "menu", "appearance"];
+
+export function render(markdown: string): { html: string; headings: Heading[] } {
   const headings: Heading[] = [];
-  const taken = new Set<string>();
+  const taken = new Set<string>(SHELL_IDS);
   const marked = new Marked({
     gfm: true,
     renderer: {
@@ -323,9 +327,39 @@ function contents(page: Page): string {
   return `${links ? `<p>On this page</p><ul>${links}</ul>` : ""}<a class="docs-source" href="${page.source}">View as Markdown</a>`;
 }
 
+/**
+ * Answers that are made from the pages and the server's address, kept once made: they change only with a new
+ * build of the shell, and the address is the same for nearly every request. `from` is what one was made from.
+ */
+const made = new Map<string, { from: string; text: string; etag: string }>();
+
+function cached(key: string, from: string, make: () => string): { text: string; etag: string } {
+  const kept = made.get(key);
+  if (kept?.from === from) return kept;
+  // Without PUBLIC_URL each Host asked for is an address of its own; a server reached by many starts over.
+  if (made.size >= 500) made.clear();
+  const text = make();
+  const entry = { from, text, etag: `W/"${createHash("sha1").update(text).digest("base64url").slice(0, 27)}"` };
+  made.set(key, entry);
+  return entry;
+}
+
+/** Sends a kept answer with its ETag, so a reader that has it already gets a 304. */
+function sendKept(req: Request, res: Response, answer: { text: string; etag: string }): void {
+  res.set({ ETag: answer.etag, "Cache-Control": "no-cache" });
+  if (req.fresh) return void res.status(304).end();
+  res.send(answer.text);
+}
+
 function sendDoc(req: Request, res: Response, base: string, page: Page | null): void {
   const frame = shell("docs.html");
   if (!frame) return void res.status(503).type("text").send("The web pages have not been built yet. Run: npm run build");
+  if (!page) return void res.status(404).set("Cache-Control", "no-cache").type("html").send(docHtml(req, frame, base, null));
+  sendKept(req, res.type("html"), cached(`html ${page.name} ${base}`, frame, () => docHtml(req, frame, base, page)));
+}
+
+/** A page inside the shell, or the page that says there is none. */
+function docHtml(req: Request, frame: string, base: string, page: Page | null): string {
   const title = !page ? "Page not found · appShots docs" : page.name === "index" ? "appShots documentation" : `${page.title} · appShots docs`;
   const description = page?.description ?? "There is no page at this address.";
   const head = [`<title>${escapeHtml(title)}</title>`, `<meta name="description" content="${escapeHtml(description)}" />`];
@@ -347,18 +381,13 @@ function sendDoc(req: Request, res: Response, base: string, page: Page | null): 
   const body = page
     ? `<h1>${escapeHtml(page.title)}</h1>\n${page.updated ? `<p class="docs-updated">Last updated ${day(page.updated)}</p>\n` : ""}${page.html}`
     : '<h1>Page not found</h1>\n<p>There is no page at this address. The <a href="/docs">documentation</a> starts here, and the list on the left has every page.</p>';
-  const html = frame
+  return frame
     .replace("<!--docs:head-->", () => head.join("\n    "))
     .replace("<!--docs:nav-->", () => sidebar(page))
     .replace("<!--docs:body-->", () => body)
     .replace("<!--docs:pager-->", () => (page ? pager(page) : ""))
     .replace("<!--docs:toc-->", () => (page ? contents(page) : ""))
     .replaceAll("{{SERVER}}", escapeHtml(base));
-  res
-    .status(page ? 200 : 404)
-    .set("Cache-Control", "no-cache")
-    .type("html")
-    .send(html);
 }
 
 // ---------------------------------------------------------------- routes
@@ -366,7 +395,8 @@ function sendDoc(req: Request, res: Response, base: string, page: Page | null): 
 /** Registers everything above. `baseUrl` gives the address this server is reached at. */
 export function siteRoutes(app: Express, baseUrl: (req: Request) => string): void {
   const sendMarkdown = (req: Request, res: Response, page: Page) => {
-    res.type("text/markdown").set("Cache-Control", "no-cache").send(asMarkdown(page).replaceAll("{{SERVER}}", baseUrl(req)));
+    const base = baseUrl(req);
+    sendKept(req, res.type("text/markdown"), cached(`md ${page.name} ${base}`, "", () => asMarkdown(page).replaceAll("{{SERVER}}", base)));
   };
   const send = (req: Request, res: Response, page: Page | null) => {
     // An agent that asks for Markdown gets it at the page's own address too.
@@ -415,7 +445,10 @@ export function siteRoutes(app: Express, baseUrl: (req: Request) => string): voi
       "",
       `> ${SUMMARY}`,
       "",
-      `appShots is a web app at ${base}. People sign in with Google and make a set of App Store screenshots in the Studio, its editor, or let a coding agent (Claude Code, Codex, OpenCode, Pi or another) make the whole set through the server's MCP endpoint at ${base}/mcp, the \`appshots\` skill and the \`appshots\` command for the Mac. Every page below is plain Markdown.`,
+      // Whether people sign in depends on how this server is set up, as on the pages themselves.
+      config.auth
+        ? `appShots is a web app at ${base}. People sign in with Google and make a set of App Store screenshots in the Studio, its editor, or let a coding agent (Claude Code, Codex, OpenCode, Pi or another) make the whole set through the server's MCP endpoint at ${base}/mcp, the \`appshots\` skill and the \`appshots\` command for the Mac. Every page below is plain Markdown.`
+        : `appShots is a web app at ${base}. Whoever can reach this server makes a set of App Store screenshots in the Studio, its editor, without signing in, or lets a coding agent (Claude Code, Codex, OpenCode, Pi or another) make the whole set through the server's MCP endpoint at ${base}/mcp, the \`appshots\` skill and the \`appshots\` command for the Mac. Every page below is plain Markdown.`,
       ...SECTIONS.flatMap((section) => ["", `## ${section.title}`, "", ...pages.filter((page) => page.section === section.title).map((page) => `- [${page.title}](${base}${page.source}): ${page.description}`)]),
       "",
       "## Optional",
@@ -427,10 +460,10 @@ export function siteRoutes(app: Express, baseUrl: (req: Request) => string): voi
   });
   app.get("/llms-full.txt", (req, res) => {
     const base = baseUrl(req);
-    const all = pages.map((page) => `${asMarkdown(page).replace(/^# .*\n/, (title) => `${title}\nSource: ${base}${page.url}\n`)}`).join("\n---\n\n");
-    res
-      .type("text/markdown")
-      .set("Cache-Control", "no-cache")
-      .send(`# appShots documentation\n\n> ${SUMMARY}\n\n---\n\n${all}`.replaceAll("{{SERVER}}", base));
+    const make = () => {
+      const all = pages.map((page) => `${asMarkdown(page).replace(/^# .*\n/, (title) => `${title}\nSource: ${base}${page.url}\n`)}`).join("\n---\n\n");
+      return `# appShots documentation\n\n> ${SUMMARY}\n\n---\n\n${all}`.replaceAll("{{SERVER}}", base);
+    };
+    sendKept(req, res.type("text/markdown"), cached(`full ${base}`, "", make));
   });
 }
