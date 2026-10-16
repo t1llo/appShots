@@ -1,5 +1,5 @@
-/* What the project's pages add to the Studio's stylesheet: undo and redo in the bar, the note on a conflicting
-   edit, and previews that are out of date. */
+/* What the project's pages add to the Studio's stylesheet: undo and redo in the bar, the history at the side of
+   the page, the note on a conflicting edit, and previews that are out of date. */
 
 .undo-buttons {
   display: inline-flex;
@@ -23,4 +23,89 @@
 }
 .callout.list-error {
   margin-top: 12px;
+}
+
+/* A dialog at the side of the page, as tall as the window: the project's history. */
+.history-button {
+  display: grid;
+  flex: none;
+  place-items: center;
+}
+dialog.drawer {
+  width: min(400px, 100vw);
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0 0 0 auto;
+  padding: 0;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+dialog.drawer::backdrop {
+  background: rgb(15 15 15 / 0.35);
+}
+.drawer-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 12px 0 20px;
+}
+.drawer-head h1 {
+  margin: 0;
+}
+.drawer-head .icon-btn {
+  display: grid;
+  place-items: center;
+}
+.drawer-note {
+  flex: none;
+  margin: 6px 20px 8px;
+}
+dialog.drawer .callout.list-error {
+  margin: 8px 20px;
+}
+.revisions {
+  flex: 1;
+  margin: 0;
+  padding: 0 8px 16px;
+  overflow-y: auto;
+  list-style: none;
+}
+.revision {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+.revision + .revision {
+  box-shadow: inset 0 1px 0 var(--line);
+}
+.revision:hover {
+  background: var(--hover);
+}
+.revision.current {
+  background: var(--accent-soft);
+}
+.revision-main {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.revision-title {
+  font-weight: 600;
+}
+.revision-sub {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.revision .btn {
+  flex: none;
 }

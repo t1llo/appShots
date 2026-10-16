@@ -1,13 +1,13 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { errorText } from "../api.ts";
 import { hostToasts, toast } from "./toast.tsx";
 
 /**
  * A modal that exists only while it is open. Put `data-autofocus` on the element that should take the focus. When it
  * goes, the focus goes back to where it was before, which the browser does only for a dialog closed by its own steps,
- * not for one taken out of the page.
+ * not for one taken out of the page. `className` gives it another shape, such as a drawer at the side.
  */
-export function Dialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+export function Dialog({ onClose, className, label, children }: { onClose: () => void; className?: string; label?: string; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   // The close event comes after the cleanup below has closed the dialog itself, so that one is not passed on.
   const live = useRef(false);
@@ -28,6 +28,8 @@ export function Dialog({ onClose, children }: { onClose: () => void; children: R
   return (
     <dialog
       ref={ref}
+      className={className}
+      aria-label={label}
       onClose={() => {
         if (live.current && !ref.current?.open) onClose();
       }}
@@ -81,5 +83,60 @@ export function Confirm(props: { title: ReactNode; children?: ReactNode; action:
         </button>
       </div>
     </Dialog>
+  );
+}
+
+/** What `ask` asks: the Confirm dialog's title, line and button, and what is done on yes. */
+export interface Question {
+  title: string;
+  text?: ReactNode;
+  action: string;
+  running: string;
+  danger?: boolean;
+  run: () => unknown;
+}
+
+let questions: (Question & { id: number })[] = [];
+let nextQuestion = 0;
+const askers = new Set<() => void>();
+
+function setQuestions(next: typeof questions) {
+  questions = next;
+  for (const notify of askers) notify();
+}
+
+const watchQuestions = (notify: () => void) => {
+  askers.add(notify);
+  return () => void askers.delete(notify);
+};
+
+/**
+ * Asks in a Confirm dialog before something is done that is hard to take back, from code that would otherwise have
+ * stopped the page with the browser's own confirm(). `run` is done on yes; when it fails, the dialog says why.
+ */
+export function ask(question: Question): void {
+  setQuestions([...questions, { ...question, id: ++nextQuestion }]);
+}
+
+/** Shows what `ask` asks, one question at a time, over whatever else is open. */
+export function Questions() {
+  const question = useSyncExternalStore(watchQuestions, () => questions[0]);
+  if (!question) return null;
+  const done = () => setQuestions(questions.filter((entry) => entry.id !== question.id));
+  return (
+    <Confirm
+      key={question.id}
+      title={question.title}
+      action={question.action}
+      running={question.running}
+      danger={question.danger}
+      onClose={done}
+      run={async () => {
+        await question.run();
+        done();
+      }}
+    >
+      {question.text}
+    </Confirm>
   );
 }

@@ -1,0 +1,390 @@
+/* The store listing preview: a search result and a product page around the slides, in the store's own light and
+   dark whatever the Studio's look. Sizes are in points of the screen shown, one point to one CSS pixel. */
+
+.store-part + .store-part {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.store-part h2 {
+  margin-bottom: 14px;
+  font-size: 14px;
+}
+.store-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px;
+}
+.store-figure {
+  margin: 0;
+}
+
+.store-screen {
+  --s-bg: #fff;
+  --s-text: #000;
+  --s-text-2: rgb(60 60 67 / 0.6);
+  --s-fill: rgb(118 118 128 / 0.12);
+  --s-line: rgb(60 60 67 / 0.2);
+  --s-tint: #007aff;
+  --s-skel: rgb(120 120 128 / 0.14);
+  --s-bar: rgb(249 249 249 / 0.94);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 44px;
+  background: var(--s-bg);
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    rgb(15 15 15 / 0.12) 0 6px 18px;
+  color: var(--s-text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.25;
+  user-select: none;
+}
+.store-screen.dark {
+  --s-bg: #000;
+  --s-text: #fff;
+  --s-text-2: rgb(235 235 245 / 0.6);
+  --s-fill: rgb(118 118 128 / 0.24);
+  --s-line: rgb(84 84 88 / 0.6);
+  --s-tint: #0a84ff;
+  --s-skel: rgb(120 120 128 / 0.3);
+  --s-bar: rgb(22 22 22 / 0.94);
+}
+.store-screen.tablet {
+  border-radius: 24px;
+}
+.store-screen.desktop {
+  border-radius: 12px;
+}
+.store-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The top of the screen: the time and the signs beside it, or a window's title bar. */
+.store-status {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  height: 54px;
+  padding: 4px 30px 0 46px;
+  box-sizing: border-box;
+  font-size: 16px;
+  font-weight: 600;
+}
+.tablet .store-status {
+  height: 28px;
+  padding: 0 20px;
+  font-size: 13px;
+}
+.store-status-icons {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.store-status-icons i {
+  width: 16px;
+  height: 10px;
+  border-radius: 3px;
+  background: currentColor;
+}
+.store-status-icons i.battery {
+  width: 22px;
+  height: 11px;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+  background: linear-gradient(90deg, currentColor 70%, transparent 70%) content-box;
+  padding: 1px;
+}
+.store-titlebar {
+  flex: none;
+  height: 40px;
+  background: var(--s-bar);
+  box-shadow: inset 0 -1px 0 var(--s-line);
+}
+.store-tabs {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  justify-content: space-around;
+  height: 82px;
+  padding-top: 8px;
+  box-sizing: border-box;
+  background: var(--s-bar);
+  box-shadow: inset 0 0.5px 0 var(--s-line);
+}
+.store-tabs span {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 5px;
+  width: 58px;
+}
+.store-tabs i:not(.store-bar) {
+  width: 24px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--s-text-2);
+  opacity: 0.55;
+}
+.store-tabs .on i:not(.store-bar) {
+  background: var(--s-tint);
+  opacity: 1;
+}
+.store-tabs .store-bar {
+  height: 6px;
+}
+
+/* What the store fills in from its own data, which the project does not have. */
+.store-bar {
+  display: block;
+  height: 9px;
+  border-radius: 5px;
+  background: var(--s-skel);
+}
+.store-bar.tall {
+  height: 14px;
+}
+.store-glyph {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.store-glyph.filled {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* ---------------------------------------------------------------- search results */
+
+.store-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  margin: 6px 0 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--s-fill);
+  color: var(--s-text);
+  font-size: 17px;
+}
+.store-search .store-glyph {
+  width: 18px;
+  height: 18px;
+  color: var(--s-text-2);
+}
+.store-search span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.store-results {
+  display: grid;
+  align-items: start;
+}
+.store-result {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.store-app {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.store-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  object-fit: cover;
+  box-shadow: 0 0 0 0.5px var(--s-line);
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+}
+.store-icon.blank {
+  background: var(--s-skel);
+  box-shadow: none;
+}
+.store-app-text {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+  min-width: 0;
+}
+.store-app-text b {
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.store-stars {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  color: var(--s-text-2);
+}
+.store-stars .store-glyph {
+  width: 11px;
+  height: 11px;
+}
+.store-stars .store-bar {
+  height: 7px;
+  margin-left: 5px;
+}
+.store-get {
+  flex: none;
+  height: 30px;
+  padding: 0 20px;
+  border-radius: 15px;
+  background: var(--s-fill);
+  color: var(--s-tint);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 30px;
+}
+.store-get.solid {
+  background: var(--s-tint);
+  color: #fff;
+}
+.store-get.blank {
+  display: block;
+  width: 70px;
+  padding: 0;
+  background: var(--s-skel);
+}
+.store-shots {
+  display: flex;
+}
+.store-shot {
+  flex: none;
+  cursor: pointer;
+}
+.store-shot .stage {
+  border-radius: var(--radius);
+  background: var(--s-skel);
+  box-shadow: 0 0 0 0.5px var(--s-line);
+}
+.store-shot.selected .stage {
+  box-shadow:
+    0 0 0 0.5px var(--s-line),
+    0 0 0 2px var(--s-bg),
+    0 0 0 4px var(--accent);
+}
+.store-shot.blank {
+  display: block;
+  background: var(--s-skel);
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- product page */
+
+.store-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 44px;
+  color: var(--s-tint);
+  font-size: 17px;
+}
+.store-nav .store-glyph {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2;
+}
+.store-head {
+  display: flex;
+  gap: 16px;
+  padding-block: 6px 18px;
+}
+.store-head-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  padding-top: 4px;
+}
+.store-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.15;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.store-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  color: var(--s-tint);
+}
+.store-head-actions .store-glyph {
+  width: 22px;
+  height: 22px;
+}
+.store-facts {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  margin-bottom: 18px;
+  padding-block: 10px;
+  box-shadow:
+    inset 0 0.5px 0 var(--s-line),
+    inset 0 -0.5px 0 var(--s-line);
+}
+.store-facts > div {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+.store-facts > div + div {
+  box-shadow: inset 0.5px 0 0 var(--s-line);
+}
+.store-carousel {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.store-carousel .store-shot {
+  scroll-snap-align: start;
+}
+.store-device-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-block: 12px;
+  color: var(--s-text-2);
+  font-size: 13px;
+}
+.store-text {
+  display: grid;
+  gap: 9px;
+  padding-top: 14px;
+  box-shadow: inset 0 0.5px 0 var(--s-line);
+}
+
+/* A tablet's and a window's store has more room for its words. */
+:is(.tablet, .desktop) .store-title {
+  font-size: 28px;
+}
+:is(.tablet, .desktop) .store-app-text b {
+  font-size: 18px;
+}

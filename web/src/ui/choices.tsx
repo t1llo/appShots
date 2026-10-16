@@ -7,6 +7,8 @@ export interface Choice<T extends string> {
   id: T;
   text: ReactNode;
   title?: string;
+  /** What a screen reader says for a choice whose text is short, such as "S" for small. */
+  label?: string;
 }
 
 /** Picks the choice the arrow keys, Home or End point at, and moves the focus along with it. */
@@ -36,6 +38,7 @@ export function Segmented<T extends string>({ label, choices, value, onChange }:
           aria-checked={choice.id === value}
           tabIndex={tabStop(choices, value, index)}
           title={choice.title}
+          aria-label={choice.label}
           onClick={() => onChange(choice.id)}
         >
           {choice.text}
@@ -45,19 +48,28 @@ export function Segmented<T extends string>({ label, choices, value, onChange }:
   );
 }
 
-/** The tabs at the top of a panel. The left and right arrow keys open the one beside the open one. */
-export function Tabs<T extends string>({ label, choices, value, onChange }: { label: string; choices: readonly Choice<T>[]; value: T; onChange: (id: T) => void }) {
+/** The id of a tab, for the panel it opens to be labelled by. */
+export const tabId = (panel: string, id: string) => `${panel}-tab-${id}`;
+
+/**
+ * The tabs at the top of a panel. The left and right arrow keys open the one beside the open one. `panel` is the id
+ * of the element the tabs fill, which is labelled by the open tab's tabId.
+ */
+export function Tabs<T extends string>({ label, choices, value, onChange, panel }: { label: string; choices: readonly Choice<T>[]; value: T; onChange: (id: T) => void; panel?: string }) {
   return (
     <div className="tabs" role="tablist" aria-label={label} onKeyDown={onArrows(choices, value, onChange, "row")}>
       {choices.map((choice, index) => (
         <button
           key={choice.id}
+          id={panel ? tabId(panel, choice.id) : undefined}
           className={`tab${choice.id === value ? " on" : ""}`}
           type="button"
           role="tab"
           aria-selected={choice.id === value}
+          aria-controls={panel}
           tabIndex={tabStop(choices, value, index)}
           title={choice.title}
+          aria-label={choice.label}
           onClick={() => onChange(choice.id)}
         >
           {choice.text}

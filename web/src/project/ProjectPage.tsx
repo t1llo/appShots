@@ -3,18 +3,20 @@
 // in what changes elsewhere. The previews show what the server has, since they are the server's own pages.
 
 import { useQueryClient } from "@tanstack/react-query";
-import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Creative, type Detail, detailQuery, type DeviceKind, drawnSize, exportSizes, type Meta, type PlacementId, plural, type Project, type Slide, type TargetId } from "../api.ts";
 import { useOpenDialog } from "../dialogs.tsx";
 import { type Change, CreativeEditor, ProjectEditor, Scope, SlideEditor } from "../editor/index.ts";
 import { languageName, LanguageSwitch } from "../languages.tsx";
 import { change, projectDraft, type ProjectDoc, remoteOf, renamed, useDraft, useOpenProject, useUndoKeys } from "../state/useDraft.ts";
-import { Menu, toast } from "../ui/index.ts";
+import { ask, Menu, Segmented, tabId, Tabs, toast } from "../ui/index.ts";
 import { AssetsView, Picker, useUpload } from "./Assets.tsx";
 import { ExportButton } from "./ExportButton.tsx";
+import { HistoryButton } from "./History.tsx";
 import { ConflictBar, ProjectBar, SaveStatus, UndoButtons } from "./ProjectBar.tsx";
 import { CreativeCard, creativeKey, SlideCard, slideKey, useWidth } from "./Previews.tsx";
 import { setOf } from "./sets.ts";
+import { StorePreview } from "./StorePreview.tsx";
 
 /** How large the previews are drawn: the height of a slide, the width a landscape one may take at most, and the height of an asset. */
 const ZOOMS = {
@@ -26,7 +28,6 @@ type Zoom = keyof typeof ZOOMS;
 
 type Selection = { kind: "slide"; index: number } | { kind: "creative"; placement: PlacementId } | null;
 type Tab = "item" | "project";
-const TABS: Tab[] = ["item", "project"];
 
 const remembered = (key: string) => {
   try {
@@ -41,7 +42,7 @@ const remember = (key: string, value: string) => {
   } catch {}
 };
 
-export function ProjectPage({ meta, detail, view, openConnect }: { meta: Meta; detail: Detail; view: "slides" | "assets"; openConnect: () => void }) {
+export function ProjectPage({ meta, detail, view, openConnect }: { meta: Meta; detail: Detail; view: "slides" | "assets" | "store"; openConnect: () => void }) {
   const id = detail.project.id;
   const queryClient = useQueryClient();
   const openDialog = useOpenDialog();
@@ -180,15 +181,23 @@ export function ProjectPage({ meta, detail, view, openConnect }: { meta: Meta; d
     toast(`The ${deviceLabel} has its own slides now. What you change here no longer reaches the other devices.`, "", 7000);
   };
 
-  const joinSet = () => {
-    if (!confirm(`Delete the ${deviceLabel}'s own ${slides.length === 1 ? "slide" : `${slides.length} slides`}? The ${deviceLabel} then shows the shared slides again.`)) return;
-    update((doc) => {
-      const sets = { ...doc.deviceSlides };
-      delete sets[device];
-      doc.deviceSlides = sets;
-    }, true);
-    setSelection((current) => (current?.kind !== "slide" ? current : draft.slides.length ? { kind: "slide", index: Math.min(current.index, draft.slides.length - 1) } : null));
-  };
+  const joinSet = () =>
+    ask({
+      title: `Delete the ${deviceLabel}'s own ${slides.length === 1 ? "slide" : `${slides.length} slides`}?`,
+      text: `The ${deviceLabel} then shows the shared slides again. Undo brings its own back.`,
+      action: slides.length === 1 ? "Delete slide" : "Delete slides",
+      running: "Deleting…",
+      danger: true,
+      run: () => {
+        update((doc) => {
+          const sets = { ...doc.deviceSlides };
+          delete sets[device];
+          doc.deviceSlides = sets;
+        }, true);
+        const shared = store.getState().draft.slides.length;
+        setSelection((current) => (current?.kind !== "slide" ? current : shared ? { kind: "slide", index: Math.min(current.index, shared - 1) } : null));
+      },
+    });
 
   const addSlide = () => {
     const taken = new Set(slides.map((slide) => slide.screenshot));
@@ -214,9 +223,17 @@ export function ProjectPage({ meta, detail, view, openConnect }: { meta: Meta; d
     remove: () => {
       // A device's own set holds at least one slide, so its last one takes the set with it.
       if (ownSet && slides.length === 1) return joinSet();
-      if (!confirm(`Delete slide ${index + 1}?`)) return;
-      editSlides((set) => void set.splice(index, 1), true);
-      setSelection(slides.length > 1 ? { kind: "slide", index: Math.min(index, slides.length - 2) } : null);
+      ask({
+        title: `Delete slide ${index + 1}?`,
+        text: "Undo brings it back.",
+        action: "Delete slide",
+        running: "Deleting…",
+        danger: true,
+        run: () => {
+          editSlides((set) => void set.splice(index, 1), true);
+          setSelection(slides.length > 1 ? { kind: "slide", index: Math.min(index, slides.length - 2) } : null);
+        },
+      });
     },
   });
 
@@ -233,11 +250,18 @@ export function ProjectPage({ meta, detail, view, openConnect }: { meta: Meta; d
     select({ kind: "creative", placement: where });
   };
 
-  const removeCreative = (where: PlacementId) => {
-    if (!confirm(`Remove the ${meta.placements[where].label.toLowerCase()}${meta.placements[where].kind === "store" ? " asset" : ""}?`)) return;
-    update((doc) => void delete doc.creatives[where], true);
-    setSelection(slides.length ? { kind: "slide", index: 0 } : null);
-  };
+  const removeCreative = (where: PlacementId) =>
+    ask({
+      title: `Remove the ${meta.placements[where].label.toLowerCase()}${meta.placements[where].kind === "store" ? " asset" : ""}?`,
+      text: "Undo brings it back.",
+      action: "Remove",
+      running: "Removing…",
+      danger: true,
+      run: () => {
+        update((doc) => void delete doc.creatives[where], true);
+        setSelection(slides.length ? { kind: "slide", index: 0 } : null);
+      },
+    });
 
   const deleteProject = () => openDialog({ remove: { id, name: draft.name } });
 
@@ -266,17 +290,38 @@ export function ProjectPage({ meta, detail, view, openConnect }: { meta: Meta; d
   const splitDevices = meta.devices.filter((entry) => draft.deviceSlides?.[entry.id] != null);
   const pick = (files: File[], kind: "shot" | "image") => void upload(files, kind);
 
-  const tabKeys = (event: KeyboardEvent) => {
-    const at = TABS.indexOf(tab);
-    const next = event.key === "ArrowRight" ? TABS[(at + 1) % TABS.length] : event.key === "ArrowLeft" ? TABS[(at + TABS.length - 1) % TABS.length] : event.key === "Home" ? TABS[0] : event.key === "End" ? TABS.at(-1) : null;
-    if (!next) return;
-    event.preventDefault();
-    setTab(next);
-    document.getElementById(`editor-tab-${next}`)?.focus();
-  };
+  /** Which device's slides are shown. The slides page and the store's both have it. */
+  const deviceSwitch = (
+    <Segmented
+      label="Device the slides are shown for"
+      choices={meta.devices.map((entry) => {
+        const split = draft.deviceSlides?.[entry.id] != null;
+        const has = shots.some((shot) => shot.device === entry.id);
+        return {
+          id: entry.id,
+          text: (
+            <>
+              {entry.label}
+              {split ? <span className="dot" /> : null}
+            </>
+          ),
+          title: `${split ? `The ${entry.label} has slides of its own.` : `The ${entry.label} shows the shared slides.`}${has ? "" : " It has no screenshots of its own yet, so another device's stand in."}`,
+        };
+      })}
+      value={device}
+      onChange={showDevice}
+    />
+  );
+  const languageSwitch = <LanguageSwitch locales={draft.locales} value={locale} onChange={setLocale} onAdd={addLanguage} />;
+
+  // The project's icon in the store: an uploaded image named as one, or else the logo its slides show.
+  const icon = useMemo(() => {
+    const logo = shownSlides.find((slide) => slide.logo?.image)?.logo?.image;
+    return images.find((image) => /icon/i.test(image.name)) ?? images.find((image) => image.name === logo);
+  }, [images, shownSlides]);
 
   const canvas = (
-    <div className="workspace" hidden={view === "assets"}>
+    <div className="workspace" hidden={view !== "slides"}>
       {shots.length === 0 ? (
         <div className="callout">
           <div className="callout-text">
@@ -294,26 +339,7 @@ export function ProjectPage({ meta, detail, view, openConnect }: { meta: Meta; d
       ) : null}
 
       <div className="toolbar">
-        <div className="segmented" role="radiogroup" aria-label="Device the slides are shown for">
-          {meta.devices.map((entry) => {
-            const split = draft.deviceSlides?.[entry.id] != null;
-            const has = shots.some((shot) => shot.device === entry.id);
-            return (
-              <button
-                key={entry.id}
-                className={device === entry.id ? "on" : ""}
-                type="button"
-                role="radio"
-                aria-checked={device === entry.id}
-                title={`${split ? `The ${entry.label} has slides of its own.` : `The ${entry.label} shows the shared slides.`}${has ? "" : " It has no screenshots of its own yet, so another device's stand in."}`}
-                onClick={() => showDevice(entry.id)}
-              >
-                {entry.label}
-                {split ? <span className="dot" /> : null}
-              </button>
-            );
-          })}
-        </div>
+        {deviceSwitch}
         {shapes.length > 1 ? (
           <select className="ghost" aria-label="Size shown" title="These sizes have a shape of their own, so each is drawn separately." value={target} onChange={(event) => setTarget(event.target.value as TargetId)}>
             {shapes.map((key) => (
@@ -328,14 +354,13 @@ export function ProjectPage({ meta, detail, view, openConnect }: { meta: Meta; d
           </span>
         )}
         <span className="spacer" />
-        <LanguageSwitch locales={draft.locales} value={locale} onChange={setLocale} onAdd={addLanguage} />
-        <div className="segmented" role="radiogroup" aria-label="Preview size">
-          {(Object.keys(ZOOMS) as Zoom[]).map((key) => (
-            <button key={key} className={zoom === key ? "on" : ""} type="button" role="radio" aria-checked={zoom === key} title={`${ZOOMS[key].name} previews`} aria-label={`${ZOOMS[key].name} previews`} onClick={() => setZoom(key)}>
-              {key.toUpperCase()}
-            </button>
-          ))}
-        </div>
+        {languageSwitch}
+        <Segmented
+          label="Preview size"
+          choices={(Object.keys(ZOOMS) as Zoom[]).map((key) => ({ id: key, text: key.toUpperCase(), title: `${ZOOMS[key].name} previews`, label: `${ZOOMS[key].name} previews` }))}
+          value={zoom}
+          onChange={setZoom}
+        />
       </div>
 
       <div className="set-line">
@@ -451,6 +476,7 @@ export function ProjectPage({ meta, detail, view, openConnect }: { meta: Meta; d
       <ProjectBar id={id} name={draft.name} view={view} onRename={rename} field={titleField}>
         <SaveStatus store={store} task={task} />
         <UndoButtons store={store} />
+        <HistoryButton id={id} store={store} />
         <Menu
           label={`Actions for ${draft.name}`}
           items={[
@@ -469,29 +495,43 @@ export function ProjectPage({ meta, detail, view, openConnect }: { meta: Meta; d
       <ConflictBar store={store} />
 
       <div className="content">
-        {/* The slides stay laid out under the assets, so coming back to them does not load every preview again. */}
+        {/* The slides stay laid out under the assets and the store, so coming back to them does not load every preview again. */}
         {canvas}
         {view === "assets" ? <AssetsView meta={meta} detail={detail} draft={draft} locale={locale} setLocale={setLocale} upload={upload} openConnect={openConnect} /> : null}
+        {/* The store's slides are the slides page's own previews, so their headlines are edited beside them. */}
+        {view === "store" ? (
+          <StorePreview
+            name={draft.name}
+            device={device}
+            deviceLabel={deviceLabel}
+            size={size}
+            slides={shownSlides.map((slide, index) => ({ slide, src: `/render/${id}/${index}?${query}`, frameKey: slideKeys[index] ?? "" }))}
+            theme={base.theme}
+            icon={icon}
+            projectId={id}
+            selected={slideIndex}
+            select={selectSlide}
+            controls={
+              <>
+                {deviceSwitch}
+                {languageSwitch}
+              </>
+            }
+          />
+        ) : null}
         {view === "assets" ? null : (
           <aside className="panel">
-            <div className="tabs" role="tablist" aria-label="What the editor shows" onKeyDown={tabKeys}>
-              {TABS.map((each) => (
-                <button
-                  key={each}
-                  id={`editor-tab-${each}`}
-                  className={`tab${tab === each ? " on" : ""}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === each}
-                  aria-controls="editor-panel"
-                  tabIndex={tab === each ? 0 : -1}
-                  onClick={() => setTab(each)}
-                >
-                  {each === "item" ? itemTab : "Project"}
-                </button>
-              ))}
-            </div>
-            <div className="panel-body" id="editor-panel" role="tabpanel" aria-labelledby={`editor-tab-${tab}`}>
+            <Tabs
+              label="What the editor shows"
+              panel="editor-panel"
+              choices={[
+                { id: "item", text: itemTab },
+                { id: "project", text: "Project" },
+              ]}
+              value={tab}
+              onChange={setTab}
+            />
+            <div className="panel-body" id="editor-panel" role="tabpanel" aria-labelledby={tabId("editor-panel", tab)}>
               <Scope.Provider value={{ meta, projectId: id, shots, images, target, locale, primary: draft.locales[0]!, guides, dragging: slideIndex != null }}>
                 {tab === "project" ? (
                   <ProjectEditor project={project} change={changeProject} rename={rename} remove={deleteProject} />

@@ -7,7 +7,7 @@ import { api, day, errorText, type Meta, plural, projectsQuery } from "./api.ts"
 import { attempt, type FreshToken, type TokenEntry, tokensKey, useOpenDialog } from "./dialogs.tsx";
 import { rendersQuery } from "./renders.tsx";
 import { type Appearance, readAppearance, setAppearance } from "./theme.ts";
-import { Confirm, CopyBlock, Icon, Menu, Segmented, Select, toast } from "./ui/index.ts";
+import { ask, Confirm, CopyBlock, Icon, Menu, Segmented, Select, toast } from "./ui/index.ts";
 
 /** A page of its own: its name in the bar, and under it a column that holds a heading and sections. */
 export function Page({ name, title, sub, actions, wide, children }: { name: string; title: string; sub?: ReactNode; actions?: ReactNode; wide?: boolean; children?: ReactNode }) {
@@ -300,12 +300,18 @@ function Tokens() {
       setBusy(false);
     }
   });
-  const revoke = (token: TokenEntry) =>
-    attempt(async () => {
-      if (!confirm(`Revoke "${token.name}"? Whatever uses it stops working.`)) return;
-      await api("DELETE", `/account/tokens/${token.id}`);
-      if (fresh?.id === token.id) setFresh(null);
-      await refresh();
+  const revoke = (token: TokenEntry) => () =>
+    ask({
+      title: `Revoke "${token.name}"?`,
+      text: "Whatever uses it stops working.",
+      action: "Revoke",
+      running: "Revoking…",
+      danger: true,
+      run: async () => {
+        await api("DELETE", `/account/tokens/${token.id}`);
+        setFresh((shown) => (shown?.id === token.id ? null : shown));
+        await refresh();
+      },
     });
 
   return (
@@ -485,12 +491,15 @@ function PeopleLists({ data }: { data: PeopleData }) {
       await api("PUT", "/admin/renders", { email: person.email, left });
       await refresh();
     });
-  const remove = (person: Person) =>
-    attempt(async () => {
-      if (person.joinedAt && !confirm(`Remove ${person.email} with all of their projects? This cannot be undone.`)) return;
+  const remove = (person: Person) => {
+    const request = async () => {
       await api("DELETE", "/admin/people", { email: person.email });
       await refresh();
-    });
+    };
+    // Someone who never signed in has nothing to lose with it.
+    if (!person.joinedAt) return attempt(request);
+    return () => ask({ title: `Remove ${person.email}?`, text: "All of their projects go with them. This cannot be undone.", action: "Remove", running: "Removing…", danger: true, run: request });
+  };
 
   return (
     <>

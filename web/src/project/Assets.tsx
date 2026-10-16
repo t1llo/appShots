@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type Detail, detailQuery, type DeviceKind, errorText, type Meta, type Shot, shotIn, type StoredImage } from "../api.ts";
 import { languageName, LanguageSwitch } from "../languages.tsx";
 import type { ProjectDoc, ProjectStore } from "../state/useDraft.ts";
-import { Icon, toast } from "../ui/index.ts";
+import { ask, Icon, type Question, toast } from "../ui/index.ts";
 import { UPLOAD } from "./ProjectBar.tsx";
 import { setOf, usedNames } from "./sets.ts";
 import { batchNames, inParallel } from "./upload.ts";
@@ -149,23 +149,47 @@ export function AssetsView(props: {
     await queryClient.invalidateQueries({ queryKey: detailQuery(id).queryKey });
   };
 
+  /** Asks first. A request that fails on yes says so in the dialog, where it can be tried again. */
+  const askFirst = (question: Omit<Question, "run">, request: () => Promise<unknown>) =>
+    ask({
+      ...question,
+      run: async () => {
+        try {
+          await request();
+        } finally {
+          void queryClient.invalidateQueries({ queryKey: detailQuery(id).queryKey });
+        }
+      },
+    });
+
   /** Files a screenshot under another device, for one whose size did not give it away. */
   const moveShot = (shot: Shot, to: DeviceKind) => {
     const name = meta.devices.find((entry) => entry.id === to)!.label;
-    if (shots.some((other) => other.name === shot.name && other.device === to && other.locale === shot.locale) && !confirm(`"${shot.name}" already has a screenshot for the ${name}. Replace it?`)) return;
-    void act(api("PATCH", `/projects/${id}/shots/${shot.file}`, { device: to }));
+    const request = () => api("PATCH", `/projects/${id}/shots/${shot.file}`, { device: to });
+    if (!shots.some((other) => other.name === shot.name && other.device === to && other.locale === shot.locale)) return void act(request());
+    askFirst({ title: `Replace the ${name}'s "${shot.name}"?`, text: `"${shot.name}" already has a screenshot for the ${name}. This one takes its place.`, action: "Replace", running: "Replacing…", danger: true }, request);
   };
 
   const removeShot = (shot: Shot) => {
     const others = shots.some((other) => other !== shot && other.name === shot.name && other.device === shot.device);
-    if (!confirm(shot.locale && others ? `Delete the ${languageName(shot.locale)} screenshot "${shot.name}"? ${languageName(shot.locale)} then shows the ${languageName(first)} one again.` : `Delete the screenshot "${shot.name}"?`)) return;
-    void act(api("DELETE", `/projects/${id}/shots/${shot.file}`));
+    const language = shot.locale && others ? languageName(shot.locale) : null;
+    askFirst(
+      {
+        title: language ? `Delete the ${language} screenshot "${shot.name}"?` : `Delete the screenshot "${shot.name}"?`,
+        text: language ? `${language} then shows the ${languageName(first)} one again.` : "This cannot be undone.",
+        action: "Delete screenshot",
+        running: "Deleting…",
+        danger: true,
+      },
+      () => api("DELETE", `/projects/${id}/shots/${shot.file}`),
+    );
   };
 
-  const removeImage = (image: StoredImage) => {
-    if (!confirm(`Delete the image "${image.name}"? Slides that show it will leave it out.`)) return;
-    void act(api("DELETE", `/projects/${id}/images/${image.file}`));
-  };
+  const removeImage = (image: StoredImage) =>
+    askFirst(
+      { title: `Delete the image "${image.name}"?`, text: "Slides that show it will leave it out. This cannot be undone.", action: "Delete image", running: "Deleting…", danger: true },
+      () => api("DELETE", `/projects/${id}/images/${image.file}`),
+    );
 
   return (
     <div className="workspace wide">

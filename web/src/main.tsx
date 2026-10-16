@@ -11,11 +11,13 @@ import { DialogHost, type DialogKind, OpenDialog, useOpenDialog } from "./dialog
 import { MockupsPage } from "./mockups.tsx";
 import { AdminPage, ProjectsPage, SettingsPage } from "./pages.tsx";
 import { dropTarget } from "./project/Assets.tsx";
+import { HistoryDrawer } from "./project/History.tsx";
+import type { ProjectView } from "./project/ProjectBar.tsx";
 import { ProjectPage } from "./project/ProjectPage.tsx";
 import { RenderList, useRenderNotes, useRenders } from "./renders.tsx";
 import { useLiveClock } from "./state/live.ts";
 import { forgetDraft } from "./state/useDraft.ts";
-import { Icon, Menu, Toasts } from "./ui/index.ts";
+import { Icon, Menu, Questions, Toasts } from "./ui/index.ts";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -156,6 +158,7 @@ function Shell() {
       <Outlet />
 
       <DialogHost kind={dialog} meta={meta.data} close={() => setDialog(null)} />
+      <Questions />
       <Toasts />
       <DropVeil />
     </OpenDialog.Provider>
@@ -211,12 +214,14 @@ function DropVeil() {
 }
 
 /** A project's page: its slides, what it is made of, or its mockups. */
-function ProjectRoute({ projectId, view }: { projectId: string; view: "slides" | "assets" | "mockups" }) {
+function ProjectRoute({ projectId, view }: { projectId: string; view: ProjectView }) {
   const meta = useQuery(metaQuery).data!;
   const queryClient = useQueryClient();
   // The project as the server has it now, which the clock asks for again while the page is open.
   const detail = useQuery(detailQuery(projectId));
   const open = useOpenDialog();
+  // A project whose stored file cannot be read is listed as damaged, and its history can still bring it back.
+  const damaged = useQuery(projectsQuery).data?.some((entry) => entry.id === projectId && entry.damaged != null) ?? false;
   // Deleted elsewhere, by another tab, an agent or the CLI: its edits have nowhere to go, so the page closes.
   const gone = isGone(detail.error) && detail.data != null;
   useEffect(() => {
@@ -243,10 +248,24 @@ function ProjectRoute({ projectId, view }: { projectId: string; view: "slides" |
   if (!detail.error) return <Blank />;
   return (
     <Message title="This project could not be opened" text={errorText(detail.error)}>
+      {damaged ? <RestoreButton id={projectId} /> : null}
       <Link className="btn" to="/">
         Back to your projects
       </Link>
     </Message>
+  );
+}
+
+/** Opens the history of a project that cannot be opened, to bring back a version of it that can. */
+function RestoreButton({ id }: { id: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="btn primary" type="button" onClick={() => setOpen(true)}>
+        Restore an earlier version…
+      </button>
+      {open ? <HistoryDrawer id={id} onClose={() => setOpen(false)} /> : null}
+    </>
   );
 }
 
@@ -260,8 +279,8 @@ const adminRoute = createRoute({ getParentRoute: () => rootRoute, path: "admin",
 const projectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "$projectId",
-  // #/<project>?view=assets is what the project is made of; anything else is its slides.
-  validateSearch: (search: Record<string, unknown>): { view?: "assets" } => (search.view === "assets" ? { view: "assets" } : {}),
+  // #/<project>?view=assets is what the project is made of, ?view=store how the store shows it; anything else is its slides.
+  validateSearch: (search: Record<string, unknown>): { view?: "assets" | "store" } => (search.view === "assets" || search.view === "store" ? { view: search.view } : {}),
   component: () => <ProjectRoute projectId={projectRoute.useParams().projectId} view={projectRoute.useSearch().view ?? "slides"} />,
 });
 const mockupsRoute = createRoute({ getParentRoute: () => rootRoute, path: "$projectId/mockups", component: () => <ProjectRoute projectId={mockupsRoute.useParams().projectId} view="mockups" /> });

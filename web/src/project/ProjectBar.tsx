@@ -17,9 +17,9 @@ const REDO = "M10.8 3.6l2.6 2.6-2.6 2.6M13 6.2H6.6a3.6 3.6 0 0 0 0 7.2h2.2";
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 const keys = (key: string, shift = false) => (MAC ? `${shift ? "⇧" : ""}⌘${key}` : `Ctrl+${shift ? "Shift+" : ""}${key}`);
 
-export type ProjectView = "slides" | "assets" | "mockups";
+export type ProjectView = "slides" | "assets" | "store" | "mockups";
 
-/** The parts of a project: what it makes for the store, what it is made of, and the devices alone. */
+/** The parts of a project: what it makes for the store, what it is made of, how the store shows it, and the devices alone. */
 export function ViewSwitch({ id, view }: { id: string; view: ProjectView }) {
   const params = { projectId: id };
   const current = (name: ProjectView) => ({ className: view === name ? "on" : "", "aria-current": view === name ? ("page" as const) : undefined });
@@ -30,6 +30,9 @@ export function ViewSwitch({ id, view }: { id: string; view: ProjectView }) {
       </Link>
       <Link {...current("assets")} to="/$projectId" params={params} search={{ view: "assets" }} title="The screenshots, logos and images the project is made of">
         Assets
+      </Link>
+      <Link {...current("store")} to="/$projectId" params={params} search={{ view: "store" }} title="The first slides as the App Store shows them: in search results and on the product page">
+        Store
       </Link>
       <Link {...current("mockups")} to="/$projectId/mockups" params={params} title="The devices alone, on a transparent background">
         Mockups
@@ -121,6 +124,11 @@ export function SaveStatus({ store, task }: { store: ProjectStore; task?: string
       {error && save.kind !== "gone" ? (
         <button className="btn small quiet" type="button" onClick={() => store.retry()}>
           {save.kind === "retrying" ? "Try now" : "Try again"}
+        </button>
+      ) : null}
+      {save.kind === "failed" ? (
+        <button className="btn small quiet" type="button" title="Put back what the server has, so the edits it turns down stop holding up the rest. Undo brings them back." onClick={() => store.revert()}>
+          Revert to saved
         </button>
       ) : null}
       <span role="alert" style={HIDDEN}>

@@ -8,11 +8,12 @@ import { type Detail, type DeviceStyle, errorText, fetchFile, label, type Meta, 
 import { DEVICE_LOOKS, ids, Slider, STATUS_BARS, TimeInput } from "./editor/index.ts";
 import { languageName, LanguageSwitch } from "./languages.tsx";
 import { Picker, useUpload } from "./project/Assets.tsx";
+import { HistoryButton } from "./project/History.tsx";
 import { ConflictBar, ProjectBar, SaveStatus, UndoButtons } from "./project/ProjectBar.tsx";
 import { Stage, useWidth } from "./project/Previews.tsx";
 import { change as changeDoc, projectDraft, remoteOf, renamed, useDraft, useOpenProject, useUndoKeys } from "./state/useDraft.ts";
 import { track } from "./track.ts";
-import { CopyBlock, Field, Icon, NumberInput, Select, toast } from "./ui/index.ts";
+import { CopyBlock, Field, Icon, NumberInput, Segmented, Select, toast } from "./ui/index.ts";
 
 const DOWNLOAD = "M8 2.6v7.8M4.9 7.5L8 10.6l3.1-3.1M2.8 10.4v2.8h10.4v-2.8";
 const COPY = "M5.6 5.6V3h7.4v7.4h-2.6M3 5.6h7.4V13H3z";
@@ -138,6 +139,7 @@ export function MockupsPage({ meta, detail }: { meta: Meta; detail: Detail }) {
       <ProjectBar id={id} name={project.name} view="mockups">
         <SaveStatus store={store} task={task} />
         <UndoButtons store={store} />
+        <HistoryButton id={id} store={store} />
         <button className="btn primary" type="button" disabled={busy != null || shots.length === 0} onClick={() => void download("zip", `/api/projects/${id}/mockups.zip`, `${id}-mockups.zip`)}>
           {busy === "zip" ? "Drawing…" : "Download all"}
         </button>
@@ -149,21 +151,16 @@ export function MockupsPage({ meta, detail }: { meta: Meta; detail: Detail }) {
           <section>
             <div className="toolbar">
               {shots.length ? (
-                <div className="segmented" role="radiogroup" aria-label="What the previews stand on">
-                  {(Object.keys(BACKDROPS) as Backdrop[]).map((key) => (
-                    <button
-                      key={key}
-                      className={backdrop === key ? "on" : ""}
-                      type="button"
-                      role="radio"
-                      aria-checked={backdrop === key}
-                      title={key === "checker" ? "Show what is transparent as a chequered pattern" : `See the mockups on a ${key} page. The PNG stays transparent.`}
-                      onClick={() => setBackdrop(key)}
-                    >
-                      {BACKDROPS[key]}
-                    </button>
-                  ))}
-                </div>
+                <Segmented
+                  label="What the previews stand on"
+                  choices={(Object.keys(BACKDROPS) as Backdrop[]).map((key) => ({
+                    id: key,
+                    text: BACKDROPS[key],
+                    title: key === "checker" ? "Show what is transparent as a chequered pattern" : `See the mockups on a ${key} page. The PNG stays transparent.`,
+                  }))}
+                  value={backdrop}
+                  onChange={setBackdrop}
+                />
               ) : null}
               <span className="spacer" />
               {project.locales.length > 1 ? <LanguageSwitch locales={project.locales} value={locale} onChange={setLocale} /> : null}
