@@ -115,6 +115,8 @@ export interface Detail {
   /** How many writes the project has seen, from a server that counts them. It sends the same number as the ETag. */
   revision?: number;
   shots: Shot[];
+  /** Screenshots of languages the project no longer has: shown nowhere, kept until deleted. Older servers leave it out. */
+  orphanedShots?: Shot[];
   images: StoredImage[];
   outputs: { locale: string; target: string; files: string[]; version: number }[];
   creativeOutputs: { locale: string; placement: PlacementId; path: string; version: number }[];

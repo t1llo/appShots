@@ -65,6 +65,7 @@ With `run` and `launch`, `--lang` also starts the app in that language, so one c
 - One name holds one screenshot per device and language. An upload replaces the one that was there.
 - A language without its own screenshot of a name shows the first language's. Nothing is left empty.
 - Delete a language's screenshot and it shows the first language's again.
+- Take a language out of the project and its screenshots are kept but shown nowhere, not even in a language of the same family. Add the language again and they are back. **Assets** lists them under **Languages taken out**, to delete them.
 
 ## What follows the language
 

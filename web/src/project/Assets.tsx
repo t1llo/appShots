@@ -128,6 +128,7 @@ export function AssetsView(props: {
   const { meta, detail, draft, locale, setLocale, upload, openConnect } = props;
   const id = detail.project.id;
   const { shots, images } = detail;
+  const orphaned = detail.orphanedShots ?? [];
   const queryClient = useQueryClient();
   const first = draft.locales[0]!;
   const used = usedNames(draft);
@@ -184,6 +185,24 @@ export function AssetsView(props: {
       () => api("DELETE", `/projects/${id}/shots/${shot.file}`),
     );
   };
+
+  const removeOrphaned = (shot: Shot) =>
+    askFirst(
+      { title: `Delete the ${languageName(shot.locale ?? first)} screenshot "${shot.name}"?`, text: "This cannot be undone.", action: "Delete screenshot", running: "Deleting…", danger: true },
+      () => api("DELETE", `/projects/${id}/shots/${shot.file}`),
+    );
+
+  const removeAllOrphaned = () =>
+    askFirst(
+      {
+        title: `Delete all ${orphaned.length} screenshots of languages this project no longer has?`,
+        text: "This cannot be undone.",
+        action: "Delete screenshots",
+        running: "Deleting…",
+        danger: true,
+      },
+      () => Promise.all(orphaned.map((shot) => api("DELETE", `/projects/${id}/shots/${shot.file}`))),
+    );
 
   const removeImage = (image: StoredImage) =>
     askFirst(
@@ -283,6 +302,32 @@ export function AssetsView(props: {
           )}
         </div>
       </section>
+
+      {orphaned.length ? (
+        <section className="block">
+          <div className="section-head">
+            <h2>Languages taken out</h2>
+            <span className="count">{orphaned.length}</span>
+            <span className="hint">Screenshots of languages this project no longer has. No slide shows them; adding the language again brings them back.</span>
+            <span className="spacer" />
+            <button className="btn small quiet" type="button" onClick={removeAllOrphaned}>
+              Delete all
+            </button>
+          </div>
+          <div className="shots">
+            {orphaned.map((shot) => (
+              <div key={shot.file} className="shot borrowed" title={`${shot.name} · ${shot.width}×${shot.height} · ${languageName(shot.locale ?? first)}`}>
+                <img src={`/files/${id}/shots/${shot.file}?v=${shot.version}`} alt="" loading="lazy" />
+                <span className="tag from">{shot.locale}</span>
+                <button className="remove" type="button" title="Delete screenshot" aria-label={`Delete ${shot.name} in ${shot.locale}`} onClick={() => removeOrphaned(shot)}>
+                  ×
+                </button>
+                <span className="name">{shot.name}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="block">
         <div className="section-head">

@@ -60,10 +60,12 @@ Good to know:
 | Projects per account | {{MAX_PROJECTS}} |
 | Screenshots per project | {{MAX_SHOTS}} for each language |
 | Logos and images per project | {{MAX_SHOTS}} |
+| Screenshots and images per account | {{MAX_UPLOADS}} in all, across its projects. Renders do not count |
 | Slides per set | 10 |
 | Languages per project | 40 |
 | A screenshot file | 40 MB |
 | An image file | 20 MB |
+| A picture | 40 million pixels, and 10000 pixels a side |
 | Renders | {{RENDERS}} per account. See below |
 | Renders at once | One running and one waiting per account |
 

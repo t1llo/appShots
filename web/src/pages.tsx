@@ -212,6 +212,9 @@ interface Usage {
   shots: number;
   images: number;
   bytes: number;
+  /** The screenshots and images among them, and the room the account has for those. Older servers send neither. */
+  uploadBytes?: number;
+  uploadLimit?: number;
 }
 
 const usageQuery = queryOptions({ queryKey: ["usage"], queryFn: () => api<Usage>("GET", "/usage") });
@@ -238,6 +241,9 @@ export function SettingsPage({ meta }: { meta: Meta }) {
             <Row title="Sign-in is off" sub="This server has one space, and whoever can open this address works in it." />
           )}
           {usage ? <Row title="What you keep here" sub={`${plural(usage.projects, "project")} · ${plural(usage.shots, "screenshot")} · ${plural(usage.images, "image")} · ${size(usage.bytes)} with the renders`} /> : null}
+          {usage?.uploadLimit && usage.uploadBytes !== undefined ? (
+            <Row title="Room for uploads" sub={`${size(usage.uploadBytes)} of screenshots and images, ${Math.min(100, Math.round((100 * usage.uploadBytes) / usage.uploadLimit))}% of what you can keep. Renders do not count.`} />
+          ) : null}
           {rendersLeft == null ? null : <Row title="Renders" sub={`${plural(rendersLeft, "render")} left. Every export uses one.`} />}
         </div>
       </Part>

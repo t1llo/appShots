@@ -24,8 +24,8 @@ const FRESH_FOR = 30_000;
 
 const MB = 1024 * 1024;
 
-/** A number of bytes as people read it: 512 MB, 1.5 GB. */
-export const megabytes = (bytes: number) => (bytes >= 1024 * MB ? `${(bytes / (1024 * MB)).toFixed(1)} GB` : `${Math.ceil(bytes / MB)} MB`);
+/** A number of bytes as people read it: 512 MB, 1.5 GB, 2 GB. */
+export const megabytes = (bytes: number) => (bytes >= 1024 * MB ? `${Number((bytes / (1024 * MB)).toFixed(1))} GB` : `${Math.ceil(bytes / MB)} MB`);
 
 async function folders(space: Space): Promise<string[]> {
   const entries = await readdir(projectsDir(space), { withFileTypes: true }).catch(() => []);

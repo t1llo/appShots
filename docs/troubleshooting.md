@@ -115,6 +115,10 @@ export PATH="$HOME/.local/bin:$PATH"
 
 **"This account is limited to {{MAX_PROJECTS}} projects", or the same about screenshots or images.** Delete what you no longer need. The limits are in [Accounts, tokens and limits](/docs/accounts#limits).
 
+**"This account keeps … of screenshots and images and has room for {{MAX_UPLOADS}}".** Uploads of all your projects count together. Delete screenshots you no longer use, those of languages a project no longer has first: the Studio lists them under **Languages taken out** on a project's **Assets** page. Deleting a project frees all of its own.
+
+**"The picture is … pixels, more than any screen has".** The file is larger than a screenshot can be, often a picture scaled up or stitched together. Upload the screenshot as the device took it.
+
 ## Still stuck
 
 <!-- if contact -->

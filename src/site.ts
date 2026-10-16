@@ -35,6 +35,7 @@ import {
   STATUS_BARS,
 } from "./design.ts";
 import { PLACEMENTS, placementsOf, TARGETS } from "./sizes.ts";
+import { megabytes } from "./storage/usage.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
 const docsDir = path.join(root, "docs");
@@ -72,6 +73,7 @@ const fonts = Object.entries(FONTS as Record<string, { family: string; group: st
 const VALUES: Record<string, string> = {
   MAX_PROJECTS: String(config.limits.projects),
   MAX_SHOTS: String(config.limits.shots),
+  MAX_UPLOADS: megabytes(config.limits.bytes),
   RENDERS: String(config.limits.renders),
   // A name is plain text, whatever characters it has.
   OPERATOR: config.operator.name.replace(/[\\`*_{}[\]<>()#+!|~-]/g, "\\$&"),

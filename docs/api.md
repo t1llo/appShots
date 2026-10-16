@@ -12,7 +12,7 @@ Everything the Studio does goes through a small JSON API. Use it from a script o
 | Base address | `{{SERVER}}/api` |
 | Sign-in | The header `Authorization: Bearer <token>` |
 | Bodies | JSON up to 2 MB, except file uploads, which send the file itself as the body |
-| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404 or 413, or 409 for a change made on an older revision. A body over its limit gets 413, and the sentence names the limit |
+| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404 or 413, or 409 for a change made on an older revision. A body over its limit gets 413, and the sentence names the limit, as does a picture larger than any screen or an upload the account has no room left for |
 
 Create the token under **Connect an agent** in the Studio. The examples expect it in `APPSHOTS_TOKEN`.
 
@@ -27,7 +27,7 @@ Create the token under **Connect an agent** in the Studio. The examples expect i
 | `GET /api/projects/:id/revisions` | Lists the versions kept of the project, newest first. See [Revisions](#revisions) |
 | `POST /api/projects/:id/restore` | Makes an earlier version current again. Body: `{ "revision": 4 }` |
 | `DELETE /api/projects/:id` | Deletes it with everything in it, its earlier versions too, and a damaged one as well |
-| `GET /api/usage` | What the account keeps on the server: the number of `projects`, `slides`, `shots` and `images`, and their size in `bytes` |
+| `GET /api/usage` | What the account keeps on the server: the number of `projects`, `slides`, `shots` and `images`, and their size in `bytes`. `uploadBytes` is the part that is screenshots and images, and `uploadLimit` the room the account has for those, where it has a limit. See [Limits](#limits) |
 
 ```bash
 curl -s {{SERVER}}/api/projects \
@@ -83,6 +83,12 @@ iPhone, iPhone Duo, iPad or Mac is read from the size and shape of the image. Ad
 A captured Mac window is stored without the shadow macOS adds, so its `width` and `height` in the `shots` list are those of the window. Its entry has `corner`, the radius of its round corners in pixels. See [Mac apps](/docs/mac).
 
 A screenshot is for the project's first language unless you add `?locale=de-DE`. The language has to be one of the project's `locales`, and `de` finds `de-DE`. Each entry of the project's `shots` list says which `locale` it is for; the first language's have none. See [Languages](/docs/languages#screenshots-per-language).
+
+The screenshots of a language taken out of `locales` are kept, so adding the language again brings them back, but no slide shows them, in no language. The project lists them apart, under `orphanedShots`, with the same keys as `shots`. Move one to a language the project has with `PATCH`, or delete it with `DELETE`. A file that cannot be read as a picture is left out of both lists, and the project's `warnings` name it so it can be uploaded again or deleted.
+
+### Limits
+
+A screenshot or image of more than 40 million pixels, or of more than 10000 pixels on a side, is refused with status 413 before it is decoded: no screen has that many, and a 6K display has about 20 million. On a server with sign-in, each account other than the admin has room for {{MAX_UPLOADS}} of screenshots and images across its projects. Rendered files do not count. An upload past it is refused with status 413, and the sentence says how much the account keeps. Replacing a screenshot counts only what it adds. `GET /api/usage` gives `uploadBytes` and `uploadLimit`.
 
 ## Logos and images
 
