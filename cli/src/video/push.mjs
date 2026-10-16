@@ -139,12 +139,15 @@ async function previewsOf(plan, flags, out) {
   const folders = (dir) => readdirSync(dir).filter((entry) => !entry.startsWith(".") && statSync(path.join(dir, entry)).isDirectory()).sort();
   const planLocales = Array.isArray(plan.locales) ? plan.locales : null;
   const planDisplays = Array.isArray(plan.displays) ? plan.displays : null;
+  const locales = folders(out).filter((locale) => !planLocales || planLocales.includes(locale));
+  /** @param {string} a @param {string} b */
+  const same = (a, b) => a.toLowerCase() === b.toLowerCase();
   /** @type {Preview[]} */
   const previews = [];
   const refused = [];
-  for (const locale of folders(out)) {
-    if (planLocales && !planLocales.includes(locale)) continue;
-    const picked = languages?.filter((entry) => sameLanguage(entry.from, locale));
+  for (const locale of locales) {
+    // --lang names a folder by its code, or by another code of its language where no folder has that one.
+    const picked = languages?.filter((entry) => same(entry.from, locale) || (sameLanguage(entry.from, locale) && !locales.some((other) => same(entry.from, other))));
     if (languages && picked?.length === 0) continue;
     // A code that names a region the folder does not, such as en-GB for en, says where it goes.
     const onto = /** @type {string[]} */ ((picked ?? []).map((entry) => entry.to ?? (entry.from.includes("-") && !locale.includes("-") ? entry.from : null)).filter(Boolean));
@@ -377,7 +380,7 @@ export async function videoPush(plan, flags) {
       }
       if (target.action === "full") continue;
       const uploaded = before.get(preview.key);
-      const sends = uploaded || sending.has(preview.key) ? "would place the upload of before" : `would upload ${preview.shown} (${megabytes(preview.bytes)}, ${preview.seconds?.toFixed(1) ?? "?"} s, poster at ${preview.timecode ?? "Apple's choice"})`;
+      const sends = uploaded || sending.has(preview.key) ? `would place ${preview.shown} as uploaded before` :`would upload ${preview.shown} (${megabytes(preview.bytes)}, ${preview.seconds?.toFixed(1) ?? "?"} s, poster at ${preview.timecode ?? "Apple's choice"})`;
       sending.add(preview.key);
       const how = target.action === "replace" ? `in place of appShots' earlier upload${replace ? "" : " (with --replace)"}` : `as preview ${target.placements.length + 1} of at most ${group.limit}`;
       console.log(`${target.label}  ${sends} and place it in ${group.group}, ${how}`);
@@ -459,7 +462,7 @@ export async function videoPush(plan, flags) {
       there++;
       continue;
     }
-    const video = preview.key ? videos.get(preview.key) : undefined;
+    const video = videos.get(preview.key);
     if (!video || (pending.has(video) && flags["no-wait"])) continue;
     const page = await previewPlacements(account, target.localization, group.group);
     if (page.some((placement) => placement.video?.referenceName === preview.referenceName)) {

@@ -360,6 +360,21 @@ test("--lang picks the languages and says which store language each goes onto; -
   await refused(planOf(root), { display: "watch" }, /--display takes iphone, ipad, mac/);
 });
 
+test("two folders of one language that go onto one page stop the push, and --lang picks a folder by its own code", async () => {
+  asc.reset({ locales: ["en-GB", "de-DE"] });
+  const root = project([
+    { locale: "en", display: "iphone" },
+    { locale: "en-GB", display: "iphone" },
+  ]);
+  const plan = planOf(root, { locales: ["en", "en-GB"] });
+  await refused(plan, {}, /en\/iphone\/preview\.mp4 and .*en-GB\/iphone\/preview\.mp4 would both go onto en-GB\. Leave one out with --lang\. Nothing was changed\./);
+  assert.deepEqual(asc.writes(), []);
+  const { code } = await push(plan, { lang: "en-GB" });
+  assert.equal(code, 0);
+  assert.deepEqual(asc.page("en-GB", IPHONE), [nameOf(root, "en-GB", "iphone")]);
+  assert.equal(asc.state.videos.size, 1);
+});
+
 test("a poster frame chosen after the upload is moved on the video that is there", async () => {
   const root = project([{ locale: "en", display: "iphone", poster: 3.5 }]);
   await push(planOf(root));
