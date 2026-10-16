@@ -43,16 +43,33 @@ export function identify(req: Request): Identity | null {
   return holder && { space: spaceOfUser(holder), user: holder, session: true };
 }
 
-/** Browsers attach Origin to cross-site writes, and a session cookie must not be usable from another site. */
-export function sameOrigin(req: Request): boolean {
-  const origin = req.get("origin");
-  if (!origin) return true;
+/** Whether an address is on this server: the host the request came to, or the public address it is known by. */
+function ownAddress(req: Request, address: string): boolean {
   try {
-    const host = new URL(origin).host;
+    const host = new URL(address).host;
     return host === req.get("host") || (config.publicUrl !== "" && host === new URL(config.publicUrl).host);
   } catch {
     return false;
   }
+}
+
+/** Browsers attach Origin to cross-site writes, and a session cookie must not be usable from another site. */
+export function sameOrigin(req: Request): boolean {
+  const origin = req.get("origin");
+  return !origin || ownAddress(req, origin);
+}
+
+/**
+ * Whether a GET that changes something comes from this server's own pages or from no page at all, such as the CLI
+ * or an address typed in. A browser sends the session cookie along when another site links here, and such a link
+ * must not be able to spend a render. Browsers say where a request comes from in Sec-Fetch-Site, older ones only in
+ * Referer.
+ */
+export function notCrossSite(req: Request): boolean {
+  const site = req.get("sec-fetch-site");
+  if (site) return site === "same-origin" || site === "none";
+  const referer = req.get("referer");
+  return !referer || ownAddress(req, referer);
 }
 
 const READ_ONLY = new Set(["GET", "HEAD", "OPTIONS"]);

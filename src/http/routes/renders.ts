@@ -1,16 +1,17 @@
 import express, { type Router } from "express";
 import { z } from "zod";
 import { rendersLeft } from "../../accounts.ts";
-import { cancelRender, getRender, listRenders, renderProject, resolveLocales, startRender } from "../../render.ts";
-import { localeSchema } from "../../schema.ts";
+import { cancelRender, getRender, listRenders, type RenderJob, type RenderRequest, renderProject, resolveLocales, startRender } from "../../render.ts";
+import { localeSchema, type Project } from "../../schema.ts";
 import { PLACEMENT_IDS, TARGET_IDS } from "../../sizes.ts";
 import { checkRender } from "../../services/check.ts";
-import { getProject, InputError, listOutputs, NotFoundError } from "../../store.ts";
+import { getProject, InputError, listOutputs, NotFoundError, type Space } from "../../store.ts";
+import { clientGone } from "../abort.ts";
 import type { Log } from "../errors.ts";
 import { spaceOf } from "../auth.ts";
 import { creativeOutputs } from "./projects.ts";
 
-const renderBody = z.object({
+export const renderBody = z.object({
   targets: z.array(z.enum(TARGET_IDS)).optional(),
   locales: z.array(localeSchema).optional(),
   slides: z.array(z.number().int().min(0)).optional(),
@@ -18,6 +19,21 @@ const renderBody = z.object({
   /** Answer at once with the run instead of waiting for it. */
   background: z.boolean().optional(),
 });
+
+/**
+ * Queues a render nobody waits for. What it fails with is for whoever asks after it; only the server's own trouble
+ * goes to the log. Answers with the run as it was accepted, once it has read the screenshots: one deleted after the
+ * answer is missing from the run, not from its plan.
+ */
+export async function inBackground(log: Log, space: Space, project: Project, request: RenderRequest): Promise<RenderJob> {
+  const { job, finished, read } = startRender(space, project.id, request, project.name);
+  finished.catch((error: unknown) => {
+    if (!(error instanceof InputError || error instanceof NotFoundError)) log.error(error);
+  });
+  const accepted = { ...job };
+  await read;
+  return accepted;
+}
 
 /** Starting renders, and following and cancelling the ones under way. */
 export function renderRoutes(log: Log): Router {
@@ -32,17 +48,10 @@ export function renderRoutes(log: Log): Router {
       // moment later.
       const project = await getProject(space, id);
       resolveLocales(project, request.locales);
-      const { job, finished, read } = startRender(space, id, request, project.name);
-      finished.catch((error: unknown) => {
-        if (!(error instanceof InputError || error instanceof NotFoundError)) log.error(error);
-      });
-      // The answer is the run as it was accepted, sent once it has read the screenshots: one deleted after the
-      // answer is missing from the run, not from its plan.
-      const accepted = { ...job };
-      await read;
-      return void res.status(202).json({ job: accepted, rendersLeft: rendersLeft(space.id) });
+      return void res.status(202).json({ job: await inBackground(log, space, project, request), rendersLeft: rendersLeft(space.id) });
     }
-    const result = await renderProject(space, id, request);
+    // A client that stops waiting cancels the render, and gets the render back.
+    const result = await renderProject(space, id, request, { signal: clientGone(res) });
     res.json({ ...result, outputs: await listOutputs(space, id), creativeOutputs: await creativeOutputs(space, id), rendersLeft: rendersLeft(space.id) });
   });
 
@@ -53,7 +62,7 @@ export function renderRoutes(log: Log): Router {
     res.json(await checkRender(spaceOf(res), req.params.id, request));
   });
 
-  // The account's renders: the ones waiting or under way, and the finished ones of the last hour.
+  // The account's renders: the ones waiting or under way, and the finished ones of the last hour, eight at most.
   api.get("/renders", (_req, res) => {
     res.json({ jobs: listRenders(spaceOf(res)), rendersLeft: rendersLeft(spaceOf(res).id) });
   });

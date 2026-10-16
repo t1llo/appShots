@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { copyFile, link, mkdir, readdir, readFile, rename, rm, rmdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { LOCALE } from "../schema.ts";
@@ -269,6 +270,29 @@ export async function discardStaging(dir: string, job: string): Promise<void> {
   await stat(path.join(dir, "project.json")).catch(() => rmdir(dir).catch(() => {}));
 }
 
+/** The staging folders exports are sending from, by name. A sweep leaves them alone, as it does a running render's. */
+const exporting = new Set<string>();
+
+/**
+ * A staging folder for an export to link the files it sends into: on the same disk as out/, so a link stands in for
+ * a copy. Released once the archive is sent; one a server left behind goes with the next sweep.
+ */
+export async function exportStage(dir: string): Promise<{ dir: string; release(): Promise<void> }> {
+  const name = `export-${randomBytes(8).toString("hex")}`;
+  exporting.add(name);
+  const release = async () => {
+    await discardStaging(dir, name);
+    exporting.delete(name);
+  };
+  try {
+    await mkdir(stagingDir(dir, name), { recursive: true });
+  } catch (error) {
+    await release();
+    throw error;
+  }
+  return { dir: stagingDir(dir, name), release };
+}
+
 /**
  * Removes staging folders no run is using, such as those of a server that stopped in the middle of a render. They
  * are shared by an account's projects, so `running` holds every run that has not ended.
@@ -276,6 +300,6 @@ export async function discardStaging(dir: string, job: string): Promise<void> {
 export async function sweepStaging(dir: string, running: Set<string>): Promise<void> {
   const root = path.join(path.dirname(dir), STAGING);
   for (const job of await readdir(root).catch(() => [])) {
-    if (!running.has(job)) await rm(path.join(root, job), { recursive: true, force: true });
+    if (!running.has(job) && !exporting.has(job)) await rm(path.join(root, job), { recursive: true, force: true });
   }
 }

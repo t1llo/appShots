@@ -79,7 +79,7 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
   api.use(assetRoutes());
   api.use(videoRoutes(log));
   api.use(renderRoutes(log));
-  api.use(exportRoutes());
+  api.use(exportRoutes(log));
   api.use(mockupRoutes());
   api.use("/account", accountRoutes());
   api.use("/admin", adminRoutes());

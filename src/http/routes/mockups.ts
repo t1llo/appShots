@@ -4,6 +4,7 @@ import { renderMockup } from "../../render.ts";
 import { mockupLocale, previewSettings as mockupSettings } from "../../services/mockups.ts";
 import { getProject, InputError, listShots, NotFoundError } from "../../store.ts";
 import { writeZip } from "../../zip.ts";
+import { clientGone } from "../abort.ts";
 import { spaceOf } from "../auth.ts";
 
 // The settings a mockup is drawn with, and its language, are the services' (src/services/mockups.ts), as for the MCP tool.
@@ -55,11 +56,24 @@ export function mockupRoutes(): Router {
               .map((shot) => ({ shot, name: `${locale}/${mockupName(shot)}` })),
           ),
         ];
-    // Drawn before the first byte goes out, so a failure is still an error and not half a file.
-    const entries = [];
-    for (const { shot, name } of wanted) entries.push({ name, data: (await renderMockup(space, project, shot, settings)).png });
+    // Each goes out as soon as it is drawn, while the next one is drawn, so the download starts at once and only one
+    // mockup is held at a time. Nothing is sent before the first is drawn: a failure that early is still an error.
+    const signal = clientGone(res);
+    const draw = (i: number) => {
+      const drawing = renderMockup(space, project, wanted[i]!.shot, settings);
+      drawing.catch(() => {});
+      return drawing;
+    };
+    async function* drawn() {
+      let next = wanted.length ? draw(0) : undefined;
+      for (let i = 0; i < wanted.length && !signal.aborted; i++) {
+        const mockup = await next!;
+        next = i + 1 < wanted.length ? draw(i + 1) : undefined;
+        yield { name: wanted[i]!.name, data: mockup.png };
+      }
+    }
     res.type("zip").set("Content-Disposition", `attachment; filename="${project.id}-mockups.zip"`);
-    await writeZip(res, entries);
+    await writeZip(res, drawn(), { signal });
     res.end();
   });
 
