@@ -333,6 +333,7 @@ Each event's name says what happened, and its `data` is one line of JSON:
 | Event | When | Fields |
 | --- | --- | --- |
 | `ready` | Once, first. The stream works from end to end | `heartbeatMs` |
+| `ping` | Every `heartbeatMs`, 20 seconds | None: its `data` is `{}` |
 | `project` | A project was changed or restored | `id`, the new `revision`, and the `actor` that made the change, as in [Revisions](#revisions) |
 | `project-created` | A project was made, or moved into the account | `id`, `actor`: `admin` for one the admin moved |
 | `project-deleted` | A project was deleted, or moved out of the account | `id` |
@@ -341,7 +342,7 @@ Each event's name says what happened, and its `data` is one line of JSON:
 
 An event names what changed, not all of it: fetch what you show of it again, such as `GET /api/projects/:id` when its `revision` is newer than the one you have. Progress of a render is told at most four times a second, and its start and end at once.
 
-- A comment line goes down a quiet stream every 20 seconds, so a proxy in between does not take it for dead.
+- The `ping` keeps a proxy in between from taking a quiet stream for dead, and tells a client that the stream still works. A connection can die without a word, such as while a laptop sleeps: a client that hears nothing at all for two heartbeats should close the stream and open it again. The Studio does.
 - Nothing is kept for a client that was not connected: there is no replay and no `Last-Event-ID`. After the stream was cut off, open it again and fetch everything you show once more. `retry` tells a browser's `EventSource` to wait five seconds before it does that by itself.
 - A stream ends when the sign-in it was opened with ends: when its session signs out, its token is revoked or its account is deleted. It ends as well when the server stops, such as for an update. A client that reads more slowly than events come is cut off.
 - One account may hold 10 streams open at once. One more is refused with 429 and `Retry-After`.

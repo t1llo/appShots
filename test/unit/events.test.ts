@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import http from "node:http";
+import net from "node:net";
 import { after, describe, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import express from "express";
@@ -134,10 +136,14 @@ describe("the route", async () => {
     res.locals.identity = { space: { id: req.get("x-space") ?? "a", root: "/nonexistent" }, session: true };
     next();
   });
-  app.use("/api", eventRoutes({ heartbeatMs: 50, maxStreams: 2, bus }));
+  app.use("/api", eventRoutes({ heartbeatMs: 50, maxStreams: 2, maxBuffered: 64 * 1024, bus }));
   const server = http.createServer(app);
+  // The server's end of each connection, by the port of the client's end.
+  const sockets = new Map<number, net.Socket>();
+  server.on("connection", (socket: net.Socket) => sockets.set(socket.remotePort!, socket));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/events`;
+  const port = (server.address() as { port: number }).port;
+  const url = `http://127.0.0.1:${port}/api/events`;
   after(async () => {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
@@ -159,18 +165,21 @@ describe("the route", async () => {
     }
   });
 
-  test("a quiet stream gets a comment every heartbeat, and the events of its account only", async () => {
+  test("a quiet stream gets a ping every heartbeat, and the events of its account only", async () => {
     const [mine, theirs] = await Promise.all([openEvents(url), openEvents(url, { headers: { "x-space": "b" } })]);
     try {
       await Promise.all([mine.next("ready"), theirs.next("ready")]);
       await sleep(180);
-      assert.ok(mine.text().split(": heartbeat\n\n").length - 1 >= 2, mine.text());
+      // An event, not a comment: EventSource hands no comment on, and the Studio tells a dead stream by its pings.
+      const pings = mine.received.filter((event) => event.type === "ping");
+      assert.ok(pings.length >= 2, mine.text());
+      assert.ok(pings.every((ping) => JSON.stringify(ping.data) === "{}"));
       bus.publish("a", changed("for-a"));
       bus.publish("b", changed("for-b"));
       assert.deepEqual(await mine.next(), { type: "project", data: { id: "for-a", revision: 2, actor: "api" } });
       assert.deepEqual(await theirs.next(), { type: "project", data: { id: "for-b", revision: 2, actor: "api" } });
       await sleep(50);
-      assert.deepEqual(mine.received.map((event) => event.type), ["ready", "project"]);
+      assert.deepEqual(mine.received.filter((event) => event.type !== "ping").map((event) => event.type), ["ready", "project"]);
     } finally {
       mine.close();
       theirs.close();
@@ -192,6 +201,29 @@ describe("the route", async () => {
     assert.equal(third.response.status, 200);
     second.close();
     third.close();
+  });
+
+  test("a client that stops reading is cut off, and its connection let go at once", async () => {
+    // A client of its own that asks for the stream, then reads nothing more.
+    const client = net.connect(port, "127.0.0.1");
+    await once(client, "connect");
+    client.pause();
+    client.write("GET /api/events HTTP/1.1\r\nHost: 127.0.0.1\r\nx-space: slow\r\n\r\n");
+    try {
+      for (let tries = 0; tries < 50 && bus.followers("slow") === 0; tries++) await sleep(20);
+      assert.equal(bus.followers("slow"), 1);
+      // Events larger than what the system buffers between the two ends, until more waits for the client than it may.
+      const large = changed("x".repeat(256 * 1024));
+      for (let sent = 0; sent < 400 && bus.followers("slow") > 0; sent++) {
+        bus.publish("slow", large);
+        await sleep(2);
+      }
+      assert.equal(bus.followers("slow"), 0);
+      // Ended rather than cut off, the server's end would still wait to hand over what it holds.
+      assert.equal(sockets.get(client.localPort!)?.destroyed, true);
+    } finally {
+      client.destroy();
+    }
   });
 
   test("the streams end when the server stops", async () => {

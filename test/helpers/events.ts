@@ -8,7 +8,10 @@ export interface StreamEvent {
 
 export interface EventStream {
   response: Response;
-  /** The next event not taken yet, of `type` when given: the ones before it are skipped. Rejects after `ms`. */
+  /**
+   * The next event not taken yet, of `type` when given: the ones before it are skipped, and so are the pings of the
+   * heartbeat unless `type` asks for one. Rejects after `ms`.
+   */
   next(type?: string, ms?: number): Promise<StreamEvent>;
   /** Every event received so far, taken or not. */
   received: StreamEvent[];
@@ -74,7 +77,7 @@ export async function openEvents(url: string, init: RequestInit = {}): Promise<E
       for (;;) {
         while (taken < received.length) {
           const event = received[taken++]!;
-          if (!type || event.type === type) return event;
+          if (type ? event.type === type : event.type !== "ping") return event;
         }
         if (done) throw new Error(`The stream ended before ${type ? `a ${type} event` : "another event"} came`);
         const left = deadline - Date.now();

@@ -2,13 +2,17 @@ import express, { type Router } from "express";
 import { type EventBus, events, type SpaceEvent } from "../../services/events.ts";
 import { spaceOf, stillSignedIn } from "../auth.ts";
 
-/** How often a comment goes down a quiet stream, so that a proxy in between does not take it for dead and close it. */
+/**
+ * How often a `ping` goes down the stream: so that a proxy in between does not take a quiet stream for dead and close
+ * it, and so that a client can tell a stream that died without a word, such as across a laptop's sleep, from one that
+ * has nothing to tell. A comment would do for the proxy, but EventSource never hands one on.
+ */
 export const HEARTBEAT_MS = 20_000;
 /** Streams one account may hold open at once: one for each tab of the Studio, and some to spare. */
 export const MAX_STREAMS = 10;
 /** How long a browser waits before it opens a stream again that was cut off. */
 const RETRY_MS = 5000;
-/** What may wait to go out to a client that does not read. Past it the stream ends, and the client asks for everything again. */
+/** What may wait to go out to a client that does not read. Past it the stream is cut off, and the client asks for everything again. */
 const MAX_BUFFERED = 1024 * 1024;
 
 const frame = (name: string, data: object) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -19,6 +23,7 @@ export const eventFrame = ({ type, ...data }: SpaceEvent) => frame(type, data);
 export interface EventRouteOptions {
   heartbeatMs?: number;
   maxStreams?: number;
+  maxBuffered?: number;
   bus?: EventBus;
 }
 
@@ -30,6 +35,7 @@ export interface EventRouteOptions {
 export function eventRoutes(options: EventRouteOptions = {}): Router {
   const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
   const maxStreams = options.maxStreams ?? MAX_STREAMS;
+  const maxBuffered = options.maxBuffered ?? MAX_BUFFERED;
   const bus = options.bus ?? events;
   const api = express.Router();
 
@@ -53,16 +59,19 @@ export function eventRoutes(options: EventRouteOptions = {}): Router {
 
     const signedIn = stillSignedIn(req, res);
     let open = true;
-    const end = () => {
+    const end = (cut = false) => {
       if (!open) return;
       open = false;
       clearInterval(heartbeat);
       unfollow();
-      res.end();
+      // Ending would wait for what is buffered to go out first, to a client that does not read, and keep its socket
+      // and that buffer for as long as TCP lets it. Cut off, both are let go at once.
+      if (cut) res.destroy();
+      else res.end();
     };
     const write = (text: string) => {
       if (!open) return;
-      if (res.writableLength > MAX_BUFFERED) return end();
+      if (res.writableLength > maxBuffered) return end(true);
       res.write(text);
     };
     const check = () => {
@@ -70,7 +79,7 @@ export function eventRoutes(options: EventRouteOptions = {}): Router {
     };
     const heartbeat = setInterval(() => {
       check();
-      write(": heartbeat\n\n");
+      write(frame("ping", {}));
     }, heartbeatMs);
     heartbeat.unref();
     const unfollow = bus.follow(space.id, {
@@ -81,7 +90,7 @@ export function eventRoutes(options: EventRouteOptions = {}): Router {
       recheck: check,
       end,
     });
-    res.on("close", end);
+    res.on("close", () => end());
     // Gone before it was followed: no close would come to end it.
     if (res.destroyed || req.socket.destroyed) return end();
     // `ready` says that the stream works from end to end. A client that does not get it, such as one behind a proxy
