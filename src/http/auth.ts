@@ -63,13 +63,14 @@ export function sameOrigin(req: Request): boolean {
  * Whether a GET that changes something comes from this server's own pages or from no page at all, such as the CLI
  * or an address typed in. A browser sends the session cookie along when another site links here, and such a link
  * must not be able to spend a render. Browsers say where a request comes from in Sec-Fetch-Site, older ones only in
- * Referer.
+ * Referer, which a page can keep from being sent. With sign-in on, a session is a browser's, so one that says
+ * neither is refused; with sign-in off, it is likely the CLI, which sends neither.
  */
 export function notCrossSite(req: Request): boolean {
   const site = req.get("sec-fetch-site");
   if (site) return site === "same-origin" || site === "none";
   const referer = req.get("referer");
-  return !referer || ownAddress(req, referer);
+  return referer ? ownAddress(req, referer) : !config.auth;
 }
 
 const READ_ONLY = new Set(["GET", "HEAD", "OPTIONS"]);

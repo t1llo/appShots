@@ -164,7 +164,7 @@ Rendering takes a while, so give the request a generous timeout. A client that g
 
 A ZIP is sent with its `Content-Length`, so a download that was cut short is shorter than that and can be told from a whole one. It holds the files as they were when the download began, even when a render finishes meanwhile. Archives past 4 GB or 65,535 files are written as ZIP64, which `unzip` and the archive tools of macOS and Windows open.
 
-`?render=1` with the session of a browser, rather than a token, renders only for a request from the Studio's own pages or one typed into the address bar: browsers send `Sec-Fetch-Site`, older ones `Referer`, and a link on another site is refused with 403, so it cannot spend a render. A page uses `POST /api/projects/:id/exports` instead.
+`?render=1` with the session of a browser, rather than a token, renders only for a request from the Studio's own pages or one typed into the address bar: browsers send `Sec-Fetch-Site`, older ones `Referer`, and a link on another site is refused with 403, as is a request that sends neither, so it cannot spend a render. A page uses `POST /api/projects/:id/exports` instead.
 
 ### Without waiting
 

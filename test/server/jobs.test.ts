@@ -278,14 +278,18 @@ describe("renders, with sign-in", () => {
     assert.equal(crossSite.status, 403);
     const oldBrowser = await call(`/api/projects/${id}/export.zip?render=1`, session("u2", { Referer: "https://elsewhere.example.com/page" }));
     assert.equal(oldBrowser.status, 403);
+    // The same browser following a link from a page that keeps its address to itself: it says neither.
+    const hidden = await call(`/api/projects/${id}/export.zip?render=1`, session("u2"));
+    assert.equal(hidden.status, 403);
     assert.equal(await left(two), 5, "no render was spent");
     // The Studio's own pages, an address typed in, and a token, which no other site has.
     assert.equal((await server.fetch(`/api/projects/${id}/export.zip?render=1`, session("u2", { "Sec-Fetch-Site": "same-origin" }))).status, 200);
     assert.equal((await server.fetch(`/api/projects/${id}/export.zip?render=1`, session("u2", { "Sec-Fetch-Site": "none" }))).status, 200);
+    assert.equal((await server.fetch(`/api/projects/${id}/export.zip?render=1`, session("u2", { Referer: `${server.url}/projects/${id}` }))).status, 200);
     assert.equal((await server.fetch(`/api/projects/${id}/export.zip?render=1`, two({ headers: { "Sec-Fetch-Site": "cross-site" } }))).status, 200);
     // Without render=1 it only reads, from anywhere.
     assert.equal((await server.fetch(`/api/projects/${id}/export.zip`, session("u2", { "Sec-Fetch-Site": "cross-site" }))).status, 200);
-    assert.equal(await left(two), 2);
+    assert.equal(await left(two), 1);
   });
 
   test("deleting an account while it renders stops the render before its folder goes", async () => {
