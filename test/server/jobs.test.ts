@@ -6,6 +6,7 @@ import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
+import { callTool, textOf } from "../helpers/mcp.ts";
 import { startServer, type TestServer } from "../helpers/spawn-server.ts";
 import { type TmpData, tmpData } from "../helpers/tmp-data.ts";
 
@@ -163,6 +164,47 @@ describe("renders, without sign-in", () => {
     const response = await server.fetch(`/api/projects/${id}/export.zip?render=1`);
     assert.equal(response.status, 200);
     assert.ok((await response.arrayBuffer()).byteLength > 0);
+  });
+
+  test("an agent starts a render in the background, follows it and gets the pictures once it is done", async () => {
+    const id = await create("Agent", 2);
+    const started = await callTool(server, "render", { project: id, background: true });
+    assert.notEqual(started.isError, true, textOf(started));
+    const job = /render ([0-9a-f]{16})/.exec(textOf(started))?.[1];
+    assert.ok(job, textOf(started));
+    assert.match(textOf(await callTool(server, "get_render", { job })), /waits for its turn|is drawing: \d of 2 pictures/);
+    await until(async () => (await call(`/api/renders/${job}`)).body.state === "done", 10_000, "the render");
+    const done = await callTool(server, "get_render", { job });
+    assert.match(textOf(done), /^Rendered 2 PNGs\./);
+    assert.match(textOf(done), new RegExp(`/files/${id}/out/en/iphone-6\\.9/01\\.png`));
+    const listed = JSON.parse(textOf(await callTool(server, "get_render", {})));
+    assert.ok(listed.some((each: Job) => each.id === job && each.state === "done"));
+    assert.match(textOf(await callTool(server, "cancel_render", { job })), /has ended already: done/);
+    const unknown = await callTool(server, "get_render", { job: "0000000000000000" });
+    assert.equal(unknown.isError, true);
+    assert.match(textOf(unknown), /No such render/);
+  });
+
+  test("an agent cancels a render it started, and one that stops waiting for its render cancels it", async () => {
+    const id = await create("Agent cancels", 4);
+    const job = /render ([0-9a-f]{16})/.exec(textOf(await callTool(server, "render", { project: id, background: true })))![1]!;
+    assert.match(textOf(await callTool(server, "cancel_render", { job })), /^Cancelled the render/);
+    await until(async () => (await call(`/api/renders/${job}`)).body.state === "cancelled", 5000, "the cancel");
+    assert.match(textOf(await callTool(server, "get_render", { job })), /was cancelled/);
+
+    const controller = new AbortController();
+    const asked = server
+      .fetch("/mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "render", arguments: { project: id } } }),
+        signal: controller.signal,
+      })
+      .catch(() => null);
+    await until(async () => (await jobs()).some((each) => each.project === id && each.state === "running"), 5000, "the render to start");
+    controller.abort();
+    await asked;
+    await until(async () => (await jobs()).filter((each) => each.project === id).every((each) => each.state === "cancelled"), 5000, "the render to be cancelled");
   });
 
   test("mockups.zip of a project without screenshots is an error, not an empty file", async () => {

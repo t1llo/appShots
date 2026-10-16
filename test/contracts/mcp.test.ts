@@ -26,12 +26,14 @@ const TOOLS: Record<string, string[]> = {
   update_slide: ["project", "slide", "of", "changes", "remove"],
   set_creative_assets: ["project", "header", "search", "universal", "readme", "social", "link", "post", "remove"],
   check_project: ["project", "slides", "creatives", "targets", "locales"],
-  render: ["project", "slides", "creatives", "targets", "locales", "previews", "preview"],
+  render: ["project", "slides", "creatives", "targets", "locales", "previews", "preview", "background"],
+  get_render: ["job", "previews", "preview"],
+  cancel_render: ["job"],
   render_mockups: ["project", "screenshots", "locale", "device", "width"],
   list_revisions: ["project"],
   restore_project: ["project", "revision"],
 };
-const READ_ONLY = ["get_design_guide", "list_projects", "get_project", "list_revisions", "check_project"];
+const READ_ONLY = ["get_design_guide", "list_projects", "get_project", "list_revisions", "check_project", "get_render"];
 const DESCRIBE_KEYS = ["id", "name", "locales", "theme", "slides", "deviceSlides", "creativeAssets", "mockups", "screenshots", "images", "exportSizes", "studio"];
 
 const THREE_SLIDES = [
