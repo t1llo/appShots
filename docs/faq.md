@@ -1,7 +1,7 @@
 ---
 title: Questions and answers
 nav: FAQ
-description: Short answers about appShots. What it is, which agents it works with, whether you need a Mac, what happens to your screenshots, fonts and device frames, and what it does not do.
+description: Short answers about appShots. What it is, which agents it works with, whether you need a Mac, app preview videos, what happens to your screenshots, fonts and device frames, and what it does not do.
 ---
 
 ## The basics
@@ -64,9 +64,13 @@ Yes. The **Mockups** page of a project shows every screenshot in its device with
 
 Yes, with an API key of your own. `appshots store push` puts every language into its language and every folder onto its display, in the version you are preparing or a new one, and it can change the texts of the store page. It never submits anything for review. See [Upload to App Store Connect](/docs/app-store-connect).
 
-### Landscape screenshots, or app preview videos?
+### Can it make app preview videos?
 
-iPhone and iPad sets are portrait, and a Mac set is landscape. There are no landscape iPhone or iPad sets and no videos.
+Yes, on a Mac. `appshots video` records your app in the simulator, on a device, in its window or in a browser, the server draws a caption over each moment in your set's style and in every language, and the command cuts the preview, checks it against Apple's rules and can put it into App Store Connect. Your recordings stay on your Mac. Ask your agent for "an App Store preview video", or see [App preview videos](/docs/video).
+
+### Landscape screenshots?
+
+iPhone and iPad sets are portrait, and a Mac set is landscape. There are no landscape iPhone or iPad sets. An app preview video of an app that runs in landscape can be landscape too: `"orientation": "landscape"` in its plan.
 
 ### Can I use my own fonts?
 
@@ -92,7 +96,7 @@ Your account, and the person who runs the server, who has access to its disk. No
 
 ### Does my agent send my code to appShots?
 
-No. The agent reads your code on your Mac. What reaches the server is the screenshots it uploads and the slides it writes. What your agent sends to its own maker is between you and them.
+No. The agent reads your code on your Mac. What reaches the server is the screenshots it uploads and the slides it writes, and for an app preview video the words of its captions, never the recordings. What your agent sends to its own maker is between you and them.
 
 ### Does appShots get my App Store Connect key?
 

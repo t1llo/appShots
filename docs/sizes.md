@@ -88,4 +88,4 @@ Wide pictures for outside the store. See [Banners](/docs/banners).
 
 ## What appShots does not make
 
-Landscape sets for an iPhone or iPad app (a landscape screenshot goes into an upright slide, in a turned device), app previews (videos), and Apple Watch, Apple TV or Vision Pro sizes.
+Landscape sets for an iPhone or iPad app (a landscape screenshot goes into an upright slide, in a turned device), and Apple Watch, Apple TV or Vision Pro sizes. App preview videos have sizes of their own, listed in [App preview videos](/docs/video#sizes).

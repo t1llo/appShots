@@ -64,7 +64,7 @@ Say "decide yourself" and it takes: iPhone only, does everything itself without 
 - **Draw, generate or download artwork.** It uses the files you give it or the ones in your repository.
 - **Write scripts or UI tests** to take screenshots. It uses the `appshots` command for everything on the Mac.
 - **Change your app without asking.** Reaching a screen sometimes needs a few lines that only exist in debug builds. It asks first and tells you which file it changed.
-- **Make videos.** appShots makes still images.
+- **Record a video unasked.** App preview videos are a job of their own: ask for one, and the agent follows `appshots video guide`. See [App preview videos](/docs/video).
 - **Submit your app.** It can put screenshots and texts into the version you are preparing, when you ask it to. It never submits a version for review or releases one.
 - **Read your App Store Connect key.** It asks for the path of the key file and hands that to the `appshots` command. The key stays on your Mac and never reaches the appShots server.
 

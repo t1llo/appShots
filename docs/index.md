@@ -1,7 +1,7 @@
 ---
 title: appShots documentation
 nav: Overview
-description: What appShots is, what it makes and where to start. App Store screenshots for iPhone, iPad and Mac, built by hand in the Studio or by a coding agent over MCP.
+description: What appShots is, what it makes and where to start. App Store screenshots for iPhone, iPad and Mac, built by hand in the Studio or by a coding agent over MCP, and app preview videos cut on your Mac.
 ---
 
 appShots makes App Store screenshots. You give it the raw screens of your app. It puts them in device frames with a headline, a background and badges, and exports PNG files at the exact sizes App Store Connect accepts.
@@ -19,8 +19,8 @@ You can build a set by hand in the Studio, the editor in your browser, or let a 
 | Part | Where it runs | What it does |
 | --- | --- | --- |
 | Studio | Your browser, at {{SERVER}} | Shows every slide as a live preview at export size. You edit copy, layout and look, and download the set as a ZIP. |
-| MCP server | {{SERVER}}/mcp | Ten tools that let an agent create projects, write slides and render them. |
-| `appshots` command | Your Mac | Runs your app in the simulator, captures screens from the simulator, a plugged-in iPhone or iPad, the window of a Mac app or the pages of a web app, and uploads them. |
+| MCP server | {{SERVER}}/mcp | The tools that let an agent create projects, write slides, render them and draw the captions of app preview videos. |
+| `appshots` command | Your Mac | Runs your app in the simulator, captures screens from the simulator, a plugged-in iPhone or iPad, the window of a Mac app or the pages of a web app, and uploads them. Records and cuts app preview videos. |
 | `appshots` skill | Your agent | The instructions for the whole job: ask a few questions, get the screens, write the headlines, build the set, check the render. |
 
 The server draws the pictures. It cannot see your Mac, your simulator or your phone, which is why capturing happens on your machine and the result is uploaded.
@@ -34,16 +34,16 @@ The server draws the pictures. It cannot see your Mac, your simulator or your ph
 - Any number of languages from one set. See [Languages](/docs/languages).
 - Mockups: each screenshot in its device on a transparent background, for a website or a README. See [Mockups](/docs/mockups).
 - Banners: the wide picture at the top of a README, the preview a link shows, a picture for a post. See [Banners](/docs/banners).
+- App preview videos: 15 to 30 seconds of real recordings of your app, with a caption in your set's style over each moment, in every language. They are recorded and cut on your Mac. See [App preview videos](/docs/video).
 
 ## What it does not make
 
 - Landscape screenshots of an iPhone or iPad app, or screenshots for Apple Watch, Apple TV or Vision Pro.
-- App preview videos.
 - Anything for Google Play. The sizes and the device frames are Apple's.
 
 ## All pages
 
-**Make a set:** [The skill](/docs/skill) · [Get your screens in](/docs/screens) · [Mac apps](/docs/mac) · [Web apps and other toolkits](/docs/web-apps) · [The Studio](/docs/studio) · [Logos and artwork](/docs/images) · [Languages](/docs/languages) · [Render and export](/docs/export) · [Mockups](/docs/mockups) · [Banners](/docs/banners) · [What App Review accepts](/docs/app-review)
+**Make a set:** [The skill](/docs/skill) · [Get your screens in](/docs/screens) · [Mac apps](/docs/mac) · [Web apps and other toolkits](/docs/web-apps) · [The Studio](/docs/studio) · [Logos and artwork](/docs/images) · [Languages](/docs/languages) · [Render and export](/docs/export) · [Upload to App Store Connect](/docs/app-store-connect) · [App preview videos](/docs/video) · [Mockups](/docs/mockups) · [Banners](/docs/banners) · [What App Review accepts](/docs/app-review)
 
 **Reference:** [Slides](/docs/slides) · [Header and search results](/docs/store-assets) · [Output sizes](/docs/sizes) · [The appshots command](/docs/cli) · [MCP tools](/docs/mcp) · [REST API](/docs/api)
 
