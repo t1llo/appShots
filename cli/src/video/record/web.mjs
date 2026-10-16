@@ -50,15 +50,15 @@ export function clockScript(epoch) {
   const RealDate = Date;
   const realFrame = window.requestAnimationFrame.bind(window);
   const realTimeout = window.setTimeout.bind(window);
-  class VirtualDate extends RealDate {
-    constructor(...args) {
-      if (args.length === 0) super(epoch + now);
-      else super(...args);
-    }
-    static now() {
-      return epoch + now;
-    }
+  // A function rather than a class: Date() without new is still called for the time as a string.
+  function VirtualDate(...args) {
+    if (!new.target) return new RealDate(epoch + now).toString();
+    return Reflect.construct(RealDate, args.length === 0 ? [epoch + now] : args, new.target);
   }
+  Object.setPrototypeOf(VirtualDate, RealDate);
+  VirtualDate.prototype = RealDate.prototype;
+  RealDate.prototype.constructor = VirtualDate;
+  VirtualDate.now = () => epoch + now;
   window.Date = VirtualDate;
   performance.now = () => now;
   let next = 1;

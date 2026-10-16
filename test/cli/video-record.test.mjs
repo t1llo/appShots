@@ -5,6 +5,7 @@ import { registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
+import vm from "node:vm";
 import { cliHome, quietly, scriptedRunner } from "./helpers.mjs";
 
 const home = await cliHome("video-record");
@@ -52,6 +53,7 @@ const { buildUiTests, forgetUiTests, startDriver } = await import("../../cli/src
 const { sidecarTouches, touchOf } = await import("../../cli/src/video/record/touches.mjs");
 const { deviceSource } = await import("../../cli/src/video/record/device.mjs");
 const { macSource } = await import("../../cli/src/video/record/mac.mjs");
+const { clockScript } = await import("../../cli/src/video/record/web.mjs");
 const { importFootage } = await import("../../cli/src/video/import.mjs");
 host.platform = "darwin";
 
@@ -413,6 +415,32 @@ test("a touch is counted from the driver's start, or read as a clock's time", ()
       [1.5, 201, 640],
     ],
   );
+});
+
+test("a web page's clock answers for Date with new and without, and moves only when it is stepped", async () => {
+  // Just enough of a window for the clock: its own Date, timers and animation frames come from the context.
+  const page = vm.createContext({ performance: { now: () => 12345 }, document: { getAnimations: () => [] }, setTimeout, requestAnimationFrame: (/** @type {Function} */ fn) => setTimeout(() => fn(0), 0) });
+  page.window = page;
+  const epoch = Date.UTC(2026, 0, 2, 9, 41);
+  vm.runInContext(clockScript(epoch), page);
+  const at = (/** @type {string} */ code) => vm.runInContext(code, page);
+  assert.equal(at("Date.now()"), epoch);
+  assert.equal(at("new Date().getTime()"), epoch);
+  assert.equal(at("Date()"), new Date(epoch).toString());
+  assert.equal(at("new Date(0).getTime()"), 0);
+  assert.equal(at("new Date(2020, 1, 3).getMonth()"), 1);
+  assert.equal(at("Date.UTC(2020, 0, 1)"), Date.UTC(2020, 0, 1));
+  assert.equal(at("Date.parse('2020-01-01T00:00:00Z')"), Date.UTC(2020, 0, 1));
+  assert.equal(at("new Date() instanceof Date && new Date().constructor === Date"), true);
+  assert.equal(at("class Later extends Date {}; const later = new Later(); later instanceof Later && later.getTime()"), epoch);
+
+  at("var ticks = []; setInterval(() => ticks.push(performance.now()), 100); setTimeout(() => ticks.push('once'), 150);");
+  assert.equal(at("performance.now()"), 0);
+  await at("__appshotsStep(250)");
+  assert.equal(at("JSON.stringify(ticks)"), JSON.stringify([100, "once", 200]));
+  assert.equal(at("performance.now()"), 250);
+  assert.equal(at("Date.now()"), epoch + 250);
+  assert.equal(at("Date()"), new Date(epoch + 250).toString());
 });
 
 test("a device records with devicectl's screen recorder, after the app is launched in the scene's language", async () => {
