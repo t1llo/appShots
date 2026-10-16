@@ -73,15 +73,17 @@ const MAX_BYTES = 5 * 1024;
 const TIMEOUT = 5000;
 
 /**
- * GETs a small JSON document over HTTPS from a public address. No redirects are followed and nothing over 5 KB is
- * read. Resolves with the parsed body and how long it may be kept, from Cache-Control's max-age.
+ * GETs a small JSON document over HTTPS from a public address. No redirects are followed, nothing over 5 KB is read,
+ * and the whole fetch has 5 seconds. Resolves with the parsed body and how long it may be kept, from Cache-Control's
+ * max-age.
  */
 export function fetchJson(address: string): Promise<{ body: unknown; maxAge: number | null }> {
-  return new Promise((resolve, reject) => {
+  let deadline: NodeJS.Timeout | undefined;
+  return new Promise<{ body: unknown; maxAge: number | null }>((resolve, reject) => {
     const url = URL.parse(address);
     if (!url || url.protocol !== "https:") return reject(new FetchError("the address is not https"));
     if (isIP(url.hostname.replace(/^\[|\]$/g, "")) !== 0) return reject(new FetchError("the address is an IP address, not a name"));
-    const request = https.get(url, { lookup: publicLookup as never, headers: { Accept: "application/json", "User-Agent": "appShots" }, timeout: TIMEOUT }, (response) => {
+    const request = https.get(url, { lookup: publicLookup as never, headers: { Accept: "application/json", "User-Agent": "appShots" } }, (response) => {
       if (response.statusCode !== 200) {
         response.resume();
         return reject(new FetchError(`it answered with status ${response.statusCode}`));
@@ -109,10 +111,16 @@ export function fetchJson(address: string): Promise<{ body: unknown; maxAge: num
       });
       response.on("error", (error) => reject(new FetchError(error.message)));
     });
-    request.on("timeout", () => request.destroy(new FetchError("it did not answer within 5 seconds")));
+    // A request's own timeout only limits how long the connection may stay idle, which a server sending a byte now
+    // and then never lets it be, so the deadline counts from the start.
+    deadline = setTimeout(() => {
+      const late = new FetchError("it did not answer within 5 seconds");
+      reject(late);
+      request.destroy(late);
+    }, TIMEOUT);
     request.on("error", (error: NodeJS.ErrnoException) => {
       if (error instanceof FetchError) return reject(error);
       reject(new FetchError(error.code === "EPRIVATE" ? error.message : error.code === "ENOTFOUND" ? `${url.hostname} was not found` : `it could not be reached (${error.code ?? error.message})`));
     });
-  });
+  }).finally(() => clearTimeout(deadline));
 }

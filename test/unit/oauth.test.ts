@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import http from "node:http";
+import https from "node:https";
+import type { AddressInfo } from "node:net";
 import { after, test } from "node:test";
 import { tmpData } from "../helpers/tmp-data.ts";
 
@@ -156,6 +159,42 @@ test("documents are fetched from public addresses only", async () => {
   assert.match(await refusal("https://localhost/client.json"), /not on the public internet/);
 });
 
+test("a document has five seconds to arrive in full, however steadily it trickles in", async (t) => {
+  // A server on this machine stands in for the app's website: the HTTPS request goes to it over plain HTTP instead.
+  let trickling!: () => void;
+  const started = new Promise<void>((resolve) => (trickling = resolve));
+  const server = http.createServer((request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "max-age=600" });
+    if (request.url === "/quick.json") return response.end('{"client_id":"quick"}');
+    // A byte every 50 ms keeps the connection busy, and after 2 seconds the document would be complete.
+    response.write("{");
+    let sent = 0;
+    const drip = setInterval(() => {
+      if (++sent === 5) trickling();
+      if (sent < 40) response.write(" ");
+      else response.end("}");
+    }, 50);
+    response.on("close", () => clearInterval(drip));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const { port } = server.address() as AddressInfo;
+  t.mock.method(https, "get", (url: URL, options: http.RequestOptions, callback: (response: http.IncomingMessage) => void) =>
+    http.get({ host: "127.0.0.1", port, path: url.pathname, headers: options.headers, agent: false }, callback),
+  );
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+
+  assert.deepEqual(await fetchJson("https://app.example.com/quick.json"), { body: { client_id: "quick" }, maxAge: 600 });
+
+  const slow = fetchJson("https://app.example.com/slow.json");
+  await started;
+  t.mock.timers.tick(5000);
+  await assert.rejects(slow, (error) => error instanceof FetchError && /within 5 seconds/.test(error.message));
+});
+
 test("registering checks what the app says about itself, and gives a secret to an app that wants one", async () => {
   const redirect_uris = [CALLBACK];
   for (const [metadata, code] of [
@@ -270,6 +309,24 @@ test("an app's document is kept as long as it says, and fetched again for an add
     assert.equal(fetches, before + 1);
     t.mock.timers.tick(61_000);
   }
+});
+
+test("two requests for the same document at once wait for one fetch", async () => {
+  const address = "https://app.example.com/shared.json";
+  let fetches = 0;
+  const answers: (() => void)[] = [];
+  const directory = clientDirectory(async () => {
+    fetches++;
+    await new Promise<void>((resolve) => answers.push(resolve));
+    return { body: { client_id: address, client_name: "Shared App", redirect_uris: [CALLBACK] }, maxAge: null };
+  });
+  const first = directory.find(address, "visitor-d");
+  const second = directory.find(address, "visitor-e");
+  await new Promise((resolve) => setImmediate(resolve));
+  for (const answer of answers) answer();
+  assert.equal((await first).name, "Shared App");
+  assert.equal((await second).name, "Shared App");
+  assert.equal(fetches, 1);
 });
 
 test("one visitor can have only so many documents fetched", async () => {

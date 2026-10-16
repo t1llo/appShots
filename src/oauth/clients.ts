@@ -215,6 +215,8 @@ async function readDocument(id: string, fetchDocument: DocumentFetcher): Promise
 /** The apps an authorization request can come from, with the metadata documents fetched so far. */
 export function clientDirectory(fetchDocument: DocumentFetcher = fetchJson) {
   const documents = new Map<string, Kept>();
+  /** Fetches under way, which a second request for the same document waits for instead of starting its own. */
+  const fetching = new Map<string, Promise<Kept>>();
   return {
     /**
      * The app behind a client id. For a metadata document, the copy kept from an earlier fetch while it lasts. One
@@ -233,8 +235,13 @@ export function clientDirectory(fetchDocument: DocumentFetcher = fetchJson) {
       let kept = documents.get(id);
       const stale = kept?.client && redirectUri !== undefined && !redirectFor(kept.client, redirectUri) && now - kept.fetchedAt > 60_000;
       if (!kept || kept.until <= now || stale) {
-        if (!allow(`client-document:${visitor}`, 20, 10 * 60_000)) throw new PageError("Too many apps were looked up from your address. Wait a few minutes and try again.");
-        kept = await readDocument(id, fetchDocument);
+        let pending = fetching.get(id);
+        if (!pending) {
+          if (!allow(`client-document:${visitor}`, 20, 10 * 60_000)) throw new PageError("Too many apps were looked up from your address. Wait a few minutes and try again.");
+          pending = readDocument(id, fetchDocument).finally(() => fetching.delete(id));
+          fetching.set(id, pending);
+        }
+        kept = await pending;
         documents.delete(id);
         documents.set(id, kept);
         if (documents.size > MAX_DOCUMENTS) documents.delete(documents.keys().next().value!);
