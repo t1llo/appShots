@@ -6,7 +6,7 @@ import { loadConfig } from "../config.mjs";
 import { fail } from "../fail.mjs";
 import { run } from "../proc.mjs";
 import { pause, readJson } from "../util.mjs";
-import { orientationOf, workFolders } from "./plan.mjs";
+import { orientationOf, shown, workFolders } from "./plan.mjs";
 
 /** @typedef {import("./plan.mjs").Plan & { locales: string[] }} Plan */
 
@@ -202,7 +202,7 @@ export async function layersCommand(plan, { displays, locales }) {
     console.log(`${display}: asking the server for the layers in ${locales.join(", ")}`);
     const manifest = await fetchLayers(plan, { display, locales });
     const count = manifest.layers.length;
-    console.log(`${display}: set ${manifest.set}, ${count} layer${count === 1 ? "" : "s"} in ${path.relative(process.cwd(), manifest.dir ?? "") || manifest.dir}. ${manifest.charged ? "Drawing it used one render." : "Drawn before, so no render was used."}`);
+    console.log(`${display}: set ${manifest.set}, ${count} layer${count === 1 ? "" : "s"} in ${shown(manifest.dir ?? "")}. ${manifest.charged ? "Drawing it used one render." : "Drawn before, so no render was used."}`);
     for (const warning of manifest.warnings ?? []) console.log(`  ${warning.locale ? `${warning.locale} ` : ""}${warning.layer}: ${warning.detail}${warning.kind === "fit" ? " to fit" : ""}`);
   }
 }

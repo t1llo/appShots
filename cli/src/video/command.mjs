@@ -12,7 +12,7 @@ import { xcrun } from "../xcode.mjs";
 import { guide } from "./guide.mjs";
 import { initPlan } from "./init.mjs";
 import { layersCommand } from "./layers.mjs";
-import { PLAN_FILE, WORK_FOLDER, readPlan, resolvePlan, selectedDisplays, selectedLocales, selectedScenes, workFolders } from "./plan.mjs";
+import { PLAN_FILE, WORK_FOLDER, readPlan, resolvePlan, selectedDisplays, selectedLocales, selectedScenes, shown, workFolders } from "./plan.mjs";
 import { buildStoryboard, storyboardText } from "./storyboard.mjs";
 
 /** @typedef {import("./plan.mjs").Plan} Plan */
@@ -242,12 +242,9 @@ function previews(plan, flags) {
   const { out } = workFolders(plan);
   const displays = selectedDisplays(plan, flags);
   const found = selectedLocales(plan, flags).flatMap((locale) => displays.map((display) => ({ locale, display, file: path.join(out, locale, display, `${plan.name}.mp4`) }))).filter(({ file }) => existsSync(file));
-  if (found.length === 0) fail(`There is no preview in ${path.relative(process.cwd(), out) || out} yet${flags.lang || flags.display ? " for what --lang and --display pick" : ""}. 'appshots video compose' makes them.`);
+  if (found.length === 0) fail(`There is no preview in ${shown(out)} yet${flags.lang || flags.display ? " for what --lang and --display pick" : ""}. 'appshots video compose' makes them.`);
   return found;
 }
-
-/** @param {string} file */
-const shown = (file) => path.relative(process.cwd(), file) || file;
 
 /**
  * `appshots video check [files...]`: checks videos against Apple's specification; without files, the plan's

@@ -603,6 +603,15 @@ export function workFolders(plan) {
 }
 
 /**
+ * A file as a message names it: from the current folder when it is in there, else in full.
+ * @param {string} file
+ */
+export function shown(file) {
+  const relative = path.relative(process.cwd(), file);
+  return relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) ? file : relative;
+}
+
+/**
  * The plan's languages --lang picks, in the plan's order; all of them without it.
  * @param {Plan & { locales: string[] }} plan
  * @param {Record<string, string | true>} flags

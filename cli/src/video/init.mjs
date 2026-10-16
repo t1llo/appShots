@@ -6,7 +6,7 @@ import { fail } from "../fail.mjs";
 import { projectDirs, xcodeProjects } from "../projects.mjs";
 import { listFlag } from "../store/push.mjs";
 import { toolkits } from "../toolkits.mjs";
-import { PLAN_FILE, PREVIEW_DISPLAYS, WORK_FOLDER, resolvePlan, validatePlan } from "./plan.mjs";
+import { PLAN_FILE, PREVIEW_DISPLAYS, WORK_FOLDER, resolvePlan, shown, validatePlan } from "./plan.mjs";
 
 /** What git leaves out of the work folder: everything large. The plan beside it is what is meant to be committed. */
 export const GITIGNORE = `# Recordings, layers and previews are large and made again from appshots.video.json, which is what to commit.
@@ -37,8 +37,8 @@ const MOST_SCENES = 4;
  */
 export function planFromProject(project, shots, { displays, locales, platform, url } = {}) {
   const has = new Set(shots.map((shot) => shot.device ?? "iphone"));
-  const shown = displays ?? ["iphone", "ipad", "mac"].filter((key) => has.has(key) || (key === "iphone" && has.has("duo")));
-  const keys = shown.length > 0 ? shown : ["iphone"];
+  const wanted = displays ?? ["iphone", "ipad", "mac"].filter((key) => has.has(key) || (key === "iphone" && has.has("duo")));
+  const keys = wanted.length > 0 ? wanted : ["iphone"];
   // One plan is one kind of app; a Mac version's previews need a plan of their own.
   const kind = platform ?? (keys.every((key) => key === "mac") ? "mac" : "ios");
   const fitting = kind === "web" ? keys : keys.filter((key) => PREVIEW_DISPLAYS[key] === kind);
@@ -110,7 +110,7 @@ export async function initPlan(given, flags) {
     writeFileSync(ignore, GITIGNORE);
   }
   const scenes = plan.scenes.length;
-  console.log(`Wrote ${path.relative(process.cwd(), file) || file}: ${scenes} scene${scenes === 1 ? "" : "s"} from the slides of ${project.name ?? id}, for ${plan.displays.join(", ")} in ${plan.locales.join(", ")}.`);
+  console.log(`Wrote ${shown(file)}: ${scenes} scene${scenes === 1 ? "" : "s"} from the slides of ${project.name ?? id}, for ${plan.displays.join(", ")} in ${plan.locales.join(", ")}.`);
   console.log("Next: give each scene its drive (how the app gets through that moment), then run 'appshots video plan'.");
 }
 
