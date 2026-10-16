@@ -235,7 +235,7 @@ How the device is drawn is the project's `mockups` value, set with `PUT /api/pro
 
 ## App preview layers
 
-The pictures that go over and around an app preview video, in the project's style: the background, a caption per scene and language, the intro and outro cards and a touch ring. Each is a PNG at the size of the video, transparent but for the background. The video itself is recorded and cut on the Mac by `appshots video`, which asks for these by itself. See [App preview videos](/docs/video).
+The pictures that go over and around an app preview video, in the project's style: the background, a caption per scene and language, the intro and outro cards and a touch ring. Each is a PNG at the size of the video, transparent but for the background, except the touch ring: a small square that `appshots video compose` places wherever a touch was logged. The video itself is recorded and cut on the Mac by `appshots video`, which asks for these by itself. See [App preview videos](/docs/video).
 
 ```bash
 curl -s -X POST {{SERVER}}/api/projects/streaks/video-layers \

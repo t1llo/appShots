@@ -157,7 +157,7 @@ What is given is saved with the project, so the Studio's Mockups page shows the 
 
 ### render_video_layers
 
-Draws what goes over and around an app preview video, in the project's style: the background, a caption per scene and language, the intro and outro cards and a touch ring, as PNGs at the video's size. The video itself is recorded and cut on the Mac by `appshots video`, which calls this by itself. See [App preview videos](/docs/video).
+Draws what goes over and around an app preview video, in the project's style, as PNGs at the video's size: the background, a caption per scene and language, the intro and outro cards, and a touch ring, which is a small square that `appshots video compose` places wherever a touch was logged. The video itself is recorded and cut on the Mac by `appshots video`, which calls this by itself. See [App preview videos](/docs/video).
 
 | Argument | What it is |
 | --- | --- |

@@ -112,8 +112,8 @@ Before anything is recorded, the lengths are estimates. The warnings name what t
 | `footage` | `per-locale` (default) records the app in every language. `primary` records it in the primary language only, and the others show those recordings with their own captions |
 | `captionStyle` | `panel` (default), a card in the theme's background. `shadow`, text with a soft shadow. `band`, a band the full width, which the plan warns about: Apple has turned down previews for framing around the recording |
 | `fit` | How a Mac window lands in the video. `plate` (default) puts it whole on the project's background, `fill` scales it to cover the video |
-| `intro` | A card before the first scene: `headline`, `logo` (default `true`) and `seconds`, 0.5 to 3, default 1.5. `false` leaves it out |
-| `outro` | A card after the last scene: up to three `lines`, `logo` (default `true`), `disclosure` and `seconds`, 0.5 to 4, default 2. `false` leaves it out |
+| `intro` | A card before the first scene: `headline`, `logo` (default `true`) and `seconds`, 0.5 to 3, default 1.5. Left out or `false`, there is none. `appshots video init` writes one with the first slide's headline |
+| `outro` | A card after the last scene: up to three `lines`, `logo` (default `true`), `disclosure` and `seconds`, 0.5 to 4, default 2. Left out or `false`, there is none. `appshots video init` writes one with the logo |
 | `transition` | `type`: `fade` (default), `dissolve` or `none`. `seconds`: 0.1 to 1, default 0.4. Neighbouring parts overlap by it |
 | `music` | `file`, the path of an audio file from the plan's folder, `volume` 0 to 1 (default 0.8), `start` in seconds into the file, and `fadeOut`, up to 5 s (default 1.5). Left out, the preview has a silent track |
 | `scenes` | One to eight moments of the app, in order. See below |
