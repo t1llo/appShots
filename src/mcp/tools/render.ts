@@ -249,7 +249,9 @@ export const registerRenderTools: RegisterTools = (server, tools) => {
         "How a render started with `background` is getting on: waiting, drawing and how far, or ended and why. Once it is done, answers as render does, with the pictures to check and the links. Without `job`, lists the account's renders: those waiting or under way, and those that ended in the last hour, the newest eight at most.",
       inputSchema: {
         job: z.string().optional().describe("The job id render answered with"),
-        ...answer,
+        // Described once, on render: the tool list is read in full by every model that connects.
+        previews: answer.previews.describe("As for render"),
+        preview: answer.preview.describe("As for render"),
       },
       annotations: { readOnlyHint: true },
     },
