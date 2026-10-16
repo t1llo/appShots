@@ -4,7 +4,7 @@
 // runs on Node 18 with nothing installed. Run `npm run build:cli` after changing cli/src; `npm run check:cli`
 // fails when the file in the repository is not what the sources make.
 
-import { chmodSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { rolldown } from "rolldown";
 
@@ -94,7 +94,9 @@ export async function bundleCli(input) {
   return code;
 }
 
-if (import.meta.main) {
+// Run as the build, not imported by the tests. Not import.meta.main, which Node has only from 24.2: on an older 24
+// the build would write nothing, and check:cli would pass without having built.
+if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === import.meta.filename) {
   const code = await bundleCli(path.join(root, "cli", "src", "main.mjs"));
   let before = "";
   try {
