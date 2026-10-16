@@ -65,6 +65,13 @@ export function renderMockup(space: Space, project: Project, shot: Shot, setting
   return drawn;
 }
 
+/** How much the kept mockups take, and how many are being drawn, for a health page. */
+export function mockupCache(): { entries: number; bytes: number; drawing: number } {
+  let bytes = 0;
+  for (const each of mockups.values()) bytes += each.png.length;
+  return { entries: mockups.size, bytes, drawing: inflight.size };
+}
+
 async function draw(space: Space, project: Project, shot: Shot, settings: Mockups): Promise<Mockup> {
   const stage = mockupStage(shot, settings);
   const layers = SHADOW_LAYERS[settings.device?.shadow ?? "none"];

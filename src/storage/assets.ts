@@ -446,6 +446,8 @@ export async function saveImage(space: Space, id: string, name: string, data: Bu
   }
   if (Math.min(width, height) < 16) throw new InputError(`Image is only ${width}×${height}; that is too small to show.`);
   const image = await withProjectLock(projectKey(space, id), async () => {
+    // Once more under the lock: a project deleted while the image was worked on must not get its folder back.
+    await getProject(space, id);
     await mkdir(dir, { recursive: true });
     const before = await stat(full).catch(() => null);
     if (space.limits && !before) {

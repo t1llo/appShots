@@ -22,7 +22,7 @@ export type { RenderedCreative, RenderedFile, RenderedSheet, RenderJob, RenderRe
 export { cancelRender, cancelRenders, frozenFor, getRender, listRenders, renderProject, renderResult, startRender } from "./jobs.ts";
 export { listingSet, storeListing } from "./listing.ts";
 export type { Mockup } from "./mockup.ts";
-export { mockupSheet, renderMockup } from "./mockup.ts";
+export { mockupCache, mockupSheet, renderMockup } from "./mockup.ts";
 export type { RenderRequest } from "./plan.ts";
 export { defaultTargets, resolveLocales } from "./plan.ts";
 
@@ -31,7 +31,7 @@ export { defaultTargets, resolveLocales } from "./plan.ts";
  * then are cancelled: they keep nothing and use no render. Resolves true when everything finished in time.
  */
 export async function drain(timeoutMs: number): Promise<boolean> {
-  closeRenders();
+  await closeRenders();
   const finished = await scheduler.drain(timeoutMs);
   if (!finished) await cancelAll(2000);
   return finished;

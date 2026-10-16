@@ -303,6 +303,46 @@ export function createProjectRepository(options: { now?: () => Date; keepHistory
       }
     },
 
+    /**
+     * Moves a project, whole and as it is, into another space under an id that is free there: its own, or its own
+     * with a number behind it. Mark it with tombstone() first, as for a delete, so nothing writes to it on the way.
+     * Returns the id it has in the space it went to.
+     */
+    async move(from: Space, id: string, to: Space): Promise<string> {
+      const dir = projectDir(from, id);
+      const key = projectKey(from, id);
+      try {
+        // Under the lock creates take in the space it goes to, so the id it gets cannot be taken meanwhile.
+        return await withProjectLock(`${to.id}:create`, () =>
+          withProjectLock(key, async () => {
+            if (!(await stat(dir).then((info) => info.isDirectory(), () => false))) throw new NotFoundError(`No project "${id}"`);
+            await mkdir(projectsDir(to), { recursive: true });
+            const base = id.slice(0, 56).replace(/-+$/, "");
+            let next = id;
+            for (let n = 2; RESERVED_IDS.has(next) || !(await claim(to, next)); n++) next = `${base}-${n}`;
+            try {
+              // Onto the empty folder claim() made, which rename replaces.
+              await rename(dir, projectDir(to, next));
+            } catch (error) {
+              await rm(projectDir(to, next), { recursive: true, force: true });
+              throw error;
+            } finally {
+              creating.delete(projectKey(to, next));
+            }
+            // project.json names its id too. One that cannot be read is moved as it is: its folder names it.
+            if (next !== id) {
+              const file = projectFile(to, next);
+              const raw = await readFile(file, "utf8").then((text) => JSON.parse(text) as Record<string, unknown>, () => null);
+              if (raw && typeof raw === "object" && !Array.isArray(raw)) await writeFileAtomic(file, JSON.stringify({ ...raw, id: next }, null, 2));
+            }
+            return next;
+          }),
+        );
+      } finally {
+        tombstones.delete(key);
+      }
+    },
+
     /** The versions the history keeps, newest first, and the revision the project is at: null while it is damaged. */
     async revisions(space: Space, id: string): Promise<{ revision: number | null; revisions: Revision[] }> {
       let revision: number | null = null;

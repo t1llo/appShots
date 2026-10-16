@@ -125,6 +125,9 @@ function save(): Promise<void> {
   return writing;
 }
 
+/** Resolves once every change made so far is in the file, for a server about to stop. */
+export const accountsSaved = () => writing.catch(() => {});
+
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 const randomId = (prefix: string) => `${prefix}${randomBytes(9).toString("hex")}`;
 
@@ -171,13 +174,13 @@ export async function allowEmail(input: unknown): Promise<void> {
 
 const ADMIN_STAYS = "The admin is set with ADMIN_EMAIL on the server and cannot be removed here.";
 
-/** Takes an address off the list and removes the account behind it, with everything it owns. */
-export async function removePerson(input: unknown): Promise<void> {
+/** Takes an address off the list and removes the account behind it, with everything it owns. `stop` is as for deleteUser. */
+export async function removePerson(input: unknown, stop?: Stop): Promise<void> {
   const email = normalizeEmail(input);
   if (email === config.adminEmail) throw new InputError(ADMIN_STAYS);
   state.allowed = state.allowed.filter((entry) => entry !== email);
   const user = byEmail(email);
-  if (user) await deleteUser(user.id);
+  if (user) await deleteUser(user.id, stop);
   else await save();
 }
 
@@ -188,6 +191,15 @@ export const mainSpace: Space = { id: "main", root: config.dataDir };
 
 const userRoot = (id: string) => path.join(config.dataDir, "users", id);
 export const spaceOfUser = (user: User): Space => (isAdmin(user) ? mainSpace : { id: user.id, root: userRoot(user.id), limits: config.limits });
+
+/**
+ * The folder an account has of its own, by its address. The admin's too, which holds what the admin made before
+ * ADMIN_EMAIL named them and which the admin does not work in. Null for an address nobody has signed in with.
+ */
+export function ownSpaceOf(input: unknown): Space | null {
+  const user = byEmail(normalizeEmail(input));
+  return user ? { id: user.id, root: userRoot(user.id), limits: config.limits } : null;
+}
 
 /** Resolves the id the renderer passes along with its internal secret. */
 export function spaceById(id: string | undefined): Space | null {
@@ -314,8 +326,14 @@ export async function logInWithGoogle(profile: { sub: string; email: string; nam
   return user;
 }
 
-/** Removes the account with every project, screenshot and render it owns. */
-export async function deleteUser(id: string): Promise<void> {
+/** Ends what still works for an account's space, such as its renders, once nobody can sign in as it any more. */
+type Stop = (space: Space) => Promise<void>;
+
+/**
+ * Removes the account with every project, screenshot and render it owns. `stop` ends what is still under way for
+ * it before its folder goes.
+ */
+export async function deleteUser(id: string, stop?: Stop): Promise<void> {
   const user = state.users.find((entry) => entry.id === id);
   if (!user) throw new NotFoundError("No such account");
   // The admin's projects are the server's own space, which no button should be able to wipe.
@@ -327,13 +345,14 @@ export async function deleteUser(id: string): Promise<void> {
   }
   await save();
   await endGrantsOf(user.id);
+  await stop?.(spaceOfUser(user));
   await rm(userRoot(user.id), { recursive: true, force: true });
 }
 
-export async function confirmDelete(user: User, confirmation: unknown): Promise<void> {
+export async function confirmDelete(user: User, confirmation: unknown, stop?: Stop): Promise<void> {
   // Addresses are kept in lower case. What is typed may differ in case, or carry a space from a paste.
   if (typeof confirmation !== "string" || confirmation.trim().toLowerCase() !== user.email) throw new InputError("Type your email address to confirm.");
-  await deleteUser(user.id);
+  await deleteUser(user.id, stop);
 }
 
 export const listUsers = () => state.users;

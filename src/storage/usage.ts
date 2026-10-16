@@ -125,6 +125,9 @@ export function usageChanged(space: Space): void {
   measured.delete(space.root);
 }
 
+/** How many accounts' numbers are kept, for a health page. */
+export const usageCache = () => ({ entries: measured.size });
+
 const withRoomLock = createMutex();
 
 /**

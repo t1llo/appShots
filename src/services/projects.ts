@@ -3,9 +3,10 @@ import { defaultTargets } from "../render.ts";
 import { allSlides, creativesSchema, deviceSlidesSchema, localesSchema, mockupsSchema, type Project, repeatedLocales, slideSchema, targetsSchema, themeSchema, unknownFields } from "../schema.ts";
 import type { Space } from "../storage/paths.ts";
 import { projects, type Stored } from "../storage/projects.ts";
-import { createProject, deleteProject, listCreativeOutputs, listImages, listOutputs, listShots, projectSummary, readImages, readShots, type Shot, type StoredImage, updateProject } from "../store.ts";
+import { createProject, listCreativeOutputs, listImages, listOutputs, listShots, projectSummary, readImages, readShots, type Shot, type StoredImage, updateProject } from "../store.ts";
 import { deviceShape } from "../template.ts";
 import { type Ctx, type Warning, writeOptions } from "./context.ts";
+import { deleteProject } from "./lifecycle.ts";
 
 /** What a change to a project may set. Each field given replaces that field as a whole. */
 export const projectPatch = z.object({

@@ -1,6 +1,7 @@
 import express, { type Response, type Router } from "express";
-import { confirmDelete, createToken, describeToken, revokeToken } from "../../accounts.ts";
+import { createToken, describeToken, revokeToken } from "../../accounts.ts";
 import { endGrant, grantsOf } from "../../oauth/store.ts";
+import { deleteAccount } from "../../services/lifecycle.ts";
 import { identityOf, requireSession, SESSION_COOKIE } from "../auth.ts";
 
 const userOf = (res: Response) => identityOf(res).user!;
@@ -31,7 +32,7 @@ export function accountRoutes(): Router {
     res.status(204).end();
   });
   account.delete("/", async (req, res) => {
-    await confirmDelete(userOf(res), req.body?.confirm);
+    await deleteAccount(userOf(res), req.body?.confirm);
     res.clearCookie(SESSION_COOKIE, { path: "/" });
     res.status(204).end();
   });
