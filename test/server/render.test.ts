@@ -167,7 +167,7 @@ describe("rendering, compared with a plain browser", renderTier, () => {
     assert.equal((await server.fetch(`/files/${id}/out/en/ipad-13/03.png`)).status, 404);
   });
 
-  test("a project deleted while it renders is named as the reason the render stopped", async () => {
+  test("deleting a project while it renders cancels the render first, and nothing of it is left", async () => {
     const created = await call("/api/projects", send("POST", { name: "Deleted", locales: ["en", "de"] }));
     const gone = created.body.id;
     const slides = Array.from({ length: 4 }, (_, i) => ({ layout: "statement", headline: { en: `Slide *${i + 1}*`, de: `Folie *${i + 1}*` } }));
@@ -182,10 +182,10 @@ describe("rendering, compared with a plain browser", renderTier, () => {
     assert.equal(seen.state, "running", JSON.stringify(seen));
     const deleting = await call(`/api/projects/${gone}`, { method: "DELETE" });
     assert.equal(deleting.status, 204, JSON.stringify(deleting.body));
-    let ended = await job();
-    while (live(ended)) ended = await sleep(50).then(job);
-    assert.equal(ended.state, "failed");
-    assert.equal(ended.error, "The project was deleted while it rendered.");
+    // The delete is answered once the render has stopped.
+    const ended = await job();
+    assert.equal(ended.state, "cancelled", JSON.stringify(ended));
+    assert.ok(ended.done < 8, "it stopped before its last picture");
     assert.equal((await call(`/api/projects/${gone}`)).status, 404);
     assert.doesNotMatch(server.output(), /ENOENT/);
     // Neither the project's folder nor the run's staging folder is left behind.
