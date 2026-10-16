@@ -65,7 +65,7 @@ export const MAX_TOUCHES = 12;
  *
  * @typedef {object} Scene The part of a plan's scene that the picture depends on.
  * @property {string} id
- * @property {[number, number] | "auto"} [trim]
+ * @property {[number, number] | "auto" | null} [trim] Null, as a plan without a trim has it, for all of it.
  * @property {number} [speed]
  * @property {number} [hold]
  * @property {boolean} [touches]
