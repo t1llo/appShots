@@ -1,6 +1,6 @@
 ---
 title: HTTP API
-description: Reference for the appShots HTTP API. Upload raw screenshots and images, read and change projects, render, download the finished set as a ZIP, and fetch device mockups, with a bearer token.
+description: Reference for the appShots HTTP API. Upload raw screenshots and images, read and change projects, render, download the finished set as a ZIP, fetch device mockups and draw the layers of app preview videos, with a bearer token.
 ---
 
 Everything the Studio does goes through a small JSON API. Use it from a script or from CI. For an agent, [MCP](/docs/mcp) is the better fit.
@@ -232,6 +232,75 @@ How the device is drawn is the project's `mockups` value, set with `PUT /api/pro
 ```
 
 `device` takes `frame`, `style`, `color`, `shadow`, `rotate`, `perspective`, `statusBar`, `statusBarTime` and `statusBarColor`, as on [Slides](/docs/slides#device). Without `width`, the screenshot is shown pixel for pixel. To try settings without saving them, add them to a request as `?settings=<the same JSON, URL-encoded>`.
+
+## App preview layers
+
+The pictures that go over and around an app preview video, in the project's style: the background, a caption per scene and language, the intro and outro cards and a touch ring. Each is a PNG at the size of the video, transparent but for the background. The video itself is recorded and cut on the Mac by `appshots video`, which asks for these by itself. See [App preview videos](/docs/video).
+
+```bash
+curl -s -X POST {{SERVER}}/api/projects/streaks/video-layers \
+  -H "Authorization: Bearer $APPSHOTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"display":"iphone","captions":[{"id":"today","text":{"slide":2}}],"intro":{"headline":{"slide":1}},"outro":{"disclosure":["subscription"]}}'
+```
+
+| Request | What it does |
+| --- | --- |
+| `POST /api/projects/:id/video-layers` | Draws a set of layers and answers when it is done. Body below |
+| `GET /api/projects/:id/video-layers/:set` | A set drawn before. Each project keeps its three newest; an older one is a 404, and asking for it again draws it anew |
+| `GET /api/projects/:id/video-layers/:set/layers.zip` | All the pictures of a set as a ZIP |
+| `GET /files/:id/video/:set/<file>.png` | One picture, as the set's `layers` name it |
+
+| Field | What it is |
+| --- | --- |
+| `display` | `iphone`, `ipad`, `mac`, `iphone-5.5`, `iphone-4.7` or `ipad-9.7`. The pictures get that display's preview size. Either this or `size` |
+| `orientation` | `portrait` (default) or `landscape`. A `mac` preview is landscape only |
+| `size` | `[width, height]` in pixels, even numbers from 320 to 3840, for a size of your own |
+| `locales` | The languages. Default: all of the project's |
+| `captionStyle` | `panel` (default), a card in the theme's background; `shadow`, text with a soft shadow; `band`, a band the full width |
+| `captions` | Up to 12, each `{ "id", "text", "position" }`. `id` is lowercase letters, digits and `-`. `text` is one text, one per language, or `{ "slide": 2 }` for that slide's headline, with `"field": "eyebrow"` or `"sub"` for another line. `position` is `top` (default) or `bottom` |
+| `intro` | `{ "headline", "logo" }`, or `false`. `logo` defaults to `true` |
+| `outro` | `{ "lines", "logo", "disclosure" }`, or `false`. Up to three `lines`. `disclosure` takes `iap`, `subscription` and `login` |
+| `plate` | The theme's background as an opaque picture. Default `true` |
+| `touch` | The ring drawn where a touch was logged. Default `false` |
+| `background` | `true` answers at once. See below |
+
+`intro` and `outro` also take `seconds`, so a plan's card can be sent as it is; the pictures do not depend on it. A field the body does not have is refused with status 400, as is a language or slide the project does not have.
+
+The answer is the set:
+
+```json
+{
+  "set": "0846fa627ccafb92",
+  "size": [886, 1920],
+  "display": "iphone",
+  "locales": ["en-US", "de-DE"],
+  "warnings": [{ "locale": "de-DE", "layer": "outro-text", "kind": "fallback", "detail": "no de-DE wording for the \"subscription\" notice, drawn in en" }],
+  "layers": [
+    { "id": "plate", "locale": null, "kind": "plate", "file": "/files/streaks/video/0846fa627ccafb92/plate.png", "width": 886, "height": 1920, "box": [0, 0, 886, 1920] },
+    { "id": "caption-today", "locale": "en-US", "kind": "caption", "file": "/files/streaks/video/0846fa627ccafb92/en-US/caption-today.png", "width": 886, "height": 1920, "box": [138, 192, 610, 130], "text": "Build the habit", "fallback": false, "fit": 1 }
+  ],
+  "zip": "/api/projects/streaks/video-layers/0846fa627ccafb92/layers.zip",
+  "charged": true,
+  "rendersLeft": 6
+}
+```
+
+- **`layers`.** `kind` is `plate`, `caption`, `intro-logo`, `intro-text`, `outro-logo`, `outro-text` or `touch`. `locale` is `null` for a picture every language shares. `box` is `[x, y, width, height]` of the part that is drawn. A text's `fallback` is `true` when it is drawn in another language, for want of one in its own, and `fit` is the scale it was drawn at: 1, or less when it had to shrink to fit.
+- **`warnings`.** Each names its `locale` and `layer`, and its `kind`: `fallback` for a text drawn in another language, `fit` for one shrunk below 70 %, `logo` for a card without a logo because the project has none.
+- **`set` and `charged`.** The set's id is made from what it draws. Asking for the same layers again answers with the set drawn before, with `charged: false`, and uses no render. A new set uses one of the account's renders, as a render does, and `rendersLeft` says how many are left. At zero a new set is refused with status 400.
+
+### Layers without waiting
+
+With `"background": true`, a new set answers at once with status 202, the run as a job and the id the set will have:
+
+```json
+{ "job": { "id": "1f89c4c9c44e68a4", "project": "streaks", "name": "Streaks", "state": "running", "done": 0, "total": 2, "set": "23a1c80026a0fb56" }, "set": "23a1c80026a0fb56", "rendersLeft": 6 }
+```
+
+`GET /api/renders/<job id>` follows it, as it does a render, and `DELETE /api/renders/<job id>` cancels it. When `state` is `done`, fetch the set with `GET /api/projects/:id/video-layers/<set>`. A set drawn before is answered at once, with status 200, background or not. One account has at most two runs of layers waiting or running at a time.
+
+`/files/:id/video/…` pictures never change, as a set's id says what is in it, so they are sent with `Cache-Control: private, max-age=31536000, immutable`. Everything under `/api` is sent as `private, no-cache`.
 
 ## What a token cannot do
 

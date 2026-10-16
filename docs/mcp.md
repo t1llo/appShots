@@ -1,6 +1,6 @@
 ---
 title: MCP tools
-description: Reference for the appShots MCP server. The endpoint, how to authenticate, and the ten tools an agent uses to create a project, build slides, render App Store screenshots and draw device mockups.
+description: Reference for the appShots MCP server. The endpoint, how to authenticate, and the tools an agent uses to create a project, build slides, render App Store screenshots, draw device mockups and draw the layers of app preview videos.
 ---
 
 appShots is a remote MCP server. An agent connects to it once and can then build and render sets by itself.
@@ -28,6 +28,8 @@ A token, or an app you let in, reaches the projects of the account it belongs to
 6. `update_slide` for the fixes, then `render` again. A change that made things worse is undone with `list_revisions` and `restore_project`.
 
 Uploading the result to App Store Connect is not among the tools. It needs your App Store Connect key, which stays on your Mac, so the [command line](/docs/app-store-connect) does it.
+
+An app preview video is recorded and cut on the Mac too, by `appshots video`. The server's part of it is `render_video_layers`, which draws the captions and cards. See [App preview videos](/docs/video).
 
 Every `render` uses one of the account's renders, whatever it draws. So an agent writes the whole set first, renders it in one call, fixes everything it sees in one go and renders once more. The design guide tells it how many are left, and so does every `render`. See [Render and export](/docs/export#how-many-renders).
 
@@ -152,6 +154,29 @@ Draws each raw screenshot in its device with nothing behind it: one transparent 
 ```
 
 What is given is saved with the project, so the Studio's Mockups page shows the same. A call that is refused, such as for a screenshot the project does not have, saves nothing. Returns a link to every PNG, a link to the ZIP and a picture of the mockups to check. See [Mockups](/docs/mockups).
+
+### render_video_layers
+
+Draws what goes over and around an app preview video, in the project's style: the background, a caption per scene and language, the intro and outro cards and a touch ring, as PNGs at the video's size. The video itself is recorded and cut on the Mac by `appshots video`, which calls this by itself. See [App preview videos](/docs/video).
+
+| Argument | What it is |
+| --- | --- |
+| `project` | The id |
+| `display` | `iphone`, `ipad`, `mac`, `iphone-5.5`, `iphone-4.7` or `ipad-9.7`. Either this or `size` |
+| `orientation` | `portrait` (default) or `landscape`. A `mac` preview is landscape only |
+| `size` | `[width, height]`, even numbers from 320 to 3840, for a size of your own |
+| `locales` | The languages. Default: all of the project's |
+| `captionStyle` | `panel` (default), `shadow` or `band` |
+| `captions` | Up to 12, each `{ "id", "text", "position" }`. `text` is one text, one per language, or `{ "slide": 2 }` for that slide's headline |
+| `intro`, `outro` | The cards, or `false`. `intro` takes `headline` and `logo`, `outro` up to three `lines`, `logo` and `disclosure` (`iap`, `subscription`, `login`) |
+| `plate` | The theme's background as an opaque picture. Default `true` |
+| `touch` | The ring drawn where a touch was logged. Default `false` |
+
+```json
+{ "project": "streaks", "display": "iphone", "captions": [{ "id": "today", "text": { "slide": 2 } }], "outro": { "disclosure": ["subscription"] } }
+```
+
+A new set uses one of the account's renders. Asking for the same layers again answers with the set drawn before and uses none. Returns the set's id, a link to its ZIP, where each picture is, and warnings: a caption shrunk to fit, a text drawn in another language because the project has none in that one, a card without a logo. The structured result is the set as the [HTTP API](/docs/api#app-preview-layers) returns it.
 
 ## Try it without an agent
 

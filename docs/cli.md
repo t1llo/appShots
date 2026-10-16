@@ -1,7 +1,7 @@
 ---
 title: The appshots command
 nav: Command line
-description: Reference for the appshots command line tool on the Mac. Setup, update, check, run an app in the iOS Simulator, capture and upload screens, capture a Mac app's window or a web app's pages, pull the finished set, download mockups, and call the server's tools.
+description: Reference for the appshots command line tool on the Mac. Setup, update, check, run an app in the iOS Simulator, capture and upload screens, capture a Mac app's window or a web app's pages, pull the finished set, make app preview videos, download mockups, and call the server's tools.
 ---
 
 `appshots` is one small Node.js file with no dependencies. It runs your app in a simulator, captures screens from the simulator, a device, a Mac window or a web page, moves files between your Mac and the server, and can call every tool the server has. The [setup command](/docs/connect) puts it next to the skill, as `~/.claude/skills/appshots/appshots.mjs` for Claude Code or `~/.agents/skills/appshots/appshots.mjs` for the other agents. When `~/.local/bin`, `~/bin` or the folder Claude Code sits in is on your `PATH`, it also links it there as the command `appshots`. Otherwise you run it as `node ~/.claude/skills/appshots/appshots.mjs`, which is how the skill runs it anyway.
@@ -226,6 +226,66 @@ These put a finished set into App Store Connect from your Mac, with an API key o
 | `--dry-run` | Changes nothing and says what would be done. `text --set` takes it too |
 
 When a project language matches several of the store page's, such as `en` with `en-US` and `en-GB`, `push` takes the app's primary language among them, or else the code App Store Connect has for it (`en-US` for `en`), and says which it took. When it cannot tell, it leaves that language out and says how to name one with `--lang en=<code>`, listing the other languages after it. A language left out makes the command end with status 1.
+
+## App preview videos
+
+```bash
+appshots video init streaks
+appshots video plan
+appshots video record
+appshots video layers
+appshots video compose
+appshots video push --dry-run
+```
+
+`appshots video` makes the app preview videos of the App Store. It records the app on your Mac, has the server draw the captions in the project's style, cuts the previews with ffmpeg and checks them against Apple's rules. The plan is `appshots.video.json` in the folder the command runs in, and the work goes into `appshots-video/` beside it. See [App preview videos](/docs/video).
+
+| Command | What it does |
+| --- | --- |
+| `appshots video init [project]` | Writes the plan from the project's slides. `--display iphone,ipad` picks the displays and `--lang <codes>` the languages. `--again` writes it anew over the one there |
+| `appshots video plan` | Checks the plan and prints the storyboard: each scene, its caption and its seconds, each display's length, the time recording takes, and what to fix. `--json` prints it as JSON |
+| `appshots video record` | Records each scene in each language on each display that has no recording yet. See the options below |
+| `appshots video import <file> --scene <id>` | Takes a recording made elsewhere, with QuickTime Player or Xcode, as a scene's footage. `--lang <code>` and `--display <key>` say whose |
+| `appshots video layers` | Has the server draw the captions, cards, background and touch ring of each display. A new set uses one render; the same again is free |
+| `appshots video compose` | Cuts the previews into `appshots-video/out/<language>/<display>/`, each with its poster and its check. `--draft` is quicker and cannot be uploaded, `--jobs <n>` sets how many scenes are cut at once, and `--engine remotion` draws with Remotion |
+| `appshots video check [files…]` | Checks videos against Apple's specification, or the plan's previews without files. `--display <key>` names the display a file is for, and `--json` prints the result as JSON. Ends with status 1 when a file has an error |
+| `appshots video sheet [file]` | A contact sheet, a picture a second, of a video or of each preview. `--raw` makes one of each language's recordings, `--scene <ids>` only of these, and `--every <seconds>` sets the step |
+| `appshots video poster --at <seconds> [file]` | Takes the poster frame at that time, and keeps the time for `push` |
+| `appshots video remotion` | Explains Remotion's licence, then writes a Remotion project into `appshots-video/remotion/` and installs it. `--yes` once you have agreed to the licence, `--no-install` to write the files only, `--again` to bring them back to the template |
+| `appshots video push` | Puts the previews into the App Store Connect version being prepared. See the options below |
+| `appshots video guide` | Prints the steps an agent follows, in order |
+
+Every one of them takes `--plan <file>` for another plan, and most take `--lang <codes>` and `--display <keys>` to work on some of the plan's languages and displays only.
+
+| Option of `record` | What it does |
+| --- | --- |
+| `--scene <ids>` | Only these scenes |
+| `--again` | Records again what has a recording |
+| `--seconds <n>` | Records each scene this long at most, 1 to 120 |
+| `--manual` | You drive each scene by hand, and recording stops on Return |
+| `--reuse-footage` | Records the primary language only, and shows those recordings in the others with their own captions |
+| `--sim [name]` | On this simulator. Default: the 6.9-inch iPhone or the 13-inch iPad |
+| `--device [name]` | On a plugged-in iPhone or iPad, with Xcode 27 or newer. Experimental |
+| `--mac [app]` | A Mac app's window. `--window <width>x<height>` sizes it first |
+| `--web <url>` | A web app's page, frame by frame. `--realtime` records it as it plays, for a page with video or WebGL |
+
+| Option of `push` | What it does |
+| --- | --- |
+| `--app <bundle id>` | The app. Left out when the key reaches one app only |
+| `--version <number>` | Stops unless this is the version being prepared. `push` never creates a version |
+| `--lang <codes>` | Only these languages. `en=en-GB` puts the preview of `en` onto the store page's `en-GB` |
+| `--display <keys>` | Only these displays |
+| `--replace` | Takes off appShots' own earlier upload of the same preview and puts the new one in its place |
+| `--dry-run` | Changes nothing and says what would be done |
+| `--no-wait` | Stops once the files are uploaded, before Apple has processed them. `--resume` places them later without uploading again |
+
+`push` uses the key `appshots store login` saved, and submits nothing for review. See [App previews](/docs/app-store-connect#app-previews).
+
+| Environment variable | What it does |
+| --- | --- |
+| `APPSHOTS_FFMPEG`, `APPSHOTS_FFPROBE` | The ffmpeg and ffprobe to use, in place of the ones found on the `PATH` or in Homebrew's folders |
+| `APPSHOTS_FFMPEG_STALL` | Seconds without progress after which ffmpeg is stopped. Default 30 |
+| `APPSHOTS_BROWSER` | The Chromium browser that records a web app |
 
 ## Mockups
 
