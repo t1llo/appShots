@@ -255,6 +255,28 @@ test("--jobs sets how many segments are built at once", async () => {
   await assert.rejects(compose(p.plan, { ...p.flags, jobs: "many" }), /--jobs/);
 });
 
+test("two segments that come out the same, such as an intro and an outro with one logo, are built once for both", async () => {
+  const p = project({ locales: ["en"], transition: { type: "none" } });
+  // Logo cards with no text, the same picture for both, and no transition: the same command twice.
+  const cards = ["intro-text", "intro-logo", "outro-text"];
+  p.manifests.iphone.layers = [...p.manifests.iphone.layers.filter((/** @type {any} */ layer) => !cards.includes(layer.kind)), { id: "intro-logo", locale: null, kind: "intro-logo" }, { id: "outro-logo", locale: null, kind: "outro-logo" }];
+  for (const id of ["intro-logo", "outro-logo"]) writeFileSync(path.join(p.root, "layers", p.manifests.iphone.set, `${id}.png`), PIXEL);
+  // More jobs than segments, so that both would start before either is there.
+  process.env.FAKE_DELAY = "300";
+  /** @type {any[]} */
+  let results = [];
+  await quietly(async () => {
+    results = await compose({ ...p.plan, intro: { seconds: 2 } }, { ...p.flags, jobs: "8" });
+  });
+  assert.equal(results[0].seconds, 22);
+  assert.equal(calls().filter((call) => !isJoin(call)).length, 4);
+  const join = calls().find(isJoin)?.args ?? [];
+  const inputs = join.filter((_, at) => join[at - 1] === "-i" && join[at].endsWith(".mp4"));
+  assert.equal(inputs.length, 5);
+  assert.equal(inputs[0], inputs[4]);
+  assert.ok(readdirSync(path.join(p.root, "work")).every((name) => /^[0-9a-f]{16}\.mp4$/.test(name)));
+});
+
 test("--draft encodes quickly, is checked as a draft, and does not fail for being one", async () => {
   const p = project({ locales: ["en"] });
   const printed = await quietly(() => compose(p.plan, { ...p.flags, draft: true }));

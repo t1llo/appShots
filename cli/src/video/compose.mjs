@@ -310,18 +310,24 @@ function contentKey(version, tools, args, root) {
 async function runSegments(ctx, jobs) {
   const work = path.join(ctx.root, "work");
   mkdirSync(work, { recursive: true });
-  return pool(jobs, ctx.jobs ?? jobsOf({}), async (job) => {
-    const key = contentKey(SEGMENT_VERSION, ctx.tools, job.args, ctx.root);
+  const keys = jobs.map((job) => contentKey(SEGMENT_VERSION, ctx.tools, job.args, ctx.root));
+  // Two segments made from the same inputs, such as an intro and an outro with the same logo, are one file, built
+  // once: two ffmpegs writing it at once would write the same partial file.
+  /** @type {Map<string, Job>} */
+  const unique = new Map();
+  keys.forEach((key, at) => unique.has(key) || unique.set(key, jobs[at]));
+  /** @type {Set<string>} */
+  const built = new Set();
+  await pool([...unique], ctx.jobs ?? jobsOf({}), async ([key, job]) => {
     const file = path.join(work, `${key}.mp4`);
-    const built = !existsSync(file);
-    if (built) {
-      // Written under another name first, so a segment that is there is always whole.
-      const partial = path.join(work, `${key}.${process.pid}.partial.mp4`);
-      await runFfmpeg(ctx.tools, [...job.args, "-f", "mp4", partial], { label: `stage 1, ${job.label}`, out: partial });
-      renameSync(partial, file);
-    }
-    return { scene: job.scene, file, seconds: job.frames / FPS, frames: job.frames, built };
+    if (existsSync(file)) return;
+    // Written under another name first, so a segment that is there is always whole.
+    const partial = path.join(work, `${key}.${process.pid}.partial.mp4`);
+    await runFfmpeg(ctx.tools, [...job.args, "-f", "mp4", partial], { label: `stage 1, ${job.label}`, out: partial });
+    renameSync(partial, file);
+    built.add(key);
   });
+  return jobs.map((job, at) => ({ scene: job.scene, file: path.join(work, `${keys[at]}.mp4`), seconds: job.frames / FPS, frames: job.frames, built: built.has(keys[at]) }));
 }
 
 /**
