@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { cliHome, stubServer } from "./helpers.mjs";
+import { cliHome, quietly, stubServer } from "./helpers.mjs";
 
 const home = await cliHome("tools");
 after(() => home.remove());
@@ -24,16 +24,11 @@ const bare = { name: "list_projects", description: "Lists the projects.", inputS
  */
 async function printed(list, name) {
   const server = await stubServer(() => [200, { jsonrpc: "2.0", id: 1, result: { tools: list } }]);
-  const lines = [];
-  const log = console.log;
-  console.log = (line = "") => void lines.push(String(line));
   try {
-    await tools({ url: server.url, token: "test-token" }, name);
+    return await quietly(() => tools({ url: server.url, token: "test-token" }, name));
   } finally {
-    console.log = log;
     await server.close();
   }
-  return lines.join("\n");
 }
 
 test("an object shown without its fields is found, also inside a list or a list's items", () => {

@@ -109,17 +109,17 @@ export async function latestReferences(server) {
  * the ones it uses, so it does no harm, and it may be one the user keeps.
  * @param {string} dir
  * @param {Record<string, string>} references
- * @returns {number} How many files changed.
+ * @returns {string[]} The names of the files that changed.
  */
 export function installReferences(dir, references) {
-  let changed = 0;
+  const changed = [];
   for (const [name, text] of Object.entries(references)) {
     if (!REFERENCE.test(name)) continue;
     const file = path.join(referencesOf(dir), name);
     if (existsSync(file) && readFileSync(file, "utf8") === text) continue;
     mkdirSync(referencesOf(dir), { recursive: true });
     writeAtomic(file, text);
-    changed++;
+    changed.push(name);
   }
   return changed;
 }
@@ -224,21 +224,40 @@ export async function update() {
   } catch (error) {
     fail(`Cannot get the skill from ${url}: ${error.cause?.message ?? error.message}`);
   }
-  let changed = 0;
+  /** @type {Set<string>} */
+  const changed = new Set();
+  /** @type {Set<string>} */
+  const changedReferences = new Set();
   for (const dir of dirs) {
-    changed += installReferences(dir, references);
+    for (const name of installReferences(dir, references)) changedReferences.add(name);
     for (const [name, text] of Object.entries(now)) {
       const file = path.join(dir, name);
       if (existsSync(file) && readFileSync(file, "utf8") === text) continue;
       // The command that was there stays beside the new one, so it can be put back by hand.
       if (name === "appshots.mjs" && existsSync(file)) copyFileSync(file, `${file}.bak`);
       writeAtomic(file, text, name === "appshots.mjs" ? 0o755 : undefined);
-      changed++;
+      changed.add(name);
     }
     chmodSync(path.join(dir, "appshots.mjs"), 0o755);
   }
   // What was remembered about the server is older than what has just been fetched.
   rmSync(LATEST_FILE, { force: true });
-  const where = dirs.map(tilde).join(" and ");
-  console.log(changed ? `Updated the appshots skill and command in ${where}. Read SKILL.md again from the top: it has changed.` : `The appshots skill and command in ${where} are up to date.`);
+  console.log(updated(dirs.map(tilde).join(" and "), changed, [...changedReferences].sort()));
+}
+
+/**
+ * What update says it did. The agent reads SKILL.md again from the top only when that changed; a reference file
+ * is read when a step names it, so a changed one needs reading again only if it was read before.
+ * @param {string} where
+ * @param {Set<string>} changed SKILL.md and appshots.mjs, the ones of them that changed.
+ * @param {string[]} references The reference files that changed.
+ */
+function updated(where, changed, references) {
+  if (changed.has("SKILL.md")) return `Updated the appshots skill and command in ${where}. Read SKILL.md again from the top: it has changed.`;
+  if (!changed.size && !references.length) return `The appshots skill and command in ${where} are up to date.`;
+  const one = references.length === 1;
+  const files = one ? `the skill's reference file ${references[0]}` : `the skill's reference files ${references.join(", ")}`;
+  const what = [changed.size ? "the appshots command" : "", references.length ? files : ""].filter(Boolean).join(" and ");
+  const again = !references.length ? "." : one ? "; read that file again where a step names it." : "; read those files again where a step names them.";
+  return `Updated ${what} in ${where}. SKILL.md has not changed${again}`;
 }

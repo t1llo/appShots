@@ -125,7 +125,7 @@ test("update installs the reference files beside the skill, and the skill counts
   writeFileSync(path.join(skill, "SKILL.md"), NEW.skill);
   writeFileSync(path.join(skill, "appshots.mjs"), NEW.cli);
   assert.match(await skillStatus(), /the server has a newer one/);
-  assert.match(await quietly(() => update()), /^Updated the appshots skill and command in /m);
+  assert.match(await quietly(() => update()), /^Updated the skill's reference files start\.md, web\.md in .*\. SKILL\.md has not changed/m);
   assert.deepEqual(readdirSync(path.join(skill, "references")).sort(), ["start.md", "web.md"]);
   assert.equal(installed("references/start.md"), REFERENCES["start.md"]);
   assert.equal(await skillStatus(), "up to date");
@@ -140,6 +140,29 @@ test("update replaces a changed reference file and keeps one the server no longe
   await quietly(() => update());
   assert.equal(installed("references/start.md"), REFERENCES["start.md"]);
   assert.equal(installed("references/gone.md"), "# Gone\n");
+});
+
+test("update says SKILL.md changed only when it did", async () => {
+  withReferences();
+  writeFileSync(path.join(skill, "SKILL.md"), NEW.skill);
+  writeFileSync(path.join(skill, "appshots.mjs"), NEW.cli);
+  await quietly(() => update());
+
+  // One reference file changed: the agent need not read SKILL.md again.
+  withReferences({ ...REFERENCES, "web.md": `${REFERENCES["web.md"]}A new line\n` });
+  const reference = await quietly(() => update());
+  assert.match(reference, /^Updated the skill's reference file web\.md in /m);
+  assert.doesNotMatch(reference, /Read SKILL\.md again/);
+
+  // The command alone.
+  writeFileSync(path.join(skill, "appshots.mjs"), OLD.cli);
+  const command = await quietly(() => update());
+  assert.match(command, /^Updated the appshots command in .*\. SKILL\.md has not changed\.$/m);
+
+  // SKILL.md with the rest says so, as it always did.
+  writeFileSync(path.join(skill, "SKILL.md"), OLD.skill);
+  writeFileSync(path.join(skill, "references", "start.md"), "# Old start\n");
+  assert.match(await quietly(() => update()), /^Updated the appshots skill and command in .*\. Read SKILL\.md again from the top: it has changed\.$/m);
 });
 
 test("update with a reference file that does not match its hash changes nothing", async () => {
