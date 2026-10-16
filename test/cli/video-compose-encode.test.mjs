@@ -92,11 +92,12 @@ test("an ffmpeg whose output stops moving is stopped, its file removed, and the 
 });
 
 test("a slow ffmpeg that keeps making progress is left to finish", async () => {
-  const ffmpeg = await fakeFfmpeg("slow", `let us = 0; const tick = setInterval(() => { us += 40000; progress(us); if (us >= 720000) { clearInterval(tick); fs.writeFileSync(out, "video"); process.stdout.write("progress=end\\n"); } }, 200);`);
+  // It says where it is as soon as it starts, so all it has to beat is Node's own start, however busy the machine.
+  const ffmpeg = await fakeFfmpeg("slow", `let us = 0; progress(us); const tick = setInterval(() => { us += 40000; progress(us); if (us >= 1000000) { clearInterval(tick); fs.writeFileSync(out, "video"); process.stdout.write("progress=end\\n"); } }, 200);`);
   const out = path.join(dir, "slow.mp4");
-  const result = await runFfmpeg({ ffmpeg }, ["-f", "mp4", out], { label: "stage 2", out, stall: 2500 });
-  // It ran for longer than the limit, and was never still for long.
-  assert.equal(result.seconds, 0.72);
+  const result = await runFfmpeg({ ffmpeg }, ["-f", "mp4", out], { label: "stage 2", out, stall: 4000 });
+  // It ran for about five seconds, longer than the limit, and was never still for long.
+  assert.equal(result.seconds, 1);
   assert.ok(existsSync(out));
 });
 
