@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fail } from "../fail.mjs";
+import { listFlag } from "../store/push.mjs";
 
 /**
  * @typedef {string | Record<string, string>} Text One text, or one per language, as the project's own texts are.
@@ -602,24 +603,12 @@ export function workFolders(plan) {
 }
 
 /**
- * The comma-separated list a flag holds, or null when it is not given.
- * @param {Record<string, string | true>} flags
- * @param {string} name
- * @param {string} example
- */
-function listOf(flags, name, example) {
-  if (flags[name] === undefined) return null;
-  if (typeof flags[name] !== "string") fail(`--${name} needs a value, such as --${name} ${example}.`);
-  return flags[name].split(",").map((part) => part.trim()).filter(Boolean);
-}
-
-/**
  * The plan's languages --lang picks, in the plan's order; all of them without it.
  * @param {Plan & { locales: string[] }} plan
  * @param {Record<string, string | true>} flags
  */
 export function selectedLocales(plan, flags) {
-  const asked = listOf(flags, "lang", plan.locales.slice(0, 2).join(","));
+  const asked = listFlag(flags, "lang", plan.locales.slice(0, 2).join(","));
   if (!asked) return plan.locales;
   for (const code of asked) if (!plan.locales.some((each) => each.toLowerCase() === code.toLowerCase())) fail(`--lang ${code}: the plan's languages are ${plan.locales.join(", ")}.`);
   return plan.locales.filter((code) => asked.some((each) => each.toLowerCase() === code.toLowerCase()));
@@ -631,7 +620,7 @@ export function selectedLocales(plan, flags) {
  * @param {Record<string, string | true>} flags
  */
 export function selectedDisplays(plan, flags) {
-  const asked = listOf(flags, "display", plan.displays.join(","));
+  const asked = listFlag(flags, "display", plan.displays.join(","));
   if (!asked) return plan.displays;
   for (const key of asked) if (!plan.displays.includes(key)) fail(`--display ${key}: the plan's displays are ${plan.displays.join(", ")}.`);
   return plan.displays.filter((key) => asked.includes(key));
@@ -643,7 +632,7 @@ export function selectedDisplays(plan, flags) {
  * @param {Record<string, string | true>} flags
  */
 export function selectedScenes(plan, flags) {
-  const asked = listOf(flags, "scene", plan.scenes[0].id);
+  const asked = listFlag(flags, "scene", plan.scenes[0].id);
   if (!asked) return plan.scenes;
   for (const id of asked) if (!plan.scenes.some((scene) => scene.id === id)) fail(`--scene ${id}: the plan's scenes are ${plan.scenes.map((scene) => scene.id).join(", ")}.`);
   return plan.scenes.filter((scene) => asked.includes(scene.id));
