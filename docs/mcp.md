@@ -39,6 +39,8 @@ Returns the guide the server is built around: the workflow, how to upload screen
 
 Without arguments it is the whole guide. `topic` asks for one part of it, for an agent that knows what it is looking for, and the answer names the others: `workflow`, `uploading`, `sizes`, `device-sets`, `mac`, `web`, `layouts`, `no-screenshot`, `feature-slides`, `feature-points`, `backgrounds`, `fonts`, `device`, `badges`, `icon-rows`, `images`, `icons`, `copy`, `store-assets`, `banners` or `mockups`. A topic the guide does not have gets the whole guide, with the topics named first.
 
+Two topics stand outside the whole guide. `core` is a short version of about two thousand tokens, for a model with a small context: the steps, an example set, the layouts, the rules, and which topic to read for anything else. `fields` lists every field of a slide, the theme and their parts with the values each takes, written out from the checks the tools make. The tool list shows the parts of a slide, such as a badge or the device, as plain objects to stay small, and this topic is where their fields are. See [Local models](/docs/connect#local-models).
+
 ### list_projects
 
 Lists the projects of the account: id, name, number of slides, languages and when each last changed. `ownSets` names the devices that have a slide set of their own. A project whose stored file cannot be read is listed too, with `damaged` saying what is wrong: `restore_project` brings back an earlier revision of it. No arguments.

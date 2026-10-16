@@ -47,6 +47,42 @@ describe("the design guide", () => {
       for (const other of TOPICS) if (other !== topic) assert.ok(footer!.includes(other.id), `${topic.id} leaves out ${other.id}`);
     }
   });
+
+  test("has a core topic a small model can read, which names every other topic", () => {
+    const core = designGuide(base, space, "core");
+    assert.match(core, /^## Start here\n/);
+    // About two to three thousand tokens, at four characters a token.
+    assert.ok(core.length > 6000 && core.length < 12_000, `${core.length} characters`);
+    assert.ok(core.length * 4 < designGuide(base, space).length, "is a quarter of the guide at most");
+    for (const id of [...TOPICS.map((topic) => topic.id), "fields"]) assert.match(core, new RegExp(`\\n- \`${id}\`: `), `does not say when to read ${id}`);
+    assert.ok(!designGuide(base, space).includes("## Start here"), "is not part of the whole guide");
+  });
+
+  test("has a fields topic with every field of a slide and its parts", async () => {
+    const schema = await import("../../src/schema.ts");
+    const fields = designGuide(base, space, "fields");
+    const parts = {
+      Slide: schema.slideSchema,
+      Device: schema.deviceSchema,
+      Badge: schema.badgeSchema,
+      Feature: schema.featureSchema,
+      "Feature cards": schema.featureCardsSchema,
+      "Icon row": schema.iconRowSchema,
+      Logo: schema.logoSchema,
+      Image: schema.placedImageSchema,
+      Asset: schema.creativeSchema,
+      Mockups: schema.mockupsSchema,
+    };
+    for (const [title, part] of Object.entries(parts)) {
+      const start = fields.indexOf(`\n### ${title}\n`);
+      assert.ok(start > 0, title);
+      const end = fields.indexOf("\n### ", start + 1);
+      const body = fields.slice(start, end < 0 ? undefined : end);
+      for (const field of Object.keys(part.shape)) assert.ok(body.includes(`\n- \`${field}\`: `), `${title} leaves out ${field}`);
+    }
+    for (const field of Object.keys(schema.themeSchema.shape)) assert.ok(fields.includes(`\`${field}\``), `the theme leaves out ${field}`);
+    assert.ok(!designGuide(base, space).includes("\n## Fields\n"), "is not part of the whole guide");
+  });
 });
 
 describe("contact sheets", () => {

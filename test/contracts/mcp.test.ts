@@ -148,6 +148,19 @@ describe("tools", () => {
     assert.match(textOf(await callTool(server, "get_design_guide", { topic: "uploading" })), /^## Uploading\n/);
   });
 
+  test("get_design_guide has a short core topic for a small context, and the fields written out", async () => {
+    const guide = textOf(await callTool(server, "get_design_guide"));
+    const core = textOf(await callTool(server, "get_design_guide", { topic: "core" }));
+    assert.match(core, /^## Start here\n/);
+    assert.ok(core.length * 4 < guide.length, `${core.length} characters of a guide of ${guide.length}`);
+    assert.ok(core.includes(`${server.url}/#/<project>`));
+    assert.match(core, /\n- `fields`: /);
+    const fields = textOf(await callTool(server, "get_design_guide", { topic: "fields" }));
+    assert.match(fields, /^## Fields\n/);
+    assert.match(fields, /\n- `statusBarTime`: /);
+    for (const aside of [core, fields]) assert.ok(!guide.includes(aside.slice(0, 200)), "the whole guide stays without it");
+  });
+
   test("get_design_guide answers a topic it does not have with the whole guide, as before it took topics", async () => {
     const guide = textOf(await callTool(server, "get_design_guide"));
     const result = await callTool(server, "get_design_guide", { topic: "layouts and badges" });

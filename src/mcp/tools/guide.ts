@@ -16,7 +16,9 @@ export const registerGuideTools: RegisterTools = (server, tools) => {
           .string()
           .optional()
           .catch(undefined)
-          .describe(`One part of the guide, to look something up again later: ${TOPIC_IDS.join(", ")}. Left out, the whole guide, which is what to read first`),
+          .describe(
+            `One part of the guide, to look something up again later: ${TOPIC_IDS.join(", ")}. Left out, the whole guide, which is what to read first. With little room for it, read "core" first instead: the short guide, which says what to read next. "fields" lists every field a slide and its parts take`,
+          ),
       },
       annotations: { readOnlyHint: true },
     },
