@@ -272,3 +272,19 @@ test("the project's renders and its export do not take in a set of layers", asyn
   assert.deepEqual((await call(`/api/projects/${other}`)).body, project.body);
   assert.deepEqual(await exported(), names);
 });
+
+test("deleting a project while its layers are drawn stops the run first, and nothing of it comes back", async () => {
+  const doomed = (await call("/api/projects", send("POST", { name: "Doomed preview", locales: ["en", "de"] }))).body.id;
+  // A page stops being drawn when its run is cancelled, as the browser's does.
+  fake.before = (capture) => new Promise((resolve) => capture.signal.addEventListener("abort", () => resolve(), { once: true }));
+  const { job } = (await call(`/api/projects/${doomed}/video-layers`, send("POST", { display: "iphone", captions: [{ id: "a", text: "A" }], background: true }))).body;
+  await drawing();
+  assert.equal((await call(`/api/projects/${doomed}`, { method: "DELETE" })).status, 204);
+  // Answered once the run has stopped.
+  assert.equal((await call(`/api/renders/${job.id}`)).body.state, "cancelled");
+  await sleep(100);
+  assert.equal(fake.calls.length, 1, "the second language was never drawn");
+  const projects = await readdir(path.join(server.dataDir, "projects"));
+  assert.ok(!projects.includes(doomed), "no folder came back");
+  assert.ok(!projects.includes(".video-staging"), "nothing is left in staging");
+});

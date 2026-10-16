@@ -28,12 +28,13 @@ export { defaultTargets, resolveLocales } from "./plan.ts";
 
 /**
  * Lets what is queued and running finish, for up to `timeoutMs`, and takes no more work meanwhile. Runs still going
- * then are cancelled: they keep nothing and use no render. Resolves true when everything finished in time.
+ * then are cancelled: they keep nothing and use no render. `cancelOthers` cancels what else waits in the queue, and
+ * is given as long. Resolves true when everything finished in time.
  */
-export async function drain(timeoutMs: number): Promise<boolean> {
+export async function drain(timeoutMs: number, cancelOthers?: (timeoutMs: number) => Promise<void>): Promise<boolean> {
   await closeRenders();
   const finished = await scheduler.drain(timeoutMs);
-  if (!finished) await cancelAll(2000);
+  if (!finished) await Promise.all([cancelAll(2000), cancelOthers?.(2000)]);
   return finished;
 }
 

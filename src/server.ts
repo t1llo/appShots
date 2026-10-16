@@ -7,7 +7,8 @@ import { createApp } from "./app.ts";
 import { config } from "./config.ts";
 import { webDir } from "./http/routes/site.ts";
 import { grantsSaved } from "./oauth/store.ts";
-import { closeBrowser, drain, prewarm } from "./render.ts";
+import { closeBrowser, prewarm } from "./render.ts";
+import { drain } from "./services/lifecycle.ts";
 import { sweepProjects } from "./storage/migrate.ts";
 
 // What `npm start` and the container run: build the app, listen, and stop cleanly on a signal.
@@ -44,7 +45,7 @@ server.listen({ port: config.port, host: config.host }, () => {
  */
 async function shutDown(): Promise<void> {
   const closed = new Promise((resolve) => server.close(resolve));
-  // drain() lets renders finish for this long, then gives the ones still going two seconds to stop.
+  // drain() lets renders and video layers finish for this long, then gives what still goes two seconds to stop.
   await Promise.race([Promise.all([closed, drain(5500)]), sleep(7500)]);
   server.closeAllConnections();
   await Promise.all([accountsSaved(), grantsSaved()]);

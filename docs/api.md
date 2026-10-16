@@ -313,7 +313,7 @@ With `"background": true`, a new set answers at once with status 202, the run as
 
 Creating and revoking tokens, deleting the account and managing who can sign in need a signed-in browser. A token that leaks can therefore not make more tokens.
 
-Deleting a project or an account first cancels its renders and waits for them to stop, so nothing drawn for it comes back afterwards.
+Deleting a project or an account first cancels its renders, and the runs drawing the layers of its app previews, and waits for them to stop, so nothing drawn for it comes back afterwards.
 
 ## For the admin
 

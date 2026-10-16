@@ -5,7 +5,7 @@ import { holdRender } from "../accounts.ts";
 import { noteError, scheduler } from "../render/engine.ts";
 import type { RenderJob } from "../render/jobs.ts";
 import { Cancelled } from "../render/output.ts";
-import { getProject, InputError, listImages, listShots, NotFoundError, type Space } from "../store.ts";
+import { getProject, InputError, listImages, listShots, NotFoundError, type Space, UnavailableError } from "../store.ts";
 import { artboardsOf, type Draft, type LayerWarning, plain, prepareDraft } from "./cards.ts";
 import { browserCapturer, type PageCapturer } from "./pages.ts";
 import { normaliseRequest, type VideoLayersBody } from "./request.ts";
@@ -79,6 +79,8 @@ export function createVideoService(deps: VideoServiceDeps) {
   const schedule = deps.schedule ?? (<T>(space: string, work: () => Promise<T>) => scheduler.schedule("render", space, work));
   const runs = new Map<string, Run>();
   const waiting = new Map<string, number>();
+  /** Set once the server shuts down: no run starts from then on, so the ones under way can finish. */
+  let closing = false;
 
   function forget(): void {
     const old = Date.now() - KEPT_MS;
@@ -100,6 +102,15 @@ export function createVideoService(deps: VideoServiceDeps) {
       gone = true;
       if (--run.callers === 0 && !ended(run)) run.controller.abort();
     };
+  }
+
+  /** Cancels the runs that match and have not ended, and waits up to `timeoutMs` for them to stop. */
+  async function stop(match: (run: Run) => boolean, timeoutMs: number): Promise<void> {
+    const live = [...runs.values()].filter((run) => !ended(run) && match(run));
+    for (const run of live) run.controller.abort();
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([Promise.allSettled(live.map((run) => run.finished)), new Promise((resolve) => (timer = setTimeout(resolve, timeoutMs)))]);
+    clearTimeout(timer);
   }
 
   const own = (space: Space, job: string) => {
@@ -197,6 +208,7 @@ export function createVideoService(deps: VideoServiceDeps) {
 
       const total = draft.locales.reduce((sum, locale) => sum + artboardsOf(draft, locale).length, 0);
       if (total === 0) throw new InputError("Nothing to draw: ask for captions, an intro or outro, the plate or the touch ring.");
+      if (closing) throw new UnavailableError("The server is shutting down. Try again in a minute.");
       const count = waiting.get(space.id) ?? 0;
       if (count >= MAX_WAITING) throw new InputError("Two runs are already under way for this account. Try again when one has finished.");
       const settle = hold(space.id);
@@ -205,12 +217,22 @@ export function createVideoService(deps: VideoServiceDeps) {
 
       const job: VideoJob = { id: randomBytes(8).toString("hex"), project: id, name: project.name, state: "queued", done: 0, total, createdAt: new Date().toISOString(), set };
       const run: Run = { job, space: space.id, draft, controller: new AbortController(), finished: undefined as never, callers: 0 };
-      run.finished = schedule(space.id, async () => {
+      const scheduled = schedule(space.id, async () => {
         if (run.controller.signal.aborted) throw new Cancelled();
         job.state = "running";
         job.startedAt = new Date().toISOString();
         return draw(run, space, set);
-      })
+      });
+      // A run stopped while it waits ends at once, as a render does, rather than when its turn would have come: a
+      // project is deleted only once nothing waits to draw for it. Its place in the queue comes to nothing.
+      scheduled.catch(() => {});
+      const stopped = new Promise<never>((_resolve, reject) => {
+        const end = () => {
+          if (job.state === "queued") reject(new Cancelled());
+        };
+        run.controller.signal.addEventListener("abort", end, { once: true });
+      });
+      run.finished = Promise.race([scheduled, stopped])
         .then(
           async (manifest) => {
             job.state = "done";
@@ -250,6 +272,25 @@ export function createVideoService(deps: VideoServiceDeps) {
       const run = own(space, job);
       if (run && !ended(run)) run.controller.abort();
       return run?.job;
+    },
+
+    /**
+     * Cancels the runs of an account, or of one of its projects, and waits for them to stop, as for renders: a
+     * project or an account is deleted or moved once nothing draws for it any more, so no run puts its layers, or
+     * the folder it stages them in, back where they were.
+     */
+    cancelRuns(space: Space, project?: string, timeoutMs = 15_000): Promise<void> {
+      return stop((run) => run.space === space.id && (project === undefined || run.job.project === project), timeoutMs);
+    },
+
+    /** Starts no more runs, while the server shuts down. A set that is there already is still answered. */
+    close(): void {
+      closing = true;
+    },
+
+    /** Cancels every run that has not ended and waits up to `timeoutMs` for them to stop. */
+    cancelAll(timeoutMs: number): Promise<void> {
+      return stop(() => true, timeoutMs);
     },
 
     /** What the page of a running set draws. */

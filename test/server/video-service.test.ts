@@ -4,8 +4,9 @@ import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { PageError } from "../../src/render/capture.ts";
 import { Cancelled } from "../../src/render/output.ts";
+import { createScheduler } from "../../src/render/scheduler.ts";
 import type { Slide } from "../../src/schema.ts";
-import { createProject, deleteProject, InputError, NotFoundError, projectDir, saveImage, updateProject } from "../../src/store.ts";
+import { createProject, deleteProject, InputError, NotFoundError, projectDir, saveImage, UnavailableError, updateProject } from "../../src/store.ts";
 import { projectsDir } from "../../src/storage/paths.ts";
 import { createVideoService, type LayersAnswer } from "../../src/video/service.ts";
 import { KEPT_SETS, readSet, videoDir } from "../../src/video/store.ts";
@@ -208,6 +209,73 @@ test("a project deleted while its layers are drawn keeps nothing of them", async
   assert.deepEqual(settled, [false]);
   assert.equal(await exists(projectDir(space, id)), false);
   assert.equal(await exists(staging), false);
+});
+
+/** A service whose runs take their turns one at a time, and whose pages stop being drawn when their run is cancelled, as the browser's do. */
+function oneAtATime(): void {
+  const lane = createScheduler({ render: 1, mockup: 1 });
+  service = createVideoService({ capturer: fake, hold: () => async (used) => void settled.push(used), schedule: (spaceId, work) => lane.schedule("render", spaceId, work) });
+  fake.before = (capture) => new Promise((resolve) => capture.signal.addEventListener("abort", () => resolve(), { once: true }));
+}
+
+test("cancelling a project's runs ends one waiting its turn at once, and leaves another project's run drawing", async () => {
+  oneAtATime();
+  const hold = gate();
+  fake.before = () => hold.opened;
+  const [mine, theirs] = [await project(), await project()];
+  const other = await service.start(space, theirs, { ...BODY, locales: ["en"], captions: [{ id: "a", text: "A" }] });
+  const waiting = await service.start(space, mine, { ...BODY, locales: ["en"], captions: [{ id: "a", text: "A" }] });
+  assert.ok("job" in other && "job" in waiting);
+  while (fake.calls.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+  await service.cancelRuns(space, mine);
+  assert.equal(waiting.job.state, "cancelled", "ended without waiting for the run ahead of it");
+  await assert.rejects(waiting.finished, Cancelled);
+  assert.equal(other.job.state, "running");
+  assert.deepEqual(settled, [false]);
+  hold.open();
+  assert.equal((await other.finished).charged, true);
+  assert.ok(!fake.calls.some((capture) => capture.path.startsWith(`/render/${mine}/`)), "the cancelled run never drew");
+});
+
+test("cancelling a project's runs stops the one drawing and waits for it, before the project goes; an account's go whatever their project", async () => {
+  oneAtATime();
+  const [one, two] = [await project(), await project()];
+  const drawing = await service.start(space, one, { ...BODY, captions: [{ id: "a", text: "A" }] });
+  const waiting = await service.start(space, one, { ...BODY, captions: [{ id: "b", text: "B" }] });
+  assert.ok("job" in drawing && "job" in waiting);
+  while (fake.calls.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+  await service.cancelRuns(space, one);
+  // Both have ended once it answers: nothing of theirs is still drawing when the folder goes.
+  assert.deepEqual([drawing.job.state, waiting.job.state], ["cancelled", "cancelled"]);
+  await Promise.all([assert.rejects(drawing.finished, Cancelled), assert.rejects(waiting.finished, Cancelled)]);
+  assert.equal(fake.calls.length, 1, "the second language was never drawn");
+  assert.deepEqual(settled, [false, false]);
+  assert.equal(await exists(staging), false);
+  assert.deepEqual(await readdir(videoDir(space, one)).catch(() => []), []);
+
+  const third = await service.start(space, one, { ...BODY, locales: ["en"], captions: [{ id: "c", text: "C" }] });
+  const fourth = await service.start(space, two, { ...BODY, locales: ["en"], captions: [{ id: "d", text: "D" }] });
+  assert.ok("job" in third && "job" in fourth);
+  await service.cancelRuns({ id: "someone-else", root: data.dir });
+  assert.equal(fourth.job.state, "queued", "another account's cancel reaches none of these");
+  await service.cancelRuns(space);
+  assert.deepEqual([third.job.state, fourth.job.state], ["cancelled", "cancelled"]);
+});
+
+test("once the server shuts down no run starts, a set that is there is still answered, and what goes can be cancelled", async () => {
+  const id = await project();
+  const there = await layers(id, { ...BODY, locales: ["en"] });
+  oneAtATime();
+  const going = await service.start(space, id, { ...BODY, captions: [{ id: "going", text: "Going" }] });
+  assert.ok("job" in going);
+  service.close();
+  await assert.rejects(service.start(space, id, { ...BODY, captions: [{ id: "late", text: "Late" }] }), UnavailableError);
+  const answer = await service.start(space, id, { ...BODY, locales: ["en"] });
+  assert.ok("done" in answer);
+  assert.equal(answer.done.set, there.set);
+  await service.cancelAll(2000);
+  assert.equal(going.job.state, "cancelled");
+  assert.deepEqual(settled, [true, false], "the refused run held no render");
 });
 
 test("a run clears what runs cut off by a stop of the server left in staging, and only that", async () => {
