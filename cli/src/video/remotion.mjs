@@ -97,6 +97,8 @@ async function inProject(command, args, folder, timeout) {
  * there already stay as they are, the user's changes with them; `again` puts appShots' template back over the
  * ones that differ, after saying which they are and asking. That is a question of its own, as the yes to the
  * licence does not give away the user's changes: `replace` passes the user's answer to it from a chat.
+ * 'appshots video remotion' passes its flags --yes, --no-install, --again and --replace as these options, and
+ * what this prints for an agent to run next names all four, so the command has to take each of them.
  * @param {string} root The work folder, appshots-video/ next to the plan.
  * @param {{ yes?: boolean, install?: boolean, again?: boolean, replace?: boolean }} [options] `install: false` writes the files only.
  * @returns {Promise<{ folder: string, written: string[], installed: boolean }>}
@@ -143,7 +145,7 @@ export async function scaffoldRemotion(root, { yes = false, install = true, agai
 
   const there = existsSync(path.join(folder, "node_modules", "remotion", "package.json"));
   let installed = there && !written.includes("package.json");
-  if (!install) console.log(installed ? "Remotion is installed there." : `Remotion is not installed there yet. To install it: cd ${shown(folder)} && npm install`);
+  if (!install) console.log(installed ? "Remotion is installed there." : "Remotion is not installed there yet.");
   else if (installed) console.log("Remotion is installed there already.");
   else {
     console.log(`Installing Remotion ${REMOTION_VERSION} in ${shown(folder)} with npm. This takes a few minutes.`);
@@ -157,7 +159,8 @@ export async function scaffoldRemotion(root, { yes = false, install = true, agai
     if (!process.stdin.isTTY) console.log(`Remotion has skills of its own for coding agents. To add them, ask the user, then run: ${skills}`);
     else if (await agrees("Remotion has skills of its own for coding agents. Add them now (npx remotion skills add)?")) await inProject("npx", ["remotion", "skills", "add"], folder, 5 * 60000);
   }
-  console.log(`Next: appshots video compose --engine remotion`);
+  // A compose before the install fails, so without one the install is the next step.
+  console.log(`Next: ${installed ? "" : `cd ${shown(folder)} && npm install, then `}appshots video compose --engine remotion`);
   return { folder, written, installed };
 }
 

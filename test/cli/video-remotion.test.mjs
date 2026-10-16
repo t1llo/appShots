@@ -81,12 +81,18 @@ const filesIn = (folder) =>
 test("the scaffold writes the template's files and nothing else, with Remotion pinned exactly", async () => {
   const root = workFolder();
   const calls = recorder();
-  const { folder, written, installed } = await quietly(async () => Object.assign(globalThis, { result: await scaffoldRemotion(root, { yes: true, install: false }) })).then(() => globalThis.result);
+  let result;
+  const printed = await quietly(async () => {
+    result = await scaffoldRemotion(root, { yes: true, install: false });
+  });
+  const { folder, written, installed } = result;
   assert.equal(folder, path.join(root, "remotion"));
   assert.deepEqual(filesIn(folder), [...TEMPLATE_FILES].sort());
   assert.deepEqual([...written].sort(), [...TEMPLATE_FILES].sort());
   assert.equal(installed, false);
   assert.deepEqual(calls, []);
+  // A compose would fail before the install, so that is the step it names next.
+  assert.match(printed, /Remotion is not installed there yet\.\nNext: cd .*remotion && npm install, then appshots video compose --engine remotion\n$/);
 
   const pkg = JSON.parse(readFileSync(path.join(folder, "package.json"), "utf8"));
   assert.equal(pkg.private, true);
@@ -125,7 +131,7 @@ test("with install, npm installs in the project's folder, and Remotion's skills 
   const printed = await quietly(() => scaffoldRemotion(root, { yes: true }));
   assert.deepEqual(calls, [{ command: "npm", args: ["install", "--no-audit", "--no-fund"], cwd: path.join(root, "remotion") }]);
   assert.match(printed, /To add them, ask the user, then run: cd .*remotion && npx remotion skills add/);
-  assert.match(printed, /Next: appshots video compose --engine remotion/);
+  assert.match(printed, /\nNext: appshots video compose --engine remotion\n$/);
 });
 
 test("an install that fails says why and how to see more", noTerminal, async () => {
@@ -160,11 +166,14 @@ test("files the user changed stay as they are, and --again puts the template bac
   assert.deepEqual(calls, []);
 });
 
-test("the template's package.json is the one REMOTION_VERSION names", () => {
+test("the template's package.json is the one REMOTION_VERSION names", async () => {
   const pkg = JSON.parse(asset("remotion/package.json"));
   assert.equal(pkg.dependencies.remotion, REMOTION_VERSION);
-  // The template's files are what the bundle carries: each one the scaffold writes is in cli/assets.
-  for (const file of TEMPLATE_FILES) assert.ok(existsSync(path.join(repository, "cli", "assets", "remotion", file === ".gitignore" ? "gitignore" : file)), file);
+  // The scaffold writes the files it lists and the bundle carries every file of cli/assets: the two are the
+  // same, so that no file of the template is carried and never written, nor listed and missing.
+  const { assetFiles } = await import("../../scripts/build-cli.mjs");
+  const carried = assetFiles(path.join(repository, "cli", "assets", "remotion")).map((file) => (file === "gitignore" ? ".gitignore" : file)).sort();
+  assert.deepEqual(carried, [...TEMPLATE_FILES].sort());
   assert.equal(existsSync(path.join(repository, "cli", "assets", "remotion", ".gitignore")), false);
 });
 
