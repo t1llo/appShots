@@ -25,16 +25,11 @@ const TAGS = "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709";
 const GOOD = { size: "886x1920", rate: 30, seconds: 16, audio: "silent", filters: [TAGS], video: FINAL, sound: AUDIO, extra: [], faststart: true };
 
 /**
- * @param {Partial<Recipe>} change
- * @returns {Recipe}
- */
-const like = (change) => ({ ...GOOD, ...change });
-/**
- * Swaps options of the final encode for others.
+ * Swaps options of an encode for others.
  * @param {Record<string, string>} options
- * @param {string[]} [from]
+ * @param {string[]} from
  */
-const swap = (options, from = FINAL) => {
+const swapIn = (options, from) => {
   const args = [...from];
   for (const [name, value] of Object.entries(options)) {
     const at = args.indexOf(name);
@@ -43,6 +38,17 @@ const swap = (options, from = FINAL) => {
   }
   return args;
 };
+
+/** The final encode at x264's fastest, for every file but the good one; x264 then says Constrained Baseline. */
+const FAST = swapIn({ "-preset": "ultrafast" }, FINAL);
+/** @param {Record<string, string>} options */
+const swap = (options) => swapIn(options, FAST);
+
+/**
+ * @param {Partial<Recipe>} change
+ * @returns {Recipe}
+ */
+const like = (change) => ({ ...GOOD, video: FAST, ...change });
 
 /**
  * ProRes 422 HQ as ffprobe says it of prores_ks at the iPhone size, in place of the good file's H.264.
@@ -75,13 +81,13 @@ export const FIXTURES = {
   "too-long": { recipe: like({ seconds: 31 }), errors: ["duration"], warnings: [] },
   "too-short": { recipe: like({ seconds: 14 }), errors: ["duration"], warnings: [] },
   "nearly-30": { recipe: like({ seconds: 29.95 }), errors: [], warnings: ["duration-margin"] },
-  mono: { recipe: like({ sound: swap({ "-ac": "1" }, AUDIO) }), errors: ["audio-channels"], warnings: [] },
+  mono: { recipe: like({ sound: swapIn({ "-ac": "1" }, AUDIO) }), errors: ["audio-channels"], warnings: [] },
   "no-audio": { recipe: like({ audio: null }), errors: ["audio"], warnings: [] },
-  "audio-32k": { recipe: like({ sound: swap({ "-ar": "32000" }, AUDIO) }), errors: ["audio-rate"], warnings: [] },
+  "audio-32k": { recipe: like({ sound: swapIn({ "-ar": "32000" }, AUDIO) }), errors: ["audio-rate"], warnings: [] },
   "audio-mp3": { recipe: like({ audio: "tone", sound: ["-c:a", "libmp3lame", "-b:a", "256k", "-ar", "48000", "-ac", "2"] }), errors: ["audio-codec"], warnings: [] },
   // An MP4 with one audio track always has it as the default, so the first of two is made the other one.
   "audio-not-default": { recipe: like({ extra: ["-map", "0:v", "-map", "1:a", "-map", "1:a", "-disposition:a:0", "0", "-disposition:a:1", "default"] }), errors: ["audio-default"], warnings: [] },
-  "audio-thin": { recipe: like({ audio: "tone", sound: swap({ "-b:a": "64k" }, AUDIO) }), errors: [], warnings: ["audio-bitrate"] },
+  "audio-thin": { recipe: like({ audio: "tone", sound: swapIn({ "-b:a": "64k" }, AUDIO) }), errors: [], warnings: ["audio-bitrate"] },
   "level-4.2": { recipe: like({ video: swap({ "-level:v": "4.2" }) }), errors: ["level"], warnings: [] },
   interlaced: { recipe: like({ filters: [`${TAGS}:field_mode=tff`], video: swap({ "-x264-params": "nal-hrd=cbr:force-cfr=1:interlaced=1:tff=1" }), extra: ["-flags", "+ildct+ilme"] }), errors: ["field-order"], warnings: [] },
   "square-not": { recipe: like({ filters: [TAGS, "setsar=4/3"] }), errors: ["sar"], warnings: [] },

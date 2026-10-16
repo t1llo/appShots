@@ -18,7 +18,7 @@
       "r_frame_rate": "30/1",
       "avg_frame_rate": "30/1",
       "duration": "16.000000",
-      "bit_rate": "11414252",
+      "bit_rate": "11487210",
       "nb_read_frames": "480",
       "disposition": {
         "default": 1,
@@ -47,8 +47,8 @@
   "format": {
     "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
     "duration": "16.000000",
-    "size": "22850955",
-    "bit_rate": "11425477"
+    "size": "22994285",
+    "bit_rate": "11497142"
   },
   "boxes": [
     "ftyp",

@@ -4,7 +4,7 @@
   "streams": [
     {
       "codec_name": "h264",
-      "profile": "High",
+      "profile": "Constrained Baseline",
       "codec_type": "video",
       "width": 886,
       "height": 1920,
@@ -18,7 +18,7 @@
       "r_frame_rate": "30/1",
       "avg_frame_rate": "30/1",
       "duration": "16.000000",
-      "bit_rate": "11364473",
+      "bit_rate": "11535538",
       "nb_read_frames": "480",
       "disposition": {
         "default": 1,
@@ -64,8 +64,8 @@
   "format": {
     "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
     "duration": "16.000000",
-    "size": "22758583",
-    "bit_rate": "11379291"
+    "size": "23098091",
+    "bit_rate": "11549045"
   },
   "boxes": [
     "ftyp",
