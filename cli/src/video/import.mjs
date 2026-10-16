@@ -48,6 +48,7 @@ export async function importFootage(plan, file, flags) {
   if (!displays.includes(display)) fail(`The plan has no display "${flags.display}". Its displays: ${displays.join(", ")}`);
 
   const root = workFolder(flags);
+  // As for a recording, the ffmpeg that will cut the footage is the one asked for.
   const tools = await findFfmpeg({ root, ask: confirm });
   const movie = await inspectMovie(source, tools);
   if (!movie || movie.streams === 0) fail(`${name} holds no video that ffprobe can read.`);

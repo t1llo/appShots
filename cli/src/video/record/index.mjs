@@ -208,6 +208,8 @@ export async function recordScenes(plan, flags) {
     }
   }
   const pending = work.reduce((sum, each) => sum + each.jobs.length, 0);
+  // Everything the compose asks of ffmpeg, not only what recording uses: footage is worth making only with an
+  // ffmpeg that can cut it, and that is better said before the scenes are recorded than after.
   const tools = pending > 0 ? await findFfmpeg({ root, ask: confirm }) : null;
   const hash = planHash(plan);
   /** @type {Array<import("./session.mjs").Sidecar & { file?: string }>} */
