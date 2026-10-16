@@ -8,9 +8,17 @@ import { cliHome, quietly, stubServer } from "./helpers.mjs";
 const home = await cliHome("capture-plan-fastlane");
 after(() => home.remove());
 
-const server = await stubServer(({ method, url }) => {
+/** How long the server takes over a screenshot, by its name and language, so that uploads finish out of order. */
+let slow = {};
+const server = await stubServer(async ({ method, url }) => {
   if (method === "GET" && url === "/api/projects/demo") return [200, { project: { id: "demo", locales: ["en", "de"] }, shots: [] }];
-  if (method === "PUT" && url.startsWith("/api/projects/demo/shots/")) return [201, { name: "shot", width: 1320, height: 2868 }];
+  const shot = /^\/api\/projects\/demo\/shots\/([^?]+)\?(.*)$/.exec(url);
+  if (method === "PUT" && shot) {
+    const query = new URLSearchParams(shot[2]);
+    const name = decodeURIComponent(shot[1]);
+    await new Promise((resolve) => setTimeout(resolve, slow[`${name} ${query.get("locale")}`] ?? 0));
+    return [201, { name, device: query.get("device"), locale: query.get("locale"), width: 1320, height: 2868 }];
+  }
   return [404, { error: "not found" }];
 });
 after(() => server.close());
@@ -67,6 +75,7 @@ const uploads = () =>
 
 beforeEach(() => {
   server.requests.length = 0;
+  slow = {};
 });
 
 test("a fastlane file name is the simulator's, a hyphen, then the screenshot's", () => {
@@ -103,9 +112,15 @@ test("each picture is filed by its size and folder, one per name, family and lan
   );
 });
 
-test("shoot --fastlane uploads each under its name, family and language", async () => {
+test("shoot --fastlane uploads each under its name, family and language, and says so in the order it listed them", async () => {
+  // The first to go is the last to come back.
+  slow = { "01home de": 100 };
   const printed = await shootWith(["demo", "--fastlane", dir]);
   assert.deepEqual(uploads(), ["01home?device=iphone&locale=de", "01home?device=iphone&locale=en", "02stats?device=ipad&locale=en", "settings?device=iphone&locale=en"]);
+  assert.deepEqual(
+    printed.split("\n").filter((line) => line.startsWith("Uploaded ")),
+    ["Uploaded 01home (iphone, de, 1320x2868) to demo", "Uploaded 02stats (ipad, en, 1320x2868) to demo", "Uploaded 01home (iphone, en, 1320x2868) to demo", "Uploaded settings (iphone, en, 1320x2868) to demo"],
+  );
   assert.match(printed, /^en-US\/iPad Pro 13-inch \(M4\)-02Stats\.png -> 02stats \(ipad-13, en\)$/m);
   assert.match(printed, /^en-US\/iPhone 17 Pro Max-Settings\.png -> settings \(iphone, en\)$/m);
   assert.match(printed, /^ {2}! Left out fr-FR\/iPhone 17 Pro Max-01Home\.png: the run takes no language fr-FR, only en, de\.$/m);

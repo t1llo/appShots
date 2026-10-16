@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fail } from "../fail.mjs";
-import { upload } from "../upload.mjs";
-import { pool, slugify } from "../util.mjs";
+import { uploadShots } from "../upload.mjs";
+import { slugify } from "../util.mjs";
 import { displayOfSize, PLAN_DISPLAYS, pngSize } from "./displays.mjs";
 import { projectLocale } from "./jobs.mjs";
 
@@ -122,6 +122,6 @@ export async function importFastlane(config, { project, locales, dir, only, ids,
   const count = (n) => `${n} ${n === 1 ? "screenshot" : "screenshots"}`;
   if (shots.length === 0) fail(`Nothing in ${dir} to import${only ? ` named ${only.join(", ")}` : ""}.`);
   if (dryRun) return console.log(`Would upload ${count(shots.length)} to ${project}. Nothing was uploaded (--dry-run).`);
-  await pool(shots, 4, (shot) => upload(config, project, shot.file, shot.name, shot.kind, shot.locale));
+  await uploadShots(config, project, shots.map((shot) => ({ file: shot.file, name: shot.name, device: shot.kind, language: shot.locale })));
   console.log(`Imported ${count(shots.length)} from fastlane into ${project}.`);
 }

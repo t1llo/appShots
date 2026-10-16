@@ -3369,10 +3369,10 @@ function picturesIn(source, kinds = /\.(png|jpe?g)$/i) {
 * Sends files a few at a time and prints a line for each in the order they were given. Files that come out under
 * one name go one after the other, in that order, so the last of them is the one that stays, as when they went
 * one by one.
-* @template R
-* @param {string[]} files
-* @param {(file: string) => string} nameOf
-* @param {(file: string, name: string) => Promise<R>} send
+* @template T, R
+* @param {T[]} files
+* @param {(file: T) => string} nameOf
+* @param {(file: T, name: string) => Promise<R>} send
 * @param {(result: R) => string} line
 * @returns {Promise<R[]>}
 */
@@ -3395,6 +3395,21 @@ async function sendAll(files, nameOf, send, line) {
 		}
 	});
 	return results;
+}
+/**
+* Uploads screenshots a few at a time, each under its name, family and language, and prints a line for each in the
+* order they were given, as appshots upload does.
+* @param {Config} config
+* @param {string} project
+* @param {Array<{ file: string, name: string, device?: string, language?: string }>} shots
+*/
+function uploadShots(config, project, shots) {
+	const key = (shot) => [
+		shot.name,
+		shot.device,
+		shot.language
+	].join(" ");
+	return sendAll(shots, key, (shot) => sendShot(config, project, shot.file, shot.name, shot.device, shot.language), uploaded(project));
 }
 /**
 * @param {Config} config
@@ -4349,7 +4364,12 @@ async function importFastlane(config, { project, locales, dir, only, ids, dryRun
 	const count = (n) => `${n} ${n === 1 ? "screenshot" : "screenshots"}`;
 	if (shots.length === 0) fail(`Nothing in ${dir} to import${only ? ` named ${only.join(", ")}` : ""}.`);
 	if (dryRun) return console.log(`Would upload ${count(shots.length)} to ${project}. Nothing was uploaded (--dry-run).`);
-	await pool(shots, 4, (shot) => upload(config, project, shot.file, shot.name, shot.kind, shot.locale));
+	await uploadShots(config, project, shots.map((shot) => ({
+		file: shot.file,
+		name: shot.name,
+		device: shot.kind,
+		language: shot.locale
+	})));
 	console.log(`Imported ${count(shots.length)} from fastlane into ${project}.`);
 }
 //#endregion

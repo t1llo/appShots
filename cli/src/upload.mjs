@@ -80,10 +80,10 @@ export function picturesIn(source, kinds = /\.(png|jpe?g)$/i) {
  * Sends files a few at a time and prints a line for each in the order they were given. Files that come out under
  * one name go one after the other, in that order, so the last of them is the one that stays, as when they went
  * one by one.
- * @template R
- * @param {string[]} files
- * @param {(file: string) => string} nameOf
- * @param {(file: string, name: string) => Promise<R>} send
+ * @template T, R
+ * @param {T[]} files
+ * @param {(file: T) => string} nameOf
+ * @param {(file: T, name: string) => Promise<R>} send
  * @param {(result: R) => string} line
  * @returns {Promise<R[]>}
  */
@@ -106,6 +106,18 @@ async function sendAll(files, nameOf, send, line) {
     }
   });
   return results;
+}
+
+/**
+ * Uploads screenshots a few at a time, each under its name, family and language, and prints a line for each in the
+ * order they were given, as appshots upload does.
+ * @param {Config} config
+ * @param {string} project
+ * @param {Array<{ file: string, name: string, device?: string, language?: string }>} shots
+ */
+export function uploadShots(config, project, shots) {
+  const key = (shot) => [shot.name, shot.device, shot.language].join(" ");
+  return sendAll(shots, key, (shot) => sendShot(config, project, shot.file, shot.name, shot.device, shot.language), uploaded(project));
 }
 
 /**
