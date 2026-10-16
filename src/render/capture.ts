@@ -54,7 +54,7 @@ export class PageStatusError extends Error {
  * size between passes, which costs far less than a window of its own for each. `transparent` leaves out the white
  * a page is otherwise drawn on.
  */
-export async function openWindow(space: Space, size: Size, options: { transparent?: boolean } = {}) {
+async function browserWindow(space: Space, size: Size, options: { transparent?: boolean } = {}) {
   const instance = await getBrowser();
   const context = await instance.newContext({
     viewport: { width: size.width, height: size.height },
@@ -122,4 +122,20 @@ export async function openWindow(space: Space, size: Size, options: { transparen
   }
 }
 
-export type Window = Awaited<ReturnType<typeof openWindow>>;
+export type Window = Awaited<ReturnType<typeof browserWindow>>;
+
+/** What opens the windows renders and mockups are drawn in. */
+export type Renderer = (space: Space, size: Size, options?: { transparent?: boolean }) => Promise<Window>;
+
+let renderer: Renderer = browserWindow;
+
+/** Opens a window as the browser does, or as the renderer a test has put in its place. */
+export const openWindow: Renderer = (space, size, options) => renderer(space, size, options);
+
+/**
+ * Puts another renderer in the browser's place, or the browser back without one. Tests use it to run renders,
+ * cancels and exports through the server without a browser: the pictures are made up, the rest is the real thing.
+ */
+export function useRenderer(next?: Renderer): void {
+  renderer = next ?? browserWindow;
+}

@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createWriteStream } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Writable } from "node:stream";
-import { finished } from "node:stream/promises";
 import { after, test } from "node:test";
 import { promisify } from "node:util";
 import { crc32 } from "node:zlib";
@@ -89,11 +87,8 @@ test("a ZIP of more than 65,535 entries is written as ZIP64", async () => {
 /** Writes the archive to a file and has the system's unzip test every entry in it. */
 async function unzipTest(entries: ZipEntry[]): Promise<string> {
   const file = path.join(scratch.dir, `test-${entries.length}.zip`);
-  const out = createWriteStream(file);
-  await writeZip(out, entries);
-  out.end();
-  await finished(out);
-  const { stdout } = await promisify(execFile)("unzip", ["-t", file], { maxBuffer: 64 * 1024 * 1024 });
+  await writeFile(file, await zipOf(entries));
+  const { stdout } = await promisify(execFile)("unzip", ["-tq", file]);
   return stdout;
 }
 
@@ -124,7 +119,7 @@ test("entries that start past 4 GiB are found through their ZIP64 offsets", asyn
   const chunk = Buffer.alloc(256 * 1024 * 1024, 1);
   const entries = Array.from({ length: 17 }, (_, i) => ({ name: `${String(i).padStart(2, "0")}.bin`, data: chunk }));
   let written = 0;
-  let last = Buffer.alloc(0);
+  let last: Buffer = Buffer.alloc(0);
   const sink = new Writable({
     write(data: Buffer, _encoding, done) {
       written += data.length;

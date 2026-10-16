@@ -1,4 +1,4 @@
-import { InputError } from "../store.ts";
+import { UnavailableError } from "../store.ts";
 
 /**
  * Who draws when. Renders and mockups wait in lanes of their own, so a free mockup never waits behind a paid render.
@@ -45,7 +45,7 @@ export function createScheduler(limits: Record<Lane, number>) {
   return {
     /** Runs work in its lane once it is the account's turn and a place is free, and settles as the work does. */
     schedule<T>(lane: Lane, space: string, work: () => Promise<T>): Promise<T> {
-      if (!accepting) return Promise.reject(new InputError("The server is shutting down. Try again in a minute."));
+      if (!accepting) return Promise.reject(new UnavailableError("The server is shutting down. Try again in a minute."));
       const state: LaneState = lanes[lane];
       return new Promise<T>((resolve, reject) => {
         const start = () => {

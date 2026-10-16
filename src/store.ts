@@ -10,7 +10,7 @@ import { usageChanged } from "./storage/usage.ts";
 // The functions the server, the MCP tools and the renderer call keep their names and shapes here. Projects are read
 // and written by the repository in storage/projects.ts, which locks, counts revisions and keeps the history; the
 // screenshots and images by storage/assets.ts, which lists them from an index and checks what is uploaded.
-export { ConflictError, DamagedError, InputError, NotFoundError, TooLargeError } from "./domain/errors.ts";
+export { ConflictError, DamagedError, InputError, NotFoundError, TooLargeError, UnavailableError } from "./domain/errors.ts";
 export { deleteImage, deleteShot, type ImageFiles, listImages, listShots, moveShot, readImages, readShots, saveImage, saveShot, type Shot, type ShotFiles, shotLocale, type StoredImage } from "./storage/assets.ts";
 export { imagesDir, outDir, projectDir, safeJoin, shotsDir, type Space } from "./storage/paths.ts";
 export { countProjects, slugify } from "./storage/projects.ts";

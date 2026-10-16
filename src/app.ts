@@ -21,12 +21,15 @@ import { siteRoutes } from "./http/routes/site.ts";
 import { videoFileRoutes, videoPageRoutes, videoRoutes } from "./http/routes/video.ts";
 import { allowedHost, privateCache, securityHeaders } from "./http/security.ts";
 import type { DocumentFetcher } from "./oauth/clients.ts";
+import { type Renderer, useRenderer } from "./render.ts";
 
 export interface AppDeps {
   /** Where the server reports what went wrong on its side. The console unless a test listens in. */
   log?: Log;
   /** How an app's OAuth metadata document is fetched: over HTTPS from its address, unless a test stands in for it. */
   fetchClientDocument?: DocumentFetcher;
+  /** What draws the pictures: the browser, unless a test stands in for it. */
+  renderer?: Renderer;
 }
 
 /**
@@ -35,6 +38,7 @@ export interface AppDeps {
  */
 export async function createApp(deps: AppDeps = {}): Promise<Express> {
   const log = deps.log ?? console;
+  if (deps.renderer) useRenderer(deps.renderer);
   const hidden = await hiddenAdminProjects();
   if (hidden) {
     log.warn(

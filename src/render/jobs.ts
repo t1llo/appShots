@@ -4,7 +4,7 @@ import path from "node:path";
 import { holdRender } from "../accounts.ts";
 import type { LintWarning } from "../domain/lint.ts";
 import type { Project } from "../schema.ts";
-import { getProject, InputError, listImages, listShots, NotFoundError, projectDir, type Shot, shotsDir, type Space } from "../store.ts";
+import { getProject, InputError, listImages, listShots, NotFoundError, projectDir, type Shot, shotsDir, type Space, UnavailableError } from "../store.ts";
 import { commitOutputs, discardStaging, sweepStaging } from "../storage/outputs.ts";
 import { projectKey } from "../storage/paths.ts";
 import { PageStatusError } from "./capture.ts";
@@ -49,6 +49,10 @@ interface Run {
   space: string;
   cancelled: boolean;
   frozen?: Frozen;
+  /** What a finished run drew, for whoever asks after a run they did not wait for. */
+  result?: RenderResult;
+  /** Ends a run that has not had its turn yet, at once rather than when its turn would have come. */
+  stop: () => void;
   finished: Promise<RenderResult>;
 }
 
@@ -56,12 +60,17 @@ const waiting = new Map<string, number>();
 /** One running plus one queued per account, so nobody can fill the shared queue. */
 const MAX_WAITING = 2;
 
-/** Every run that waits or works, and the finished ones of the last hour. */
+/** Every run that waits or works, and the finished ones of the last hour: the newest eight of each account. */
 const runs = new Map<string, Run>();
 const KEPT_MS = 3600_000;
 const KEPT_PER_SPACE = 8;
 
 const ended = (run: Run) => run.job.finishedAt != null;
+
+/** Set once the server shuts down: a render asked for from then on is refused, so the ones under way can finish. */
+let closing = false;
+
+const UNKNOWN = "No such render. Finished renders are listed for an hour, the newest eight at most.";
 
 function forget(): void {
   const old = Date.now() - KEPT_MS;
@@ -84,10 +93,22 @@ export function listRenders(space: Space): RenderJob[] {
     .reverse();
 }
 
-export function getRender(space: Space, job: string): RenderJob {
+function runOf(space: Space, job: string): Run {
   const run = runs.get(job);
-  if (!run || run.space !== space.id) throw new NotFoundError("No such render. A finished one is listed for an hour.");
-  return run.job;
+  if (!run || run.space !== space.id) throw new NotFoundError(UNKNOWN);
+  return run;
+}
+
+export const getRender = (space: Space, job: string): RenderJob => runOf(space, job).job;
+
+/** What a run drew, once it is done. Nothing before, nor for a run that failed or was cancelled. */
+export const renderResult = (space: Space, job: string): RenderResult | undefined => runOf(space, job).result;
+
+function cancel(run: Run): void {
+  if (ended(run)) return;
+  run.cancelled = true;
+  // One still waiting has drawn nothing, and ends now. One that draws stops before its next picture.
+  if (run.job.state === "queued") run.stop();
 }
 
 /**
@@ -95,19 +116,39 @@ export function getRender(space: Space, job: string): RenderJob {
  * it, and it uses no render. A run that is already putting its pictures in place finishes.
  */
 export function cancelRender(space: Space, job: string): RenderJob {
-  const run = runs.get(job);
-  if (!run || run.space !== space.id) throw new NotFoundError("No such render. A finished one is listed for an hour.");
-  if (!ended(run)) run.cancelled = true;
+  const run = runOf(space, job);
+  cancel(run);
   return run.job;
+}
+
+/** Waits for runs to end, for up to `timeoutMs`. */
+async function ending(live: Run[], timeoutMs: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([Promise.allSettled(live.map((run) => run.finished)), new Promise((resolve) => (timer = setTimeout(resolve, timeoutMs)))]);
+  clearTimeout(timer);
 }
 
 /** Cancels every run that has not ended and waits up to `timeoutMs` for them to stop. */
 export async function cancelAll(timeoutMs: number): Promise<void> {
   const live = [...runs.values()].filter((run) => !ended(run));
-  for (const run of live) run.cancelled = true;
-  let timer: NodeJS.Timeout | undefined;
-  await Promise.race([Promise.allSettled(live.map((run) => run.finished)), new Promise((resolve) => (timer = setTimeout(resolve, timeoutMs)))]);
-  clearTimeout(timer);
+  for (const run of live) cancel(run);
+  await ending(live, timeoutMs);
+}
+
+/**
+ * Cancels the runs of an account, or of one of its projects, and waits for them to stop: a project or an account is
+ * deleted once nothing draws for it any more. A browser that hangs on a page is waited for up to `timeoutMs`; what
+ * such a run would put in place later finds the project gone, and is thrown away.
+ */
+export async function cancelRenders(space: Space, project?: string, timeoutMs = 15_000): Promise<void> {
+  const live = [...runs.values()].filter((run) => run.space === space.id && !ended(run) && (project === undefined || run.job.project === project));
+  for (const run of live) cancel(run);
+  await ending(live, timeoutMs);
+}
+
+/** Takes no more renders: one asked for from here on is refused, while the server shuts down. */
+export function closeRenders(): void {
+  closing = true;
 }
 
 /** Runs that have not ended. */
@@ -123,9 +164,11 @@ export function frozenFor(space: Space, job: unknown): Frozen | undefined {
  * Queues a render and returns at once with the run. Refuses when the account has two waiting already or no
  * renders left. `finished` settles when the run does, and somebody has to catch what it throws. `read` settles
  * once the run has read the project and its screenshots, so a change made after it is not drawn. `name` is what
- * the run is called until the project has been read.
+ * the run is called until the project has been read. `signal` cancels the run, such as when whoever waits for it
+ * goes away.
  */
-export function startRender(space: Space, id: string, request: RenderRequest = {}, name = id): { job: RenderJob; finished: Promise<RenderResult>; read: Promise<void> } {
+export function startRender(space: Space, id: string, request: RenderRequest = {}, name = id, options: { signal?: AbortSignal } = {}): { job: RenderJob; finished: Promise<RenderResult>; read: Promise<void> } {
+  if (closing) throw new UnavailableError("The server is shutting down. Try again in a minute.");
   const count = waiting.get(space.id) ?? 0;
   if (count >= MAX_WAITING) throw new InputError("Two renders are already under way for this account. Try again when one has finished.");
   const settle = holdRender(space.id);
@@ -139,24 +182,31 @@ export function startRender(space: Space, id: string, request: RenderRequest = {
     job.name = project.name;
     return { project, shots, plan: planRender(project, shots, images, request) };
   });
-  const run: Run = { job, space: space.id, cancelled: false, finished: undefined as never };
-  run.finished = loaded
-    .then(({ project, shots, plan }) =>
-      scheduler.schedule("render", space.id, async () => {
-        if (run.cancelled) throw new Cancelled();
-        run.frozen = { project, shots };
-        job.state = "running";
-        job.startedAt = new Date().toISOString();
-        job.total = plan.total;
-        return renderNow(run, space, plan);
-      }),
-    )
+  const run: Run = { job, space: space.id, cancelled: false, stop: () => {}, finished: undefined as never };
+  const stopped = new Promise<never>((_resolve, reject) => {
+    run.stop = () => reject(new Cancelled());
+  });
+  const scheduled = loaded.then(({ project, shots, plan }) => {
+    if (run.cancelled) throw new Cancelled();
+    return scheduler.schedule("render", space.id, async () => {
+      if (run.cancelled) throw new Cancelled();
+      run.frozen = { project, shots };
+      job.state = "running";
+      job.startedAt = new Date().toISOString();
+      job.total = plan.total;
+      return renderNow(run, space, plan);
+    });
+  });
+  // A run stopped while it waits leaves its place in the queue behind, which comes to nothing when its turn comes.
+  scheduled.catch(() => {});
+  run.finished = Promise.race([scheduled, stopped])
     .then(
       async (result) => {
         job.state = "done";
         job.files = result.files.length + result.creatives.length;
         job.warnings = result.warnings;
         job.lint = result.lint;
+        run.result = result;
         await settle(true);
         return result;
       },
@@ -178,12 +228,14 @@ export function startRender(space: Space, id: string, request: RenderRequest = {
     });
   runs.set(job.id, run);
   forget();
+  if (options.signal?.aborted) cancel(run);
+  else options.signal?.addEventListener("abort", () => cancel(run), { once: true });
   return { job, finished: run.finished, read: loaded.then(() => undefined, () => undefined) };
 }
 
-/** Renders and waits for it. */
-export async function renderProject(space: Space, id: string, request: RenderRequest = {}): Promise<RenderResult> {
-  return startRender(space, id, request).finished;
+/** Renders and waits for it. `signal` cancels it, such as when whoever waits goes away: then it uses no render. */
+export async function renderProject(space: Space, id: string, request: RenderRequest = {}, options: { signal?: AbortSignal } = {}): Promise<RenderResult> {
+  return startRender(space, id, request, id, options).finished;
 }
 
 /** Screenshots the run was asked with that are gone from the disk since. */

@@ -3,6 +3,7 @@ import http from "node:http";
 import { createServer } from "node:net";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 import { format } from "node:util";
 import type { AppDeps } from "../../src/app.ts";
 import { type TmpData, tmpData } from "./tmp-data.ts";
@@ -36,6 +37,8 @@ export interface ServerOptions {
   inProcess?: boolean;
   /** What the app is built with in place of the real thing, such as a stand-in for the web. Needs `inProcess`. */
   deps?: Omit<AppDeps, "log">;
+  /** Modules the server process loads before src/server.ts, such as helpers/fake-renderer-preload.ts. Not with `inProcess`. */
+  imports?: string[];
 }
 
 const root = path.resolve(import.meta.dirname, "..", "..");
@@ -71,6 +74,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 /** Starts the server with sign-in off and resolves once /healthz answers. Rejects with its output if it stops first. */
 export async function startServer(options: ServerOptions = {}): Promise<TestServer> {
+  if (options.imports && options.inProcess) throw new Error("A server built in this process loads no modules of its own: give it deps.");
   if (options.inProcess) return startInProcess(options);
   if (options.deps) throw new Error("Only a server built in this process can be given deps.");
   const made = options.dataDir ? undefined : await tmpData("server");
@@ -94,7 +98,8 @@ class PortTaken extends Error {}
 async function launch(dataDir: string, options: ServerOptions, made: TmpData | undefined): Promise<TestServer> {
   const port = await freePort();
   const env = cleanEnv();
-  const child = spawn(process.execPath, ["src/server.ts"], {
+  const imports = (options.imports ?? []).flatMap((file) => ["--import", pathToFileURL(path.resolve(file)).href]);
+  const child = spawn(process.execPath, [...imports, "src/server.ts"], {
     cwd: root,
     // The browser starts with the first render: most test servers never draw, and would each start one for nothing.
     env: { ...env, RENDER_PREWARM: "off", ...options.env, DATA_DIR: dataDir, PORT: String(port) },

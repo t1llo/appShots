@@ -3,7 +3,7 @@ import { STATUS_CODES } from "node:http";
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { AuthError } from "../accounts.ts";
-import { ConflictError, InputError, NotFoundError, TooLargeError } from "../store.ts";
+import { ConflictError, InputError, NotFoundError, TooLargeError, UnavailableError } from "../store.ts";
 import { tooLarge } from "./limits.ts";
 
 /** Where the server reports what went wrong on its side. */
@@ -31,6 +31,7 @@ const isHttpError = (error: unknown): error is HttpError =>
 export function publicError(error: unknown): { status: number; message: string } | null {
   if (error instanceof z.ZodError) return { status: 400, message: z.prettifyError(error) };
   if (error instanceof TooLargeError) return { status: 413, message: error.message };
+  if (error instanceof UnavailableError) return { status: 503, message: error.message };
   if (error instanceof InputError) return { status: 400, message: error.message };
   if (error instanceof NotFoundError) return { status: 404, message: error.message };
   if (error instanceof AuthError) return { status: 401, message: error.message };
@@ -54,11 +55,18 @@ export function reportError(log: Log, error: unknown, where: string): string {
 /** One sentence under `error` for the caller; the details of anything unexpected go to the log only. */
 export function errorHandler(log: Log) {
   return (error: unknown, req: Request, res: Response, _next: NextFunction): void => {
-    if (res.headersSent) return void res.end();
+    if (res.headersSent) {
+      // Part of the answer is out already, such as the first files of a ZIP. Ending it as usual would pass a cut-off
+      // download for a whole one, so the connection is broken off, which every client reports as a failed download.
+      // A client that went away first is no error of the server's.
+      if (!res.destroyed && res.socket && !res.socket.destroyed) reportError(log, error, `${req.method} ${req.path}`);
+      return void res.destroy();
+    }
     // A route that was about to send a file has set how long to keep it, and maybe a download name. The error
     // answer takes the file's place, and must be neither kept nor saved.
     res.set("Cache-Control", "no-store").removeHeader("Content-Disposition");
     const known = publicError(error);
+    if (known?.status === 503) res.set("Retry-After", "30");
     if (known) return void res.status(known.status).json({ error: known.message });
     const ref = reportError(log, error, `${req.method} ${req.path}`);
     res.status(500).json({ error: "Internal error", ref });

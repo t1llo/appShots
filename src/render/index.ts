@@ -13,12 +13,13 @@
 //   engine.ts     the browser itself, and the one scheduler that hands it out
 
 import { closeBrowser, type EngineHealth, engineHealth, scheduler } from "./engine.ts";
-import { cancelAll, liveRenders } from "./jobs.ts";
+import { cancelAll, closeRenders, liveRenders } from "./jobs.ts";
 import type { Lane, QueueStats } from "./scheduler.ts";
 
+export { type Renderer, useRenderer, type Window } from "./capture.ts";
 export { closeBrowser, prewarm } from "./engine.ts";
 export type { RenderedCreative, RenderedFile, RenderedSheet, RenderJob, RenderResult, RenderState } from "./jobs.ts";
-export { cancelRender, frozenFor, getRender, listRenders, renderProject, startRender } from "./jobs.ts";
+export { cancelRender, cancelRenders, frozenFor, getRender, listRenders, renderProject, renderResult, startRender } from "./jobs.ts";
 export { listingSet, storeListing } from "./listing.ts";
 export type { Mockup } from "./mockup.ts";
 export { mockupSheet, renderMockup } from "./mockup.ts";
@@ -30,6 +31,7 @@ export { defaultTargets, resolveLocales } from "./plan.ts";
  * then are cancelled: they keep nothing and use no render. Resolves true when everything finished in time.
  */
 export async function drain(timeoutMs: number): Promise<boolean> {
+  closeRenders();
   const finished = await scheduler.drain(timeoutMs);
   if (!finished) await cancelAll(2000);
   return finished;

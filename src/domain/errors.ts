@@ -11,6 +11,12 @@ export class InputError extends Error {}
 export class TooLargeError extends InputError {}
 
 /**
+ * Work the server cannot take on right now, such as a render asked for while it shuts down. Answered 503: the same
+ * request works again in a minute, from the server that takes over.
+ */
+export class UnavailableError extends InputError {}
+
+/**
  * A project whose project.json cannot be read at all. It is listed and can be deleted or restored from its history,
  * but not opened or changed.
  */
