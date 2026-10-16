@@ -14,7 +14,7 @@ import { commitSet, discardStaging, KEPT_SETS, type Layer, layerPath, type Manif
 /**
  * Drawing the layers of an app preview: one run per set, queued with the renders and paid like one. A set is named
  * by a hash of everything it draws, so asking for the same layers again answers with the set that is there and costs
- * nothing. A run that fails, is cancelled or loses its caller keeps nothing and costs nothing.
+ * nothing. A run that fails, is cancelled or loses every caller waiting on it keeps nothing and costs nothing.
  */
 
 /** Goes into every set's hash: a change to how layers are drawn makes every set new. */
@@ -34,6 +34,21 @@ interface Run {
   draft: Draft;
   controller: AbortController;
   finished: Promise<LayersAnswer>;
+  /** The requests that started or joined it and have not left. It stops when the last one leaves. */
+  callers: number;
+}
+
+/** A run being drawn, as a request that started or joined it holds it. */
+export interface Started {
+  job: VideoJob;
+  finished: Promise<LayersAnswer>;
+  /** Whether this request started the run, and so is the one charged for it. */
+  started: boolean;
+  /**
+   * Says this request went away before its answer. The run stops once every request that started or joined it has
+   * left; one in the background never leaves, as it wants the set whether or not anyone else waits for it.
+   */
+  leave: () => void;
 }
 
 export interface VideoServiceDeps {
@@ -74,6 +89,17 @@ export function createVideoService(deps: VideoServiceDeps) {
       kept.set(run.space, count);
       if (count > KEPT_PER_SPACE || Date.parse(run.job.finishedAt!) < old) runs.delete(run.job.id);
     }
+  }
+
+  /** Counts one more request waiting on the run, and hands it the way to leave it, once. */
+  function join(run: Run): () => void {
+    run.callers++;
+    let gone = false;
+    return () => {
+      if (gone) return;
+      gone = true;
+      if (--run.callers === 0 && !ended(run)) run.controller.abort();
+    };
   }
 
   const own = (space: Space, job: string) => {
@@ -155,7 +181,7 @@ export function createVideoService(deps: VideoServiceDeps) {
      * Answers with the set when it exists, or starts drawing it. Refuses a request the project cannot answer (a
      * language it does not have, a slide it does not have) before anything is queued or held.
      */
-    async start(space: Space, id: string, body: VideoLayersBody): Promise<{ done: LayersAnswer } | { job: VideoJob; finished: Promise<LayersAnswer>; started: boolean }> {
+    async start(space: Space, id: string, body: VideoLayersBody): Promise<{ done: LayersAnswer } | Started> {
       const project = await getProject(space, id);
       const [shots, images] = await Promise.all([listShots(space, id), listImages(space, id)]);
       const draft = await prepareDraft(space, project, shots, images, normaliseRequest(project, body));
@@ -167,7 +193,7 @@ export function createVideoService(deps: VideoServiceDeps) {
       }
       // The same layers asked for again while they are drawn: one run draws them, and only it is charged.
       const same = [...runs.values()].find((run) => run.space === space.id && !ended(run) && run.job.project === id && run.job.set === set);
-      if (same) return { job: same.job, finished: same.finished.then((answer) => ({ ...answer, charged: false })), started: false };
+      if (same) return { job: same.job, finished: same.finished.then((answer) => ({ ...answer, charged: false })), started: false, leave: join(same) };
 
       const total = draft.locales.reduce((sum, locale) => sum + artboardsOf(draft, locale).length, 0);
       if (total === 0) throw new InputError("Nothing to draw: ask for captions, an intro or outro, the plate or the touch ring.");
@@ -178,7 +204,7 @@ export function createVideoService(deps: VideoServiceDeps) {
       forget();
 
       const job: VideoJob = { id: randomBytes(8).toString("hex"), project: id, name: project.name, state: "queued", done: 0, total, createdAt: new Date().toISOString(), set };
-      const run: Run = { job, space: space.id, draft, controller: new AbortController(), finished: undefined as never };
+      const run: Run = { job, space: space.id, draft, controller: new AbortController(), finished: undefined as never, callers: 0 };
       run.finished = schedule(space.id, async () => {
         if (run.controller.signal.aborted) throw new Cancelled();
         job.state = "running";
@@ -210,7 +236,7 @@ export function createVideoService(deps: VideoServiceDeps) {
           else waiting.delete(space.id);
         });
       runs.set(job.id, run);
-      return { job, finished: run.finished, started: true };
+      return { job, finished: run.finished, started: true, leave: join(run) };
     },
 
     /** A run of the account, or undefined when the job is none of its video runs. */

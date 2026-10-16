@@ -54,8 +54,8 @@ export function registerVideoTools(server: McpServer, { base, space }: { base: s
         let answer: LayersAnswer;
         if ("done" in started) answer = started.done;
         else {
-          // A call the client gives up on stops its run, which then costs nothing.
-          if (started.started) extra.signal.addEventListener("abort", () => videoService.cancel(space, started.job.id), { once: true });
+          // A call the client gives up on leaves its run, which stops, costing nothing, when nobody else waits for it.
+          extra.signal.addEventListener("abort", started.leave, { once: true });
           answer = await started.finished;
         }
         const left = rendersLeft(space.id);

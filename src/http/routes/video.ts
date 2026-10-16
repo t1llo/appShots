@@ -25,19 +25,17 @@ export function videoRoutes(log: Log): Router {
     const { background, ...body } = videoLayersBody.parse(req.body ?? {});
     const started = await videoService.start(space, req.params.id, body);
     if ("done" in started) return void res.json({ ...started.done, rendersLeft: rendersLeft(space.id) });
-    const { job, finished } = started;
+    const { job, finished, leave } = started;
     if (background) {
       finished.catch((error: unknown) => {
         if (!told(error)) log.error(error);
       });
       return void res.status(202).json({ job, set: job.set, rendersLeft: rendersLeft(space.id) });
     }
-    // A caller that goes away before the layers are drawn takes its run with it: nobody would fetch them.
-    if (started.started) {
-      res.on("close", () => {
-        if (!res.writableFinished) videoService.cancel(space, job.id);
-      });
-    }
+    // A caller that goes away before the layers are drawn leaves its run, which stops when nobody else waits for it.
+    res.on("close", () => {
+      if (!res.writableFinished) leave();
+    });
     res.json({ ...(await finished), rendersLeft: rendersLeft(space.id) });
   });
 

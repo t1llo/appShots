@@ -104,3 +104,24 @@ test("a call the client gives up on stops its run", async () => {
   assert.equal(videoService.getJob(space, job)!.state, "cancelled");
   assert.equal(fake.calls.length, 1);
 });
+
+test("a call the client gives up on does not stop a run another request waits for", async () => {
+  const hold = gate();
+  fake.before = () => hold.opened;
+  const args = { display: "iphone" as const, captions: [{ id: "shared", text: "Shared" }] };
+  const caller = new AbortController();
+  const call = draw(args, { signal: caller.signal }).catch((error: unknown) => error);
+  while (fake.calls.length === 0) await sleep(5);
+  const page = fake.calls[0]!;
+  const other = await videoService.start(space, project, args);
+  assert.ok("job" in other && !other.started);
+  caller.abort();
+  assert.ok((await call) instanceof Error);
+  await sleep(50);
+  const stopped = page.signal.aborted;
+  hold.open();
+  assert.equal(stopped, false);
+  assert.equal((await other.finished).layers.length > 0, true);
+  const job = new URL(page.path, "http://page").searchParams.get("job")!;
+  assert.equal(videoService.getJob(space, job)!.state, "done");
+});

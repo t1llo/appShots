@@ -251,6 +251,38 @@ test("the same layers asked for twice at once are drawn once and charged once", 
   assert.deepEqual(settled, [true]);
 });
 
+test("a run stops once every request waiting on it has left, and not before", async () => {
+  const id = await project();
+  const hold = gate();
+  fake.before = () => hold.opened;
+  const first = await service.start(space, id, BODY);
+  const second = await service.start(space, id, BODY);
+  assert.ok("job" in first && "job" in second);
+  while (fake.calls.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+  first.leave();
+  first.leave();
+  const stopped = fake.calls[0]!.signal.aborted;
+  hold.open();
+  assert.equal(stopped, false, "one request leaving twice counts once");
+  assert.equal((await second.finished).charged, false);
+  assert.equal((await first.finished).charged, true);
+  assert.deepEqual(settled, [true]);
+
+  const again = gate();
+  fake.before = () => again.opened;
+  const body = { ...BODY, captions: [{ id: "left", text: "Left" }] };
+  const third = await service.start(space, id, body);
+  const fourth = await service.start(space, id, body);
+  assert.ok("job" in third && "job" in fourth);
+  third.leave();
+  fourth.leave();
+  again.open();
+  await assert.rejects(third.finished, Cancelled);
+  await assert.rejects(fourth.finished, Cancelled);
+  assert.equal(third.job.state, "cancelled");
+  assert.deepEqual(settled, [true, false]);
+});
+
 test("an account has one run going and one waiting at most", async () => {
   const id = await project();
   const hold = gate();

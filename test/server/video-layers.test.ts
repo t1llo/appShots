@@ -162,6 +162,26 @@ test("a caller that goes away while it waits takes its run with it", async () =>
   assert.equal(fake.calls.length, 1, "the second language was never drawn");
 });
 
+test("a caller that goes away does not take a run another request waits for", async () => {
+  const hold = gate();
+  fake.before = () => hold.opened;
+  const body = { ...BODY, captions: [{ id: "shared", text: "Shared" }] };
+  const caller = new AbortController();
+  const request = server.fetch(`/api/projects/${id}/video-layers`, { ...send("POST", body), signal: caller.signal }).catch(() => null);
+  const page = await drawing();
+  const joined = await layers({ ...body, background: true });
+  assert.equal(joined.status, 202);
+  assert.equal(joined.body.job.id, jobOf(page), "the second request joined the run");
+  caller.abort();
+  await request;
+  await sleep(50);
+  const stopped = page.signal.aborted;
+  hold.open();
+  assert.equal(stopped, false);
+  assert.equal((await settled(jobOf(page))).state, "done");
+  assert.equal((await call(`/api/projects/${id}/video-layers/${joined.body.set}`)).status, 200);
+});
+
 test("the page a run draws from is there while it runs, for its own languages only", async () => {
   const hold = gate();
   fake.before = () => hold.opened;
