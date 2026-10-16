@@ -94,6 +94,14 @@ export function sceneWindow(scene, sidecar) {
 }
 
 /**
+ * A scene's length in frames: its window at its speed, and the hold on its last frame. Taken from the window
+ * itself, so that the segment is always as long as the part of the recording it shows.
+ * @param {Scene} scene
+ * @param {Window} window
+ */
+export const sceneFrames = (scene, window) => toFrames((window.end - window.start) / window.speed + (scene.hold ?? 0));
+
+/**
  * Whether the recorder left out time that has to be put back. The simulator and screencapture write a frame only
  * when the screen changes, so a still end is missing; a web page stepped frame by frame and an imported file
  * already run at their own length.

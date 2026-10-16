@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { keptAudio, musicOf, previewAudio } from "../../cli/src/video/audio.mjs";
 import { cardArgs, finalCodec, joinArgs, joinPoints, passArgs, sceneArgs, segmentCodec, touchOverlay } from "../../cli/src/video/graph.mjs";
-import { captionBands, footageChain, frameTime, limit, placement, plateBox, sceneWindow, toFrames, touchPoints, turnOf } from "../../cli/src/video/normalise.mjs";
+import { captionBands, footageChain, frameTime, limit, placement, plateBox, sceneFrames, sceneWindow, toFrames, touchPoints, turnOf } from "../../cli/src/video/normalise.mjs";
 
 const IPHONE = /** @type {[number, number]} */ ([886, 1920]);
 const MAC = /** @type {[number, number]} */ ([1920, 1080]);
@@ -72,6 +72,17 @@ test("the trim comes from the plan, from what auto found, or is the whole record
   assert.deepEqual(sceneWindow({ id: "a", trim: [1, 20] }, sim), { start: 1, end: 7.84, speed: 1 });
   assert.throws(() => sceneWindow({ id: "a", trim: [9, 10] }, sim), /trimmed to nothing/);
   assert.throws(() => sceneWindow({ id: "a" }, { source: "sim", size: [1, 1] }), /record --scene a --again/);
+});
+
+test("a scene is as long as its window at its speed and its hold, and a cut auto made once is not used without auto", () => {
+  const recorded = { ...sim, wall: 8, trim: /** @type {[number, number]} */ ([1, 5]) };
+  const length = (/** @type {any} */ scene) => sceneFrames(scene, sceneWindow(scene, recorded));
+  assert.equal(length({ id: "a", trim: "auto", speed: 1, hold: 0 }), 120);
+  // The plan dropped "auto" after the recording: the whole recording, and as long as all of it.
+  assert.deepEqual(sceneWindow({ id: "a", trim: null, speed: 1, hold: 0 }, recorded), { start: 0, end: 8, speed: 1 });
+  assert.equal(length({ id: "a", trim: null, speed: 1, hold: 0 }), 240);
+  assert.equal(length({ id: "a", trim: [0.6, 7.2], speed: 1.5, hold: 1 }), 162);
+  assert.equal(length({ id: "a", trim: [2, 20] }), 180);
 });
 
 test("a buffer recorded the other way round is turned, and its touches with it; a Mac window never is", () => {

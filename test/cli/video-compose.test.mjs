@@ -131,7 +131,6 @@ function project({ displays = ["iphone"], locales = ["en", "de"], intro = true, 
       return manifests[display];
     },
     readSidecar: doubles.readSidecar,
-    sceneSeconds: doubles.sceneSeconds,
     captionLayerId: doubles.captionLayerId,
     specs: doubles.PREVIEW_SPECS,
     probe: async (/** @type {string} */ file) => ({ streams: [{ codec_type: "video" }, { codec_type: "audio" }], format: { filename: file } }),
@@ -417,6 +416,23 @@ test("buildSegments makes the segments of one preview, and needs no job count", 
   );
   assert.ok(segments.every((segment) => existsSync(segment.file)));
   assert.equal(planSegments(/** @type {any} */ (ctx), { captions: false }).length, 3);
+});
+
+test("a scene whose plan dropped auto after it was recorded shows the whole recording, and is as long as it", () => {
+  const p = project({ locales: ["en"], wall: 8, scenes: [{ id: "inbox", caption: "Inbox", trim: null }, { id: "search", caption: "Find anything", trim: "auto" }] });
+  // Both recordings keep the cut that auto made of them.
+  for (const scene of ["inbox", "search"]) {
+    const file = path.join(p.root, "raw", "iphone", "en", `${scene}.json`);
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), trim: [1, 5] }));
+  }
+  const ctx = { plan: p.plan, root: p.root, display: "iphone", locale: "en", size: /** @type {[number, number]} */ ([886, 1920]), layers: p.manifests.iphone, tools: { ...tools, ffmpeg } };
+  const jobs = planSegments(/** @type {any} */ (ctx), { captions: true });
+  const scene = (/** @type {string} */ id) => /** @type {any} */ (jobs.find((job) => job.scene === id));
+  assert.equal(scene("inbox").frames, 240);
+  assert.ok(!scene("inbox").args.join(" ").includes("trim=start"));
+  assert.deepEqual(scene("inbox").args.slice(-2), ["-t", "8.000000"]);
+  assert.equal(scene("search").frames, 120);
+  assert.ok(scene("search").args.join(" ").includes("trim=start=1:end=5"));
 });
 
 test("a stage that fails stops the compose and names it", async () => {

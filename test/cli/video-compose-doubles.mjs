@@ -205,19 +205,6 @@ export function planHash(plan) {
 }
 
 /**
- * @param {any} plan
- * @param {any} scene
- * @param {any} sidecar
- */
-export function sceneSeconds(plan, scene, sidecar) {
-  if (!sidecar) return scene.record?.seconds ?? scene.drive?.wait ?? 6;
-  const trim = Array.isArray(scene.trim) ? scene.trim : scene.trim === "auto" && Array.isArray(sidecar.trim) ? sidecar.trim : [0, sidecar.wall];
-  const start = Math.max(0, trim[0]);
-  const end = Math.min(trim[1], sidecar.wall);
-  return (end - start) / (scene.speed ?? 1) + (scene.hold ?? 0);
-}
-
-/**
  * @param {number[]} durations
  * @param {{ type?: string, seconds?: number }} [transition]
  */

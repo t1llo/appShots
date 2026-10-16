@@ -17,8 +17,8 @@ import { runFfmpeg } from "./encode.mjs";
 import { findFfmpeg } from "./ffmpeg.mjs";
 import { FADE, cardArgs, finalCodec, joinArgs, joinPoints, passArgs, sceneArgs, segmentCodec } from "./graph.mjs";
 import { fetchLayers } from "./layers.mjs";
-import { FPS, captionBands, num, placement, plateBox, sceneWindow, toFrames, touchPoints, turnOf } from "./normalise.mjs";
-import { captionLayerId, sceneSeconds } from "./plan.mjs";
+import { FPS, captionBands, num, placement, plateBox, sceneFrames, sceneWindow, toFrames, touchPoints, turnOf } from "./normalise.mjs";
+import { captionLayerId } from "./plan.mjs";
 import { posterFrame } from "./poster.mjs";
 import { probe } from "./probe.mjs";
 import { readSidecar } from "./record/index.mjs";
@@ -43,7 +43,7 @@ const LONGEST = 30;
  * What compose takes from the other video modules. A test stands in for them through setParts, as it stands in
  * for programs through setRunner.
  */
-const parts = { findFfmpeg, fetchLayers, readSidecar, sceneSeconds, captionLayerId, probe, checkProbe, checkCut, posterFrame, composeRemotion, specs: PREVIEW_SPECS };
+const parts = { findFfmpeg, fetchLayers, readSidecar, captionLayerId, probe, checkProbe, checkCut, posterFrame, composeRemotion, specs: PREVIEW_SPECS };
 
 /**
  * Puts other parts in place, such as a test's, and returns the ones they replace.
@@ -247,8 +247,8 @@ export function planSegments(ctx, { captions }) {
     const sidecar = parts.readSidecar(ctx.root, display, locale, scene.id);
     if (!sidecar) fail(`Scene "${scene.id}" has no recording for ${locale} on ${display}. Record it: appshots video record --scene ${scene.id} --lang ${locale} --display ${display}`);
     if (!Array.isArray(sidecar.size)) fail(`The sidecar of scene "${scene.id}" (${locale}, ${display}) does not say the recording's size. Record it again: appshots video record --scene ${scene.id} --lang ${locale} --display ${display} --again`);
-    const frames = toFrames(parts.sceneSeconds(plan, scene, sidecar));
     const window = sceneWindow(scene, sidecar);
+    const frames = sceneFrames(scene, window);
     const turn = turnOf(sidecar, orientation, display === "mac");
     const [width, height] = sidecar.size;
     const place = placement(size, turn ? [height, width] : [width, height], box);
