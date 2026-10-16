@@ -176,10 +176,11 @@ test("compose makes a preview per display and language, with its poster and chec
   const german = made.find((call) => call.args.some((arg) => arg.endsWith(path.join("de", "caption-inbox.png"))));
   assert.ok(german?.args.includes(path.join(p.root, "raw", "iphone", "en", "inbox.mov")));
 
+  // A preview is written in work/ and moved into out/ when it is whole, so out/ never holds a half-written one.
+  assert.ok(made.filter(isJoin).every((call) => path.dirname(call.args.at(-1) ?? "") === path.join(p.root, "work")));
   for (const locale of ["en", "de"]) {
     const out = path.join(p.root, "out", locale, "iphone");
-    assert.ok(existsSync(path.join(out, "preview.mp4")));
-    assert.ok(existsSync(path.join(out, "preview.poster.png")));
+    assert.deepEqual(readdirSync(out).sort(), ["preview.check.json", "preview.mp4", "preview.poster.png"]);
     const record = JSON.parse(readFileSync(path.join(out, "preview.check.json"), "utf8"));
     assert.equal(record.version, 1);
     assert.equal(record.file, "preview.mp4");
@@ -211,11 +212,13 @@ test("a second compose builds nothing that did not change, and a changed caption
   assert.match(printed, /preview\.mp4 is unchanged/);
 
   writeFileSync(path.join(p.root, "layers", p.manifests.iphone.set, "de", "caption-search.png"), Buffer.concat([PIXEL, Buffer.from("new words")]));
-  await quietly(() => compose(p.plan, p.flags));
+  const changed = await quietly(() => compose(p.plan, p.flags));
   const made = calls();
   assert.equal(made.length, 2);
   assert.ok(made[0].args.some((arg) => arg.endsWith(path.join("de", "caption-search.png"))));
-  assert.ok(isJoin(made[1]) && made[1].args.at(-1)?.includes(path.join("out", "de", "iphone")));
+  assert.ok(isJoin(made[1]));
+  assert.match(changed, /out\/en\/iphone\/preview\.mp4 is unchanged/);
+  assert.match(changed, /out\/de\/iphone\/preview\.mp4\n/);
 
   // A recording made again is new footage, even at the same path.
   rmSync(log, { force: true });

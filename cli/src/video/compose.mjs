@@ -444,7 +444,8 @@ async function composeOne({ ctx, jobs, frames }, { engine, music, name, draft, e
   const reused = before?.key === key;
   if (reused) console.log(`  ${shown} is unchanged`);
   else {
-    const partial = path.join(folder, `.${name}.${process.pid}.partial.mp4`);
+    // Written in work/, on the same disk, so that one an interrupted run leaves is never counted among the previews.
+    const partial = path.join(root, "work", `${key}.${process.pid}.partial.mp4`);
     await runFfmpeg(tools, [...args, "-f", "mp4", partial], { label: `stage 2, the preview (${display}, ${locale})`, out: partial });
     renameSync(partial, file);
     console.log(`  ${shown}`);
