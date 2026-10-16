@@ -4838,6 +4838,8 @@ const BY_HAND = [
 ];
 /** A device stops being used after this many screens in a row have failed on it: what is wrong is not the screens. */
 const FAILURES_IN_A_ROW = 3;
+/** What a simulator opens a web link in when no app is started for it. */
+const SAFARI = "com.apple.mobilesafari";
 /**
 * The project as the server has it: its languages, and the screenshots it has already.
 * @param {Config} config
@@ -4922,7 +4924,7 @@ async function checkInstalled(simulator, apps, plan) {
 * @property {string} [bundleId]
 * @property {string} [xcodeProject]
 * @property {string} [scheme]
-* @property {Map<string, string>} started The app the last screen started on each simulator, by its udid.
+* @property {Map<string, string>} started The app the last screen brought to the front on each simulator, by its udid.
 */
 /**
 * Brings up the screen of one job, takes it once it has come to rest, and uploads it.
@@ -4936,8 +4938,9 @@ async function take(run, job, simulator) {
 	const wait = screen.wait ?? plan.wait;
 	mkdirSync(path.dirname(job.file), { recursive: true });
 	const app = screenApp(plan, screen, run.bundleId);
+	const front = app ?? (screen.url && /^https?:/i.test(screen.url) ? SAFARI : void 0);
 	const before = run.started.get(simulator.udid);
-	if (before && before !== app) {
+	if (before && before !== front) {
 		await xcrun([
 			"simctl",
 			"terminate",
@@ -4979,6 +4982,7 @@ async function take(run, job, simulator) {
 				screen.url
 			]);
 			if (result.status !== 0) fail(`Could not open ${screen.url} on ${simulator.name}${app ? `. Does ${app} take that link?` : ""}\n${result.stderr.trim()}`);
+			if (!app && front) run.started.set(simulator.udid, front);
 		}
 		await captureSettled(simulator, job.file, wait);
 	}

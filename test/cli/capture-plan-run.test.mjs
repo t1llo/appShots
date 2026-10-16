@@ -306,6 +306,25 @@ test("the app the last screen started is closed before another one starts, so th
   ]);
 });
 
+test("a web link opened with no app comes up in Safari, which is closed before the next screen starts its app", async () => {
+  const file = writePlan({
+    project: "demo",
+    wait: 0,
+    locales: ["en"],
+    screens: [{ id: "settings", app: "com.apple.Preferences" }, { id: "web", launch: { url: "https://appshots.example.com/docs" } }, { id: "more-web", launch: { url: "https://appshots.example.com/faq" } }, { id: "settings-again", app: "com.apple.Preferences" }],
+  });
+  await shootWith(["--plan", file]);
+  const steps = calls.filter((call) => / (launch|terminate|openurl) /.test(call)).map((call) => call.replace("xcrun simctl ", "").replace(" --terminate-running-process", "").replace(/ -AppleLanguages .*$/, ""));
+  assert.deepEqual(steps, [
+    "launch <phone> com.apple.Preferences",
+    "terminate <phone> com.apple.Preferences",
+    "openurl <phone> https://appshots.example.com/docs",
+    "openurl <phone> https://appshots.example.com/faq",
+    "terminate <phone> com.apple.mobilesafari",
+    "launch <phone> com.apple.Preferences",
+  ]);
+});
+
 test("a screen that fails is reported at the end, and a device is given up after three in a row", async (t) => {
   const file = writePlan({ ...NOTES, locales: ["en"], screens: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }, { id: "e" }] });
   launchStatus = 1;
