@@ -133,9 +133,9 @@ export function startEncoder(file, tools) {
     tools.ffmpeg,
     // prettier-ignore
     ["-hide_banner", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(FPS), "-c:v", "png", "-i", "-",
-      "-vf", "crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0,scale=out_color_matrix=bt709:out_range=tv,format=yuv444p",
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "12", "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
-      "-movflags", "+faststart", "-y", file],
+      // The tags go on the frames: output options alone leave the primaries and transfer unset.
+      "-vf", "crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0,scale=out_color_matrix=bt709:out_range=tv,format=yuv444p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "12", "-movflags", "+faststart", "-y", file],
     { stdin: true },
   );
   let frames = 0;
@@ -336,7 +336,8 @@ async function recordPage(talk, { scene, locale, file, seconds, settle, signal, 
           for (let frame = 0; frame < count && into.frames() < limit; frame++) {
             checkStop(signal);
             await step();
-            const { data } = await page("Page.captureScreenshot", { format: "png" });
+            // Still every pixel, only packed less tightly, which takes a third of the time.
+            const { data } = await page("Page.captureScreenshot", { format: "png", optimizeForSpeed: true });
             await into.write(Buffer.from(data, "base64"));
           }
         },
