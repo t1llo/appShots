@@ -230,6 +230,8 @@ export async function recordScenes(plan, flags) {
               // A recorder that records for a set length gets no more than the scene's driver takes.
               const length = drive && typeof drive === "object" && "wait" in drive ? Math.min(seconds, drive.wait + 0.5) : seconds;
               const file = workingFile(root, display, locale, scene.id, source.extension);
+              // A UI test is built before the app is started for it, as the build takes a while.
+              const tests = drive && typeof drive === "object" && "uitest" in drive && source.tests ? await source.tests(scene) : undefined;
               console.log(`Recording ${scene.id} (${locale}, ${display}) on ${source.label}…`);
               await source.open(scene, locale);
               const touchLog = path.join(logs.dir, `${display}-${locale}-${scene.id}.log`);
@@ -248,7 +250,7 @@ export async function recordScenes(plan, flags) {
                       touchLog,
                       seconds,
                       simulator: source.simulator,
-                      tests: drive && typeof drive === "object" && "uitest" in drive && source.tests ? await source.tests(scene) : undefined,
+                      tests,
                     },
                     settle,
                     signal,
