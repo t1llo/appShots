@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: Fixes for the common appShots problems. Sign-in errors, an agent that cannot see the skill or the MCP server, 401 answers, capture failures in the simulator or on a device, and render problems.
+description: Fixes for the common appShots problems. Sign-in errors, an agent that cannot see the skill or the MCP server, 401 answers, capture failures in the simulator or on a device, render problems, and app preview videos.
 ---
 
 Start with this. It reports the server, the token, the skill, Xcode, the project and what it is made with, simulators and devices, and every line says what to do next:
@@ -110,6 +110,54 @@ export PATH="$HOME/.local/bin:$PATH"
 **App Store Connect refuses a file.** Check that it went onto the display it was made for: the folder name says which. See [Sizes](/docs/sizes).
 
 **The files look different from before.** A project is drawn by the current version of appShots each time. See [Update](/docs/update).
+
+## App preview videos
+
+**"ffmpeg is not installed. Ask the user whether to install it".** The video commands cut, check and look at videos with ffmpeg, and `appshots` asks before it installs it. Under an agent there is no Terminal to ask in, so the agent asks you instead. Say yes, or run `brew install ffmpeg` yourself. It takes about 100 MB.
+
+**ffmpeg is missing and there is no Homebrew.** Install Homebrew from [brew.sh](https://brew.sh) and then `brew install ffmpeg`. Or put an ffmpeg and an ffprobe of version 4.3 or newer for macOS anywhere on the Mac, such as one of the builds [ffmpeg.org](https://ffmpeg.org/download.html) links to, and point `appshots` at them:
+
+```bash
+export APPSHOTS_FFMPEG=~/bin/ffmpeg
+export APPSHOTS_FFPROBE=~/bin/ffprobe
+```
+
+`appshots check` says which ffmpeg it finds. An ffmpeg that lacks an H.264 encoder, AAC or a filter the compose needs is named with what it lacks; Homebrew's has all of it. The ffmpeg that comes with Remotion can check videos and take posters and sheets, but cannot cut a preview.
+
+**"The recording of … came out empty".** The recorder was stopped some other way than with Ctrl+C, as when the Terminal window was closed or an agent's command ran out of time, and such a stop leaves no movie. Record the scene again, and give the command time: recording takes about as long as `appshots video plan` says.
+
+**"The scene … is driven by hand, which needs a person at the Terminal".** A scene with `"drive": "manual"` waits for you to use the app and press Return, which an agent cannot do. Run `appshots video record --scene <id>` in your own Terminal, or give the scene a driver that runs by itself. See [Drivers](/docs/video#drivers).
+
+**"… is not installed on …" when recording on the simulator.** Without an Xcode project in the folder there is nothing to build, so the app has to be on the simulator already. Start it there once with your toolkit's own run command, then record again.
+
+**A Mac app's recording fails.** macOS lets a program record a window only with the Screen Recording permission. Switch on your terminal app under **System Settings → Privacy & Security → Screen & System Audio Recording**, then quit and reopen the terminal. `appshots check` says whether it is allowed. `--window` needs the Accessibility permission as well, under **Privacy & Security → Accessibility**; without it, the window is recorded at the size it has.
+
+**"devicectl failed" with `--device`.** Recording a device needs Xcode 27 or newer, and it is experimental. Record the device with QuickTime Player instead: **File → New Movie Recording**, and pick the iPhone or iPad as the camera beside the record button. Then bring the movie in with `appshots video import <file> --scene <id>`. Or record on the simulator, the surer source.
+
+**The colours look paler or stronger than in the app.** A video's colour tags tell a player how to show its colours. Every preview `appshots video compose` makes is tagged BT.709, which App Store Connect expects, and `appshots video check` warns about a file without those tags. A video cut elsewhere: compose it with appShots, or export it with BT.709 colour.
+
+**"ffmpeg stopped making progress on … and was stopped".** ffmpeg sometimes stalls when several scenes are cut at once on a busy Mac. Run `appshots video compose --jobs 1`. On a slow Mac, `APPSHOTS_FFMPEG_STALL=120` gives it two minutes without progress, rather than 30 seconds, before it is stopped.
+
+**"The preview runs … s, and the App Store takes 30 s at most".** Shorten a scene's `trim`, raise its `speed` to up to 2, take a scene out, or shorten the cards. Under 15 seconds, add a scene or let one run longer. `appshots video plan` shows the length of each part.
+
+**`appshots video check` reports an error.** A preview `compose` made passes every rule; an error is usually a file made some other way.
+
+| The error | What to do |
+| --- | --- |
+| size | The file is not the size of a display, or is checked against the wrong one. Name the display with `--display`, or compose it with appShots |
+| frame rate, frames | App Store Connect takes 30 frames a second, constant. Compose it with appShots, which makes every preview so |
+| length | Make it 15 to 30 seconds |
+| audio track | A preview needs a stereo AAC track, even a silent one. The compose always adds one |
+| level, profile, codec | H.264 High at level 4.0 or lower. Compose it with appShots, or export it with those settings |
+| draft | Compose it again without `--draft` |
+
+**"Two runs are already under way for this account".** Each `appshots video layers` for a new set is a run on the server, and an account has two at a time at most. Wait for one to finish.
+
+**The layers show another language's text.** The project has no text in that language for a caption taken from a slide, or the plan's caption names no text for it. `appshots video layers` says which. Translate the slide in the Studio, or add the language to the caption in the plan. The notices of `disclosure` are in English only: for a store page in another language, leave `disclosure` out and write the notice as one of the outro's `lines`, with a text for each language.
+
+**`appshots video remotion` asks for a yes.** Remotion has a licence of its own, which you have to agree to first. Read it, and if you agree, run `appshots video remotion --yes`, or tell your agent so. `--again` asks before it replaces files you changed in `appshots-video/remotion/`, so run that in your own Terminal. See [Animated text with Remotion](/docs/video#animated-text-with-remotion).
+
+**A preview does not play in App Store Connect yet.** Apple processes a new preview for up to 24 hours. If `appshots video push` said Apple was still processing it, run `appshots video push --resume` later to place it.
 
 ## Limits
 

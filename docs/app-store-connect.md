@@ -1,6 +1,6 @@
 ---
 title: Upload to App Store Connect
-description: Put a finished appShots set into App Store Connect from your Mac with an API key of your own. Each language goes into its language and each folder onto its display, in the version you are preparing or a new one. The key stays on your Mac and nothing is submitted for review.
+description: Put a finished appShots set and its app preview videos into App Store Connect from your Mac with an API key of your own. Each language goes into its language and each folder onto its display, in the version you are preparing or a new one. The key stays on your Mac and nothing is submitted for review.
 ---
 
 The `appshots` command can put a finished set into App Store Connect for you: every language into its language, every folder onto its display, in the version you are preparing. It can make that version, and it can read and change the texts of the store page. You give it an App Store Connect API key of your own.
@@ -93,6 +93,26 @@ The sizes for older devices go onto their displays too, when the project exports
 - **iPhone Duo screenshots.** App Store Connect's API has no display for the iPhone Duo yet. Drag the files of `iphone-duo` onto it by hand.
 - **Header and search results images.** They go onto the **Header and Search Results** tab by hand. See [Header and search results](/docs/store-assets).
 - **Banners.** They are not for App Store Connect.
+- **App preview videos.** They go up with a command of their own. See [App previews](#app-previews).
+
+## App previews
+
+```bash
+appshots video push --dry-run
+appshots video push
+```
+
+`appshots video push` puts the [app preview videos](/docs/video) that `appshots video compose` made into the version you are preparing, with the same key. Run it in the folder of `appshots.video.json`. Each preview goes onto the store page of its language: an `iphone` preview onto the iPhone's largest display, an `ipad` preview onto the 13-inch iPad and a `mac` preview onto the macOS version of the app. App Store Connect shows them on the smaller displays as well.
+
+- **It uploads, waits and places.** Each file goes into the app's asset library in App Store Connect once. Apple processes it, which takes some minutes, and the command waits up to 20 minutes, then places it on the page and sets its poster frame. `--no-wait` stops after the upload, and `--resume` places the previews later without uploading them again. What was done is kept in `appshots-video/out/.push-state.json`.
+- **Only checked files go up.** A draft, a file without its check, or one that does not pass Apple's specification stops the push before App Store Connect is asked anything.
+- **Three per display.** A version takes three previews per display and language. When a page holds three already, the push changes nothing: take one off in App Store Connect first.
+- **What you put there stays.** A new preview goes beside the ones there. The push takes off only appShots' own earlier upload of the same preview, after asking you, or with `--replace`. It never deletes anything from the asset library.
+- **It makes no version.** Previews go into the version being prepared. When there is none, create it in App Store Connect, or with `appshots store push <project> --version <number>`. Mac previews need a macOS version of the app.
+- **A language has to exist on the store page.** A language the store page does not have is left out, the command says so and ends with status 1. `appshots store push <project> --add-languages` adds it. `--lang en=en-GB` puts the `en` preview onto the `en-GB` page.
+- **Apple takes its time.** A preview can take up to 24 hours before it plays in App Store Connect. Nothing is submitted for review or released.
+
+The options are listed in [The appshots command](/docs/cli#app-preview-videos).
 
 ## Which version
 
@@ -165,3 +185,7 @@ Each command signs a token that Apple takes for ten minutes and sends it to `api
 | … has no macOS version in App Store Connect | Add `--only iphone,ipad`, or add the macOS platform to the app there first |
 | … has no such language on its store page | Add `--add-languages`, or add the language in App Store Connect |
 | A file is refused by Apple | Render the project again and upload once more. The files of a render always have the size of their display |
+| A preview … does not pass Apple's specification, is a draft, or has no check record | Compose it again with `appshots video compose`, without `--draft` |
+| … holds 3 previews already, the most a version takes | Take one off on that page in App Store Connect, then push again |
+| App Store Connect does not let this key … for a preview | Apple names the role App Manager for its asset library. If a Marketing key is refused there, make a key with the role App Manager |
+| Apple is still processing … previews | Run `appshots video push --resume` later. Nothing is uploaded again |

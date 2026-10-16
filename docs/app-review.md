@@ -1,7 +1,7 @@
 ---
 title: What App Review accepts
 nav: App Review rules
-description: The App Store rules that matter for screenshots, in plain words. Show the real app, use only real ratings and awards, be careful with other companies' logos, and keep header images free of them.
+description: The App Store rules that matter for screenshots and app preview videos, in plain words. Show the real app, use only real ratings and awards, be careful with other companies' logos, keep header images free of them, and show nothing but the app in a preview.
 ---
 
 Screenshots are part of what Apple reviews. A set that breaks the rules gets the whole submission sent back. This page is a short summary in our own words. Apple's own pages decide, and they change:
@@ -51,6 +51,18 @@ These have stricter rules of their own:
 
 See [Header and search results](/docs/store-assets).
 
+## App previews
+
+Guideline 2.3.4 covers app preview videos, and they are judged more strictly than screenshots:
+
+- **Only footage of the app.** A preview shows the app as it is, recorded from its own screen. No hands, no people using a device, no device around the recording, and no footage of anything that is not the app.
+- **Text over it is fine.** Captions, and short cards at the start and the end. A band or frame around the recording has been turned down, which is why appShots puts the captions in a card and warns about `"captionStyle": "band"`.
+- **No prices, no dates and no rankings** in the captions, and no "free". When the app has in-app purchases, a subscription, or needs an account, say so: `"disclosure"` in the plan's outro does.
+- **Made-up data, and music you may use.** The rules for content below apply to every frame. appShots ships no music.
+- **A preview fits its display.** The right size, 15 to 30 seconds, and up to three per display and language. `appshots video check` checks the size, the length and the rest of Apple's specification.
+
+See [App preview videos](/docs/video#what-app-review-accepts) and Apple's [app preview specifications](https://developer.apple.com/help/app-store-connect/reference/app-preview-specifications).
+
 ## Content
 
 - Screenshots must suit everybody, whatever the app's age rating. No violence or adult content in the store images.
@@ -65,5 +77,6 @@ See [Header and search results](/docs/store-assets).
 4. Does your app really work with every logo you show?
 5. Does every language read well, with no cut-off words?
 6. Are the files the right size? See [Sizes](/docs/sizes).
+7. Does every preview show the app alone, with every caption true, and does `appshots video check` pass it?
 
 appShots is not affiliated with Apple and cannot promise that a set passes review.

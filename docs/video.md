@@ -120,7 +120,7 @@ Before anything is recorded, the lengths are estimates. The warnings name what t
 | `poster` | The frame App Store Connect shows before the preview plays: `{ "scene": "today" }` takes it a second after that scene's caption is in, `"at"` sets seconds into the scene, and `{ "time": 3 }` seconds into the preview |
 | `target` | The length the storyboard aims at, 15 to 30 s. Default 26 |
 
-The logo on the cards is the one your slides use, or an image of the project named `logo` or `app-icon`. `disclosure` takes `iap`, `subscription` and `login`, and adds "Offers in-app purchases.", "Subscription required." or "Requires an account." to the outro, in English.
+The logo on the cards is the one your slides use, or an image of the project named `logo` or `app-icon`. `disclosure` takes `iap`, `subscription` and `login`, and adds "Offers in-app purchases.", "Subscription required." or "Requires an account." to the outro. Those notices are in English only; for other languages, write the notice as one of the outro's `lines` instead, with a text for each language.
 
 ### A scene
 
