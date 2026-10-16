@@ -269,7 +269,7 @@ test("an iPhone preview, composed five times over, comes out to Apple's specific
 });
 
 test("an iPad preview in two languages, the second on the first's footage, and a compose again that makes nothing", videoTier, async () => {
-  const p = project({ app: { platform: "ios" }, displays: ["ipad"], locales: ["en", "de"], footage: "primary", transition: { type: "dissolve", seconds: 0.5 }, scenes, poster: { scene: "search", at: 1 } });
+  const p = project({ app: { platform: "ios" }, displays: ["ipad"], locales: ["en", "de"], footage: "primary", intro: { seconds: 1.5 }, outro: { seconds: 2 }, transition: { type: "dissolve", seconds: 0.5 }, scenes, poster: { scene: "search", at: 1 } });
   /** @type {any[]} */
   let results = [];
   await quietly(async () => {
@@ -279,7 +279,6 @@ test("an iPad preview in two languages, the second on the first's footage, and a
     results.map((result) => result.locale),
     ["en", "de"],
   );
-  // No intro or outro text in the plan: the layers have them, so the cards are there with the plan's defaults.
   for (const result of results) assertPreview(result, [1200, 1600]);
   // "search" comes in at 45 + 165 − 2 × 15 frames, and the poster is a second into it.
   const record = JSON.parse(readFileSync(results[0].file.replace(/\.mp4$/, ".check.json"), "utf8"));
