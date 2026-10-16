@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, test } from "node:test";
+import { pathToFileURL } from "node:url";
 import { cliHome, quietly, stubServer } from "./helpers.mjs";
 
 // A server with the example project, stood in for; it answers for no other project.
@@ -159,6 +161,28 @@ for (const [action, argv, name] of NEEDS) {
     await assert.rejects(runVideo(argv), (error) => error instanceof Failure && error.message === `'appshots video ${action}' is not available in this build of appshots. 'appshots update' brings this CLI up to date with the server's.`);
   });
 }
+
+test("a step that is not there is not in this build, and a file a step imports that is not there is said as it is", () => {
+  // In a process of its own, a module hook points compose.mjs at a stand-in that imports a file that is not there,
+  // and push.mjs at a file that is not there either, whichever of them this build has.
+  const dir = path.join(home.home, "broken-step");
+  mkdirSync(dir, { recursive: true });
+  // Node names the files by their real paths, and the temporary folder is a link on a Mac.
+  const real = realpathSync(dir);
+  writeFileSync(path.join(dir, "compose.mjs"), 'import "./remotion.mjs";\nexport const compose = () => {};\n');
+  const command = pathToFileURL(path.join(VIDEO, "command.mjs")).href;
+  const to = { "./compose.mjs": pathToFileURL(path.join(dir, "compose.mjs")).href, "./push.mjs": pathToFileURL(path.join(dir, "push.mjs")).href };
+  const hooks = `const to = ${JSON.stringify(to)};\nexport const resolve = (specifier, context, next) => next(context.parentURL === ${JSON.stringify(command)} && to[specifier] ? to[specifier] : specifier, context);`;
+  const script = [
+    'import { register } from "node:module";',
+    `register(${JSON.stringify(`data:text/javascript,${encodeURIComponent(hooks)}`)});`,
+    `const { optionalStep } = await import(${JSON.stringify(command)});`,
+    'for (const name of ["videoPush", "compose"]) await optionalStep(name).then((found) => console.log(name, found), (error) => console.log(name, error.code, error.message));',
+  ].join("\n");
+  const [push, compose] = execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }).trim().split("\n");
+  assert.equal(push, "videoPush null");
+  assert.ok(compose.startsWith(`compose ERR_MODULE_NOT_FOUND Cannot find module '${path.join(real, "remotion.mjs")}' imported from ${path.join(real, "compose.mjs")}`), compose);
+});
 
 test("ffmpeg is not reported by a build without the video steps", { skip: existsSync(path.join(VIDEO, "ffmpeg.mjs")) ? "this build has them" : false }, async () => {
   assert.equal(await ffmpegLine(), null);

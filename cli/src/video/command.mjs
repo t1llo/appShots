@@ -4,6 +4,7 @@
 
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { projectRoute, request } from "../api.mjs";
 import { loadConfig } from "../config.mjs";
 import { attempt, fail } from "../fail.mjs";
@@ -47,12 +48,23 @@ export async function optionalStep(name) {
   try {
     module = await STEPS[name]();
   } catch (error) {
-    // Run from the sources, a step that is not written yet is a file that is not there.
-    if (/** @type {any} */ (error)?.code === "ERR_MODULE_NOT_FOUND") return null;
+    // Run from the sources, a step that is not written yet is a file that is not there. A file that a step itself
+    // imports and that is not there is a fault in that step, so it is said as it is.
+    if (missingHere(error)) return null;
     throw error;
   }
   const found = module[name];
   return typeof found === "function" ? /** @type {(...args: any[]) => any} */ (found) : null;
+}
+
+/**
+ * Whether an import failed because a module this file names is not there. Node says which file named it only in the
+ * message, as "Cannot find module '<file>' imported from <this file>".
+ * @param {unknown} error
+ */
+function missingHere(error) {
+  const { code, message } = /** @type {{ code?: unknown, message?: unknown }} */ (error ?? {});
+  return code === "ERR_MODULE_NOT_FOUND" && typeof message === "string" && message.includes(` imported from ${fileURLToPath(import.meta.url)}`);
 }
 
 /**
