@@ -155,6 +155,9 @@ function save(): Promise<void> {
   return writing;
 }
 
+/** Resolves once every change made so far is in the file, for a server about to stop. */
+export const grantsSaved = () => writing.catch(() => {});
+
 /** Saves without anybody waiting. A failure is reported and the change is saved with the next one. */
 const saveLater = (what: string) => void save().catch((error: unknown) => console.error(`Could not save ${what}:`, error));
 

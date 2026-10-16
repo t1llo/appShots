@@ -1,10 +1,13 @@
 import { existsSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import { accountsSaved } from "./accounts.ts";
 import { createApp } from "./app.ts";
 import { config } from "./config.ts";
 import { webDir } from "./http/routes/site.ts";
-import { closeBrowser, prewarm } from "./render.ts";
+import { grantsSaved } from "./oauth/store.ts";
+import { closeBrowser, drain, prewarm } from "./render.ts";
 import { sweepProjects } from "./storage/migrate.ts";
 
 // What `npm start` and the container run: build the app, listen, and stop cleanly on a signal.
@@ -34,9 +37,29 @@ server.listen({ port: config.port, host: config.host }, () => {
   prewarm();
 });
 
+/**
+ * Stops within the ten seconds a container is given before it is killed. No connection or render is taken any more,
+ * and what is under way gets most of that time to finish: a render still going then is cancelled, keeps nothing and
+ * uses no render, and a download still going is cut off. The accounts and grants are on disk before the process ends.
+ */
+async function shutDown(): Promise<void> {
+  const closed = new Promise((resolve) => server.close(resolve));
+  // drain() lets renders finish for this long, then gives the ones still going two seconds to stop.
+  await Promise.race([Promise.all([closed, drain(5500)]), sleep(7500)]);
+  server.closeAllConnections();
+  await Promise.all([accountsSaved(), grantsSaved()]);
+  await closeBrowser();
+}
+
+let stopping = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
-    server.close();
-    void closeBrowser().finally(() => process.exit(0));
+    // A second signal, such as Ctrl-C pressed again, does not wait.
+    if (stopping) process.exit(1);
+    stopping = true;
+    console.log("Stopping: finishing what is under way.");
+    void shutDown()
+      .catch((error: unknown) => console.error("Could not stop cleanly:", error))
+      .finally(() => process.exit(0));
   });
 }

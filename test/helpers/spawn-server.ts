@@ -24,6 +24,8 @@ export interface TestServer {
   output(): string;
   /** Stops the server and removes the data directory if startServer made it. */
   stop(): Promise<void>;
+  /** Sends the server process a signal, and resolves with its exit code once it has ended. Not with `inProcess`. */
+  signal?(name: NodeJS.Signals): Promise<number | null>;
 }
 
 export interface ServerOptions {
@@ -153,6 +155,10 @@ async function launch(dataDir: string, options: ServerOptions, made: TmpData | u
     stop: async () => {
       await halt();
       await made?.remove();
+    },
+    signal: (name) => {
+      child.kill(name);
+      return exited;
     },
   };
 }

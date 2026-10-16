@@ -53,6 +53,8 @@ interface Run {
   result?: RenderResult;
   /** Ends a run that has not had its turn yet, at once rather than when its turn would have come. */
   stop: () => void;
+  /** Settles once the run has read the project and taken its place in the queue, or could not. */
+  placed: Promise<void>;
   finished: Promise<RenderResult>;
 }
 
@@ -146,9 +148,13 @@ export async function cancelRenders(space: Space, project?: string, timeoutMs = 
   await ending(live, timeoutMs);
 }
 
-/** Takes no more renders: one asked for from here on is refused, while the server shuts down. */
-export function closeRenders(): void {
+/**
+ * Takes no more renders: one asked for from here on is refused, while the server shuts down. Resolves once the runs
+ * asked for before are in the queue, so they get their turn like the ones that were there already.
+ */
+export async function closeRenders(): Promise<void> {
   closing = true;
+  await Promise.all([...runs.values()].filter((run) => !ended(run)).map((run) => run.placed));
 }
 
 /** Runs that have not ended. */
@@ -182,7 +188,7 @@ export function startRender(space: Space, id: string, request: RenderRequest = {
     job.name = project.name;
     return { project, shots, plan: planRender(project, shots, images, request) };
   });
-  const run: Run = { job, space: space.id, cancelled: false, stop: () => {}, finished: undefined as never };
+  const run: Run = { job, space: space.id, cancelled: false, stop: () => {}, placed: Promise.resolve(), finished: undefined as never };
   const stopped = new Promise<never>((_resolve, reject) => {
     run.stop = () => reject(new Cancelled());
   });
@@ -199,6 +205,11 @@ export function startRender(space: Space, id: string, request: RenderRequest = {
   });
   // A run stopped while it waits leaves its place in the queue behind, which comes to nothing when its turn comes.
   scheduled.catch(() => {});
+  // After `scheduled` has asked for its place: callbacks on `loaded` run in the order they were added.
+  run.placed = loaded.then(
+    () => {},
+    () => {},
+  );
   run.finished = Promise.race([scheduled, stopped])
     .then(
       async (result) => {
