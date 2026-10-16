@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { backoff, dueOn, type JobUpdate, type Known, LiveLink, type LiveEvent, noWants, parseEvent, READY_MS, type Source, SLOW_TICKS, type Timers, want } from "../../web/src/state/stream.ts";
+import { backoff, dueOn, type JobUpdate, type Known, LiveLink, type LiveEvent, noWants, parseEvent, QUIET_BEATS, READY_MS, type Source, SLOW_TICKS, type Timers, want } from "../../web/src/state/stream.ts";
 
 // How the Studio follows the server's stream of changes, on its own: no browser, no server. The stream is a stand-in
 // the test opens, drops and closes, time is a clock the test moves on, and the cache is a few maps.
@@ -142,6 +142,52 @@ describe("the link", () => {
     clock.advance(READY_MS * 2);
     assert.equal(link.state, "live");
     assert.equal(sources.length, 1);
+  });
+
+  test("a live stream that goes quiet, such as one that died without a word while the laptop slept, counts as not working", () => {
+    const { link, last, sources, clock, resyncs } = harness();
+    const quiet = 20_000 * QUIET_BEATS;
+    link.start();
+    last().emit("ready", { heartbeatMs: 20_000 });
+    // A ping says that it still works, and so does any event.
+    clock.advance(quiet - 1);
+    last().emit("ping", {});
+    clock.advance(quiet - 1);
+    last().emit("project", { id: "demo", revision: 3, actor: "mcp" });
+    clock.advance(quiet - 1);
+    assert.equal(link.state, "live");
+    assert.equal(sources.length, 1);
+    // Then nothing at all: the stream is closed, and opened again after the first pause.
+    clock.advance(1);
+    assert.equal(link.state, "down");
+    assert.equal(last().closed, true);
+    clock.advance(backoff(1));
+    assert.equal(sources.length, 2);
+    last().emit("ready", { heartbeatMs: 20_000 });
+    assert.equal(link.state, "live");
+    // What changed meanwhile went unheard, and is asked for.
+    assert.equal(resyncs(), 1);
+  });
+
+  test("a stream whose server names no heartbeat is not held to one", () => {
+    const { link, last, sources, clock } = harness();
+    link.start();
+    last().emit("ready", {});
+    clock.advance(3_600_000);
+    assert.equal(link.state, "live");
+    assert.equal(sources.length, 1);
+  });
+
+  test("a stream that drops while live waits for ready again, not for its heartbeat", () => {
+    const { link, last, clock } = harness();
+    link.start();
+    last().emit("ready", { heartbeatMs: 20_000 });
+    last().drop(0);
+    // Only ready makes it live again: a ping meanwhile does not put off the wait.
+    last().emit("ping", {});
+    clock.advance(READY_MS);
+    assert.equal(link.state, "down");
+    assert.equal(last().closed, true);
   });
 
   test("a stream that keeps dropping before it is ready is given up on for a while", () => {

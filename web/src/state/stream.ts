@@ -157,11 +157,27 @@ export type LinkState = "off" | "connecting" | "live" | "down";
 
 /** How long `ready` may take to come before the stream counts as not working. */
 export const READY_MS = 10_000;
+/**
+ * A live stream that sends nothing for this many of its heartbeats, not even a ping, counts as not working. A
+ * connection can die without a word, such as while a laptop sleeps or when a router forgets it, and EventSource
+ * would go on waiting on it for as long as the system keeps the socket.
+ */
+export const QUIET_BEATS = 2.5;
 /** A stream that keeps dropping is tried again by the link, with a pause that grows, instead of by the browser. */
 const DROPS = 3;
 
 /** How long to wait before trying a stream again that failed `failures` times in a row: 5 s, doubled each time, up to 5 min. */
 export const backoff = (failures: number): number => Math.min(300_000, 5000 * 2 ** Math.max(0, failures - 1));
+
+/** The heartbeat a stream's `ready` names, or 0 when it names none. */
+function heartbeatOf(data: unknown): number {
+  try {
+    const { heartbeatMs } = JSON.parse(String(data));
+    return Number.isFinite(heartbeatMs) && heartbeatMs > 0 ? heartbeatMs : 0;
+  } catch {
+    return 0;
+  }
+}
 
 export interface LinkOptions {
   connect(): Source;
@@ -187,6 +203,8 @@ export class LiveLink {
   #drops = 0;
   /** Whether changes may have gone unheard since the stream was last ready: it dropped, failed or was stopped. */
   #missed = false;
+  /** How long the live stream may send nothing before it counts as dead, or 0 for a server that names no heartbeat. */
+  #quietMs = 0;
   #timer: unknown = null;
 
   constructor(options: LinkOptions) {
@@ -237,29 +255,38 @@ export class LiveLink {
     const source = this.#options.connect();
     this.#source = source;
     this.#set("connecting");
-    const mine = (run: () => void) => () => {
-      if (this.#source === source) run();
+    const mine = (run: (data: unknown) => void) => ({ data }: { data?: unknown }) => {
+      if (this.#source === source) run(data);
     };
-    source.addEventListener("ready", mine(() => this.#ready()));
+    source.addEventListener("ready", mine((data) => this.#ready(data)));
+    // The heartbeat: it says nothing but that the stream still works, as every event does.
+    source.addEventListener("ping", mine(() => this.#heard()));
     source.addEventListener("error", mine(() => this.#error(source)));
     for (const type of EVENT_TYPES) {
-      source.addEventListener(type, ({ data }) => {
-        if (this.#source !== source) return;
+      source.addEventListener(type, mine((data) => {
+        this.#heard();
         const event = parseEvent(type, data);
         if (event) this.#options.onEvent(event);
-      });
+      }));
     }
     this.#wait(() => this.#fail(), READY_MS);
   }
 
-  #ready(): void {
+  #ready(data: unknown): void {
     if (this.#timer !== null) this.#timers.clear(this.#timer);
     this.#timer = null;
     this.#failures = 0;
     this.#drops = 0;
+    this.#quietMs = QUIET_BEATS * heartbeatOf(data);
     this.#set("live");
+    this.#heard();
     if (this.#missed) this.#options.onResync();
     this.#missed = false;
+  }
+
+  /** Something came down the live stream, so it still works: it may now be quiet for a few heartbeats more. */
+  #heard(): void {
+    if (this.#state === "live" && this.#quietMs > 0) this.#wait(() => this.#fail(), this.#quietMs);
   }
 
   #error(source: Source): void {
