@@ -4,6 +4,7 @@ import { InputError } from "../domain/errors.ts";
 import { type Project, type Slide, slideSchema, type Theme, unknownFields } from "../schema.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, type DeviceKind } from "../sizes.ts";
 import { projects } from "../storage/projects.ts";
+import { usageChanged } from "../storage/usage.ts";
 import { listImages, listShots } from "../store.ts";
 import { type Ctx, type Warning, writeOptions } from "./context.ts";
 import { missingImages, missingNames, missingScreenshots, unknownImages, unknownScreenshots } from "./projects.ts";
@@ -45,6 +46,8 @@ export async function setSlides(ctx: Ctx, id: string, input: { slides: unknown[]
     },
     writeOptions(ctx),
   );
+  // The account's usage counts slides.
+  usageChanged(ctx.space);
   if (slides.length === 0) return { project, ownSets: [], warnings: [] };
   const ownSets = device ? [] : DEVICE_KINDS.filter((kind) => project.deviceSlides[kind]);
   return { project, ownSets, warnings: [...(await missingNames(ctx.space, project)), ...ignored] };
