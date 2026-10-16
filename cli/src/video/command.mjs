@@ -258,13 +258,13 @@ const shown = (file) => path.relative(process.cwd(), file) || file;
 async function checkPreviews(files, flags) {
   const checkFiles = await step("checkFiles", "check");
   if (flags.display === true) fail("--display needs the display the files are for, such as --display iphone.");
-  if (files.length > 0) return checkFiles(files.map((file) => path.resolve(file)), { display: flags.display, json: Boolean(flags.json), root: workFolderOf(flags) });
+  if (files.length > 0) return checkFiles(files, { display: flags.display, json: Boolean(flags.json), root: workFolderOf(flags) });
   if (!existsSync(planFileOf(flags))) fail(`Name the videos to check: ${usageOf("check")}. Without them it checks the previews of ${path.basename(planFileOf(flags))}, and there is none here.`);
   const plan = await loadPlan(flags);
   const found = previews(plan, flags);
   // One display is said outright; several are told apart by their sizes.
   const displays = [...new Set(found.map((each) => each.display))];
-  return checkFiles(found.map((each) => each.file), { display: displays.length === 1 ? displays[0] : undefined, json: Boolean(flags.json), root: workFolders(plan).work });
+  return checkFiles(found.map((each) => shown(each.file)), { display: displays.length === 1 ? displays[0] : undefined, json: Boolean(flags.json), root: workFolders(plan).work });
 }
 
 /**
