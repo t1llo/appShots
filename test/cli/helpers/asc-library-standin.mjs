@@ -128,6 +128,8 @@ export async function libraryStandIn(publicKey) {
     refuse: [],
     /** The size of the parts an upload is split into. */
     partSize: 4096,
+    /** How many of the next uploads lose their commit, as when the connection drops or the command is stopped. */
+    loseCommits: 0,
   };
   let next = 0;
   let clock = 0;
@@ -213,6 +215,10 @@ export async function libraryStandIn(publicKey) {
       if (!video) return refuse("NOT_FOUND", "No such video.", 404);
       const attributes = json.data.attributes ?? {};
       for (const name of Object.keys(attributes)) if (name !== "uploaded" && name !== "previewFrameTimeCode") violations.push(`PATCH ${route} would change ${name}`);
+      if (attributes.uploaded === true && state.loseCommits > 0) {
+        state.loseCommits--;
+        return refuse("UNEXPECTED_ERROR", "The connection was lost.", 500);
+      }
       if (attributes.uploaded === true) {
         const parts = Math.ceil(video.fileSize / state.partSize);
         if (video.parts.size !== parts) return refuse("STATE_ERROR", `Only ${video.parts.size} of ${parts} parts arrived.`);
@@ -305,6 +311,7 @@ export async function libraryStandIn(publicKey) {
       state.placements = new Map();
       state.processAfter = processAfter;
       state.refuse = [];
+      state.loseCommits = 0;
       for (const [platform, versionState, codes] of /** @type {const} */ ([["IOS", ios, locales], ["MAC_OS", mac, macLocales]])) {
         // An older version that is on the App Store, under the one given.
         state.versions.push({ id: `${platform}-1.0`, platform, versionString: "1.0", appVersionState: "READY_FOR_DISTRIBUTION", createdDate: "2026-06-01T00:00:00Z" });

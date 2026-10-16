@@ -222,6 +222,24 @@ test("--no-wait stops after the upload, and --resume places what Apple has proce
   assert.match(second.printed, /^2 previews placed\.$/m);
 });
 
+test("an upload that stopped before it was finished is uploaded anew by the next push, and placed", async () => {
+  const root = project([{ locale: "en", display: "iphone" }]);
+  asc.state.loseCommits = 1;
+  await refused(planOf(root), {}, /could not finish preview\.mp4/);
+  assert.deepEqual([...asc.state.videos.values()].map((video) => [video.referenceName, video.state]), [[nameOf(root, "en", "iphone"), "AWAITING_UPLOAD"]]);
+  assert.equal(existsSync(path.join(root, "appshots-video", "out", ".push-state.json")), false);
+
+  // The reservation that never got its file is not taken for an upload of it.
+  const { printed, code } = await push(planOf(root));
+  assert.equal(code, 0);
+  assert.deepEqual(asc.violations, []);
+  assert.doesNotMatch(printed, /uploaded before/);
+  assert.match(printed, /^1 preview placed, 1 uploaded\.$/m);
+  assert.deepEqual(asc.page("en-US", IPHONE), [nameOf(root, "en", "iphone")]);
+  // It stays in the library, as appShots deletes nothing there.
+  assert.deepEqual([...asc.state.videos.values()].map((video) => video.state), ["AWAITING_UPLOAD", "PREPARE_FOR_SUBMISSION"]);
+});
+
 test("--resume needs an earlier push of the same files", async () => {
   const root = project([{ locale: "en", display: "iphone" }]);
   await refused(planOf(root), { resume: true }, /Nothing to resume: there is no .*\.push-state\.json/);

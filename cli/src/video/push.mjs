@@ -354,12 +354,13 @@ export async function videoPush(plan, flags) {
     if (!replace) fail(`${pages}: ${replacing.length === 1 ? "this page holds" : "these pages hold"} an earlier upload of this preview by appShots. Ask the user whether appShots may take it off and put the new one in its place; then run it again with --replace. Nothing was changed.`);
   }
 
-  // A preview uploaded before, by an earlier push or by one that stopped, is placed without being sent again.
+  // A preview uploaded before, by an earlier push or by one that stopped, is placed without being sent again. One
+  // still awaiting its upload is a reservation whose file never arrived: it is uploaded anew.
   const needed = previews.filter((preview) => targets.some((target) => target.preview === preview && target.action !== "there"));
   /** @type {Map<string, import("../store/library.mjs").Video | null>} */
   const before = new Map();
   for (const preview of needed) {
-    const usable = (await videosNamed(account, library, preview.referenceName)).filter((video) => !BROKEN.has(video.state));
+    const usable = (await videosNamed(account, library, preview.referenceName)).filter((video) => !BROKEN.has(video.state) && video.state !== "AWAITING_UPLOAD");
     before.set(preview.key, usable.find((video) => video.id === state.previews[preview.key]?.video) ?? usable[0] ?? null);
   }
 
