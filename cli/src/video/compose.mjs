@@ -15,11 +15,11 @@ import { keptAudio, musicOf, previewAudio } from "./audio.mjs";
 import { checkCut, checkProbe, previewsIn, readCheckRecord, writeCheckRecord } from "./check.mjs";
 import { runFfmpeg } from "./encode.mjs";
 import { findFfmpeg } from "./ffmpeg.mjs";
-import { FADE, cardArgs, finalCodec, joinArgs, joinPoints, passArgs, sceneArgs, segmentCodec } from "./graph.mjs";
+import { cardArgs, finalCodec, joinArgs, joinPoints, passArgs, sceneArgs, segmentCodec } from "./graph.mjs";
 import { fetchLayers, localLayers } from "./layers.mjs";
 import { FPS, captionBands, num, placement, plateBox, sceneFrames, sceneWindow, toFrames, touchPoints, turnOf } from "./normalise.mjs";
 import { captionLayerId } from "./plan.mjs";
-import { posterFrame } from "./poster.mjs";
+import { posterFrame, posterTime } from "./poster.mjs";
 import { probe } from "./probe.mjs";
 import { readSidecar } from "./record/index.mjs";
 import { composeRemotion } from "./remotion.mjs";
@@ -348,24 +348,19 @@ export async function buildSegments(ctx, { captions }) {
 }
 
 /**
- * When the poster frame is, in seconds of the preview: the plan's time; or a moment into the plan's scene; or, by
- * default, one second after the first scene's caption has faded in, which shows the app and never the intro card.
+ * When the poster frame is, in seconds of the preview, as poster.mjs picks it from where the scenes sit in the cut:
+ * a time chosen with 'video poster --at'; the plan's time, or a moment into its scene that stays within that scene;
+ * or a second after the first scene's caption is in, which shows the app and never a card.
  * @param {any} plan
  * @param {Job[]} jobs
  * @param {number} overlap The transition's frames.
+ * @param {number} [chosen] The time chosen with 'video poster --at'.
  */
-export function posterTime(plan, jobs, overlap) {
+export function posterAt(plan, jobs, overlap, chosen) {
   const { starts, total } = startsOf(jobs, overlap);
-  const poster = plan.poster;
-  let frame;
-  if (poster && typeof poster.time === "number") frame = toFrames(poster.time);
-  else {
-    const at = poster?.scene ? jobs.findIndex((job) => job.kind === "scene" && job.scene === poster.scene) : jobs.findIndex((job) => job.kind === "scene");
-    if (at < 0) fail(`poster.scene in the plan is "${poster?.scene}", which is not one of its scenes.`);
-    const into = typeof poster?.at === "number" ? toFrames(poster.at) : (at === 0 ? 0 : overlap) + toFrames(CAPTION_DELAY + FADE + 1);
-    frame = starts[at] + into;
-  }
-  return Math.min(Math.max(frame, 0), total - 1) / FPS;
+  const captioned = new Set((plan.scenes ?? []).filter(hasCaption).map((/** @type {any} */ scene) => scene.id));
+  const scenes = jobs.flatMap((job, at) => (job.kind === "scene" ? [{ id: job.scene, start: starts[at] / FPS, seconds: job.frames / FPS, caption: captioned.has(job.scene) }] : []));
+  return posterTime({ scenes, total: total / FPS, transition: overlap / FPS, poster: plan.poster, chosen });
 }
 
 /**
@@ -465,8 +460,8 @@ async function composeOne({ ctx, jobs, frames }, { engine, music, name, draft, e
   }
 
   // A poster chosen with 'video poster --at' stays where it was put, on the last frame if the preview got shorter.
-  const chosen = before?.poster?.chosen === true;
-  const at = chosen ? Math.min(Math.max(toFrames(before.poster.seconds), 0), frames - 1) / FPS : posterTime(ctx.plan, jobs, transition.frames);
+  const chosen = before?.poster?.chosen === true && typeof before.poster.seconds === "number";
+  const at = posterAt(ctx.plan, jobs, transition.frames, chosen ? before.poster.seconds : undefined);
   // The plan's poster can change without the video, so a preview that is reused may still need its poster again.
   const posterMoved = !reused || typeof before.poster?.seconds !== "number" || Math.abs(before.poster.seconds - at) >= 0.5 / FPS || !existsSync(posterFile);
   if (posterMoved) {

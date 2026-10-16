@@ -10,7 +10,7 @@ import { useDoubles } from "./video-compose-doubles.mjs";
 const home = await cliHome("video-compose");
 useDoubles();
 const doubles = await import("./video-compose-doubles.mjs");
-const { compose, setParts, posterTime, buildSegments, planSegments } = await import("../../cli/src/video/compose.mjs");
+const { compose, setParts, posterAt, buildSegments, planSegments } = await import("../../cli/src/video/compose.mjs");
 
 /** @type {string} */
 let dir;
@@ -405,20 +405,33 @@ test("the Mac window lies on the plate, and a scene without touches gets no ring
   assert.ok(!notes.some((arg) => arg.endsWith("touch.png")));
 });
 
-test("the poster is a second after the first caption, or where the plan puts it", () => {
+test("the poster is a second after the first caption, or where the plan puts it, and always in a scene's own frames", () => {
   const jobs = /** @type {any[]} */ ([
     { kind: "intro", scene: "intro", frames: 45 },
     { kind: "scene", scene: "inbox", frames: 180 },
     { kind: "scene", scene: "search", frames: 180 },
     { kind: "outro", scene: "outro", frames: 60 },
   ]);
-  assert.equal(posterTime({}, jobs, 12), 89 / 30);
-  assert.equal(posterTime({}, jobs.slice(1), 12), 44 / 30);
-  assert.equal(posterTime({ poster: { scene: "search", at: 2 } }, jobs, 12), (33 + 168 + 60) / 30);
-  assert.equal(posterTime({ poster: { time: 5.5 } }, jobs, 12), 5.5);
+  const scenes = [
+    { id: "inbox", caption: "Inbox" },
+    { id: "search", caption: false },
+  ];
+  // Inbox comes in at 1.1 s; 0.4 s of transition, its caption in by 0.45 s after it, then one second.
+  assert.equal(posterAt({ scenes }, jobs, 12), 89 / 30);
+  assert.equal(posterAt({ scenes }, jobs.slice(1), 12), 56 / 30);
+  // Search has no caption to wait for.
+  assert.equal(posterAt({ scenes, poster: { scene: "search" } }, jobs, 12), 243 / 30);
+  assert.equal(posterAt({ scenes, poster: { scene: "search", at: 2 } }, jobs, 12), (33 + 168 + 60) / 30);
+  assert.equal(posterAt({ scenes, poster: { time: 5.5 } }, jobs, 12), 5.5);
   // 465 frames less three overlaps of 12: the last frame is the 429th.
-  assert.equal(posterTime({ poster: { time: 99 } }, jobs, 12), 428 / 30);
-  assert.throws(() => posterTime({ poster: { scene: "intro" } }, jobs, 12), /poster\.scene in the plan is "intro"/);
+  assert.equal(posterAt({ scenes, poster: { time: 99 } }, jobs, 12), 428 / 30);
+  // A time past its scene's end stays on that scene's last frame, and never shows the next scene or the outro card.
+  assert.equal(posterAt({ scenes, poster: { scene: "inbox", at: 30 } }, jobs, 12), (33 + 180 - 1) / 30);
+  assert.equal(posterAt({ scenes, poster: { scene: "search", at: 7 } }, jobs, 12), (201 + 180 - 1) / 30);
+  // A time chosen with 'video poster --at' wins, on the last frame if the preview is shorter.
+  assert.equal(posterAt({ scenes, poster: { time: 5.5 } }, jobs, 12, 10), 10);
+  assert.equal(posterAt({ scenes }, jobs, 12, 25), 428 / 30);
+  assert.throws(() => posterAt({ scenes, poster: { scene: "intro" } }, jobs, 12), /poster\.scene is "intro", and the plan has no scene of that id\. Its scenes are inbox, search/);
 });
 
 test("for Remotion, the scenes are built without captions or touches, and its render gets the last pass", async () => {

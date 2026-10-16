@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
+import { fail } from "../../cli/src/fail.mjs";
 
 let hooked = false;
 
@@ -180,6 +181,25 @@ export function writeCheckRecord(file, record) {
   const whole = { version: 1, file: path.basename(file), bytes: statSync(file).size, ...record, checkedAt: new Date().toISOString() };
   writeFileSync(checkFileOf(file), `${JSON.stringify(whole, null, 2)}\n`);
   return whole;
+}
+
+/**
+ * The poster's time among the scenes of the cut, as poster.mjs places it: a chosen time, the plan's time, or a
+ * moment into a scene that stays within it, by default a second after its caption is in.
+ * @param {{ scenes: Array<{ id: string, start: number, seconds: number, caption?: boolean }>, total: number, transition?: number, poster?: any, chosen?: number }} cut
+ */
+export function posterTime({ scenes, total, transition = 0, poster, chosen }) {
+  const last = Math.max(0, (Math.round(total * 30) - 1) / 30);
+  const onFrame = (/** @type {number} */ seconds) => Math.min(last, Math.round(Math.max(0, seconds) * 30) / 30);
+  if (chosen !== undefined) return onFrame(chosen);
+  if (poster && "time" in poster) return onFrame(poster.time);
+  const scene = poster && "scene" in poster ? scenes.find((each) => each.id === poster.scene) : scenes[0];
+  if (!scene) {
+    if (poster && "scene" in poster) fail(`poster.scene is "${poster.scene}", and the plan has no scene of that id. Its scenes are ${scenes.map((each) => each.id).join(", ")}.`);
+    return 0;
+  }
+  const into = poster && "scene" in poster && poster.at !== undefined ? poster.at : (scene.caption ? transition + 0.45 : transition) + 1;
+  return onFrame(Math.min(scene.start + Math.max(0, into), scene.start + scene.seconds - 1 / 30));
 }
 
 /** @param {string} file @param {number} seconds @param {string} out @param {{ ffmpeg: string }} tools */
