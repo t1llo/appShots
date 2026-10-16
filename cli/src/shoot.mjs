@@ -1,6 +1,7 @@
 import { hasLanguage, projectRoute, request } from "./api.mjs";
 import { giveBack } from "./args.mjs";
 import { capture } from "./capture.mjs";
+import { shootPlan } from "./capture-plan/run.mjs";
 import { connectedDevices } from "./capture/device.mjs";
 import { macWindow } from "./capture/mac.mjs";
 import { withCleanStatusBar } from "./capture/sim.mjs";
@@ -78,7 +79,10 @@ async function settleSource(args) {
  */
 export async function shoot(args, { keys } = {}) {
   const { flags } = args;
-  if (!keys && !process.stdin.isTTY) fail("'appshots shoot' is for a person at the Terminal: it waits for a key before each screenshot. An agent takes them with 'appshots capture'.");
+  // A plan, or what fastlane wrote, needs nobody at the Terminal.
+  if (flags.plan !== undefined || flags.fastlane !== undefined) return shootPlan(args);
+  for (const flag of ["only", "again", "dry-run"]) if (flags[flag] !== undefined) fail(`--${flag} goes with a capture plan, as in: appshots shoot --plan appshots.capture.json --${flag}`);
+  if (!keys && !process.stdin.isTTY) fail("'appshots shoot' is for a person at the Terminal: it waits for a key before each screenshot. An agent takes them with 'appshots capture', or all of them at once with 'appshots shoot --plan appshots.capture.json'.");
   if (flags.web) fail("'appshots shoot' captures what a person has opened, and a web page is drawn without a window. Take each page by its address: appshots capture --web <address> --name <name> --project <project>");
   const project = args.positional[0];
   if (!project || (args.positional.length < 2 && Object.keys(args.borrowed).length === 0)) fail(USAGE);

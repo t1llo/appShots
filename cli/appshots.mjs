@@ -35,7 +35,8 @@ const BOOLEAN_FLAGS = new Set([
 	"dry-run",
 	"add-languages",
 	"builds",
-	"create"
+	"create",
+	"again"
 ]);
 /**
 * Flags whose value may be left out: a bare --sim or --device is the only one there is, a bare --mac lists the
@@ -1282,7 +1283,7 @@ const simulatorLabel = (sim) => `${sim.name}${sim.name === sim.model ? "" : `, a
 * Null for any other size, which the Studio scales to the displays of an export all the same.
 * @param {{ width: number, height: number } | null} screen
 */
-function displayOf(screen) {
+function displayOf$1(screen) {
 	for (const [folder, [, width, height]] of Object.entries(STORE_DISPLAYS)) {
 		const [family, inches] = folder.split("-");
 		if (storeSized(screen, [width, height]) && family !== "mac") return `the ${inches}-inch ${family === "ipad" ? "iPad" : "iPhone"} display`;
@@ -1293,7 +1294,7 @@ function displayOf(screen) {
 /** @param {{ screen: { width: number, height: number } | null }} sim */
 const screenLabel = (sim) => {
 	if (!sim.screen) return "";
-	const display = displayOf(sim.screen);
+	const display = displayOf$1(sim.screen);
 	return `, screenshots ${sim.screen.width}x${sim.screen.height} ${display ? `for ${display}` : "(no store display has this size)"}`;
 };
 /**
@@ -2291,7 +2292,7 @@ function toolkitLines(kit, simulator, xcode) {
 //#endregion
 //#region cli/src/build.mjs
 /** @param {string} project */
-const container = (project) => [project.endsWith(".xcworkspace") ? "-workspace" : "-project", project];
+const container$1 = (project) => [project.endsWith(".xcworkspace") ? "-workspace" : "-project", project];
 /** @param {string | true | undefined} given */
 function findXcodeProject(given) {
 	if (typeof given === "string" && /\.(xcworkspace|xcodeproj)\/?$/.test(given)) {
@@ -2315,7 +2316,7 @@ async function schemesOf(project) {
 	const result = await xcodebuild([
 		"-list",
 		"-json",
-		...container(project)
+		...container$1(project)
 	]);
 	if (result.status !== 0) fail(`xcodebuild could not list the schemes of ${path.basename(project)}:\n${complaint(result)}`);
 	const start = result.stdout.search(/^\{/m);
@@ -2378,7 +2379,7 @@ async function build(project, scheme, simulator, fresh) {
 	const name = `${slugify(path.parse(project).name)}-${createHash("sha256").update(project).digest("hex").slice(0, 8)}`;
 	const log = path.join(BUILD_CACHE, `${name}.log`);
 	const target = [
-		...container(project),
+		...container$1(project),
 		"-scheme",
 		scheme,
 		"-configuration",
@@ -3839,6 +3840,1248 @@ async function setup(url, flags) {
 	if (!command) console.log(`To type 'appshots' yourself, add this to ~/.zshrc: alias appshots='node ${tilde(cli)}'`);
 }
 //#endregion
+//#region cli/src/capture-plan/displays.mjs
+/** @typedef {"iphone" | "duo" | "ipad"} PlanKind */
+/**
+* The displays a capture plan takes screenshots for, by the names the server gives its export sizes: the family a
+* screenshot of each is filed under, and the sizes simulators of it take screenshots at, upright. The first size is
+* the one the server exports. The same as the models in src/domain/devices.ts, which a test keeps them alike with.
+* A Mac app is not in a simulator, so the Mac is not here.
+* @type {Record<string, { kind: PlanKind, sizes: Array<[number, number]> }>}
+*/
+const PLAN_DISPLAYS = {
+	"iphone-6.9": {
+		kind: "iphone",
+		sizes: [
+			[1320, 2868],
+			[1290, 2796],
+			[1260, 2736]
+		]
+	},
+	"iphone-6.3": {
+		kind: "iphone",
+		sizes: [[1206, 2622], [1179, 2556]]
+	},
+	"iphone-6.5": {
+		kind: "iphone",
+		sizes: [
+			[1284, 2778],
+			[1242, 2688],
+			[828, 1792]
+		]
+	},
+	"iphone-6.1": {
+		kind: "iphone",
+		sizes: [
+			[1170, 2532],
+			[1125, 2436],
+			[1080, 2340]
+		]
+	},
+	"iphone-5.5": {
+		kind: "iphone",
+		sizes: [[1242, 2208], [1080, 1920]]
+	},
+	"iphone-4.7": {
+		kind: "iphone",
+		sizes: [[750, 1334]]
+	},
+	"iphone-4": {
+		kind: "iphone",
+		sizes: [[640, 1136], [640, 1096]]
+	},
+	"iphone-3.5": {
+		kind: "iphone",
+		sizes: [[640, 960], [640, 920]]
+	},
+	"iphone-duo": {
+		kind: "duo",
+		sizes: [[2007, 2853]]
+	},
+	"iphone-duo-cover": {
+		kind: "duo",
+		sizes: [[1398, 2034]]
+	},
+	"ipad-13": {
+		kind: "ipad",
+		sizes: [[2064, 2752], [2048, 2732]]
+	},
+	"ipad-11": {
+		kind: "ipad",
+		sizes: [
+			[1668, 2420],
+			[1488, 2266],
+			[1668, 2388],
+			[1640, 2360]
+		]
+	},
+	"ipad-12.9": {
+		kind: "ipad",
+		sizes: [[2048, 2732]]
+	},
+	"ipad-10.5": {
+		kind: "ipad",
+		sizes: [[1668, 2224], [1620, 2160]]
+	},
+	"ipad-9.7": {
+		kind: "ipad",
+		sizes: [
+			[1536, 2048],
+			[1536, 2008],
+			[768, 1024],
+			[768, 1004]
+		]
+	}
+};
+/** A family stands for the display it is designed at. */
+const FAMILY_DISPLAYS = {
+	iphone: "iphone-6.9",
+	duo: "iphone-duo",
+	ipad: "ipad-13"
+};
+/**
+* The display a screenshot of this size is from, upright or on its side. The first that has it wins, which is the
+* current hardware where two share a size. Null for a size no display has.
+* @param {number} width
+* @param {number} height
+*/
+function displayOfSize(width, height) {
+	const [short, long] = width < height ? [width, height] : [height, width];
+	return Object.keys(PLAN_DISPLAYS).find((key) => PLAN_DISPLAYS[key].sizes.some(([w, h]) => w === short && h === long)) ?? null;
+}
+/**
+* How far down a display's sizes a screen of this size is, upright or on its side: 0 is the size the server exports,
+* -1 none of them.
+* @param {{ width: number, height: number } | null} screen
+* @param {string} display
+*/
+function sizeRank(screen, display) {
+	if (!screen) return -1;
+	const [short, long] = screen.width < screen.height ? [screen.width, screen.height] : [screen.height, screen.width];
+	return PLAN_DISPLAYS[display].sizes.findIndex(([w, h]) => w === short && h === long);
+}
+/**
+* The width and height a PNG gives in its header, or null for a file that is no PNG.
+* @param {string} file
+*/
+function pngSize$1(file) {
+	const head = Buffer.alloc(24);
+	const fd = openSync(file, "r");
+	try {
+		readSync(fd, head, 0, 24, 0);
+	} finally {
+		closeSync(fd);
+	}
+	if (head.readUInt32BE(0) !== 2303741511 || head.toString("latin1", 12, 16) !== "IHDR") return null;
+	return {
+		width: head.readUInt32BE(16),
+		height: head.readUInt32BE(20)
+	};
+}
+//#endregion
+//#region cli/src/capture-plan/jobs.mjs
+/** @typedef {Plan} Plan */
+/** @typedef {PlanDevice} PlanDevice */
+/** @typedef {PlanScreen} PlanScreen */
+/** @typedef {Simulator} Simulator */
+/**
+* The language of a project a code stands for, as the server decides it: the same code, else the project's one of
+* that language, else the bare language of a code with a region. Null when the project has none of them.
+* @param {string[]} locales
+* @param {string} wanted
+*/
+function projectLocale(locales, wanted) {
+	const lower = wanted.toLowerCase();
+	const language = (code) => code.toLowerCase().split("-")[0];
+	return locales.find((code) => code.toLowerCase() === lower) ?? locales.find((code) => language(code) === lower) ?? locales.find((code) => code.toLowerCase() === language(wanted)) ?? null;
+}
+/**
+* The languages a run takes, as the project spells them: the plan's, or the project's when it lists none, and of
+* those only the ones --lang names.
+* @param {Plan} plan
+* @param {string} project
+* @param {string[]} locales The project's.
+* @param {string | true | undefined} only The value of --lang: codes, separated by commas.
+*/
+function runLocales(plan, project, locales, only) {
+	const wanted = plan.locales ?? locales;
+	const resolved = wanted.map((code) => {
+		const found = projectLocale(locales, code);
+		if (!found) fail(`Project ${project} has no language "${code}", which the plan lists. Its languages are ${locales.join(", ")}. Add it first: in the Studio under Languages, or with the update_project tool.`);
+		return found;
+	});
+	const twice = resolved.find((code, at) => resolved.indexOf(code) !== at);
+	if (twice) fail(`The plan's languages ${wanted.filter((code, at) => resolved[at] === twice).join(" and ")} are both ${twice} in project ${project}. List it once.`);
+	if (only === void 0) return resolved;
+	if (typeof only !== "string") fail(`--lang needs one or more of the plan's languages, as in --lang ${resolved.slice(0, 2).join(",")}.`);
+	const picked = only.split(",").map((code) => {
+		const found = code.trim() ? projectLocale(resolved, code.trim()) : null;
+		if (!found) fail(`--lang ${code.trim()}: the plan takes ${resolved.join(", ")}.`);
+		return found;
+	});
+	return resolved.filter((code) => picked.includes(code));
+}
+/**
+* The screens a run takes: all of the plan's, or the ones --only names.
+* @param {Plan} plan
+* @param {string | true | undefined} only
+*/
+function runScreens(plan, only) {
+	if (only === void 0) return plan.screens;
+	if (typeof only !== "string") fail(`--only needs the ids of screens, separated by commas, as in --only ${plan.screens.slice(0, 2).map((screen) => screen.id).join(",")}.`);
+	const ids = only.split(",").map((id) => id.trim()).filter(Boolean);
+	const unknown = ids.filter((id) => !plan.screens.some((screen) => screen.id === id));
+	if (unknown.length > 0) fail(`--only ${unknown.join(",")}: the plan has no such screen. Its screens are ${plan.screens.map((screen) => screen.id).join(", ")}.`);
+	return plan.screens.filter((screen) => ids.includes(screen.id));
+}
+/** @param {[number, number]} size */
+const sizeLabel = ([width, height]) => `${width}x${height}`;
+/**
+* The simulator a plan's device is taken on: the one it names, or else one whose screenshots have the display's
+* size, the size the server exports first, then the newest iOS, one that runs already, and the newest model.
+* @param {PlanDevice} device
+* @param {Simulator[]} simulators
+* @returns {Simulator}
+*/
+function pickSimulator(device, simulators) {
+	const { display, kind } = device;
+	const sizes = PLAN_DISPLAYS[display].sizes;
+	if (device.sim) {
+		const named = choose(simulators, device.sim, "simulator", "the plan's devices");
+		if (named.screen && sizeRank(named.screen, display) === -1) fail(`${named.name} takes ${named.screen.width}x${named.screen.height} screenshots, which are not ${display}'s (${sizes.map(sizeLabel).join(", ")}). Name a simulator of that size in the plan, or another display.`);
+		return named;
+	}
+	const number = (sim) => Number(sim.model.replace(/[\d.]+-inch/, "").match(/\d+/)?.[0] ?? 0);
+	const [best] = simulators.filter((sim) => sizeRank(sim.screen, display) !== -1).sort((a, b) => sizeRank(a.screen, display) - sizeRank(b.screen, display) || b.os.localeCompare(a.os, void 0, { numeric: true }) || Number(b.booted) - Number(a.booted) || number(b) - number(a) || Number(b.name === b.model) - Number(a.name === a.model) || a.name.localeCompare(b.name));
+	if (best) return best;
+	const family = Object.keys(FAMILY_DISPLAYS).find((each) => FAMILY_DISPLAYS[each] === display);
+	const named = family ? recommendedSimulator(simulators, family) : null;
+	if (named && !named.fallback) return named;
+	const hint = family ? `'appshots boot${SIM_KINDS[family].flag} --create' adds one when this Xcode has the model.` : `Add one in Xcode under Window > Devices and Simulators, or list ${kind} instead: the server scales the screenshots of ${FAMILY_DISPLAYS[kind]} to ${display}.`;
+	fail(`No simulator takes ${display} screenshots (${sizes.map(sizeLabel).join(" or ")}). ${hint}`);
+}
+/**
+* @typedef {object} Job
+* @property {PlanDevice} device
+* @property {"light" | "dark" | null} appearance
+* @property {string} locale The project's code of the language.
+* @property {PlanScreen} screen
+* @property {string} name What the screenshot is called in the project.
+* @property {string} file Where it is saved.
+* @property {boolean} skip Whether the project has it already, so this run leaves it.
+*/
+/**
+* Every screenshot a run is made of, in the order it takes them: device by device, so each simulator is set up
+* once; within one, appearance by appearance, as switching it redraws everything; then language by language and
+* screen by screen. The first appearance keeps the screen's own name and any other adds its own to it, as in home
+* and home-dark. What the project has already under that name, family and language is skipped, unless `again`.
+* @param {Plan} plan
+* @param {{ screens: PlanScreen[], locales: string[], primary: string, shots: Array<{ name: string, device: string, locale?: string }>, again: boolean }} run
+* @returns {Job[]}
+*/
+function planJobs(plan, { screens, locales, primary, shots, again }) {
+	const appearances = plan.appearances ?? [null];
+	const inProject = (name, kind, locale) => shots.some((shot) => shot.name === name && shot.device === kind && (shot.locale ?? primary) === locale);
+	/** @type {Job[]} */
+	const jobs = [];
+	for (const device of plan.devices) for (const [index, appearance] of appearances.entries()) for (const locale of locales) for (const screen of screens) {
+		if (screen.devices && !screen.devices.includes(device.display)) continue;
+		const name = index === 0 ? screen.id : `${screen.id}-${appearance}`;
+		const file = path.join(plan.out, locale, device.display, `${name}.png`);
+		jobs.push({
+			device,
+			appearance,
+			locale,
+			screen,
+			name,
+			file,
+			skip: !again && inProject(name, device.kind, locale)
+		});
+	}
+	return jobs;
+}
+/**
+* What the app is started with for a language, as 'appshots launch --lang' does it.
+* @param {string} locale
+*/
+const languageArguments = (locale) => [
+	"-AppleLanguages",
+	`(${locale})`,
+	"-AppleLocale",
+	locale.replaceAll("-", "_")
+];
+/**
+* The app a screen is in: its own, or the plan's. Undefined for a link opened in whatever the simulator opens it
+* with, and for a UI test, which starts the app itself.
+* @param {Plan} plan
+* @param {PlanScreen} screen
+* @param {string} [built] The bundle id of the app the plan built, when it names none.
+*/
+const screenApp = (plan, screen, built) => screen.uitest ? void 0 : screen.app ?? plan.app.bundleId ?? (plan.app.xcode ? built ?? "<the app the plan builds>" : void 0);
+/**
+* How a job reaches its screen, in words, for --dry-run and for the line before each capture.
+* @param {Plan} plan
+* @param {Job} job
+* @param {string} [built]
+*/
+function reachLabel(plan, job, built) {
+	const { screen } = job;
+	if (screen.uitest) return `run the UI test ${screen.uitest}`;
+	const app = screenApp(plan, screen, built);
+	const steps = [];
+	if (app) steps.push(`launch ${[
+		app,
+		...screen.app ? [] : plan.app.args,
+		...screen.args
+	].join(" ")}`);
+	if (screen.url) steps.push(`open ${screen.url}${app ? "" : " in the simulator's own language"}`);
+	return steps.join(", then ");
+}
+//#endregion
+//#region cli/src/capture-plan/fastlane.mjs
+/** @typedef {Config} Config */
+/**
+* Splits the name fastlane snapshot gives a file into the simulator it was taken on and the name the UI test gave
+* it: "iPhone 17 Pro Max-01Home" is iPhone 17 Pro Max and 01Home. The first hyphen ends the simulator's name, apart
+* from the one in a size such as "13-inch". A name that starts with no device is the screenshot's name as it is.
+* @param {string} base The file name without .png.
+*/
+function splitSnapshotName(base) {
+	const match = /^((?:iPhone|iPad)\b.*?)-(?!inch\b)(.+)$/i.exec(base);
+	return match ? {
+		device: match[1],
+		name: match[2]
+	} : {
+		device: null,
+		name: base
+	};
+}
+/**
+* The family a simulator's name says it is, for a picture whose size no display has.
+* @param {string | null} device
+* @returns {PlanKind | null}
+*/
+const kindOfName = (device) => !device ? null : /^iPad/i.test(device) ? "ipad" : /^iPhone.*\bDuo\b/i.test(device) ? "duo" : /^iPhone/i.test(device) ? "iphone" : null;
+/**
+* The name a picture goes by in the project: the one the UI test gave it, as a screenshot name. Where the plan has
+* a screen of that name once its leading number is gone, as home for 01Home, it is that screen.
+* @param {string} given
+* @param {string[] | null} ids The plan's screens.
+*/
+function shotName(given, ids) {
+	const name = slugify(given);
+	const bare = name.replace(/^\d+[-_]?/, "");
+	return ids && !ids.includes(name) && ids.includes(bare) ? bare : name;
+}
+/**
+* @typedef {object} Imported
+* @property {string} file
+* @property {string} relative The file as it is in the fastlane folder, for what is printed.
+* @property {string} name The name it is uploaded under.
+* @property {string | null} display Null for a size no display has, filed by the simulator's name.
+* @property {PlanKind} kind
+* @property {string} locale The project's code of its language.
+*/
+/**
+* What fastlane snapshot wrote, as the project would take it: a folder per language, such as en-US, and in each a
+* PNG per simulator and screen, named "<simulator>-<name>.png". The size of a picture decides its display, and the
+* simulator's name its family where no display has that size. Pictures frameit made, ones of no iPhone or iPad and
+* a language the project lacks are left out, and so is all but one of the pictures that come out under one name,
+* family and language, as a project keeps one of each: the one of the display listed first, which is the larger.
+* @param {string} dir
+* @param {string[]} locales The project's languages, or those of them the run takes.
+* @param {{ only?: string[] | null, ids?: string[] | null }} [options] only: the names to take; ids: the plan's screens.
+*/
+function fastlaneShots(dir, locales, { only = null, ids = null } = {}) {
+	if (!existsSync(dir) || !statSync(dir).isDirectory()) fail(`No such folder: ${dir}. --fastlane takes the folder fastlane snapshot writes into, usually fastlane/screenshots.`);
+	const folders = readdirSync(dir).filter((name) => /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(name) && statSync(path.join(dir, name)).isDirectory()).sort();
+	if (folders.length === 0) fail(`${dir} has no folder per language, such as en-US. fastlane snapshot writes into <output>/<language>/; point --fastlane at the folder that holds those, usually fastlane/screenshots.`);
+	/** @type {Imported[]} */
+	const found = [];
+	/** @type {Array<{ relative: string, why: string }>} */
+	const left = [];
+	for (const folder of folders) {
+		const locale = projectLocale(locales, folder);
+		const files = readdirSync(path.join(dir, folder)).filter((name) => /\.png$/i.test(name) && !name.startsWith(".") && !/_framed\.png$/i.test(name)).sort((a, b) => a.localeCompare(b, void 0, { numeric: true }));
+		for (const entry of files) {
+			const relative = path.join(folder, entry);
+			if (!locale) {
+				left.push({
+					relative,
+					why: `the run takes no language ${folder}, only ${locales.join(", ")}`
+				});
+				continue;
+			}
+			const file = path.join(dir, relative);
+			const parts = splitSnapshotName(path.parse(entry).name);
+			const size = pngSize$1(file);
+			const display = size ? displayOfSize(size.width, size.height) : null;
+			const kind = display ? PLAN_DISPLAYS[display].kind : size ? kindOfName(parts.device) : null;
+			if (!size || !kind) {
+				left.push({
+					relative,
+					why: size ? `${size.width}x${size.height} is the size of no iPhone or iPad display` : "it is not a PNG"
+				});
+				continue;
+			}
+			const name = shotName(parts.name, ids);
+			if (only && !only.includes(name)) continue;
+			found.push({
+				file,
+				relative,
+				name,
+				display,
+				kind,
+				locale
+			});
+		}
+	}
+	const order = (shot) => shot.display ? Object.keys(PLAN_DISPLAYS).indexOf(shot.display) : Infinity;
+	/** @type {Map<string, Imported>} */
+	const kept = new Map();
+	for (const shot of found) {
+		const key = `${shot.name} ${shot.kind} ${shot.locale}`;
+		const other = kept.get(key);
+		const why = (first) => `${first.relative} is ${shot.name} in ${shot.locale} already, and a project keeps one of each per family`;
+		if (other && order(other) <= order(shot)) left.push({
+			relative: shot.relative,
+			why: why(other)
+		});
+		else {
+			if (other) left.push({
+				relative: other.relative,
+				why: why(shot)
+			});
+			kept.set(key, shot);
+		}
+	}
+	const chosen = new Set(kept.values());
+	return {
+		shots: found.filter((shot) => chosen.has(shot)),
+		left
+	};
+}
+/**
+* Uploads what fastlane snapshot wrote, each under its name, family and language, in place of what the project has.
+* @param {Config} config
+* @param {{ project: string, locales: string[], dir: string, only: string[] | null, ids: string[] | null, dryRun: boolean }} options
+*/
+async function importFastlane(config, { project, locales, dir, only, ids, dryRun }) {
+	const { shots, left } = fastlaneShots(dir, locales, {
+		only,
+		ids
+	});
+	for (const shot of shots) console.log(`${shot.relative} -> ${shot.name} (${[shot.display ?? shot.kind, shot.locale].join(", ")})`);
+	for (const { relative, why } of left) console.log(`  ! Left out ${relative}: ${why}.`);
+	const count = (n) => `${n} ${n === 1 ? "screenshot" : "screenshots"}`;
+	if (shots.length === 0) fail(`Nothing in ${dir} to import${only ? ` named ${only.join(", ")}` : ""}.`);
+	if (dryRun) return console.log(`Would upload ${count(shots.length)} to ${project}. Nothing was uploaded (--dry-run).`);
+	await pool(shots, 4, (shot) => upload(config, project, shot.file, shot.name, shot.kind, shot.locale));
+	console.log(`Imported ${count(shots.length)} from fastlane into ${project}.`);
+}
+//#endregion
+//#region cli/src/capture-plan/read.mjs
+/** The file `shoot --plan` reads when it is not given another. */
+const PLAN_FILE = "appshots.capture.json";
+const KIND_LABELS = {
+	iphone: "an iPhone",
+	duo: "an iPhone Duo",
+	ipad: "an iPad"
+};
+const ID = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+const LOCALE = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/;
+const BUNDLE_ID = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+const APPEARANCES = ["light", "dark"];
+const PLAN_FIELDS = [
+	"$schema",
+	"version",
+	"project",
+	"app",
+	"devices",
+	"locales",
+	"appearances",
+	"statusBar",
+	"wait",
+	"out",
+	"screens"
+];
+const APP_FIELDS = [
+	"bundleId",
+	"xcode",
+	"scheme",
+	"args"
+];
+const SCREEN_FIELDS = [
+	"id",
+	"app",
+	"launch",
+	"uitest",
+	"wait",
+	"devices"
+];
+/**
+* @typedef {object} PlanDevice
+* @property {string} display A key of PLAN_DISPLAYS.
+* @property {PlanKind} kind
+* @property {string} [sim] The simulator the plan names for it, by name or udid.
+*
+* @typedef {object} PlanScreen
+* @property {string} id What the screenshot is called, and what slides place it by.
+* @property {string} [app] The bundle id of the app it is in, where that is not the plan's.
+* @property {string[]} args Launch arguments, after the plan's own.
+* @property {string} [url] A link opened once the app runs, or in the simulator when no app is started.
+* @property {string} [uitest] A UI test that brings the screen up, as Target/Class/method.
+* @property {number | null} wait Seconds to wait instead of watching the screen come to rest.
+* @property {string[] | null} devices The displays it is taken on, when not all of the plan's.
+*
+* @typedef {object} Plan
+* @property {string} file As it was named, for what is printed.
+* @property {string} dir The folder of the file, which the paths in it start from.
+* @property {string} [project]
+* @property {{ bundleId?: string, xcode?: string, scheme?: string, args: string[] }} app
+* @property {PlanDevice[]} devices
+* @property {string[] | null} locales Null for every language of the project.
+* @property {Array<"light" | "dark"> | null} appearances Null to leave the simulator's as it is.
+* @property {boolean} cleanStatusBar
+* @property {number | null} wait
+* @property {string} out
+* @property {PlanScreen[]} screens
+*/
+/** @param {unknown} value */
+const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+/** @param {unknown} value */
+const isSeconds = (value) => typeof value === "number" && value >= 0 && value <= 600;
+/**
+* A list of strings, or the problems with it, each named by where it is.
+* @param {unknown} value
+* @param {string} where
+* @param {string[]} errors
+*/
+function strings(value, where, errors) {
+	if (!Array.isArray(value)) {
+		errors.push(`${where}: has to be a list of strings, as in ["-appshots", "stats"].`);
+		return [];
+	}
+	const list = [];
+	for (const [at, each] of value.entries()) if (typeof each === "string") list.push(each);
+	else errors.push(`${where}[${at}]: has to be a string.`);
+	return list;
+}
+/**
+* The display a word of a plan stands for: a family's for iphone, duo or ipad, else the word itself.
+* @param {string} word
+*/
+const displayOf = (word) => {
+	const lower = word.toLowerCase();
+	return Object.hasOwn(FAMILY_DISPLAYS, lower) ? FAMILY_DISPLAYS[lower] : lower;
+};
+/**
+* Checks what a plan file holds and fills in what it leaves out. Every problem is named by where it is in the
+* file, as in `screens[2].launch.url`, and all of them are said at once.
+* @param {unknown} json
+* @param {string} file
+* @returns {{ plan: Plan, errors: string[] }}
+*/
+function checkPlan(json, file) {
+	/** @type {string[]} */
+	const errors = [];
+	const dir = path.dirname(path.resolve(file));
+	/** @type {Plan} */
+	const plan = {
+		file,
+		dir,
+		app: { args: [] },
+		devices: [],
+		locales: null,
+		appearances: null,
+		cleanStatusBar: true,
+		wait: null,
+		out: path.join(dir, "raw-shots"),
+		screens: []
+	};
+	if (!isObject(json)) return {
+		plan,
+		errors: ["The plan has to be a JSON object, as in { \"project\": \"<id>\", \"app\": { \"bundleId\": \"com.example.app\" }, \"screens\": [{ \"id\": \"home\" }] }."]
+	};
+	const given = json;
+	for (const key of Object.keys(given)) if (!PLAN_FIELDS.includes(key)) errors.push(`${key}: a plan has no such field. It has ${PLAN_FIELDS.slice(1).join(", ")}.`);
+	if (given.version !== void 0 && given.version !== 1) errors.push("version: has to be 1, the only version there is.");
+	if (given.project !== void 0) {
+		if (typeof given.project === "string" && given.project) plan.project = given.project;
+		else errors.push("project: needs the id of an appShots project, as a string. 'appshots projects' lists them.");
+	}
+	if (given.app !== void 0) {
+		if (!isObject(given.app)) errors.push("app: has to be an object, as in { \"bundleId\": \"com.example.app\" }.");
+		else {
+			for (const key of Object.keys(given.app)) if (!APP_FIELDS.includes(key)) errors.push(`app.${key}: app has no such field. It has ${APP_FIELDS.join(", ")}.`);
+			const { bundleId, xcode, scheme, args } = given.app;
+			if (bundleId !== void 0) {
+				if (typeof bundleId === "string" && BUNDLE_ID.test(bundleId)) plan.app.bundleId = bundleId;
+				else errors.push("app.bundleId: needs the app's bundle id, as in com.example.app. 'appshots check' lists the apps installed on each booted simulator.");
+			}
+			if (xcode !== void 0) {
+				if (typeof xcode === "string" && xcode) plan.app.xcode = path.resolve(dir, xcode);
+				else errors.push("app.xcode: needs the path of the Xcode workspace or project, or of the folder it is in, from the plan's folder, as in \".\" or \"ios/App.xcworkspace\".");
+			}
+			if (scheme !== void 0) {
+				if (typeof scheme === "string" && scheme) plan.app.scheme = scheme;
+				else errors.push("app.scheme: needs the name of the scheme that builds the app.");
+			}
+			if (args !== void 0) plan.app.args = strings(args, "app.args", errors);
+			if (scheme !== void 0 && xcode === void 0) errors.push("app.scheme: goes with app.xcode, the project it is a scheme of.");
+		}
+	}
+	const devices = given.devices === void 0 ? ["iphone"] : given.devices;
+	if (!Array.isArray(devices) || devices.length === 0) errors.push("devices: needs a list of displays, as in [\"iphone\", \"ipad\"]. Left out, it is [\"iphone\"].");
+	else {
+		/** @type {Map<string, string>} */
+		const families = new Map();
+		for (const [at, entry] of devices.entries()) {
+			const where = `devices[${at}]`;
+			const word = typeof entry === "string" ? entry : isObject(entry) ? entry.display : void 0;
+			if (isObject(entry)) {
+				for (const key of Object.keys(entry)) if (!["display", "sim"].includes(key)) errors.push(`${where}.${key}: a device has no such field. It has display and sim.`);
+				if (entry.sim !== void 0 && (typeof entry.sim !== "string" || !entry.sim)) errors.push(`${where}.sim: needs the name or udid of a simulator, as 'appshots devices' and 'appshots check' list them.`);
+			}
+			if (typeof word !== "string") {
+				errors.push(`${where}: needs a display, as in "iphone" or { "display": "ipad-13", "sim": "iPad Pro 13-inch (M5)" }.`);
+				continue;
+			}
+			const display = displayOf(word);
+			if (display === "mac" || display.startsWith("mac-")) {
+				errors.push(`${where}: a plan takes its screens in simulators. A Mac app's window is captured with 'appshots capture --mac <app>'.`);
+				continue;
+			}
+			if (!Object.hasOwn(PLAN_DISPLAYS, display)) {
+				errors.push(`${where}: "${word}" is no display. Use iphone, duo or ipad, or one of ${Object.keys(PLAN_DISPLAYS).join(", ")}.`);
+				continue;
+			}
+			const { kind } = PLAN_DISPLAYS[display];
+			const before = families.get(kind);
+			if (before) {
+				errors.push(`${where}: ${display} is ${KIND_LABELS[kind]} display, like ${before}. A project keeps one screenshot of each name per family and language, and the server scales it to the family's other sizes, so list one of them.`);
+				continue;
+			}
+			families.set(kind, `${display} in devices[${at}]`);
+			plan.devices.push({
+				display,
+				kind,
+				...isObject(entry) && typeof entry.sim === "string" && entry.sim ? { sim: entry.sim } : {}
+			});
+		}
+	}
+	if (given.locales !== void 0) {
+		if (!Array.isArray(given.locales) || given.locales.length === 0) errors.push("locales: needs a list of language codes, as in [\"en\", \"de\", \"pt-BR\"]. Left out, it is every language of the project.");
+		else {
+			plan.locales = [];
+			for (const [at, code] of given.locales.entries()) if (typeof code !== "string" || !LOCALE.test(code)) errors.push(`locales[${at}]: needs a language code, such as de or pt-BR.`);
+			else if (plan.locales.some((other) => other.toLowerCase() === code.toLowerCase())) errors.push(`locales[${at}]: ${code} is in the list already.`);
+			else plan.locales.push(code);
+		}
+	}
+	if (given.appearances !== void 0) {
+		const list = typeof given.appearances === "string" ? [given.appearances] : given.appearances;
+		if (!Array.isArray(list) || list.length === 0 || list.some((each) => !APPEARANCES.includes(each))) errors.push("appearances: needs \"light\", \"dark\" or both, as in [\"light\", \"dark\"]. Left out, the simulator stays as it is.");
+		else if (new Set(list).size !== list.length) errors.push("appearances: names one twice.");
+		else plan.appearances = list;
+	}
+	if (given.statusBar !== void 0) {
+		if (given.statusBar === "clean" || given.statusBar === "as-is") plan.cleanStatusBar = given.statusBar === "clean";
+		else errors.push("statusBar: is \"clean\", for 9:41 with full battery and signal (the default), or \"as-is\".");
+	}
+	if (given.wait !== void 0) {
+		if (isSeconds(given.wait)) plan.wait = given.wait;
+		else errors.push("wait: needs a number of seconds, as in 3. Left out, each screen is taken once it has stopped changing.");
+	}
+	if (given.out !== void 0) {
+		if (typeof given.out === "string" && given.out) plan.out = path.resolve(dir, given.out);
+		else errors.push("out: needs the folder the screenshots are saved in, from the plan's folder.");
+	}
+	if (!Array.isArray(given.screens) || given.screens.length === 0) errors.push("screens: needs a list of screens, as in [{ \"id\": \"home\" }, { \"id\": \"stats\", \"launch\": [\"-appshots\", \"stats\"] }].");
+	else {
+		/** @type {Map<string, string>} */
+		const ids = new Map();
+		for (const [at, entry] of given.screens.entries()) {
+			const screen = checkScreen(entry, `screens[${at}]`, plan, errors);
+			if (!screen) continue;
+			const first = ids.get(screen.id);
+			if (first) errors.push(`screens[${at}].id: "${screen.id}" is the id of ${first} already.`);
+			else {
+				ids.set(screen.id, `screens[${at}]`);
+				plan.screens.push(screen);
+			}
+		}
+	}
+	return {
+		plan,
+		errors
+	};
+}
+/**
+* @param {unknown} entry
+* @param {string} where
+* @param {Plan} plan
+* @param {string[]} errors
+* @returns {PlanScreen | null}
+*/
+function checkScreen(entry, where, plan, errors) {
+	if (!isObject(entry)) {
+		errors.push(`${where}: has to be an object, as in { "id": "home" }.`);
+		return null;
+	}
+	const given = entry;
+	const count = errors.length;
+	for (const key of Object.keys(given)) if (!SCREEN_FIELDS.includes(key)) errors.push(`${where}.${key}: a screen has no such field. It has ${SCREEN_FIELDS.join(", ")}.`);
+	if (typeof given.id !== "string" || !ID.test(given.id)) errors.push(`${where}.id: needs the screenshot's name: lowercase letters, digits, - and _, at most 40 of them, as in "home".`);
+	/** @type {PlanScreen} */
+	const screen = {
+		id: given.id,
+		args: [],
+		wait: null,
+		devices: null
+	};
+	if (given.app !== void 0) {
+		if (typeof given.app === "string" && BUNDLE_ID.test(given.app)) screen.app = given.app;
+		else errors.push(`${where}.app: needs the bundle id of the app the screen is in, as in com.apple.Preferences.`);
+	}
+	if (given.launch !== void 0) {
+		const list = Array.isArray(given.launch);
+		const launch = list ? { args: given.launch } : given.launch;
+		if (!isObject(launch)) errors.push(`${where}.launch: has to be the launch arguments, as in ["-appshots", "stats"], or an object with args and url.`);
+		else {
+			for (const key of Object.keys(launch)) if (!["args", "url"].includes(key)) errors.push(`${where}.launch.${key}: launch has no such field. It has args and url.`);
+			if (launch.args !== void 0) screen.args = strings(launch.args, list ? `${where}.launch` : `${where}.launch.args`, errors);
+			if (launch.url !== void 0) {
+				if (typeof launch.url === "string" && /^[a-zA-Z][a-zA-Z0-9+.-]*:\S+$/.test(launch.url)) screen.url = launch.url;
+				else errors.push(`${where}.launch.url: needs a link with its scheme, as in myapp://stats or https://example.com/stats.`);
+			}
+		}
+	}
+	if (given.uitest !== void 0) {
+		if (typeof given.uitest === "string" && /^[^/\s]+\/[^/\s]+(\/[^/\s]+)?$/.test(given.uitest)) screen.uitest = given.uitest;
+		else errors.push(`${where}.uitest: names a UI test as Target/Class/method, as in AppUITests/ScreenshotTests/testStats.`);
+		if (given.launch !== void 0 || given.app !== void 0) errors.push(`${where}: takes uitest or launch and app, not both. A UI test starts the app itself.`);
+	}
+	if (given.wait !== void 0) {
+		if (isSeconds(given.wait)) screen.wait = given.wait;
+		else errors.push(`${where}.wait: needs a number of seconds, as in 3.`);
+	}
+	if (given.devices !== void 0) {
+		if (!Array.isArray(given.devices) || given.devices.length === 0) errors.push(`${where}.devices: needs a list of the plan's displays, as in ["ipad"]. Left out, the screen is taken on all of them.`);
+		else {
+			screen.devices = [];
+			for (const [at, word] of given.devices.entries()) {
+				const lower = typeof word === "string" ? word.toLowerCase() : "";
+				const device = plan.devices.find((each) => each.display === displayOf(lower) || each.kind === lower);
+				if (device) screen.devices.push(device.display);
+				else errors.push(`${where}.devices[${at}]: ${JSON.stringify(word)} is not one of the plan's devices: ${plan.devices.map((each) => each.display).join(", ") || "none"}.`);
+			}
+		}
+	}
+	if (!screen.uitest && !screen.url && !screen.app && !plan.app.bundleId && !plan.app.xcode && errors.length === count) errors.push(`${where}: says nowhere how to reach it. Give the app in app.bundleId or app.xcode, a link in launch.url, or a UI test in uitest.`);
+	return errors.length === count ? screen : null;
+}
+/**
+* Reads a plan file, or fails with everything that is wrong with it.
+* @param {string} file
+* @returns {Plan}
+*/
+function readPlan(file) {
+	let text;
+	try {
+		text = readFileSync(file, "utf8");
+	} catch {
+		fail(`No capture plan at ${file}. Write one as docs/cli.md describes (Capture plans), or name it: --plan <file>.`);
+	}
+	let json;
+	try {
+		json = JSON.parse(text);
+	} catch (error) {
+		fail(`${file} is not valid JSON: ${error.message}`);
+	}
+	const { plan, errors } = checkPlan(json, file);
+	if (errors.length > 0) fail(`${file} is not a capture plan that can be run:\n${errors.map((error) => `  ${error}`).join("\n")}`);
+	return plan;
+}
+//#endregion
+//#region cli/src/capture-plan/uitest.mjs
+/** How long one UI test may take to bring its screen up and end, building nothing. */
+const TEST_TIMEOUT = 6e5;
+/**
+* Where the UI tests of a project are built, apart from Xcode's own build folder, so that running them finds what
+* the build made.
+* @param {string} project
+*/
+function buildFolder(project) {
+	const name = `${slugify(path.parse(project).name)}-${createHash("sha256").update(project).digest("hex").slice(0, 8)}-tests`;
+	return {
+		derivedData: path.join(BUILD_CACHE, name),
+		log: path.join(BUILD_CACHE, `${name}.log`)
+	};
+}
+/** @param {string} project */
+const container = (project) => [project.endsWith(".xcworkspace") ? "-workspace" : "-project", project];
+/**
+* The last lines of a log that say what went wrong, without the ones xcodebuild stamps with the time.
+* @param {string} log
+*/
+function tail(log) {
+	let text = "";
+	try {
+		text = readFileSync(log, "utf8");
+	} catch {}
+	const lines = text.split("\n").filter((line) => line.trim() && !/^\d{4}-\d\d-\d\d /.test(line));
+	const errors = lines.filter((line) => /error|failed|Failing/i.test(line));
+	return (errors.length > 0 ? errors : lines).slice(-12).join("\n");
+}
+/**
+* Builds the app and its UI tests once, for any simulator of the same kind as this one.
+* @param {string} project The workspace or project.
+* @param {string} scheme
+* @param {{ udid: string }} simulator
+*/
+async function buildForTesting(project, scheme, simulator) {
+	const { derivedData, log } = buildFolder(project);
+	mkdirSync(BUILD_CACHE, { recursive: true });
+	const output = openSync(log, "w");
+	let result;
+	try {
+		result = await xcodebuild([
+			...container(project),
+			"-scheme",
+			scheme,
+			"-destination",
+			`platform=iOS Simulator,id=${simulator.udid}`,
+			"-derivedDataPath",
+			derivedData,
+			"build-for-testing"
+		], {
+			stdio: [
+				"ignore",
+				output,
+				output
+			],
+			timeout: 0
+		});
+	} finally {
+		closeSync(output);
+	}
+	if (result.status !== 0) fail(`The UI tests of ${scheme} did not build:\n${tail(log)}\nFull log: ${log}`);
+	console.log(`Built the UI tests of ${scheme}`);
+}
+/**
+* The language and region xcodebuild runs a test in, from a language code: de, or pt and BR for pt-BR.
+* @param {string} locale
+*/
+function testLanguage(locale) {
+	const [language, ...rest] = locale.split("-");
+	const region = rest.find((part) => /^[A-Za-z]{2}$|^\d{3}$/.test(part));
+	const script = rest.find((part) => /^[A-Za-z]{4}$/.test(part));
+	return [
+		"-testLanguage",
+		script ? `${language}-${script}` : language,
+		...region ? ["-testRegion", region.toUpperCase()] : []
+	];
+}
+/**
+* Runs one UI test on a simulator and takes the screenshot while it waits. The test says that its screen is up by
+* writing a file named ready into the folder APPSHOTS_SIGNAL names, then waits until a file named done is there:
+* the few lines of appshotsReady() in docs/cli.md. A simulator's processes see this Mac's files, so the folder is
+* an ordinary one here.
+* @param {{ project: string, scheme: string, test: string, simulator: { name: string, udid: string }, locale: string }} options
+* @param {() => Promise<void>} take Takes the screenshot.
+*/
+async function runUITest({ project, scheme, test, simulator, locale }, take) {
+	const { derivedData, log } = buildFolder(project);
+	const signal = mkdtempSync(path.join(tmpdir(), "appshots-signal-"));
+	const ready = path.join(signal, "ready");
+	const output = openSync(log, "w");
+	const env = {
+		...await xcodeEnv(),
+		TEST_RUNNER_APPSHOTS_SIGNAL: signal,
+		TEST_RUNNER_APPSHOTS_LOCALE: locale
+	};
+	let ended = false;
+	const running = xcodebuild([
+		...container(project),
+		"-scheme",
+		scheme,
+		"-destination",
+		`platform=iOS Simulator,id=${simulator.udid}`,
+		"-derivedDataPath",
+		derivedData,
+		"test-without-building",
+		`-only-testing:${test}`,
+		...testLanguage(locale)
+	], {
+		env,
+		stdio: [
+			"ignore",
+			output,
+			output
+		],
+		timeout: TEST_TIMEOUT
+	}).finally(() => {
+		ended = true;
+	});
+	running.catch(() => {});
+	let taken = false;
+	try {
+		while (!ended && !existsSync(ready)) await pause(100);
+		if (existsSync(ready)) {
+			await take();
+			taken = true;
+		}
+	} finally {
+		writeFileSync(path.join(signal, "done"), "");
+		await running.catch(() => {});
+		closeSync(output);
+		rmSync(signal, {
+			recursive: true,
+			force: true
+		});
+	}
+	const result = await running;
+	if (!taken) fail(`The UI test ${test} ended without saying that its screen was up. Call appshotsReady() in it once the screen shows, as docs/cli.md describes.\n${tail(log)}\nFull log: ${log}`);
+	if (result.status !== 0) console.error(`appshots: the UI test ${test} failed after the screenshot was taken. Full log: ${log}`);
+}
+//#endregion
+//#region cli/src/capture-plan/run.mjs
+/** @typedef {Plan} Plan */
+/** @typedef {Job} Job */
+/** @typedef {Simulator} Simulator */
+/** @typedef {Config} Config */
+const USAGE$1 = "Usage: appshots shoot [<project>] --plan [<file>] [--only <screens>] [--lang <codes>] [--again] [--dry-run], or appshots shoot [<project>] --fastlane <dir> [--dry-run]";
+const BY_HAND = [
+	"sim",
+	"device",
+	"mac",
+	"web",
+	"clean",
+	"out",
+	"as",
+	"ipad",
+	"duo"
+];
+/** A device stops being used after this many screens in a row have failed on it: what is wrong is not the screens. */
+const FAILURES_IN_A_ROW = 3;
+/**
+* The project as the server has it: its languages, and the screenshots it has already.
+* @param {Config} config
+* @param {string} id
+* @returns {Promise<{ project: { locales: string[] }, shots: Array<{ name: string, device: string, locale?: string }> }>}
+*/
+async function fetchProject(config, id) {
+	return (await request(config, "GET", projectRoute(id))).json();
+}
+/** @param {number} n */
+const count = (n) => `${n} ${n === 1 ? "screenshot" : "screenshots"}`;
+/** @param {string[]} words */
+const and = (words) => words.length < 2 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
+/**
+* The Xcode workspace or project a plan builds: the one app.xcode names, or the one in the folder it names or in
+* the plan's folder.
+* @param {Plan} plan
+* @param {string} why What it is needed for, for the message when there is none.
+*/
+function planXcodeProject(plan, why) {
+	const given = plan.app.xcode ?? plan.dir;
+	if (!existsSync(given)) fail(`app.xcode in ${plan.file}: there is no ${fromHere(given)}.`);
+	if (/\.(xcworkspace|xcodeproj)\/?$/.test(given)) return given;
+	if (!statSync(given).isDirectory()) fail(`app.xcode in ${plan.file}: ${fromHere(given)} is no Xcode workspace or project, nor a folder with one.`);
+	const found = xcodeProjects([given]);
+	if (found.length === 1) return found[0];
+	const where = `Name it in app.xcode of ${plan.file}, as in "ios/App.xcworkspace"`;
+	if (found.length === 0) fail(`${why} needs the app's Xcode project, and there is none in ${fromHere(given)}. ${where}.`);
+	fail(`${why} needs the app's Xcode project, and ${fromHere(given)} has several. ${where}:\n${found.map((file) => `  ${fromHere(file)}`).join("\n")}`);
+}
+/**
+* The simulator's appearance as it is, to put it back after the run. Null when it does not say.
+* @param {Simulator} simulator
+*/
+async function appearanceOf(simulator) {
+	const result = await xcrun([
+		"simctl",
+		"ui",
+		simulator.udid,
+		"appearance"
+	]);
+	const said = result.stdout.trim();
+	return result.status === 0 && (said === "light" || said === "dark") ? said : null;
+}
+/**
+* @param {Simulator} simulator
+* @param {"light" | "dark"} appearance
+*/
+async function setAppearance(simulator, appearance) {
+	const result = await xcrun([
+		"simctl",
+		"ui",
+		simulator.udid,
+		"appearance",
+		appearance
+	]);
+	if (result.status !== 0) fail(`Could not set ${simulator.name} to ${appearance}:\n${result.stderr.trim()}`);
+}
+/**
+* Says which of the apps the screens start is not on a simulator, before any screen is taken.
+* @param {Simulator} simulator
+* @param {string[]} apps
+* @param {Plan} plan
+*/
+async function checkInstalled(simulator, apps, plan) {
+	for (const app of apps) {
+		if ((await xcrun([
+			"simctl",
+			"get_app_container",
+			simulator.udid,
+			app
+		])).status === 0) continue;
+		const how = plan.app.xcode ? "" : ` Build and install it there with 'appshots run --sim ${simulator.udid}', or name the Xcode project in app.xcode of ${plan.file}, and the plan builds it.`;
+		fail(`${app} is not installed on ${simulator.name}.${how}`);
+	}
+}
+/**
+* Brings up the screen of one job, takes it once it has come to rest, and uploads it.
+* @param {{ plan: Plan, config: Config, project: string, bundleId?: string, xcodeProject?: string, scheme?: string }} run
+* @param {Job} job
+* @param {Simulator} simulator
+*/
+async function take(run, job, simulator) {
+	const { plan } = run;
+	const { screen } = job;
+	const wait = screen.wait ?? plan.wait;
+	mkdirSync(path.dirname(job.file), { recursive: true });
+	if (screen.uitest && run.xcodeProject && run.scheme) await runUITest({
+		project: run.xcodeProject,
+		scheme: run.scheme,
+		test: screen.uitest,
+		simulator,
+		locale: job.locale
+	}, () => captureSettled(simulator, job.file, wait));
+	else {
+		const app = screenApp(plan, screen, run.bundleId);
+		if (app) {
+			const args = [
+				...screen.app ? [] : plan.app.args,
+				...screen.args,
+				...languageArguments(job.locale)
+			];
+			const result = await xcrun([
+				"simctl",
+				"launch",
+				"--terminate-running-process",
+				simulator.udid,
+				app,
+				...args
+			]);
+			if (result.status !== 0) fail(`Could not launch ${app} on ${simulator.name}:\n${result.stderr.trim()}`);
+		}
+		if (screen.url) {
+			const result = await xcrun([
+				"simctl",
+				"openurl",
+				simulator.udid,
+				screen.url
+			]);
+			if (result.status !== 0) fail(`Could not open ${screen.url} on ${simulator.name}${app ? `. Does ${app} take that link?` : ""}\n${result.stderr.trim()}`);
+		}
+		await captureSettled(simulator, job.file, wait);
+	}
+	await upload(run.config, run.project, job.file, job.name, job.device.kind, job.locale);
+}
+/**
+* Prints what a run would do, device by device.
+* @param {Plan} plan
+* @param {Job[]} jobs
+* @param {Map<PlanDevice, { value?: Simulator, problem?: string }>} picked
+*/
+function printPlan(plan, jobs, picked) {
+	for (const device of plan.devices) {
+		const mine = jobs.filter((job) => job.device === device);
+		if (mine.length === 0) continue;
+		const { value: sim, problem } = picked.get(device) ?? {};
+		console.log(`${device.display} on ${sim ? `${simulatorLabel(sim)}${sim.booted ? ", booted" : ", to be booted"}` : `no simulator: ${problem}`}`);
+		for (const job of mine) {
+			const what = `${job.name} (${[job.locale, job.appearance].filter(Boolean).join(", ")})`;
+			console.log(`  ${job.skip ? "skip" : "take"} ${what}: ${job.skip ? "the project has it" : `${reachLabel(plan, job)} -> ${fromHere(job.file)}`}`);
+		}
+	}
+}
+/**
+* Imports what fastlane snapshot wrote instead of capturing. The project and the screens' names come from the plan
+* when there is one: --plan, or appshots.capture.json in this folder when no project is named.
+* @param {Args} args
+*/
+async function shootFastlane({ positional, flags }) {
+	if (typeof flags.fastlane !== "string") fail("--fastlane needs the folder fastlane snapshot wrote into, usually fastlane/screenshots.");
+	if (flags.again) fail("--fastlane uploads all it finds, in place of what the project has, so it takes no --again.");
+	const plan = flags.plan !== void 0 || !positional[0] && existsSync("appshots.capture.json") ? readPlan(typeof flags.plan === "string" ? flags.plan : PLAN_FILE) : null;
+	const project = positional[0] ?? plan?.project;
+	if (!project) fail(`Name the project the screenshots go to: appshots shoot <project> --fastlane ${flags.fastlane}`);
+	const config = loadConfig();
+	const { project: stored } = await fetchProject(config, project);
+	const locales = runLocales(plan ?? { locales: null }, project, stored.locales, flags.lang);
+	if (flags.only === true) fail("--only needs the names of screenshots, separated by commas, as in --only home,stats.");
+	const only = typeof flags.only === "string" ? plan ? runScreens(plan, flags.only).map((screen) => screen.id) : flags.only.split(",").map((name) => slugify(name.trim())) : null;
+	await importFastlane(config, {
+		project,
+		locales,
+		dir: path.resolve(flags.fastlane),
+		only,
+		ids: plan ? plan.screens.map((screen) => screen.id) : null,
+		dryRun: Boolean(flags["dry-run"])
+	});
+}
+/**
+* Takes every screen a capture plan lists, unattended: on each of its devices, in each appearance and language,
+* each brought up by its launch arguments, its link or its UI test, taken once it has come to rest, and uploaded
+* under its name, family and language. What the project has already is left, so a run that stopped half way goes
+* on where it stopped; --again takes all of it again, --only some screens, --lang some languages. --dry-run says
+* what it would do. Each simulator is booted once, the app built once when the plan names its Xcode project, and
+* the status bar set once per device.
+* @param {Args} args
+*/
+async function shootPlan(args) {
+	const { positional, flags } = args;
+	if (positional.length > 1) fail(`${USAGE$1}\n--only and --lang take ids and codes separated by commas, as in --only home,stats.`);
+	for (const flag of BY_HAND) if (flags[flag] !== void 0) fail(`--${flag} is for shooting by hand. A plan says itself where its screens are taken: devices, statusBar and out.`);
+	if (flags.fastlane !== void 0) return shootFastlane(args);
+	const plan = readPlan(typeof flags.plan === "string" ? flags.plan : PLAN_FILE);
+	const project = positional[0] ?? plan.project;
+	if (!project) fail(`${plan.file} names no project. Add "project": "<id>" to it, or name one: appshots shoot <project> --plan ${plan.file}. 'appshots projects' lists them.`);
+	const config = loadConfig();
+	const { project: stored, shots } = await fetchProject(config, project);
+	const locales = runLocales(plan, project, stored.locales, flags.lang);
+	const screens = runScreens(plan, flags.only);
+	const jobs = planJobs(plan, {
+		screens,
+		locales,
+		primary: stored.locales[0],
+		shots,
+		again: Boolean(flags.again)
+	});
+	const todo = jobs.filter((job) => !job.skip);
+	const devices = plan.devices.filter((device) => jobs.some((job) => job.device === device));
+	const listed = await attempt(availableSimulators);
+	/** @type {Map<PlanDevice, { value?: Simulator, problem?: string }>} */
+	const picked = new Map();
+	for (const device of devices) picked.set(device, listed.problem !== void 0 ? { problem: listed.problem } : await attempt(() => pickSimulator(device, listed.value)));
+	const appearances = plan.appearances ? ` in ${and(plan.appearances)}` : "";
+	console.log(`${plan.file}: ${count(jobs.length)} for ${project}, ${screens.length} ${screens.length === 1 ? "screen" : "screens"} in ${and(locales)}${appearances}, on ${and(devices.map((device) => device.display))}`);
+	if (flags["dry-run"]) {
+		if (plan.app.xcode && todo.some((job) => !job.screen.uitest && !job.screen.app)) console.log(`First builds ${plan.app.scheme ?? "the app's scheme"} from ${fromHere(plan.app.xcode)} and installs it`);
+		if (todo.some((job) => job.screen.uitest)) console.log(`First builds the UI tests of ${plan.app.scheme ?? "the app's scheme"} from ${fromHere(plan.app.xcode ?? plan.dir)}`);
+		printPlan(plan, jobs, picked);
+		const skipped = jobs.length - todo.length;
+		return console.log(`Would take ${count(todo.length)}${skipped > 0 ? ` and skip ${skipped} the project has (--again takes them as well)` : ""}. Nothing was captured or uploaded (--dry-run).`);
+	}
+	if (todo.length === 0) return console.log(`Nothing to take: ${project} has all ${count(jobs.length)} of the plan already. --again takes them again.`);
+	const working = devices.filter((device) => todo.some((job) => job.device === device));
+	/** @type {Map<PlanDevice, Simulator>} */
+	const simulators = new Map();
+	for (const device of working) {
+		const { value, problem } = picked.get(device) ?? {};
+		if (!value) fail(`${device.display}: ${problem}`);
+		simulators.set(device, value);
+	}
+	const launched = todo.filter((job) => !job.screen.uitest);
+	const builds = Boolean(plan.app.xcode) && launched.some((job) => !job.screen.app);
+	const tests = todo.some((job) => job.screen.uitest);
+	/** @type {{ plan: Plan, config: Config, project: string, bundleId?: string, xcodeProject?: string, scheme?: string }} */
+	const run = {
+		plan,
+		config,
+		project,
+		bundleId: plan.app.bundleId
+	};
+	if (builds || tests) {
+		run.xcodeProject = planXcodeProject(plan, tests ? "A UI test" : "Building the app");
+		run.scheme = await pickScheme(run.xcodeProject, plan.app.scheme);
+	}
+	const first = simulators.get(working[0]);
+	const bootedHere = [...simulators.values()].filter((sim) => !sim.booted);
+	const prepare = async () => {
+		if (!run.xcodeProject || !run.scheme) return null;
+		console.log(`Building ${run.scheme} from ${fromHere(run.xcodeProject)}`);
+		const app = builds ? await build(run.xcodeProject, run.scheme, first, false) : null;
+		if (tests) await buildForTesting(run.xcodeProject, run.scheme, first);
+		return app;
+	};
+	const [built, ...booted] = await Promise.allSettled([prepare(), ...[...simulators.values()].map((sim) => boot(sim))]);
+	for (const outcome of [built, ...booted]) if (outcome.status === "rejected") throw outcome.reason;
+	const app = built.status === "fulfilled" ? built.value : null;
+	run.bundleId ??= app?.bundleId;
+	for (const device of working) {
+		const simulator = simulators.get(device);
+		const mine = launched.filter((job) => job.device === device);
+		if (app && mine.some((job) => !job.screen.app)) await install(simulator, app.file);
+		await checkInstalled(simulator, [...new Set(mine.map((job) => screenApp(plan, job.screen, run.bundleId)).filter((each) => each !== void 0))], plan);
+	}
+	/** @type {string[]} */
+	const taken = [];
+	/** @type {Array<{ job: Job, problem: string }>} */
+	const failed = [];
+	let at = 0;
+	for (const device of working) {
+		const simulator = simulators.get(device);
+		const mine = todo.filter((job) => job.device === device);
+		const work = async () => {
+			const before = plan.appearances ? await appearanceOf(simulator) : null;
+			/** @type {"light" | "dark" | null} */
+			let appearance = before;
+			let inRow = 0;
+			try {
+				for (const [index, job] of mine.entries()) {
+					if (job.appearance && job.appearance !== appearance) {
+						await setAppearance(simulator, job.appearance);
+						appearance = job.appearance;
+					}
+					console.log(`${++at}/${todo.length} ${job.name} (${[
+						device.display,
+						job.locale,
+						job.appearance
+					].filter(Boolean).join(", ")}): ${reachLabel(plan, job, run.bundleId)}`);
+					const { problem } = await attempt(() => take(run, job, simulator));
+					if (problem === void 0) {
+						taken.push(job.name);
+						inRow = 0;
+						continue;
+					}
+					console.error(`appshots: ${problem}`);
+					failed.push({
+						job,
+						problem: problem.split("\n")[0]
+					});
+					if (++inRow < FAILURES_IN_A_ROW) continue;
+					const rest = mine.slice(index + 1);
+					for (const left of rest) failed.push({
+						job: left,
+						problem: `not tried after ${FAILURES_IN_A_ROW} failures in a row on ${simulator.name}`
+					});
+					at += rest.length;
+					break;
+				}
+			} finally {
+				if (before && appearance !== before) await setAppearance(simulator, before);
+			}
+		};
+		if (plan.cleanStatusBar) await withCleanStatusBar(simulator, work);
+		else await work();
+	}
+	const skipped = jobs.length - todo.length;
+	console.log(`Taken ${taken.length} of ${count(todo.length)} for ${project}${skipped > 0 ? `; skipped ${skipped} the project has (--again takes them as well)` : ""}.`);
+	if (bootedHere.length > 0) console.log(`Booted for this run and still running: ${bootedHere.map((sim) => `${sim.name} (${sim.udid})`).join(", ")}. 'appshots simctl shutdown <udid>' stops one.`);
+	if (failed.length > 0) {
+		const lines = failed.map(({ job, problem }) => `  ${job.name} (${[
+			job.device.display,
+			job.locale,
+			job.appearance
+		].filter(Boolean).join(", ")}): ${problem}`);
+		fail(`${failed.length} of ${count(todo.length)} not taken:\n${lines.join("\n")}\nRun the plan again once that is fixed: it takes only what the project does not have yet.`);
+	}
+}
+//#endregion
 //#region cli/src/shoot.mjs
 const USAGE = "Usage: appshots shoot <project> <names...> [--sim <name>] [--device <name>] [--mac <app>] [--clean] [--out <dir>]";
 /**
@@ -3905,7 +5148,13 @@ async function settleSource(args) {
 */
 async function shoot(args, { keys } = {}) {
 	const { flags } = args;
-	if (!keys && !process.stdin.isTTY) fail("'appshots shoot' is for a person at the Terminal: it waits for a key before each screenshot. An agent takes them with 'appshots capture'.");
+	if (flags.plan !== void 0 || flags.fastlane !== void 0) return shootPlan(args);
+	for (const flag of [
+		"only",
+		"again",
+		"dry-run"
+	]) if (flags[flag] !== void 0) fail(`--${flag} goes with a capture plan, as in: appshots shoot --plan appshots.capture.json --${flag}`);
+	if (!keys && !process.stdin.isTTY) fail("'appshots shoot' is for a person at the Terminal: it waits for a key before each screenshot. An agent takes them with 'appshots capture', or all of them at once with 'appshots shoot --plan appshots.capture.json'.");
 	if (flags.web) fail("'appshots shoot' captures what a person has opened, and a web page is drawn without a window. Take each page by its address: appshots capture --web <address> --name <name> --project <project>");
 	const project = args.positional[0];
 	if (!project || args.positional.length < 2 && Object.keys(args.borrowed).length === 0) fail(USAGE);
@@ -4827,7 +6076,12 @@ const COMMANDS = {
 			"clean",
 			"out",
 			"web",
-			...FILING
+			...FILING,
+			"plan",
+			"only",
+			"again",
+			"fastlane",
+			"dry-run"
 		],
 		run: (args) => shoot(args)
 	},
@@ -5014,6 +6268,18 @@ started by that toolkit's own command, and 'appshots check' says which.
                                          for Return while you open it, then captures and uploads it.
                                          Options as for capture: --sim, --device, --mac, --clean, --out,
                                          --lang
+  appshots shoot [project] --plan [file] Take every screen a capture plan lists, unattended: on each of
+                                         its simulators, in each language and appearance, reached by
+                                         launch arguments, a link or a UI test, and upload them. The
+                                         plan is appshots.capture.json unless named; docs/cli.md has
+                                         its fields. What the project has already is skipped
+      --only <ids>                         Only these screens, such as home,stats
+      --lang <codes>                       Only these of the plan's languages, such as en,de
+      --again                              Take again what the project has already
+      --dry-run                            Say what it would take and how, and do nothing
+      --fastlane <dir>                     Upload what fastlane snapshot wrote into <dir> instead,
+                                           each by its size and folder: appshots shoot <project>
+                                           --fastlane fastlane/screenshots
   appshots upload <project> <files or folders...>
                                          Upload screenshots that exist already. A folder stands for the
                                          PNG and JPEG files in it. The name is the file name, or --name

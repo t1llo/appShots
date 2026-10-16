@@ -1,5 +1,5 @@
 /** Flags that never take a value. */
-export const BOOLEAN_FLAGS = new Set(["clean", "render", "help", "ipad", "duo", "dark", "light", "fresh", "image", "dry-run", "add-languages", "builds", "create"]);
+export const BOOLEAN_FLAGS = new Set(["clean", "render", "help", "ipad", "duo", "dark", "light", "fresh", "image", "dry-run", "add-languages", "builds", "create", "again"]);
 
 /**
  * Flags whose value may be left out: a bare --sim or --device is the only one there is, a bare --mac lists the

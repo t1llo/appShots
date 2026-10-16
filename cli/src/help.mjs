@@ -81,6 +81,18 @@ started by that toolkit's own command, and 'appshots check' says which.
                                          for Return while you open it, then captures and uploads it.
                                          Options as for capture: --sim, --device, --mac, --clean, --out,
                                          --lang
+  appshots shoot [project] --plan [file] Take every screen a capture plan lists, unattended: on each of
+                                         its simulators, in each language and appearance, reached by
+                                         launch arguments, a link or a UI test, and upload them. The
+                                         plan is appshots.capture.json unless named; docs/cli.md has
+                                         its fields. What the project has already is skipped
+      --only <ids>                         Only these screens, such as home,stats
+      --lang <codes>                       Only these of the plan's languages, such as en,de
+      --again                              Take again what the project has already
+      --dry-run                            Say what it would take and how, and do nothing
+      --fastlane <dir>                     Upload what fastlane snapshot wrote into <dir> instead,
+                                           each by its size and folder: appshots shoot <project>
+                                           --fastlane fastlane/screenshots
   appshots upload <project> <files or folders...>
                                          Upload screenshots that exist already. A folder stands for the
                                          PNG and JPEG files in it. The name is the file name, or --name

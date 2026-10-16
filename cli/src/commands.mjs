@@ -83,7 +83,7 @@ export const COMMANDS = {
       if (config && typeof project === "string") await upload(config, project, shot.file, shot.name, ("device" in shot ? shot.device : undefined) ?? device, language);
     },
   },
-  shoot: { flags: ["sim", "device", "clean", "out", "web", ...FILING], run: (args) => shoot(args) },
+  shoot: { flags: ["sim", "device", "clean", "out", "web", ...FILING, "plan", "only", "again", "fastlane", "dry-run"], run: (args) => shoot(args) },
   upload: {
     flags: ["name", "image", ...FILING],
     run: ({ positional, flags }) => {
