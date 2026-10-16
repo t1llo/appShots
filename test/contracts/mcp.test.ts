@@ -105,6 +105,14 @@ describe("the endpoint", () => {
     assert.deepEqual(tools.get("render_mockups").inputSchema.required, ["project"]);
   });
 
+  test("tools/list has the tool that draws the layers of an app preview", { todo: "listed once src/mcp.ts registers registerVideoTools" }, async () => {
+    const { body } = await rpc(server, "tools/list");
+    const tool = body.result.tools.find((each: { name: string }) => each.name === "render_video_layers");
+    assert.ok(tool, "render_video_layers is listed");
+    assert.deepEqual(tool.inputSchema.required, ["project"]);
+    for (const input of ["project", "display", "size", "orientation", "locales", "captionStyle", "captions", "intro", "outro", "plate", "touch"]) assert.ok(input in tool.inputSchema.properties, input);
+  });
+
   test("an unknown tool or a wrong argument is refused as a tool error", async () => {
     assertRefused(await callTool(server, "no_such_tool"), /no_such_tool/);
     assertRefused(await callTool(server, "get_project", {}), /project/);

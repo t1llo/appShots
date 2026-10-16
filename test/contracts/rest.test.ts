@@ -615,6 +615,28 @@ describe("rendering, without drawing", () => {
   });
 });
 
+describe("app preview layers, without drawing", () => {
+  let id: string;
+  before(async () => {
+    id = await createProject({ name: "Preview", locales: ["en"], slides: THREE_SLIDES.slice(1) });
+  });
+
+  test("a body the schema or the project refuses is a JSON 400, an unknown project a 404", async () => {
+    assertError(await call(`/api/projects/${id}/video-layers`, send("POST", {})), 400, /Give the display/);
+    assertError(await call(`/api/projects/${id}/video-layers`, send("POST", { display: "iphone", size: [886, 1921] })), 400);
+    assertError(await call(`/api/projects/${id}/video-layers`, send("POST", { display: "iphone", locales: ["fr"] })), 400, /no language "fr"/);
+    assertError(await call(`/api/projects/${id}/video-layers`, send("POST", { display: "iphone", captions: [{ id: "a", text: { slide: 3 } }] })), 400, /no slide 3/);
+    assertError(await call(`/api/projects/no-such-project/video-layers`, send("POST", { display: "iphone" })), 404);
+  });
+
+  test("a set that is not there is a JSON 404, as are its ZIP and its pictures", async () => {
+    assertError(await call(`/api/projects/${id}/video-layers/0123456789abcdef`), 404, /no set of video layers/);
+    assertError(await call(`/api/projects/${id}/video-layers/0123456789abcdef/layers.zip`), 404);
+    assertError(await call(`/files/${id}/video/0123456789abcdef/plate.png`), 404);
+    assertError(await call(`/render/${id}/video?job=nope&locale=en`), 404);
+  });
+});
+
 describe("parallel writes", () => {
   test("50 PUTs at once to one project leave a project.json that parses", async () => {
     const id = await createProject({ name: "Parallel" });
@@ -959,5 +981,49 @@ describe("rendering, drawn with Chromium", renderTier, () => {
     await call(`/api/projects/${other}/render`, send("POST", { slides: [0] }));
     const { body } = await call(`/api/projects/${other}`);
     assert.deepEqual(body.outputs[0].files, ["01.png", "02.png"]);
+  });
+});
+
+describe("app preview layers, drawn with Chromium", renderTier, () => {
+  test("a set answers with its layers, is read back and zipped, and is free the second time", async () => {
+    const id = await createProject({ name: "Layers", locales: ["en"], slides: THREE_SLIDES.slice(1) });
+    const body = { display: "iphone", captions: [{ id: "second", text: { slide: 1 } }], outro: { lines: [{ slide: 2 }] } };
+    const answer = await call(`/api/projects/${id}/video-layers`, send("POST", body));
+    assert.equal(answer.status, 200, JSON.stringify(answer.body));
+    assertKeys(answer.body, ["set", "size", "display", "locales", "warnings", "layers", "zip", "charged", "rendersLeft"]);
+    assert.deepEqual(answer.body.size, [886, 1920]);
+    assert.equal(answer.body.charged, true);
+    for (const layer of answer.body.layers) assertKeys(layer, ["id", "kind", "locale", "file", "width", "height", "box"]);
+    const caption = answer.body.layers.find((layer: { id: string }) => layer.id === "caption-second");
+    assert.equal(caption.text, "Second slide");
+
+    const file = await server.fetch(caption.file);
+    assert.equal(file.status, 200);
+    assert.equal(file.headers.get("content-type"), "image/png");
+    assert.match(file.headers.get("cache-control")!, /private/);
+    assert.deepEqual(await sizeOf(await file.arrayBuffer()), { width: 886, height: 1920 });
+
+    const read = await call(`/api/projects/${id}/video-layers/${answer.body.set}`);
+    assert.equal(read.status, 200);
+    assert.equal(read.body.set, answer.body.set);
+    const zip = await server.fetch(answer.body.zip);
+    assert.equal(zip.status, 200);
+    assert.equal(zip.headers.get("content-type"), "application/zip");
+    assert.ok(Buffer.from(await zip.arrayBuffer()).toString("latin1").includes("en/caption-second.png"));
+
+    const again = await call(`/api/projects/${id}/video-layers`, send("POST", body));
+    assert.equal(again.body.set, answer.body.set);
+    assert.equal(again.body.charged, false);
+  });
+
+  test("a background run answers 202 with its job and set, and ends in /api/renders/:job", async () => {
+    const id = await createProject({ name: "Layers later", locales: ["en"], slides: THREE_SLIDES.slice(1) });
+    const answer = await call(`/api/projects/${id}/video-layers`, send("POST", { display: "ipad", captions: [{ id: "a", text: "Later" }], background: true }));
+    assert.equal(answer.status, 202, JSON.stringify(answer.body));
+    assertKeys(answer.body, ["job", "set", "rendersLeft"]);
+    assertKeys(answer.body.job, [...JOB_KEYS, "set"]);
+    const job = await ended(answer.body.job);
+    assert.equal(job.state, "done", job.error);
+    assert.equal((await call(`/api/projects/${id}/video-layers/${answer.body.set}`)).status, 200);
   });
 });

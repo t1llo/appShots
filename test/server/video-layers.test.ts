@@ -119,7 +119,9 @@ test("a run in the background answers at once and is followed and finished throu
   assert.equal(running.body.state, "running");
   assert.equal(running.body.set, set);
   // A video run is not one of the renders the list shows, which the Studio's queue reads.
-  assert.ok(!(await call("/api/renders")).body.some?.((entry: { id: string }) => entry.id === job.id));
+  const listed = await call("/api/renders");
+  assert.ok(Array.isArray(listed.body.jobs));
+  assert.ok(!listed.body.jobs.some((entry: { id: string }) => entry.id === job.id));
   assert.equal((await call(`/api/projects/${id}/video-layers/${set}`)).status, 404, "not there before it is placed");
 
   hold.open();
