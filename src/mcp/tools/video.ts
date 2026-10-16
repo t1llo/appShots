@@ -1,21 +1,8 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
 import { rendersLeft } from "../../accounts.ts";
-import { slugSchema } from "../../schema.ts";
-import type { Space } from "../../store.ts";
 import { type VideoLayersBody, videoLayersShape } from "../../video/request.ts";
 import { type LayersAnswer, videoService } from "../../video/service.ts";
-
-/** Tool failures go back to the model as readable text so it can correct the call. */
-async function guard(run: () => Promise<CallToolResult>): Promise<CallToolResult> {
-  try {
-    return await run();
-  } catch (error) {
-    const message = error instanceof z.ZodError ? z.prettifyError(error) : error instanceof Error ? error.message : String(error);
-    return { isError: true, content: [{ type: "text", text: message }] };
-  }
-}
+import { projectInput as project, type RegisterTools } from "../context.ts";
+import { guard } from "../result.ts";
 
 /** What the model reads of a set: what was drawn, what to look at, where to get it. The manifest itself is the structured content. */
 function summary(base: string, id: string, answer: LayersAnswer, left: number | null): string {
@@ -39,17 +26,19 @@ function summary(base: string, id: string, answer: LayersAnswer, left: number | 
 }
 
 /** The tools for app preview videos. The server draws their layers; the CLI records and cuts the video on the Mac. */
-export function registerVideoTools(server: McpServer, { base, space }: { base: string; space: Space }): void {
+export const registerVideoTools: RegisterTools = (server, tools) => {
+  const { base, space } = tools;
+
   server.registerTool(
     "render_video_layers",
     {
       title: "Render app preview layers",
       description:
         "Draws the captions, intro and outro cards and background of an app preview video in the project's style, as transparent PNGs at the video size. The video itself is recorded and cut on the Mac by the appshots CLI (`appshots video guide`).",
-      inputSchema: { project: slugSchema.describe("Project id"), ...videoLayersShape },
+      inputSchema: { project, ...videoLayersShape },
     },
     ({ project: id, ...body }, extra) =>
-      guard(async () => {
+      guard(tools, "render_video_layers", async () => {
         const started = await videoService.start(space, id, body as VideoLayersBody);
         let answer: LayersAnswer;
         if ("done" in started) answer = started.done;
@@ -62,4 +51,4 @@ export function registerVideoTools(server: McpServer, { base, space }: { base: s
         return { content: [{ type: "text", text: summary(base, id, answer, left) }], structuredContent: { ...answer, rendersLeft: left } };
       }),
   );
-}
+};

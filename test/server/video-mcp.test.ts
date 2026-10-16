@@ -24,7 +24,7 @@ before(async () => {
   fake = fakeCapturer();
   videoService.useCapturer(fake);
   const server = new McpServer({ name: "appshots", version: "0.0.0" });
-  registerVideoTools(server, { base: BASE, space });
+  registerVideoTools(server, { base: BASE, space, ctx: { space, actor: "mcp" }, log: console });
   const [near, far] = InMemoryTransport.createLinkedPair();
   await server.connect(far);
   client = new Client({ name: "test", version: "0.0.0" });

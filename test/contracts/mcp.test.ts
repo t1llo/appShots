@@ -105,7 +105,7 @@ describe("the endpoint", () => {
     assert.deepEqual(tools.get("render_mockups").inputSchema.required, ["project"]);
   });
 
-  test("tools/list has the tool that draws the layers of an app preview", { todo: "listed once src/mcp.ts registers registerVideoTools" }, async () => {
+  test("tools/list has the tool that draws the layers of an app preview", async () => {
     const { body } = await rpc(server, "tools/list");
     const tool = body.result.tools.find((each: { name: string }) => each.name === "render_video_layers");
     assert.ok(tool, "render_video_layers is listed");
