@@ -379,7 +379,7 @@ shows that licence first and goes on only after your yes. An agent shows it to y
 appshots video compose --engine remotion
 ```
 
-then draws each preview with that project, and encodes and checks it as the compose does without it. The project's `README.md` says which file draws what. The files are yours to change, and appShots leaves your changes alone; `appshots video remotion --again` brings them back to the template, after showing what changes and asking.
+then draws each preview with that project, and encodes and checks it as the compose does without it. The project's `README.md` says which file draws what. The files are yours to change, and appShots leaves your changes alone; `appshots video remotion --again` brings them back to the template, after showing what changes and asking. That is a question apart from the licence: an agent shows you the list in the chat, and runs `appshots video remotion --yes --again --replace` only after you agreed to lose those changes.
 
 ## What App Review accepts
 

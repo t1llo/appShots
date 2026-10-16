@@ -194,6 +194,26 @@ for (const [file, names] of Object.entries(STEPS)) {
   });
 }
 
+test("video remotion takes every flag of the command it tells an agent to run next", { skip: existsSync(path.join(VIDEO, "remotion.mjs")) ? process.stdin.isTTY && "stdin is a terminal" : "not in this build" }, async () => {
+  const plan = planFolder("remotion");
+  const caption = path.join(path.dirname(plan), "appshots-video", "remotion", "src", "Caption.tsx");
+  /** What a refusal asks an agent to run once the user said yes, for the plan in that folder. */
+  const nextOf = async (argv) => {
+    let message = "";
+    await assert.rejects(runVideo([...argv, "--plan", plan]), (error) => error instanceof Failure && Boolean((message = error.message)));
+    const line = /after a yes, run: appshots video (remotion[^\n]*)$/.exec(message)?.[1];
+    assert.ok(line, message);
+    return [...line.split(" "), "--plan", plan];
+  };
+  const written = await runVideo(await nextOf(["remotion", "--no-install"]));
+  assert.equal(written.errors, "");
+  writeFileSync(caption, "// mine\n");
+  const replaced = await runVideo(await nextOf(["remotion", "--yes", "--again", "--no-install"]));
+  assert.equal(replaced.errors, "");
+  assert.match(replaced.printed, /Wrote 1 file into .*: src\/Caption\.tsx/);
+  assert.notEqual(readFileSync(caption, "utf8"), "// mine\n");
+});
+
 test("the plan takes the displays the preview specification has", { skip: existsSync(path.join(VIDEO, "specs.mjs")) ? false : "not in this build" }, async () => {
   const { PREVIEW_SPECS } = await import(new URL("../../cli/src/video/specs.mjs", import.meta.url).href);
   assert.deepEqual(Object.keys(PREVIEW_DISPLAYS).sort(), Object.keys(PREVIEW_SPECS).sort());

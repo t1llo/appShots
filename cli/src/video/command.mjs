@@ -139,12 +139,12 @@ export const VIDEO_ACTIONS = {
   sheet: { flags: ["plan", "raw", "every", "lang", "display", "scene"], usage: "sheet [file] [--raw] [--scene <ids>] [--every <seconds>] [--lang <codes>] [--display <keys>]", run: (rest, flags) => sheet(rest, flags) },
   poster: { flags: ["plan", "at", "lang", "display"], usage: "poster --at <seconds> [file] [--lang <codes>] [--display <keys>]", run: (rest, flags) => poster(rest, flags) },
   remotion: {
-    flags: ["plan", "yes", "no-install", "again"],
-    usage: "remotion [--yes] [--no-install] [--again]",
+    flags: ["plan", "yes", "no-install", "again", "replace"],
+    usage: "remotion [--yes] [--no-install] [--again] [--replace]",
     run: async (rest, flags) => {
       if (rest.length > 0) fail(usageOf("remotion"));
       const scaffoldRemotion = await step("scaffoldRemotion", "remotion");
-      return scaffoldRemotion(workFolderOf(flags), { yes: Boolean(flags.yes), install: !flags["no-install"], again: Boolean(flags.again) });
+      return scaffoldRemotion(workFolderOf(flags), { yes: Boolean(flags.yes), install: !flags["no-install"], again: Boolean(flags.again), replace: Boolean(flags.replace) });
     },
   },
   push: {

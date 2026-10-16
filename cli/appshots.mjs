@@ -12330,15 +12330,17 @@ const VIDEO_ACTIONS = {
 			"plan",
 			"yes",
 			"no-install",
-			"again"
+			"again",
+			"replace"
 		],
-		usage: "remotion [--yes] [--no-install] [--again]",
+		usage: "remotion [--yes] [--no-install] [--again] [--replace]",
 		run: async (rest, flags) => {
 			if (rest.length > 0) fail(usageOf("remotion"));
 			return (await step("scaffoldRemotion", "remotion"))(workFolderOf(flags), {
 				yes: Boolean(flags.yes),
 				install: !flags["no-install"],
-				again: Boolean(flags.again)
+				again: Boolean(flags.again),
+				replace: Boolean(flags.replace)
 			});
 		}
 	},
@@ -15235,6 +15237,8 @@ languages and displays. 'appshots video guide' prints the steps an agent follows
                                          the user has agreed to the licence
       --again                              Write its template files anew, after showing what changes
                                            and asking
+      --replace                            With --again, replace the changed ones without asking, once
+                                           the user has agreed to that
   appshots video push [--app <bundle id>] [--version <v>]
                                          Put the previews into the App Store Connect version being
                                          prepared. Nothing is ever submitted for review or released

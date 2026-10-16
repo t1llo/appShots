@@ -251,7 +251,7 @@ appshots video push --dry-run
 | `appshots video check [files…]` | Checks videos against Apple's specification, or the plan's previews without files. `--display <key>` names the display a file is for, and `--json` prints the result as JSON. Ends with status 1 when a file has an error |
 | `appshots video sheet [file]` | A contact sheet, a picture a second, of a video or of each preview. `--raw` makes one of each language's recordings, `--scene <ids>` only of these, and `--every <seconds>` sets the step |
 | `appshots video poster --at <seconds> [file]` | Takes the poster frame at that time, and keeps the time for `push` |
-| `appshots video remotion` | Explains Remotion's licence, then writes a Remotion project into `appshots-video/remotion/` and installs it. `--yes` once you have agreed to the licence, `--no-install` to write the files only, `--again` to bring them back to the template |
+| `appshots video remotion` | Explains Remotion's licence, then writes a Remotion project into `appshots-video/remotion/` and installs it. `--yes` once you have agreed to the licence, `--no-install` to write the files only, `--again` to bring them back to the template, and `--replace` with it once you have agreed to lose your changes to them |
 | `appshots video push` | Puts the previews into the App Store Connect version being prepared. See the options below |
 | `appshots video guide` | Prints the steps an agent follows, in order |
 

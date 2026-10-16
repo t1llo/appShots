@@ -155,7 +155,7 @@ export APPSHOTS_FFPROBE=~/bin/ffprobe
 
 **The layers show another language's text.** The project has no text in that language for a caption taken from a slide, or the plan's caption names no text for it. `appshots video layers` says which. Translate the slide in the Studio, or add the language to the caption in the plan. The notices of `disclosure` are in English only: for a store page in another language, leave `disclosure` out and write the notice as one of the outro's `lines`, with a text for each language.
 
-**`appshots video remotion` asks for a yes.** Remotion has a licence of its own, which you have to agree to first. Read it, and if you agree, run `appshots video remotion --yes`, or tell your agent so. `--again` asks before it replaces files you changed in `appshots-video/remotion/`, so run that in your own Terminal. See [Animated text with Remotion](/docs/video#animated-text-with-remotion).
+**`appshots video remotion` asks for a yes.** Remotion has a licence of its own, which you have to agree to first. Read it, and if you agree, run `appshots video remotion --yes`, or tell your agent so. `--again` asks apart before it replaces files you changed in `appshots-video/remotion/`, and lists them: run it in your own Terminal, or tell your agent you agree to lose those changes, and it adds `--replace`. See [Animated text with Remotion](/docs/video#animated-text-with-remotion).
 
 **A preview does not play in App Store Connect yet.** Apple processes a new preview for up to 24 hours. If `appshots video push` said Apple was still processing it, run `appshots video push --resume` later to place it.
 

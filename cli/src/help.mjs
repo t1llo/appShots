@@ -214,6 +214,8 @@ languages and displays. 'appshots video guide' prints the steps an agent follows
                                          the user has agreed to the licence
       --again                              Write its template files anew, after showing what changes
                                            and asking
+      --replace                            With --again, replace the changed ones without asking, once
+                                           the user has agreed to that
   appshots video push [--app <bundle id>] [--version <v>]
                                          Put the previews into the App Store Connect version being
                                          prepared. Nothing is ever submitted for review or released
