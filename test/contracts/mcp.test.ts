@@ -126,6 +126,19 @@ describe("tools", () => {
     for (const tool of ["set_slides", "render", "render_mockups", "set_creative_assets"]) assert.ok(guide.includes(tool), tool);
   });
 
+  test("get_design_guide takes a topic and answers with that part of the guide", async () => {
+    const guide = textOf(await callTool(server, "get_design_guide"));
+    const result = await callTool(server, "get_design_guide", { topic: "mockups" });
+    assertSucceeded(result);
+    const topic = textOf(result);
+    assert.match(topic, /^## Mockups\n/);
+    assert.ok(topic.includes(`${server.url}/#/<project>/mockups`));
+    // The part is the guide's own section, word for word.
+    assert.ok(guide.includes(topic.slice(0, topic.indexOf("\n\nThis is one topic"))));
+    assert.match(textOf(await callTool(server, "get_design_guide", { topic: "uploading" })), /^## Uploading\n/);
+    assertRefused(await callTool(server, "get_design_guide", { topic: "everything" }));
+  });
+
   test("create_project returns the id and how to upload into it", async () => {
     const result = await callTool(server, "create_project", { name: "MCP App", locales: ["en-US", "de-DE"], theme: { font: "inter" } });
     assertSucceeded(result);
@@ -225,6 +238,14 @@ describe("tools", () => {
     assert.equal(response.status, 400);
     assert.equal((await response.json()).error, "Slide 4 does not exist; the project has 3.");
     assertRefused(await callTool(server, "update_slide", { project: "mcp-app", slide: 0, changes: { headline: "x" } }));
+
+    // One slide changed through the HTTP API: index 2 there is slide 3 here.
+    const patched = await server.fetch("/api/projects/mcp-app/slides/2", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ changes: { headline: "Third, by index 2" } }) });
+    assert.equal(patched.status, 200);
+    assert.equal(jsonOf(await callTool(server, "get_project", { project: "mcp-app" })).slides[2].headline, "Third, by index 2");
+    const beyond = await server.fetch("/api/projects/mcp-app/slides/3", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ changes: { headline: "x" } }) });
+    assert.equal(beyond.status, 400);
+    assert.equal((await beyond.json()).error, "Slide 4 does not exist; the project has 3.");
   });
 
   test("update_slide merges the device and clears what remove names", async () => {
@@ -312,17 +333,20 @@ describe("tools", () => {
   });
 });
 
-describe("open bugs", () => {
-  test("render_mockups saves nothing when it refuses", { todo: "mcp-10" }, async () => {
+describe("refusals change nothing, and nothing goes unsaid", () => {
+  test("render_mockups saves nothing when it refuses", async () => {
     const before = (await rest("/api/projects/mcp-app")).project.mockups;
-    await callTool(server, "render_mockups", { project: "mcp-app", screenshots: ["hme"], device: { style: "clay" } });
+    assertRefused(await callTool(server, "render_mockups", { project: "mcp-app", screenshots: ["hme"], device: { style: "clay" } }), /hme/);
     assert.deepEqual((await rest("/api/projects/mcp-app")).project.mockups, before);
   });
 
-  test("update_slide says so when it names a screenshot that is not there or a field to remove that does not exist", { todo: "mcp-15" }, async () => {
+  test("update_slide says so when it names a screenshot that is not there or a field to remove that does not exist", async () => {
     const result = await callTool(server, "update_slide", { project: "mcp-app", slide: 1, changes: { screenshot: "setings" }, remove: ["subheading"] });
-    assert.match(textOf(result), /setings/);
-    assert.match(textOf(result), /subheading/);
+    assertSucceeded(result);
+    assert.match(textOf(result), /Not uploaded yet, so these will render as placeholders: setings\./);
+    assert.match(textOf(result), /Not cleared, because a slide has no such field: subheading\./);
+    assert.equal(jsonOf(result).screenshot, "setings");
+    await callTool(server, "update_slide", { project: "mcp-app", slide: 1, changes: { screenshot: "home" } });
   });
 });
 

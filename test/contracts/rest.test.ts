@@ -61,8 +61,8 @@ const SHOT_KEYS = ["name", "device", "file", "width", "height", "bytes", "versio
 const IMAGE_KEYS = ["name", "file", "width", "height", "bytes", "version"];
 const JOB_KEYS = ["id", "project", "name", "state", "done", "total", "createdAt"];
 const META_KEYS = [
-  "account", "authEnabled", "backgrounds", "badgeTones", "badgeTypes", "badgesShown", "cardIcons", "cardLooks", "creativeLayouts", "deviceColors",
-  "deviceStyles", "devices", "emphasis", "featureLayouts", "featureStyles", "fontList", "fonts", "iconGroups", "iconRowSizes", "iconRowStyles",
+  "account", "authEnabled", "backgrounds", "badgeTones", "badgeTypes", "badgesShown", "cardIcons", "cardLooks", "creativeLayouts", "deviceCatalog",
+  "deviceColors", "deviceStyles", "devices", "emphasis", "featureLayouts", "featureStyles", "fontList", "fonts", "iconGroups", "iconRowSizes", "iconRowStyles",
   "iconRowTones", "icons", "layoutShots", "layoutSpread", "layouts", "logoShapes", "logoSizes", "placements", "pointStyles", "rendersLeft",
   "reviewsShown", "statusBars", "targets",
 ];
@@ -141,6 +141,33 @@ describe("public addresses", () => {
     });
   }
 
+  test("a docs page is made once and answered 304 to a reader that has it", async () => {
+    const first = await call("/docs/api.md");
+    const etag = first.headers.get("etag");
+    assert.ok(etag, "no ETag");
+    assert.equal(first.headers.get("cache-control"), "no-cache");
+    // fetch() sends Cache-Control: no-cache with If-None-Match and sets Host itself, so these go out by hand.
+    const { port } = new URL(server.url);
+    const statusOf = (headers: Record<string, string>) =>
+      new Promise<number>((resolve, reject) => {
+        const request = http.get({ host: "127.0.0.1", port, path: "/docs/api.md", headers }, (response) => {
+          response.resume();
+          resolve(response.statusCode!);
+        });
+        request.on("error", reject);
+      });
+    assert.equal(await statusOf({ "If-None-Match": etag }), 304);
+    assert.equal((await call("/docs/api.md")).body, first.body);
+    // Another address is another page.
+    assert.equal(await statusOf({ "If-None-Match": etag, Host: `localhost:${port}` }), 200);
+  });
+
+  test("/llms.txt says whether people sign in as this server is set up", async () => {
+    const answer = await call("/llms.txt");
+    assert.match(answer.body, /without signing in/);
+    assert.doesNotMatch(answer.body, /sign in with Google/);
+  });
+
   test("fonts, icons and robots.txt are served", async () => {
     const css = await call("/fonts/fonts.css");
     assert.equal(css.status, 200);
@@ -212,6 +239,14 @@ describe("projects", () => {
     assert.equal(answer.body.rendersLeft, null);
     assert.ok(Array.isArray(answer.body.devices) && answer.body.devices.length > 0);
     assertKeys(answer.body.targets, ["iphone-6.9", "ipad-13", "mac-2880"]);
+    // Every device kind with its models, each with the sizes it is drawn at and the export sizes made for it.
+    assert.deepEqual(
+      answer.body.deviceCatalog.map((kind: { id: string }) => kind.id),
+      answer.body.devices.map((kind: { id: string }) => kind.id),
+    );
+    const targets = answer.body.deviceCatalog.flatMap((kind: { models: Array<{ targets: string[] }> }) => kind.models.flatMap((model) => model.targets));
+    assert.ok(targets.includes("iphone-6.9") && targets.includes("mac-2880"));
+    for (const kind of answer.body.deviceCatalog) for (const model of kind.models) assertKeys(model, ["id", "label", "sizes", "targets"]);
   });
 
   test("create, list, read, change and delete a project", async () => {
@@ -255,6 +290,27 @@ describe("projects", () => {
     const removed = await call("/api/projects/contract-app-2", { method: "DELETE" });
     assert.equal(removed.status, 204);
     assertError(await call("/api/projects/contract-app-2"), 404);
+  });
+
+  test("one slide is changed with PATCH, counting from 0", async () => {
+    const id = await createProject({ name: "Patched", slides: THREE_SLIDES });
+    const answer = await call(`/api/projects/${id}/slides/1`, send("PATCH", { changes: { headline: "Second, changed", headlne: "x" } }));
+    assert.equal(answer.status, 200);
+    assertKeys(answer.body, DETAIL_KEYS);
+    assert.equal(answer.body.project.slides[1].headline, "Second, changed");
+    assert.equal(answer.body.slide.headline, "Second, changed");
+    assert.equal(answer.body.revision, 2);
+    assert.deepEqual(answer.body.warnings, ["Ignored, because a slide has no such field: headlne."]);
+
+    const named = await call(`/api/projects/${id}/slides/0`, send("PATCH", { changes: { screenshot: "setings" }, remove: ["subheading"] }));
+    assert.deepEqual(named.body.warnings, [
+      "Not uploaded yet, so these will render as placeholders: setings.",
+      "Not cleared, because a slide has no such field: subheading.",
+    ]);
+    assertError(await call(`/api/projects/${id}/slides/3`, send("PATCH", { changes: { headline: "x" } })), 400, /^Slide 4 does not exist; the project has 3\.$/);
+    assertError(await call(`/api/projects/${id}/slides/0`, send("PATCH", { of: "ipad", changes: { headline: "x" } })), 400, /no slide set of its own/);
+    assertError(await call(`/api/projects/${id}/slides/one`, send("PATCH", { changes: {} })), 400);
+    assertError(await call(`/api/projects/nope/slides/0`, send("PATCH", { changes: {} })), 404);
   });
 
   test("a project can be created whole", async () => {
@@ -571,6 +627,27 @@ describe("revisions", () => {
     assertError(await call(`/api/projects/${id}`, ifMatch("latest", { name: "Garbage" })), 400, /If-Match/);
     // Without If-Match, or with *, a PUT saves on whatever is current, as before.
     assert.equal((await call(`/api/projects/${id}`, ifMatch("*", { name: "Any" }))).body.revision, 5);
+  });
+
+  test("a slide changed on an older revision is a 409 with the project as it is", async () => {
+    const id = await createProject({ name: "Slide Matched", slides: THREE_SLIDES });
+    await call(`/api/projects/${id}`, send("PUT", { name: "Moved On" }));
+    const stale = await call(`/api/projects/${id}/slides/0`, { ...ifMatch('"1"', { changes: { headline: "Lost" } }), method: "PATCH" });
+    assertError(stale, 409, /revision 1/);
+    assert.equal(stale.body.revision, 2);
+    assert.equal(stale.headers.get("etag"), '"2"');
+    assert.equal(stale.body.project.project.slides[0].headline, "First *slide*");
+    const saved = await call(`/api/projects/${id}/slides/0`, { ...ifMatch('"2"', { changes: { headline: "Kept" } }), method: "PATCH" });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.revision, 3);
+  });
+
+  test("the Studio is named in the history when it says it is the Studio", async () => {
+    const id = await createProject({ name: "Who Saved" });
+    await call(`/api/projects/${id}`, { ...send("PUT", { name: "By The Studio" }), headers: { "Content-Type": "application/json", "X-Appshots-Client": "studio" } });
+    await call(`/api/projects/${id}`, send("PUT", { name: "By A Script" }));
+    const actors = (await call(`/api/projects/${id}/revisions`)).body.revisions.map((row: { actor: string }) => row.actor);
+    assert.deepEqual(actors, ["api", "studio", "api"]);
   });
 
   test("a PUT says which fields it left out", async () => {
