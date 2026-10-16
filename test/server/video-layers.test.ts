@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
-import { svgLogo } from "../helpers/images.ts";
+import { png, svgLogo } from "../helpers/images.ts";
 import { startServer, type TestServer } from "../helpers/spawn-server.ts";
 import { type FakeCapturer, fakeCapturer, gate } from "./video-fakes.ts";
 
@@ -28,6 +30,18 @@ async function settled(job: string) {
     if (answer.body.finishedAt) return answer.body;
     await sleep(10);
   }
+}
+/** The names in a ZIP, read from the directory at its end. */
+function zipNames(zip: Buffer): string[] {
+  const end = zip.length - 22;
+  const names: string[] = [];
+  let at = zip.readUInt32LE(end + 16);
+  for (let i = 0; i < zip.readUInt16LE(end + 10); i++) {
+    const length = zip.readUInt16LE(at + 28);
+    names.push(zip.toString("utf8", at + 46, at + 46 + length));
+    at += 46 + length + zip.readUInt16LE(at + 30) + zip.readUInt16LE(at + 32);
+  }
+  return names;
 }
 async function drawing() {
   while (fake.calls.length === 0) await sleep(5);
@@ -239,4 +253,22 @@ test("a picture's address reaches nothing but the pictures of a set", async () =
     assert.notEqual(answer.status, 200, route);
     assert.ok(!(await answer.text()).includes('"slides"'), route);
   }
+});
+
+test("the project's renders and its export do not take in a set of layers", async () => {
+  const other = (await call("/api/projects", send("POST", { name: "Exported", locales: ["en"] }))).body.id;
+  // Pictures where a render puts them, so there is something to list and export without a browser.
+  const out = path.join(server.dataDir, "projects", other, "out", "en", "iphone-6.9");
+  await mkdir(out, { recursive: true });
+  for (const name of ["01.png", "02.png"]) await writeFile(path.join(out, name), await png(1320, 2868));
+  const project = await call(`/api/projects/${other}`);
+  assert.equal(project.body.outputs.length, 1);
+  const exported = async () => zipNames(Buffer.from(await (await server.fetch(`/api/projects/${other}/export.zip`)).arrayBuffer()));
+  const names = await exported();
+  assert.deepEqual(names, ["README.txt", "en/iphone-6.9/01.png", "en/iphone-6.9/02.png"]);
+
+  const { set } = (await call(`/api/projects/${other}/video-layers`, send("POST", { display: "iphone", captions: [{ id: "a", text: "A" }] }))).body;
+  assert.deepEqual(await readdir(path.join(server.dataDir, "projects", other, "video")), [set]);
+  assert.deepEqual((await call(`/api/projects/${other}`)).body, project.body);
+  assert.deepEqual(await exported(), names);
 });
