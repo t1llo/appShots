@@ -55,7 +55,7 @@ function assertError(answer: Answer, status: number, says?: RegExp): void {
 }
 
 const PROJECT_KEYS = ["id", "name", "createdAt", "updatedAt", "locales", "theme", "slides", "deviceSlides", "creatives", "mockups"];
-const DETAIL_KEYS = ["project", "shots", "images", "outputs", "creativeOutputs", "defaultTargets"];
+const DETAIL_KEYS = ["project", "shots", "orphanedShots", "images", "outputs", "creativeOutputs", "defaultTargets"];
 const LIST_KEYS = ["id", "name", "slides", "ownSets", "locales", "updatedAt"];
 const SHOT_KEYS = ["name", "device", "file", "width", "height", "bytes", "version"];
 const IMAGE_KEYS = ["name", "file", "width", "height", "bytes", "version"];
@@ -278,7 +278,7 @@ describe("projects", () => {
   test("/api/usage counts what the account keeps", async () => {
     const answer = await call("/api/usage");
     assert.equal(answer.status, 200);
-    assertKeys(answer.body, ["projects", "slides", "shots", "images", "bytes"]);
+    assertKeys(answer.body, ["projects", "slides", "shots", "images", "bytes", "uploadBytes"]);
     for (const value of Object.values(answer.body)) assert.equal(typeof value, "number");
   });
 
