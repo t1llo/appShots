@@ -115,7 +115,8 @@ export function checkProbe(probe, display, { draft = false, file } = {}) {
     const movie = !file || /\.mov$/i.test(file);
     const codec = [video.codec_name ?? "none", prores ? video.profile : null].filter(Boolean).join(" ");
     judge("codec", video.codec_name === "h264" || (prores && video.profile === "HQ" && movie), codec, "h264, or ProRes 422 HQ in a .mov");
-    if (!prores) {
+    // Profiles and levels are named and numbered per codec; these are H.264's, and any other codec is refused above.
+    if (video.codec_name === "h264") {
       judge("profile", PREVIEW_FORMAT.profiles.includes(video.profile ?? ""), video.profile ?? "none", "High, Main or Baseline");
       const level = video.level ?? -99;
       // ffprobe says -99 for a level it cannot read; that is not one above 4.0.

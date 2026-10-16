@@ -92,7 +92,7 @@ export const FIXTURES = {
   interlaced: { recipe: like({ filters: [`${TAGS}:field_mode=tff`], video: swap({ "-x264-params": "nal-hrd=cbr:force-cfr=1:interlaced=1:tff=1" }), extra: ["-flags", "+ildct+ilme"] }), errors: ["field-order"], warnings: [] },
   "square-not": { recipe: like({ filters: [TAGS, "setsar=4/3"] }), errors: ["sar"], warnings: [] },
   "two-videos": { recipe: like({ extra: ["-map", "0:v", "-map", "0:v", "-map", "1:a"] }), errors: ["video-streams"], warnings: [] },
-  hevc: { recipe: like({ video: ["-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-b:v", "11M", "-tag:v", "hvc1", "-x265-params", "log-level=error"] }), errors: ["codec", "level"], warnings: [] },
+  hevc: { recipe: like({ video: ["-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-b:v", "11M", "-tag:v", "hvc1", "-x265-params", "log-level=error"] }), errors: ["codec"], warnings: [] },
   "low-bitrate": { recipe: like({ video: swap({ "-b:v": "4M", "-minrate": "4M", "-maxrate": "4M", "-bufsize": "8M" }) }), errors: [], warnings: ["bitrate"] },
   untagged: { recipe: like({ filters: [] }), errors: [], warnings: ["color"] },
   "display-p3": { recipe: like({ filters: ["setparams=color_primaries=smpte432:color_trc=bt709:colorspace=bt709"] }), errors: [], warnings: ["color"] },

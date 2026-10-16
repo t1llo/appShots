@@ -61,6 +61,13 @@ test("each finding has what was measured and what Apple takes", () => {
   assert.equal(checkProbe(stored("600mb"), null).errors[0].value, "629.1 MB");
 });
 
+test("profile and level are judged for H.264 alone: HEVC's level 120 is its 4.0, not 12.0", () => {
+  const hevc = checkProbe(stored("hevc"), null);
+  assert.deepEqual(hevc.errors, [{ rule: "codec", value: "hevc", expected: "h264, or ProRes 422 HQ in a .mov" }]);
+  assert.ok(!hevc.passed.some((rule) => rule.rule === "profile" || rule.rule === "level"));
+  assert.ok(checkProbe(stored("good"), null).passed.some((rule) => rule.rule === "level"));
+});
+
 test("silent AAC, at about 2 kbps, is not judged by its bitrate; music is", () => {
   const silent = checkProbe(stored("good"), null);
   assert.ok(Number(stored("good").streams[1].bit_rate) < 4000);
