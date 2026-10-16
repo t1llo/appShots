@@ -87,6 +87,18 @@ test("help for video lists each sub-action, and the general help points to it", 
   for (const action of Object.keys(VIDEO_ACTIONS)) assert.match(VIDEO_HELP, new RegExp(`appshots video ${action}\\b`), action);
 });
 
+test("help for video names every flag a sub-action takes, in that sub-action's entry", () => {
+  const entries = VIDEO_HELP.split(/\n(?= {2}appshots video )/);
+  // --plan, --lang and --display are said once for all of them, above the list.
+  const shared = ["plan", "lang", "display"];
+  for (const flag of shared) assert.match(entries[0], new RegExp(`--${flag}\\b`), flag);
+  for (const [action, { flags }] of Object.entries(VIDEO_ACTIONS)) {
+    const entry = entries.find((each) => each.startsWith(`  appshots video ${action}`));
+    assert.ok(entry, action);
+    for (const flag of flags.filter((each) => !shared.includes(each))) assert.match(entry, new RegExp(`--${flag}\\b`), `${action} --${flag}`);
+  }
+});
+
 test("an unknown sub-action, or none, gives the usage", async () => {
   for (const argv of [[], ["nope"], ["toString"]]) await assert.rejects(runVideo(argv), (error) => error instanceof Failure && error.message === VIDEO_USAGE);
   assert.match(VIDEO_USAGE, /^Usage: appshots video init \| plan \| record .* \| guide\. 'appshots help video' lists what each one takes\.$/);

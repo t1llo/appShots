@@ -124,7 +124,7 @@ export const VIDEO_ACTIONS = {
     },
   },
   check: { flags: ["plan", "display", "lang", "json"], usage: "check [files...] [--display <key>] [--json]", run: (rest, flags) => checkPreviews(rest, flags) },
-  sheet: { flags: ["plan", "raw", "every", "lang", "display", "scene"], usage: "sheet [file] [--raw] [--every <seconds>] [--lang <codes>] [--display <keys>]", run: (rest, flags) => sheet(rest, flags) },
+  sheet: { flags: ["plan", "raw", "every", "lang", "display", "scene"], usage: "sheet [file] [--raw] [--scene <ids>] [--every <seconds>] [--lang <codes>] [--display <keys>]", run: (rest, flags) => sheet(rest, flags) },
   poster: { flags: ["plan", "at", "lang", "display"], usage: "poster --at <seconds> [file] [--lang <codes>] [--display <keys>]", run: (rest, flags) => poster(rest, flags) },
   remotion: {
     flags: ["plan", "yes", "no-install", "again"],
