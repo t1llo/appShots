@@ -395,12 +395,15 @@ export async function creativeHtml(ctx: CreativeContext): Promise<string> {
   const guide = ctx.guides && !banner
     ? `<div class="guide" style="left:${safe.x}px;top:${safe.y}px;width:${safe.width}px;height:${safe.height}px;--g:${round(canvas.width / 480)}px"><span>Safe area</span></div>`
     : "";
+  // The fit script checks that the copy stays inside it.
+  const inside = mirror(safe);
+  const safeData = banner ? "" : ` data-safe="${inside.x} ${inside.y} ${inside.width} ${inside.height}"`;
 
   return pageHtml({
     title: `${project.name} · ${placement.label}`,
     locale,
     css: CSS + CREATIVE_CSS,
-    body: `<div class="canvas creative creative-${layout} em-${emphasis} ${dark ? "dark" : "light"}" style="${vars}" data-copy-max="${(box.height / canvas.height).toFixed(4)}" data-shrink="together" data-fonts="${esc(fontsToLoad(font, body))}">
+    body: `<div class="canvas creative creative-${layout} em-${emphasis} ${dark ? "dark" : "light"}" style="${vars}" data-copy-max="${(box.height / canvas.height).toFixed(4)}" data-shrink="together"${safeData} data-fonts="${esc(fontsToLoad(font, body))}">
 <div class="bg" style="${backgroundCss(background)}"></div>${noise}${DEFS}
 ${artHtml}
 ${copyHtml}

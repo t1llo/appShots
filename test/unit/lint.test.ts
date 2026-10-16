@@ -117,7 +117,7 @@ test("a headline takes up to three lines, four in a column or on a statement, tw
 
 const page = (fields: Partial<FitReport>): FitReport => ({ locale: "en", scale: 1, fits: true, lines: 2, outside: false, ...fields });
 
-test("fitting names each language, slide and device once, with its worst size", () => {
+test("fitting names each language, slide and device once, with its worst size, in the order of the set", () => {
   const found = lintFit([
     { report: page({ locale: "de", slide: 2, device: "iphone", target: "iphone-6.9", scale: 0.7 }) },
     { report: page({ locale: "de", slide: 2, device: "iphone", target: "iphone-6.5", scale: 0.6 }) },
@@ -130,14 +130,14 @@ test("fitting names each language, slide and device once, with its worst size", 
   assert.deepEqual(
     found.map(({ rule, locale, slide, placement, target, value }) => [rule, locale, slide ?? placement, target, value]),
     [
+      ["headline-lines", "fr", 0, "iphone-6.9", 5],
       ["headline-scaled", "de", 2, "iphone-6.5", 0.6],
       ["copy-overflow", "fr", 2, "iphone-6.9", 0.5],
-      ["headline-lines", "fr", 0, "iphone-6.9", 5],
       ["safe-area", "en", "header", undefined, undefined],
     ],
   );
-  assert.equal(found[0]!.limit, SCALE_LIMIT);
-  assert.match(found[0]!.text, /^Slide 3 on iPhone: the copy was set at de 60% of its size to fit\./);
+  assert.equal(found[1]!.limit, SCALE_LIMIT);
+  assert.match(found[1]!.text, /^Slide 3 on iPhone: the copy was set at de 60% of its size to fit\./);
   assert.match(found[3]!.text, /^Product page header \(en\): text runs outside the safe area/);
 });
 
@@ -151,6 +151,9 @@ test("a render's warnings say each finding once, with the languages it is in", (
     `Slide 1: the headline names "App of the Day" (en), "App des Tages" (de), "App du jour" (fr), one of Apple's own recognitions. App Review does not accept them in store images.`,
     "Slide 2 on iPhone: the copy was set at de 62%, fr 71% of its size to fit. Shorten it there, or it reads smaller than the rest of the set.",
   ]);
+  // Words that differ by language name each its own, and the place none.
+  const some = lintSlide(slide({ headline: { en: "App of the Day", de: "App des Tages", fr: "Une app calme" } }), { slide: 0 }, ["en", "de", "fr"], "en");
+  assert.match(lintTexts(some, ["en", "de", "fr"])[0]!, /^Slide 1: the headline names "App of the Day" \(en\), "App des Tages" \(de\), one of/);
   // The same words in only some of the languages name those.
   assert.match(lintTexts(lintSlide(slide({ headline: { en: "Free", de: "Ruhig" } }), { slide: 0 }, ["en", "de"], "en"), ["en", "de"])[0]!, /^Slide 1 \(en\): the headline says "Free"\./);
 });

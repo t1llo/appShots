@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { CREATIVE_CAPACITY, creativeLayout } from "../creative.ts";
+import { type LintWarning, lintCreative, lintSlide, lintTexts } from "../domain/lint.ts";
 import { LOCALE, type Project, type Slide, slidesFor } from "../schema.ts";
 import { DEVICE_LABELS, type DeviceKind, orderTargets, PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, standardTargets, TARGETS, type TargetId } from "../sizes.ts";
 import { findShot, InputError, type Shot } from "../store.ts";
@@ -80,6 +81,8 @@ export interface RenderPlan {
   /** Pictures the run draws. */
   total: number;
   warnings: string[];
+  /** What the copy and the logos break of the store's rules. Each is also one of `warnings`, in fewer words. */
+  lint: LintWarning[];
   /** The screenshot files the pages will read. */
   shots: Shot[];
   /** What a device's set looks like in a language, keyed `<locale> <device>`: a set drawn from another design is out of date. */
@@ -188,6 +191,17 @@ export function planRender(project: Project, shots: Shot[], images: { name: stri
     if (extra > 0) warnings.add(`${label}: the ${layout} layout shows ${room} screenshots, so the last ${extra === 1 ? "one was" : `${extra} were`} left out.`);
   }
 
+  // The copy and the logos, checked once per slide: the shared set is the same slides on every device that has no set of its own.
+  const lint: LintWarning[] = [];
+  const fallback = project.locales[0]!;
+  const shared = new Set(kinds.filter((kind) => !project.deviceSlides[kind]).flatMap(indexesFor));
+  for (const index of [...shared].sort((a, b) => a - b)) lint.push(...lintSlide(project.slides[index]!, { slide: index }, locales, fallback));
+  for (const kind of kinds.filter((each) => project.deviceSlides[each])) {
+    for (const index of indexesFor(kind)) lint.push(...lintSlide(sets.get(kind)![index]!, { ownSet: kind, slide: index }, locales, fallback));
+  }
+  for (const placement of placements) lint.push(...lintCreative(project.creatives[placement]!, placement, locales, fallback));
+  for (const text of lintTexts(lint, locales)) warnings.add(text);
+
   // The screenshots the pages read, and what each device's set looks like in each language.
   const used = new Set<Shot>();
   const designs: Record<string, string> = {};
@@ -228,6 +242,7 @@ export function planRender(project: Project, shots: Shot[], images: { name: stri
     cleanup: everything && !request.targets?.length && !request.locales?.length,
     total: locales.length * (drawn + placements.length),
     warnings: [...warnings],
+    lint,
     shots: [...used],
     designs,
   };

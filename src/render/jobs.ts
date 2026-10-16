@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { holdRender } from "../accounts.ts";
+import type { LintWarning } from "../domain/lint.ts";
 import type { Project } from "../schema.ts";
 import { getProject, InputError, listImages, listShots, NotFoundError, projectDir, type Shot, shotsDir, type Space } from "../store.ts";
 import { commitOutputs, discardStaging, sweepStaging } from "../storage/outputs.ts";
@@ -31,6 +32,8 @@ export interface RenderJob {
   /** What a finished run wrote. */
   files?: number;
   warnings?: string[];
+  /** The warnings about the copy and the logos, as data. */
+  lint?: LintWarning[];
   /** Why a run stopped short. */
   error?: string;
 }
@@ -152,6 +155,7 @@ export function startRender(space: Space, id: string, request: RenderRequest = {
         job.state = "done";
         job.files = result.files.length + result.creatives.length;
         job.warnings = result.warnings;
+        job.lint = result.lint;
         await settle(true);
         return result;
       },

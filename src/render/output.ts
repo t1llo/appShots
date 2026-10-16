@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { type FitReport, type LintWarning, lintFit, lintTexts } from "../domain/lint.ts";
 import { type Project, slidesFor } from "../schema.ts";
+import type { LayoutId } from "../template/layouts/index.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, PLACEMENT_IDS, PLACEMENTS, type PlacementId, TARGETS, type TargetId } from "../sizes.ts";
 import { creativeDir, InputError, projectDir, type Space } from "../store.ts";
 import { type Commit, type StagedSet, stagingDir } from "../storage/outputs.ts";
@@ -45,6 +47,10 @@ export interface RenderResult {
   sheets: RenderedSheet[];
   creatives: RenderedCreative[];
   warnings: string[];
+  /** What the set breaks of the store's rules, and how its copy fitted, as data. Each is also one of `warnings`. */
+  lint: LintWarning[];
+  /** How the copy of each page drawn came out. The sizes that are scaled copies of a drawn one are named by the first. */
+  fit: FitReport[];
 }
 
 /** What a run stops with when it is cancelled. */
@@ -77,6 +83,7 @@ export async function draw(run: Drawing, space: Space, project: Project, plan: R
   const creatives: Promise<RenderedCreative>[] = [];
   const sheets: RenderedSheet[] = [];
   const sets: StagedSet[] = [];
+  const fitted: { report: FitReport; layout?: LayoutId }[] = [];
 
   // Encoding a picture takes about as long as drawing the next, so the two overlap.
   const encoding = new Set<Promise<unknown>>();
@@ -111,9 +118,12 @@ export async function draw(run: Drawing, space: Space, project: Project, plan: R
         const tiles: Promise<Tile>[] = [];
         // A set of its own is named with its device, so it is clear which slide 2 is meant.
         const prefix = deviceSlides[pass.device] ? `${DEVICE_LABELS[pass.device]} slide` : "Slide";
+        const own = deviceSlides[pass.device] ? { ownSet: pass.device } : {};
         for (const index of pass.indexes) {
           if (run.cancelled) throw new Cancelled();
-          await window.load(`http://${local}/render/${id}/${index}?target=${pass.source}&${query}`, `${prefix} ${index + 1}`);
+          const fit = await window.load(`http://${local}/render/${id}/${index}?target=${pass.source}&${query}`, `${prefix} ${index + 1}`);
+          const layout = slidesFor(project, pass.device)[index]?.layout ?? "device-bottom";
+          if (fit) fitted.push({ report: { ...fit, locale, ...own, slide: index, device: pass.device, target: shown }, layout });
           const picture = await window.shoot(size);
           const file = slideFile(index);
           const encoded = pass.targets.map(async (target) => {
@@ -154,7 +164,8 @@ export async function draw(run: Drawing, space: Space, project: Project, plan: R
         if (run.cancelled) throw new Cancelled();
         const size = PLACEMENTS[placement];
         await window.resize(size);
-        await window.load(`http://${local}/render/${id}/creative/${placement}?${query}`, size.label);
+        const fit = await window.load(`http://${local}/render/${id}/creative/${placement}?${query}`, size.label);
+        if (fit) fitted.push({ report: { ...fit, locale, placement } });
         const picture = await window.shoot(size);
         const relative = path.join(locale, creativeDir(placement), `${placement}.png`);
         await mkdir(path.dirname(path.join(stage, relative)), { recursive: true });
@@ -186,8 +197,17 @@ export async function draw(run: Drawing, space: Space, project: Project, plan: R
     ? plan.locales.flatMap((locale) => PLACEMENT_IDS.filter((placement) => !plan.placements.includes(placement)).map((placement) => ({ locale, placement, path: path.join(locale, creativeDir(placement), `${placement}.png`) })))
     : [];
   const drawnCreatives = await Promise.all(creatives);
+  const fitLint = lintFit(fitted);
+  for (const text of lintTexts(fitLint, plan.locales)) warnings.add(text);
   return {
-    result: { files: (await Promise.all(files)).flat(), sheets, creatives: drawnCreatives, warnings: [...warnings] },
+    result: {
+      files: (await Promise.all(files)).flat(),
+      sheets,
+      creatives: drawnCreatives,
+      warnings: [...warnings],
+      lint: [...plan.lint, ...fitLint],
+      fit: fitted.map(({ report }) => report),
+    },
     commit: {
       job: run.job.id,
       sets,

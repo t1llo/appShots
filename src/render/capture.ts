@@ -1,5 +1,6 @@
 import type { Page } from "playwright";
 import { config } from "../config.ts";
+import { type PageFit, readFit } from "../domain/lint.ts";
 import { InputError, NotFoundError, type Space } from "../store.ts";
 import { getBrowser } from "./engine.ts";
 
@@ -8,14 +9,26 @@ export interface Size {
   height: number;
 }
 
-/** What a page could not draw, in the words of its readiness mark: "<kind>:<detail>", such as "screenshot:home missing". */
+/**
+ * What a page could not draw, in the words of its readiness mark: "<kind>:<detail>", such as "screenshot:home missing",
+ * several joined by "; ".
+ */
 function described(reason: string): string {
+  const problems = reason.split("; ").filter(Boolean);
+  return problems.length > 1 ? problems.map(described).join(" Also, ") : describedOne(problems[0] ?? "");
+}
+
+function describedOne(reason: string): string {
   const [kind = "", ...rest] = reason.split(":");
-  const [name, problem] = rest.join(":").trim().split(/\s+/);
+  const detail = rest.join(":").trim();
+  const [name, problem] = detail.split(/\s+/);
   if (kind === "screenshot" && name) {
     return problem === "undecodable"
       ? `the screenshot "${name}" could not be read as a picture. Upload it again, then render once more.`
       : `the screenshot "${name}" is not there any more. It was deleted or replaced while the render waited: upload it again, then render once more.`;
+  }
+  if (kind === "font" && detail) {
+    return `the font "${detail}" did not load, and the copy would have been set in another. Render once more; if it fails again, pick another font.`;
   }
   return `the page could not be drawn (${reason || "no reason given"}).`;
 }
@@ -59,8 +72,11 @@ export async function openWindow(space: Space, size: Size, options: { transparen
         current = next;
       },
 
-      /** Opens a page and waits until it says it is drawn. `where` names it in an error, such as "Slide 2". */
-      async load(url: string, where: string): Promise<void> {
+      /**
+       * Opens a page and waits until it says it is drawn. `where` names it in an error, such as "Slide 2". Returns
+       * how the copy of a slide or a creative came out, and nothing for a page that does not say.
+       */
+      async load(url: string, where: string): Promise<PageFit | undefined> {
         const response = await page.goto(url, { waitUntil: "load" });
         if (response && !response.ok()) {
           const body = await response.json().catch(() => null);
@@ -75,11 +91,12 @@ export async function openWindow(space: Space, size: Size, options: { transparen
           await document.fonts.ready;
           // A page that waits for its images without saying when one fails still shows it as broken.
           const broken = [...document.images].filter((img) => img.complete && img.naturalWidth === 0).map((img) => img.getAttribute("src") ?? "");
-          return { ready: document.body.dataset.ready, error: document.body.dataset.error ?? "", broken };
+          return { ready: document.body.dataset.ready, error: document.body.dataset.error ?? "", broken, fit: document.body.dataset.fit };
         });
         if (state.ready === "error") throw new PageError(`${where}: ${described(state.error)}`);
         const shot = state.broken.map((src) => /\/shots\/([^/?]+)/.exec(src)?.[1]).find(Boolean);
         if (shot) throw new PageError(`${where}: ${described(`screenshot:${decodeURIComponent(shot).split(".")[0]} missing`)}`);
+        return readFit(state.fit);
       },
 
       /** The part of the page inside `clip`, drawn at `scale`, as a PNG. */

@@ -1,7 +1,8 @@
 /**
  * The scripts that run in a page before it is captured. Each ends by telling the renderer whether the page is ready:
  * `document.body.dataset.ready` is "1" once it is, or "error" with `dataset.error` saying what is wrong, as
- * "<kind>:<detail>" joined by "; ", such as "screenshot:home missing".
+ * "<kind>:<detail>" joined by "; ", such as "screenshot:home missing" or "font:Inter Variable". A slide or a creative
+ * also says how its copy came out in `document.body.dataset.fit`, as JSON the render reads with `readFit`.
  */
 
 /**
@@ -26,10 +27,24 @@ const REPORT = `
     const broken = [];
     await Promise.all([...document.images].map((img) => img.decode().catch(() => broken.push(img))));
     return broken;
+  };
+  // A family the page declares of which no face loaded would leave the copy in a fallback the design never chose.
+  // One it does not declare at all is a page drawn without its stylesheet, such as in a test.
+  const unloaded = (fonts) => {
+    const families = [...new Set(fonts.map((font) => (font.match(/'([^']+)'/) || [])[1]).filter(Boolean))];
+    const faces = [...document.fonts];
+    return families
+      .filter((family) => {
+        const own = faces.filter((face) => face.family.replace(/^["']|["']$/g, '') === family);
+        return own.length > 0 && !own.some((face) => face.status === 'loaded');
+      })
+      .map((family) => 'font:' + family);
   };`;
 
 /**
- * Runs in a slide or a creative: waits for fonts and images, then shrinks badges and copy until they fit.
+ * Runs in a slide or a creative: waits for fonts and images, then shrinks badges and copy until they fit, and says how
+ * the copy came out: the share of its designed size it was set at, whether it fits at all, the lines its headline
+ * takes, and whether any of its text stands outside the safe area of a store asset or off the edge of the picture.
  *
  * Each size is tried on the same steps a loop walking it down one at a time would take, so the outcome is the same,
  * but by halving: the page is laid out a handful of times instead of once a step.
@@ -37,12 +52,16 @@ const REPORT = `
 export const FIT_SCRIPT = `(async () => {${REPORT}
   const canvas = document.querySelector('.canvas');
   const set = (name, value) => canvas.style.setProperty(name, String(value));
+  let fonts = [];
   try {
-    await Promise.all(JSON.parse(canvas.dataset.fonts).map((font) => document.fonts.load(font)));
+    fonts = JSON.parse(canvas.dataset.fonts);
+    if (canvas.querySelector('.sb')) fonts.push("600 40px 'Inter Variable'");
+    await Promise.all(fonts.map((font) => document.fonts.load(font).catch(() => [])));
     await document.fonts.ready;
   } catch {}
   const broken = await decoded();
-  const problems = [];
+  const problems = unloaded(fonts);
+  const fit = { scale: 1, fits: true, lines: 0, outside: false };
   // The values a loop stepping a size would give it, from where it starts to the first past its limit.
   const ladder = (start, next, more) => {
     const rungs = [start];
@@ -91,7 +110,9 @@ export const FIT_SCRIPT = `(async () => {${REPORT}
         set('--ts', t);
         if (together) set('--bs', b);
       };
-      first(rungs, apply, () => !tooBig());
+      const [t] = first(rungs, apply, () => !tooBig());
+      fit.scale = Math.round((t / ts) * 1000) / 1000;
+      fit.fits = !tooBig();
     }
 
     const grid = canvas.querySelector('.f-grid');
@@ -169,6 +190,30 @@ export const FIT_SCRIPT = `(async () => {${REPORT}
         if (spare > u * 4) for (const device of devices) device.style.top = device.offsetTop + spare / 2 + 'px';
       }
     }
+
+    const headline = copy && copy.querySelector('.headline');
+    if (headline && headline.textContent.trim()) {
+      const style = getComputedStyle(headline);
+      const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
+      fit.lines = Math.max(1, Math.round(headline.offsetHeight / line));
+    }
+    // The safe area of a store asset is in the canvas's own pixels; anything else has the whole canvas.
+    const [sx, sy, sw, sh] = (canvas.dataset.safe || '0 0 ' + canvas.offsetWidth + ' ' + canvas.offsetHeight).split(' ').map(Number);
+    const frame = canvas.getBoundingClientRect();
+    const k = frame.width / canvas.offsetWidth || 1;
+    const range = document.createRange();
+    for (const box of canvas.querySelectorAll('.copy')) {
+      const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node && !fit.outside; node = walker.nextNode()) {
+        if (!node.textContent.trim()) continue;
+        range.selectNodeContents(node);
+        for (const rect of range.getClientRects()) {
+          const [x, y, w, h] = [(rect.left - frame.left) / k, (rect.top - frame.top) / k, rect.width / k, rect.height / k];
+          if (w > 0 && (x < sx - 1 || y < sy - 1 || x + w > sx + sw + 1 || y + h > sy + sh + 1)) fit.outside = true;
+        }
+      }
+    }
+    document.body.dataset.fit = JSON.stringify(fit);
   } catch (error) {
     problems.push('fit:' + (error instanceof Error ? error.message : String(error)));
   }
@@ -177,8 +222,9 @@ export const FIT_SCRIPT = `(async () => {${REPORT}
 
 /** Runs in a mockup: waits for the font of the status bar and the screenshot, then says whether the page is ready. */
 export const READY_SCRIPT = `(async () => {${REPORT}
+  const fonts = ["600 40px 'Inter Variable'"];
   try {
-    await document.fonts.load("600 40px 'Inter Variable'");
+    await document.fonts.load(fonts[0]);
   } catch {}
-  report(await decoded(), []);
+  report(await decoded(), document.querySelector('.sb') ? unloaded(fonts) : []);
 })();`;

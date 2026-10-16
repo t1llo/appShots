@@ -1,6 +1,6 @@
 import { ICON_GROUPS, type IconId } from "../icons.ts";
 import type { Creative, Slide, Text } from "../schema.ts";
-import { DEVICE_LABELS, type DeviceKind, PLACEMENTS, type PlacementId, type TargetId } from "../sizes.ts";
+import { DEVICE_KINDS, DEVICE_LABELS, type DeviceKind, PLACEMENT_IDS, PLACEMENTS, type PlacementId, type TargetId } from "../sizes.ts";
 import { type LayoutId, layoutDef } from "../template/layouts/index.ts";
 import { pick } from "../template/parts/text.ts";
 
@@ -287,7 +287,19 @@ export function lintFit(pages: { report: FitReport; layout?: LayoutId }[]): Lint
     // Copy that does not fit spills anyway; that it also leaves the safe area says nothing more.
     if (report.outside && report.fits) note({ rule: "safe-area", ...at }, () => false);
   }
-  return worded([...worst.values()]);
+  // In the order of the set: its slides, then a device's own, then the assets, whichever language was drawn first.
+  const rank = (finding: Finding) => [
+    finding.placement ? PLACEMENT_IDS.indexOf(finding.placement) + 1 : 0,
+    finding.ownSet ? DEVICE_KINDS.indexOf(finding.ownSet) + 1 : 0,
+    finding.slide ?? 0,
+    finding.device ? DEVICE_KINDS.indexOf(finding.device) : 0,
+  ];
+  const ranked = [...worst.values()].sort((a, b) => {
+    const [x, y] = [rank(a), rank(b)];
+    const i = x.findIndex((value, at) => value !== y[at]);
+    return i < 0 ? 0 : x[i]! - y[i]!;
+  });
+  return worded(ranked);
 }
 
 /** The smallest each language's copy was set, for a reader who cannot look at the pictures. */
@@ -352,7 +364,8 @@ function sentence(findings: Finding[], all?: string[]): string {
   const field = fieldOf(first.field);
   const langs = languagesOf(findings, all);
   const words = wordsOf(findings, all);
-  const said = `${where}${langs}: ${field}`;
+  // Words that differ by language each name their own.
+  const said = `${where}${new Set(findings.map((finding) => finding.match)).size > 1 ? "" : langs}: ${field}`;
   const logos = and((first.match ?? "").split(",").filter(Boolean).map(brandName));
   const store = first.placement !== undefined;
   switch (first.rule) {
