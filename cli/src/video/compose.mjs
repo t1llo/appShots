@@ -1,0 +1,499 @@
+// Cuts the previews together. For each display and language of the plan: one segment per scene and per card
+// (stage 1), then the join with its transitions, the audio and the encode to Apple's specification (stage 2), and
+// at the end the poster frame and the check. Footage stays on the Mac; the server only drew the layers.
+//
+// Work files are named by what goes into them, so a scene whose recording, layers and settings did not change is
+// not built again, and a preview whose segments did not change is not encoded again.
+
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fail } from "../fail.mjs";
+import { confirm } from "../prompt.mjs";
+import { pool, readJson } from "../util.mjs";
+import { keptAudio, musicOf, previewAudio } from "./audio.mjs";
+import { checkProbe } from "./check.mjs";
+import { runFfmpeg } from "./encode.mjs";
+import { findFfmpeg } from "./ffmpeg.mjs";
+import { FADE, cardArgs, finalCodec, joinArgs, joinPoints, passArgs, sceneArgs, segmentCodec } from "./graph.mjs";
+import { fetchLayers } from "./layers.mjs";
+import { FPS, captionBands, num, placement, plateBox, sceneWindow, toFrames, touchPoints, turnOf } from "./normalise.mjs";
+import { captionLayerId, sceneSeconds } from "./plan.mjs";
+import { posterFrame } from "./poster.mjs";
+import { probe } from "./probe.mjs";
+import { readSidecar } from "./record/index.mjs";
+import { composeRemotion } from "./remotion.mjs";
+import { PREVIEW_SPECS } from "./specs.mjs";
+
+/** Changes when a segment made from the same inputs and the same command would come out different. */
+const SEGMENT_VERSION = 1;
+
+/** The same for the join and the encode of a preview. */
+const PREVIEW_VERSION = 1;
+
+/** Seconds a scene's caption waits after its transition before it fades in. */
+const CAPTION_DELAY = 0.1;
+
+/** Apple takes previews of 15 to 30 seconds. */
+const SHORTEST = 15;
+const LONGEST = 30;
+
+/**
+ * What compose takes from the other video modules. A test stands in for them through setParts, as it stands in
+ * for programs through setRunner.
+ */
+const parts = { findFfmpeg, fetchLayers, readSidecar, sceneSeconds, captionLayerId, probe, checkProbe, posterFrame, composeRemotion, specs: PREVIEW_SPECS };
+
+/**
+ * Puts other parts in place, such as a test's, and returns the ones they replace.
+ * @param {Partial<typeof parts>} next
+ */
+export function setParts(next) {
+  const before = { ...parts };
+  Object.assign(parts, next);
+  return before;
+}
+
+/**
+ * @typedef {{ ffmpeg: string, ffprobe: string, version: string, encoders: Set<string>, filters: Set<string> }} Tools
+ * @typedef {{ id: string, locale: string | null, kind: string, width?: number, height?: number, box?: number[] }} Layer
+ * @typedef {{ set: string, size?: [number, number], layers: Layer[] }} Manifest
+ *
+ * @typedef {object} Context What one preview is made from: one display, one language.
+ * @property {any} plan The plan as readPlan returns it.
+ * @property {string} root The work folder, appshots-video/ next to the plan.
+ * @property {string} display
+ * @property {string} locale
+ * @property {[number, number]} size
+ * @property {Manifest} layers The manifest of the display's layer set, its files under layers/<set>/.
+ * @property {Tools} tools
+ * @property {number} jobs How many segments are built at once.
+ * @property {boolean} [draft]
+ *
+ * @typedef {object} Job A segment to build.
+ * @property {"intro" | "scene" | "outro"} kind
+ * @property {string} scene The scene's id, or "intro" or "outro".
+ * @property {number} frames
+ * @property {string} label For the messages.
+ * @property {string[]} args ffmpeg's arguments, all but the output file.
+ *
+ * @typedef {{ scene: string, file: string, seconds: number, frames: number, built: boolean }} Segment
+ */
+
+/**
+ * The plan's folder, and the work folder next to it.
+ * @param {Record<string, string | true>} flags
+ */
+export function folders(flags) {
+  const plan = path.resolve(typeof flags.plan === "string" ? flags.plan : "appshots.video.json");
+  const base = path.dirname(plan);
+  return { base, root: path.join(base, "appshots-video") };
+}
+
+/**
+ * How many segments are built at once: --jobs, or half the cores and at most 4. Each ffmpeg uses several cores
+ * itself, and a graph is less likely to stall on a Mac that is not out of memory.
+ * @param {Record<string, string | true>} flags
+ */
+export function jobsOf(flags) {
+  if (flags.jobs === undefined) return Math.max(1, Math.min(4, Math.floor(os.cpus().length / 2)));
+  const jobs = Number(flags.jobs);
+  if (!Number.isInteger(jobs) || jobs < 1 || jobs > 16) fail("--jobs takes how many segments to build at once, from 1 to 16, such as --jobs 2.");
+  return jobs;
+}
+
+/**
+ * The part of `all` that --<name> picks, in the plan's order; all of it without the flag.
+ * @param {Record<string, string | true>} flags
+ * @param {"lang" | "display"} name
+ * @param {string[]} all
+ */
+function narrow(flags, name, all) {
+  const value = flags[name];
+  if (value === undefined) return all;
+  if (typeof value !== "string") fail(`--${name} needs a value, such as --${name} ${all[0] ?? (name === "lang" ? "en" : "iphone")}.`);
+  const picked = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const unknown = picked.filter((part) => !all.includes(part));
+  if (unknown.length > 0) fail(`The plan has no ${name === "lang" ? "language" : "display"} ${unknown.join(", ")}; it has ${all.join(", ") || "none"}.`);
+  return all.filter((item) => picked.includes(item));
+}
+
+/**
+ * The H.264 encoder to use: x264 where ffmpeg has it, which keeps the bitrate Apple asks for more exactly than the
+ * Mac's own encoder.
+ * @param {Tools} tools
+ */
+function encoderOf(tools) {
+  if (tools.encoders?.has("libx264")) return "libx264";
+  if (tools.encoders?.has("h264_videotoolbox")) return "h264_videotoolbox";
+  return fail(`The ffmpeg at ${tools.ffmpeg} has no H.264 encoder (libx264 or h264_videotoolbox). Install Homebrew's ffmpeg, which has both: brew install ffmpeg`);
+}
+
+/**
+ * The plan's transition: its kind, and its length in frames.
+ * @param {any} plan
+ */
+function transitionOf(plan) {
+  const type = plan.transition?.type ?? "fade";
+  if (!["fade", "dissolve", "none"].includes(type)) fail(`transition.type in the plan is "${type}"; it is fade, dissolve or none.`);
+  return { type, frames: type === "none" ? 0 : toFrames(plan.transition?.seconds ?? 0.4) };
+}
+
+/**
+ * The size of a display's previews in the plan's orientation. A Mac's are always landscape.
+ * @param {string} display
+ * @param {any} plan
+ * @returns {[number, number]}
+ */
+function sizeOf(display, plan) {
+  const spec = parts.specs[display];
+  if (!spec) fail(`appShots makes no app previews for the display "${display}". It makes them for ${Object.keys(parts.specs).join(", ")}.`);
+  const orientation = display === "mac" ? "landscape" : (plan.orientation ?? "portrait");
+  const size = spec[orientation];
+  if (!Array.isArray(size)) fail(`An app preview for ${display} cannot be ${orientation}.`);
+  return size;
+}
+
+/**
+ * A layer of the set for the context's language: its own, or the one every language shares.
+ * @param {Context} ctx
+ * @param {string} kind
+ * @param {string} [id]
+ */
+function layerOf(ctx, kind, id) {
+  const fits = (/** @type {Layer} */ layer) => layer.kind === kind && (id === undefined || layer.id === id);
+  return ctx.layers.layers.find((layer) => fits(layer) && layer.locale === ctx.locale) ?? ctx.layers.layers.find((layer) => fits(layer) && layer.locale === null) ?? null;
+}
+
+/**
+ * Where a layer's PNG is, as the set's layers.zip lays it out: <set>/<locale>/<id>.png, or <set>/<id>.png for
+ * one that every language shares.
+ * @param {Context} ctx
+ * @param {Layer} layer
+ */
+function layerFile(ctx, layer) {
+  const file = path.join(ctx.root, "layers", ctx.layers.set, ...(layer.locale ? [layer.locale] : []), `${layer.id}.png`);
+  if (!existsSync(file)) fail(`The layer ${layer.id}${layer.locale ? ` for ${layer.locale}` : ""} is not in ${path.dirname(file)}. Fetch the layers again: appshots video layers --display ${ctx.display}`);
+  return file;
+}
+
+/**
+ * The recording a sidecar belongs to: raw/<display>/<locale>/<scene>.<ext>, in the language whose footage it
+ * reuses, if any. An imported file keeps the extension it came with.
+ * @param {Context} ctx
+ * @param {string} scene
+ * @param {import("./normalise.mjs").Sidecar} sidecar
+ */
+function footageOf(ctx, scene, sidecar) {
+  const folder = path.join(ctx.root, "raw", ctx.display, sidecar.reuse || sidecar.locale || ctx.locale);
+  const name = (existsSync(folder) ? readdirSync(folder) : []).find((entry) => entry.startsWith(`${scene}.`) && !entry.endsWith(".json") && !entry.slice(scene.length + 1).includes("."));
+  if (!name) fail(`The recording of scene "${scene}" is missing from ${folder}, though its sidecar is there. Record it again: appshots video record --scene ${scene} --lang ${ctx.locale} --display ${ctx.display} --again`);
+  return path.join(folder, name);
+}
+
+/** @param {any} scene */
+const hasCaption = (scene) => scene.caption !== undefined && scene.caption !== null && scene.caption !== false;
+
+/**
+ * The segments of one preview, as ffmpeg commands, in the order they are joined: the intro card, the scenes, the
+ * outro card. Nothing runs; every missing recording or layer is found here, before the first encode.
+ *
+ * Without captions, for Remotion, which draws its own text: the scenes only, with no caption and no touches.
+ * @param {Context} ctx
+ * @param {{ captions: boolean }} options
+ * @returns {Job[]}
+ */
+export function planSegments(ctx, { captions }) {
+  const { plan, display, locale, size } = ctx;
+  const overlap = transitionOf(plan).frames;
+  const codec = segmentCodec({ encoder: encoderOf(ctx.tools), draft: ctx.draft });
+  const orientation = display === "mac" ? "landscape" : (plan.orientation ?? "portrait");
+  const plateLayer = layerOf(ctx, "plate");
+  const plate = plateLayer && layerFile(ctx, plateLayer);
+  /** @type {Job[]} */
+  const jobs = [];
+  // A segment that comes in through a transition waits for it to finish before its text appears.
+  const lead = () => (jobs.length === 0 ? 0 : overlap / FPS);
+
+  const card = (/** @type {"intro" | "outro"} */ kind) => {
+    if (!captions || plan[kind] === false) return;
+    const logo = layerOf(ctx, `${kind}-logo`);
+    const text = layerOf(ctx, `${kind}-text`);
+    // The plan asked the server for a card only if it wants one, so the layers say whether there is one.
+    if (!logo && !text) return;
+    const frames = toFrames(plan[kind]?.seconds ?? (kind === "intro" ? 1.5 : 2));
+    const args = cardArgs({ size, frames, plate, logo: logo && layerFile(ctx, logo), text: text && layerFile(ctx, text), at: lead(), codec });
+    jobs.push({ kind, scene: kind, frames, label: `the ${kind} card (${display}, ${locale})`, args });
+  };
+
+  card("intro");
+  const fit = display === "mac" ? (plan.fit ?? "plate") : "fill";
+  const box = fit === "plate" ? plateBox(size, captionBands(ctx.layers.layers, locale, size)) : null;
+  const ringLayer = captions ? layerOf(ctx, "touch") : null;
+  for (const scene of plan.scenes) {
+    const sidecar = parts.readSidecar(ctx.root, display, locale, scene.id);
+    if (!sidecar) fail(`Scene "${scene.id}" has no recording for ${locale} on ${display}. Record it: appshots video record --scene ${scene.id} --lang ${locale} --display ${display}`);
+    if (!Array.isArray(sidecar.size)) fail(`The sidecar of scene "${scene.id}" (${locale}, ${display}) does not say the recording's size. Record it again: appshots video record --scene ${scene.id} --lang ${locale} --display ${display} --again`);
+    const frames = toFrames(parts.sceneSeconds(plan, scene, sidecar));
+    const window = sceneWindow(scene, sidecar);
+    const turn = turnOf(sidecar, orientation, display === "mac");
+    const [width, height] = sidecar.size;
+    const place = placement(size, turn ? [height, width] : [width, height], box);
+    let caption = null;
+    if (captions && hasCaption(scene)) {
+      const layer = layerOf(ctx, "caption", parts.captionLayerId(scene));
+      if (!layer) fail(`The layers have no caption for scene "${scene.id}" in ${locale}. Draw them again: appshots video layers --display ${display}`);
+      caption = layerFile(ctx, layer);
+    }
+    const touches = ringLayer && scene.touches !== false ? touchPoints(sidecar, window, turn, place, frames / FPS) : [];
+    const ring = ringLayer && touches.length > 0 ? layerFile(ctx, ringLayer) : null;
+    const args = sceneArgs({ footage: footageOf(ctx, scene.id, sidecar), sidecar, window, turn, size, place, frames, plate, caption, captionAt: lead() + CAPTION_DELAY, ring, touches, codec });
+    jobs.push({ kind: "scene", scene: scene.id, frames, label: `scene "${scene.id}" (${display}, ${locale})`, args });
+  }
+  card("outro");
+
+  if (jobs.length > 1) {
+    const short = jobs.find((job) => job.frames <= overlap);
+    if (short) fail(`${short.label[0].toUpperCase()}${short.label.slice(1)} is ${num(short.frames / FPS)} s, no longer than the ${num(overlap / FPS)} s transition into the next. Make it longer, or the transition shorter.`);
+  }
+  return jobs;
+}
+
+/**
+ * What a file is, for the name of what is made from it: a layer by its content; a recording, which can be
+ * large, by its place in the work folder, its size and when it was written; anything else by its text.
+ * @param {string} arg
+ * @param {string} root
+ */
+function identity(arg, root) {
+  if (!path.isAbsolute(arg) || !existsSync(arg)) return arg;
+  if (arg.endsWith(".png")) return `png:${createHash("sha256").update(readFileSync(arg)).digest("hex")}`;
+  const stat = statSync(arg);
+  return `file:${path.relative(root, arg)}:${stat.size}:${Math.round(stat.mtimeMs)}`;
+}
+
+/**
+ * The name of what ffmpeg makes from `args`: the first 16 hex characters of a hash of the command, with each input
+ * file by what it is rather than where, of ffmpeg's version, and of `version`.
+ * @param {number} version
+ * @param {Tools} tools
+ * @param {string[]} args
+ * @param {string} root
+ */
+function contentKey(version, tools, args, root) {
+  const named = args.map((arg, at) => (args[at - 1] === "-i" ? identity(arg, root) : arg));
+  return createHash("sha256")
+    .update(JSON.stringify({ version, ffmpeg: tools.version, args: named }))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+/**
+ * Builds the segments that are not in work/ yet, `ctx.jobs` at a time.
+ * @param {Context} ctx
+ * @param {Job[]} jobs
+ * @returns {Promise<Segment[]>}
+ */
+async function runSegments(ctx, jobs) {
+  const work = path.join(ctx.root, "work");
+  mkdirSync(work, { recursive: true });
+  return pool(jobs, ctx.jobs ?? jobsOf({}), async (job) => {
+    const key = contentKey(SEGMENT_VERSION, ctx.tools, job.args, ctx.root);
+    const file = path.join(work, `${key}.mp4`);
+    const built = !existsSync(file);
+    if (built) {
+      // Written under another name first, so a segment that is there is always whole.
+      const partial = path.join(work, `${key}.${process.pid}.partial.mp4`);
+      await runFfmpeg(ctx.tools, [...job.args, "-f", "mp4", partial], { label: `stage 1, ${job.label}`, out: partial });
+      renameSync(partial, file);
+    }
+    return { scene: job.scene, file, seconds: job.frames / FPS, frames: job.frames, built };
+  });
+}
+
+/**
+ * Stage 1 for one preview: its segments, built where they are not built yet.
+ * @param {Context} ctx
+ * @param {{ captions: boolean }} options Without captions, for Remotion: the scenes only, without text or touches.
+ * @returns {Promise<Segment[]>}
+ */
+export async function buildSegments(ctx, { captions }) {
+  return runSegments(ctx, planSegments(ctx, { captions }));
+}
+
+/**
+ * When the poster frame is, in seconds of the preview: the plan's time; or a moment into the plan's scene; or, by
+ * default, one second after the first scene's caption has faded in, which shows the app and never the intro card.
+ * @param {any} plan
+ * @param {Job[]} jobs
+ * @param {number} overlap The transition's frames.
+ */
+export function posterTime(plan, jobs, overlap) {
+  const { offsets, total } = joinPoints(
+    jobs.map((job) => job.frames),
+    overlap,
+  );
+  const starts = [0, ...offsets];
+  const poster = plan.poster;
+  let frame;
+  if (poster && typeof poster.time === "number") frame = toFrames(poster.time);
+  else {
+    const at = poster?.scene ? jobs.findIndex((job) => job.kind === "scene" && job.scene === poster.scene) : jobs.findIndex((job) => job.kind === "scene");
+    if (at < 0) fail(`poster.scene in the plan is "${poster?.scene}", which is not one of its scenes.`);
+    const into = typeof poster?.at === "number" ? toFrames(poster.at) : (at === 0 ? 0 : overlap) + toFrames(CAPTION_DELAY + FADE + 1);
+    frame = starts[at] + into;
+  }
+  return Math.min(Math.max(frame, 0), total - 1) / FPS;
+}
+
+/**
+ * Writes a file under another name first and then puts it in place, so a reader never finds half of it.
+ * @param {string} file
+ * @param {string} text
+ */
+function writeWhole(file, text) {
+  const partial = `${file}.${process.pid}.partial`;
+  writeFileSync(partial, text);
+  renameSync(partial, file);
+}
+
+/** Rules whose name says the file is a draft: a draft is meant to be one, so that rule fails no compose. */
+const isDraftRule = (/** @type {{ rule: string }} */ rule) => /draft/i.test(rule.rule);
+
+/**
+ * Prints what the check found, one line a rule that did not pass.
+ * @param {{ errors: Array<{ rule: string, value?: unknown, expected?: unknown }>, warnings: Array<{ rule: string, value?: unknown, expected?: unknown }> }} result
+ */
+function printCheck(result) {
+  const line = (/** @type {string} */ kind, /** @type {{ rule: string, value?: unknown, expected?: unknown }} */ rule) =>
+    console.log(`  ${kind}: ${rule.rule}${rule.value !== undefined ? ` is ${String(rule.value)}` : ""}${rule.expected !== undefined ? `, expected ${String(rule.expected)}` : ""}`);
+  if (result.errors.length === 0 && result.warnings.length === 0) console.log("  check: OK");
+  for (const rule of result.errors) line("error", rule);
+  for (const rule of result.warnings) line("warning", rule);
+}
+
+/**
+ * Stage 2 for one preview, then its poster and its check.
+ * @param {{ ctx: Context, jobs: Job[], frames: number }} output
+ * @param {{ engine: string, music: import("./audio.mjs").Music | null, name: string, draft: boolean, encoder: string }} options
+ */
+async function composeOne({ ctx, jobs, frames }, { engine, music, name, draft, encoder }) {
+  const { root, display, locale, tools } = ctx;
+  const folder = path.join(root, "out", locale, display);
+  mkdirSync(folder, { recursive: true });
+  const file = path.join(folder, `${name}.mp4`);
+  const record = path.join(folder, `${name}.check.json`);
+  const posterFile = path.join(folder, `${name}.poster.png`);
+  const transition = transitionOf(ctx.plan);
+  const codec = finalCodec({ encoder, draft });
+  const shown = path.relative(process.cwd(), file);
+  console.log(`${display}, ${locale}: ${jobs.length} segment${jobs.length === 1 ? "" : "s"}, ${num(frames / FPS)} s${draft ? ", draft" : ""}`);
+
+  let segments;
+  let args;
+  if (engine === "remotion") {
+    segments = await runSegments(ctx, planSegments(ctx, { captions: false }));
+    const made = await parts.composeRemotion(ctx, segments);
+    const probed = await parts.probe(made, tools);
+    const sound = (probed?.streams ?? []).some((/** @type {any} */ stream) => stream.codec_type === "audio");
+    args = passArgs({ file: made, frames, audio: sound ? keptAudio(frames) : previewAudio(null, frames), codec });
+  } else {
+    segments = await runSegments(ctx, jobs);
+    args = joinArgs({ segments: segments.map((segment) => segment.file), lengths: segments.map((segment) => segment.frames), transition, audio: previewAudio(music, frames), codec });
+  }
+  const built = segments.filter((segment) => segment.built).length;
+  if (segments.length > built) console.log(`  ${segments.length - built} of ${segments.length} segments unchanged`);
+
+  const key = contentKey(PREVIEW_VERSION, tools, args, root);
+  const before = readJson(record);
+  if (before?.key === key && before.result && existsSync(file)) {
+    console.log(`  ${shown} is unchanged`);
+    printCheck(before.result);
+    return { locale, display, file, seconds: frames / FPS, check: before.result };
+  }
+
+  const partial = path.join(folder, `.${name}.${process.pid}.partial.mp4`);
+  await runFfmpeg(tools, [...args, "-f", "mp4", partial], { label: `stage 2, the preview (${display}, ${locale})`, out: partial });
+  renameSync(partial, file);
+  console.log(`  ${shown}`);
+
+  const at = posterTime(ctx.plan, jobs, transition.frames);
+  await parts.posterFrame(file, at, posterFile, tools);
+  console.log(`  poster at ${num(at)} s: ${path.relative(process.cwd(), posterFile)}`);
+
+  const probed = await parts.probe(file, tools);
+  const result = parts.checkProbe(probed, display, { draft });
+  printCheck(result);
+  const stored = { version: 1, key, file: path.basename(file), display, locale, draft, seconds: frames / FPS, poster: { at, file: path.basename(posterFile) }, result, probe: probed };
+  writeWhole(record, `${JSON.stringify(stored, null, 2)}\n`);
+  return { locale, display, file, seconds: frames / FPS, check: result };
+}
+
+/**
+ * The languages a layer set was drawn for.
+ * @param {Manifest} manifest
+ */
+const localesIn = (manifest) => [...new Set(manifest.layers.map((layer) => layer.locale).filter((locale) => typeof locale === "string"))];
+
+/**
+ * Makes the previews of the plan: for each display and language, out/<locale>/<display>/<name>.mp4 with its
+ * poster and check.json. Everything that can stop it (a recording or a layer that is missing, a preview Apple
+ * would not take for its length) is found before the first encode.
+ * @param {any} plan The plan as readPlan returns it.
+ * @param {Record<string, string | true>} flags --plan, --lang, --display, --engine, --draft, --jobs.
+ * @returns {Promise<Array<{ locale: string, display: string, file: string, seconds: number, check: { errors: any[], warnings: any[] } }>>}
+ */
+export async function compose(plan, flags) {
+  const { base, root } = folders(flags);
+  const engine = flags.engine ?? "ffmpeg";
+  if (engine !== "ffmpeg" && engine !== "remotion") fail("--engine takes ffmpeg or remotion, such as --engine remotion.");
+  const draft = Boolean(flags.draft);
+  const jobs = jobsOf(flags);
+  const name = plan.name ?? "preview";
+  const displays = narrow(flags, "display", plan.displays ?? []);
+  if (displays.length === 0) fail("The plan names no displays. Add some to it, such as \"displays\": [\"iphone\"].");
+  if (!Array.isArray(plan.scenes) || plan.scenes.length === 0) fail("The plan has no scenes to compose.");
+  const music = engine === "ffmpeg" ? musicOf(plan, base) : null;
+  const tools = await parts.findFfmpeg({ root, ask: confirm });
+  const encoder = encoderOf(tools);
+  if (music) {
+    const probed = await parts.probe(music.file, tools);
+    if (!(probed?.streams ?? []).some((/** @type {any} */ stream) => stream.codec_type === "audio")) fail(`The music file ${music.file} has no sound that ffmpeg can read.`);
+  }
+
+  /** @type {Array<{ ctx: Context, jobs: Job[], frames: number }>} */
+  const outputs = [];
+  for (const display of displays) {
+    const size = sizeOf(display, plan);
+    const asked = Array.isArray(plan.locales) ? narrow(flags, "lang", plan.locales) : undefined;
+    const layers = await parts.fetchLayers(plan, { display, locales: asked });
+    if (Array.isArray(layers.size) && (layers.size[0] !== size[0] || layers.size[1] !== size[1]))
+      fail(`The ${display} layers are ${layers.size.join("×")}, and its previews are ${size.join("×")}. Fetch them again: appshots video layers --display ${display}`);
+    for (const locale of asked ?? narrow(flags, "lang", localesIn(layers))) {
+      const ctx = { plan, root, display, locale, size, layers, tools, jobs, draft };
+      const planned = planSegments(ctx, { captions: true });
+      const { total } = joinPoints(
+        planned.map((job) => job.frames),
+        transitionOf(plan).frames,
+      );
+      const seconds = total / FPS;
+      if (seconds < SHORTEST || seconds > LONGEST)
+        fail(
+          `The ${display} preview in ${locale} would be ${num(seconds)} s long, and Apple takes ${SHORTEST} to ${LONGEST} s. ${seconds > LONGEST ? `Cut ${num(seconds - LONGEST)} s` : `Add ${num(SHORTEST - seconds)} s`}: with each scene's trim, speed or hold, or the intro and outro. 'appshots video plan' shows the scenes' lengths.`,
+        );
+      outputs.push({ ctx, jobs: planned, frames: total });
+    }
+  }
+
+  const results = [];
+  for (const output of outputs) results.push(await composeOne(output, { engine, music, name, draft, encoder }));
+  if (draft) console.log("These are drafts: quick to make and good to look at, but 'appshots video push' does not take them. Compose without --draft for the App Store.");
+  const failing = results.filter((result) => result.check.errors.some((rule) => !(draft && isDraftRule(rule))));
+  if (failing.length > 0)
+    fail(`${failing.length} of ${results.length} preview${results.length === 1 ? " does" : "s do"} not pass Apple's specification: ${failing.map((result) => path.relative(process.cwd(), result.file)).join(", ")}. The errors are above, and in each one's .check.json.`);
+  return results;
+}
