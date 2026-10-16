@@ -119,6 +119,8 @@ function project({ displays = ["iphone"], locales = ["en", "de"], intro = true, 
   const checks = [];
   /** @type {Array<{ display: string, locales: string[] | undefined }>} */
   const fetched = [];
+  /** @type {Record<string, any>} The sets 'video layers' left on the Mac, by display and language: none at first. */
+  const local = {};
   /** @type {any[]} */
   const found = [];
   setParts({
@@ -130,6 +132,7 @@ function project({ displays = ["iphone"], locales = ["en", "de"], intro = true, 
       fetched.push({ display, locales: asked });
       return manifests[display];
     },
+    localLayers: (/** @type {any} */ _plan, /** @type {string} */ display, /** @type {string} */ locale) => local[`${display} ${locale}`] ?? null,
     readSidecar: doubles.readSidecar,
     captionLayerId: doubles.captionLayerId,
     specs: doubles.PREVIEW_SPECS,
@@ -143,7 +146,7 @@ function project({ displays = ["iphone"], locales = ["en", "de"], intro = true, 
       writeFileSync(out, PIXEL);
     },
   });
-  return { base, root, plan: full, planFile, flags: /** @type {Record<string, string | true>} */ ({ plan: planFile }), posters, checks, fetched, found, manifests };
+  return { base, root, plan: full, planFile, flags: /** @type {Record<string, string | true>} */ ({ plan: planFile }), posters, checks, fetched, local, found, manifests };
 }
 
 test("compose makes a preview per display and language, with its poster and check.json, from segments built per scene", async () => {
@@ -310,6 +313,23 @@ test("everything that would stop a compose is found before the first encode", as
   await assert.rejects(compose(sized.plan, sized.flags), /The iphone layers are 1200×1600, and its previews are 886×1920/);
 
   assert.equal(calls().length, 0);
+});
+
+test("the layers 'video layers' left on the Mac are used without the server, which is asked only for a language without them", async () => {
+  const p = project();
+  p.local["iphone en"] = p.manifests.iphone;
+  p.local["iphone de"] = p.manifests.iphone;
+  const printed = await quietly(() => compose(p.plan, p.flags));
+  assert.deepEqual(p.fetched, []);
+  assert.doesNotMatch(printed, /server/);
+  assert.ok(existsSync(path.join(p.root, "out", "de", "iphone", "preview.mp4")));
+
+  // German was drawn for a caption the plan has since changed, so the server draws it again, and says it costs.
+  delete p.local["iphone de"];
+  p.manifests.iphone = { ...p.manifests.iphone, charged: true };
+  const again = await quietly(() => compose(p.plan, p.flags));
+  assert.deepEqual(p.fetched, [{ display: "iphone", locales: ["de"] }]);
+  assert.match(again, /iphone: the layers in de are not on this Mac for the plan as it is now; asking the server for them\niphone: drawing them used one render\n/);
 });
 
 test("--lang and --display pick out of the plan, and refuse what it does not have", async () => {

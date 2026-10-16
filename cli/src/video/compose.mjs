@@ -16,7 +16,7 @@ import { checkCut, checkProbe, previewsIn, readCheckRecord, writeCheckRecord } f
 import { runFfmpeg } from "./encode.mjs";
 import { findFfmpeg } from "./ffmpeg.mjs";
 import { FADE, cardArgs, finalCodec, joinArgs, joinPoints, passArgs, sceneArgs, segmentCodec } from "./graph.mjs";
-import { fetchLayers } from "./layers.mjs";
+import { fetchLayers, localLayers } from "./layers.mjs";
 import { FPS, captionBands, num, placement, plateBox, sceneFrames, sceneWindow, toFrames, touchPoints, turnOf } from "./normalise.mjs";
 import { captionLayerId } from "./plan.mjs";
 import { posterFrame } from "./poster.mjs";
@@ -43,7 +43,7 @@ const LONGEST = 30;
  * What compose takes from the other video modules. A test stands in for them through setParts, as it stands in
  * for programs through setRunner.
  */
-const parts = { findFfmpeg, fetchLayers, readSidecar, captionLayerId, probe, checkProbe, checkCut, posterFrame, composeRemotion, specs: PREVIEW_SPECS };
+const parts = { findFfmpeg, fetchLayers, localLayers, readSidecar, captionLayerId, probe, checkProbe, checkCut, posterFrame, composeRemotion, specs: PREVIEW_SPECS };
 
 /**
  * Puts other parts in place, such as a test's, and returns the ones they replace.
@@ -58,7 +58,7 @@ export function setParts(next) {
 /**
  * @typedef {{ ffmpeg: string, ffprobe: string, version: string, encoders: Set<string>, filters: Set<string> }} Tools
  * @typedef {{ id: string, locale: string | null, kind: string, width?: number, height?: number, box?: number[] }} Layer
- * @typedef {{ set: string, size?: [number, number], layers: Layer[] }} Manifest
+ * @typedef {{ set: string, size?: [number, number], charged?: boolean, layers: Layer[] }} Manifest
  *
  * @typedef {object} Context What one preview is made from: one display, one language.
  * @property {any} plan The plan as readPlan returns it.
@@ -487,6 +487,31 @@ async function composeOne({ ctx, jobs, frames }, { engine, music, name, draft, e
 const localesIn = (manifest) => [...new Set(manifest.layers.map((layer) => layer.locale).filter((locale) => typeof locale === "string"))];
 
 /**
+ * The layer set of each language of a display. A set that 'video layers' put on this Mac for the plan as it is now
+ * is used as it is, so a compose needs no server; the server is asked only for the languages that have none, and
+ * a set it has not drawn before costs a render.
+ * @param {any} plan
+ * @param {string} display
+ * @param {string[] | undefined} locales Undefined for every language the server draws.
+ * @returns {Promise<Map<string, Manifest>>}
+ */
+async function layerSets(plan, display, locales) {
+  /** @type {Map<string, Manifest>} */
+  const sets = new Map();
+  for (const locale of locales ?? []) {
+    const local = parts.localLayers(plan, display, locale);
+    if (local) sets.set(locale, local);
+  }
+  const missing = locales?.filter((locale) => !sets.has(locale));
+  if (missing?.length === 0) return sets;
+  console.log(missing ? `${display}: the layers in ${missing.join(", ")} are not on this Mac for the plan as it is now; asking the server for them` : `${display}: asking the server for the layers`);
+  const fetched = await parts.fetchLayers(plan, { display, locales: missing });
+  if (fetched.charged) console.log(`${display}: drawing them used one render`);
+  for (const locale of missing ?? localesIn(fetched)) sets.set(locale, fetched);
+  return sets;
+}
+
+/**
  * Makes the previews of the plan: for each display and language, out/<locale>/<display>/<name>.mp4 with its
  * poster and check.json. Everything that can stop it (a recording or a layer that is missing, a preview Apple
  * would not take for its length) is found before the first encode.
@@ -518,10 +543,12 @@ export async function compose(plan, flags) {
   for (const display of displays) {
     const size = sizeOf(display, plan);
     const asked = Array.isArray(plan.locales) ? narrow(flags, "lang", plan.locales) : undefined;
-    const layers = await parts.fetchLayers(plan, { display, locales: asked });
-    if (Array.isArray(layers.size) && (layers.size[0] !== size[0] || layers.size[1] !== size[1]))
-      fail(`The ${display} layers are ${layers.size.join("×")}, and its previews are ${size.join("×")}. Fetch them again: appshots video layers --display ${display}`);
-    for (const locale of asked ?? narrow(flags, "lang", localesIn(layers))) {
+    const sets = await layerSets(plan, display, asked);
+    for (const layers of new Set(sets.values()))
+      if (Array.isArray(layers.size) && (layers.size[0] !== size[0] || layers.size[1] !== size[1]))
+        fail(`The ${display} layers are ${layers.size.join("×")}, and its previews are ${size.join("×")}. Fetch them again: appshots video layers --display ${display}`);
+    for (const locale of asked ?? narrow(flags, "lang", [...sets.keys()])) {
+      const layers = /** @type {Manifest} */ (sets.get(locale));
       const ctx = { plan, root, display, locale, size, layers, tools, jobs, draft };
       const planned = planSegments(ctx, { captions: true });
       const { total } = joinPoints(

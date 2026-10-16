@@ -265,6 +265,11 @@ export async function fetchLayers() {
   throw new Error("The compose tests hand compose its layers through setParts.");
 }
 
+/** The compose tests say through setParts which layers are on the Mac; without them, none are. */
+export function localLayers() {
+  return null;
+}
+
 // --- cli/src/video/remotion.mjs
 
 export async function scaffoldRemotion() {

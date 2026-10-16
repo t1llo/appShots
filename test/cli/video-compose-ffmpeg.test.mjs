@@ -157,7 +157,7 @@ function project(plan) {
     record(root, display, full.locales, full.scenes);
     manifests[display] = drawLayers(root, display, full.locales, full.scenes);
   }
-  setParts({ fetchLayers: async (/** @type {any} */ _plan, /** @type {{ display: string }} */ { display }) => manifests[display] });
+  setParts({ fetchLayers: async (/** @type {any} */ _plan, /** @type {{ display: string }} */ { display }) => manifests[display], localLayers: () => null });
   return { base, root, plan: planModule.readPlan(file), flags: /** @type {Record<string, string | true>} */ ({ plan: file }) };
 }
 
