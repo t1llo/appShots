@@ -11,7 +11,7 @@ import { CONFIG_FILE, tilde } from "../config.mjs";
 import { attempt, fail } from "../fail.mjs";
 import { run } from "../proc.mjs";
 import { promptLine } from "../prompt.mjs";
-import { pause } from "../util.mjs";
+import { pause, pool } from "../util.mjs";
 import { STORE_PLATFORMS } from "./displays.mjs";
 
 /** The issuer ID, the key ID and the path of the key file, as `store login` saves them. Never the key. */
@@ -170,17 +170,44 @@ export async function apple(account, method, route, what, body) {
  * @param {Account} account
  * @param {string} route
  * @param {string} what
+ * @param {any[]} [included] Collects what the pages carry along for an `include` of the route.
  * @returns {Promise<any[]>}
  */
-export async function appleList(account, route, what) {
+export async function appleList(account, route, what, included) {
   const items = [];
   for (let next = route; next; ) {
     const page = await apple(account, "GET", next, what);
     items.push(...(page?.data ?? []));
+    included?.push(...(page?.included ?? []));
     // The link to the next page is followed only while it stays with the same server, because the token goes along.
     next = page?.links?.next?.startsWith(`${STORE_API}/`) ? page.links.next.slice(STORE_API.length) : null;
   }
   return items;
+}
+
+/**
+ * Sends a file's bytes where Apple says, in the parts and with the headers it names, `at` parts at a time. The
+ * token does not go along: the addresses are storage, not the API. A part that does not arrive goes again.
+ * @param {Array<{ method: string, url: string, offset: number, length: number, requestHeaders?: Array<{ name: string, value: string }> }>} parts
+ * @param {(offset: number, length: number) => Buffer} bytes
+ * @param {string} name The file's name, for the message when a part does not arrive.
+ * @param {string} again What to do then.
+ * @param {number} [at]
+ */
+export async function sendParts(parts, bytes, name, again, at = 1) {
+  await pool(parts, at, async (part) => {
+    for (let tries = 1; ; tries++) {
+      const sent = await fetch(part.url, {
+        method: part.method,
+        headers: Object.fromEntries((part.requestHeaders ?? []).map((header) => [header.name, header.value])),
+        body: bytes(part.offset, part.length),
+        signal: AbortSignal.timeout(300000),
+      }).catch((error) => ({ ok: false, status: error.cause?.message ?? error.message }));
+      if (sent.ok) return;
+      if (tries === 3) fail(`${name} could not be sent to App Store Connect (${sent.status}). ${again}`);
+      await pause(tries * 2000);
+    }
+  });
 }
 
 /**

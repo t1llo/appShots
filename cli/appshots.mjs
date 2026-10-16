@@ -2624,16 +2624,45 @@ async function apple(account, method, route, what, body) {
 * @param {Account} account
 * @param {string} route
 * @param {string} what
+* @param {any[]} [included] Collects what the pages carry along for an `include` of the route.
 * @returns {Promise<any[]>}
 */
-async function appleList(account, route, what) {
+async function appleList(account, route, what, included) {
 	const items = [];
 	for (let next = route; next;) {
 		const page = await apple(account, "GET", next, what);
 		items.push(...page?.data ?? []);
+		included?.push(...page?.included ?? []);
 		next = page?.links?.next?.startsWith(`${STORE_API}/`) ? page.links.next.slice(STORE_API.length) : null;
 	}
 	return items;
+}
+/**
+* Sends a file's bytes where Apple says, in the parts and with the headers it names, `at` parts at a time. The
+* token does not go along: the addresses are storage, not the API. A part that does not arrive goes again.
+* @param {Array<{ method: string, url: string, offset: number, length: number, requestHeaders?: Array<{ name: string, value: string }> }>} parts
+* @param {(offset: number, length: number) => Buffer} bytes
+* @param {string} name The file's name, for the message when a part does not arrive.
+* @param {string} again What to do then.
+* @param {number} [at]
+*/
+async function sendParts(parts, bytes, name, again, at = 1) {
+	await pool(parts, at, async (part) => {
+		for (let tries = 1;; tries++) {
+			const sent = await fetch(part.url, {
+				method: part.method,
+				headers: Object.fromEntries((part.requestHeaders ?? []).map((header) => [header.name, header.value])),
+				body: bytes(part.offset, part.length),
+				signal: AbortSignal.timeout(3e5)
+			}).catch((error) => ({
+				ok: false,
+				status: error.cause?.message ?? error.message
+			}));
+			if (sent.ok) return;
+			if (tries === 3) fail(`${name} could not be sent to App Store Connect (${sent.status}). ${again}`);
+			await pause(tries * 2e3);
+		}
+	});
 }
 /**
 * @param {Account} account
@@ -4250,20 +4279,7 @@ async function uploadScreenshot(account, set, file, data, checksum) {
 		} } }
 	} };
 	const reserved = (await apple(account, "POST", "/v1/appScreenshots", `take ${name}`, body)).data;
-	for (const part of reserved.attributes?.uploadOperations ?? []) for (let tries = 1;; tries++) {
-		const sent = await fetch(part.url, {
-			method: part.method,
-			headers: Object.fromEntries((part.requestHeaders ?? []).map((header) => [header.name, header.value])),
-			body: data.subarray(part.offset, part.offset + part.length),
-			signal: AbortSignal.timeout(3e5)
-		}).catch((error) => ({
-			ok: false,
-			status: error.cause?.message ?? error.message
-		}));
-		if (sent.ok) break;
-		if (tries === 3) fail(`${name} could not be sent to App Store Connect (${sent.status}). Run the command again: it starts that display over.`);
-		await pause(tries * 2e3);
-	}
+	await sendParts(reserved.attributes?.uploadOperations ?? [], (offset, length) => data.subarray(offset, offset + length), name, "Run the command again: it starts that display over.");
 	await apple(account, "PATCH", `/v1/appScreenshots/${reserved.id}`, `finish ${name}`, { data: {
 		type: "appScreenshots",
 		id: reserved.id,

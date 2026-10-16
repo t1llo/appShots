@@ -6,7 +6,7 @@ import { loadConfig } from "../config.mjs";
 import { fail } from "../fail.mjs";
 import { fetchExport } from "../pull.mjs";
 import { pause, pool } from "../util.mjs";
-import { addLanguage, apple, appleList, createVersion, storeAccount, storeApp, storeVersion, versionLanguages } from "./asc.mjs";
+import { addLanguage, apple, appleList, createVersion, sendParts, storeAccount, storeApp, storeVersion, versionLanguages } from "./asc.mjs";
 import { STORE_BY_HAND, STORE_DISPLAYS, STORE_PLATFORMS, platformOf } from "./displays.mjs";
 import { ascLocale, sameLanguage, storeLocale } from "./locales.mjs";
 
@@ -49,7 +49,7 @@ function pngSize(file) {
  * folder en onto en-GB; `en-US,en-GB` puts it onto both; a plain `de` only picks.
  * @param {Record<string, string | true>} flags
  */
-function languageFlag(flags) {
+export function languageFlag(flags) {
   const entries = listFlag(flags, "lang", "de-DE,fr-FR");
   if (!entries) return null;
   return entries.map((entry) => {
@@ -131,20 +131,7 @@ async function uploadScreenshot(account, set, file, data, checksum) {
   const name = path.basename(file);
   const body = { data: { type: "appScreenshots", attributes: { fileName: name, fileSize: data.length }, relationships: { appScreenshotSet: { data: { type: "appScreenshotSets", id: set } } } } };
   const reserved = (await apple(account, "POST", "/v1/appScreenshots", `take ${name}`, body)).data;
-  for (const part of reserved.attributes?.uploadOperations ?? []) {
-    // The bytes go to the storage address Apple names, with the headers it names. The token does not go along.
-    for (let tries = 1; ; tries++) {
-      const sent = await fetch(part.url, {
-        method: part.method,
-        headers: Object.fromEntries((part.requestHeaders ?? []).map((header) => [header.name, header.value])),
-        body: data.subarray(part.offset, part.offset + part.length),
-        signal: AbortSignal.timeout(300000),
-      }).catch((error) => ({ ok: false, status: error.cause?.message ?? error.message }));
-      if (sent.ok) break;
-      if (tries === 3) fail(`${name} could not be sent to App Store Connect (${sent.status}). Run the command again: it starts that display over.`);
-      await pause(tries * 2000);
-    }
-  }
+  await sendParts(reserved.attributes?.uploadOperations ?? [], (offset, length) => data.subarray(offset, offset + length), name, "Run the command again: it starts that display over.");
   await apple(account, "PATCH", `/v1/appScreenshots/${reserved.id}`, `finish ${name}`, { data: { type: "appScreenshots", id: reserved.id, attributes: { uploaded: true, sourceFileChecksum: checksum } } });
   return reserved.id;
 }
