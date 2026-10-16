@@ -273,6 +273,7 @@ export function SettingsPage({ meta }: { meta: Meta }) {
       </Part>
 
       {account ? <Tokens /> : null}
+      {account ? <ConnectedApps /> : null}
 
       {/* The admin is whoever ADMIN_EMAIL names, and their projects are the server's own. */}
       {account && !account.admin ? <DeleteAccount email={account.email} /> : null}
@@ -347,6 +348,51 @@ function Tokens() {
           Create token
         </button>
       </form>
+    </Part>
+  );
+}
+
+interface ConnectedApp {
+  id: string;
+  name: string;
+  /** Where the app sent the browser back to: its own website, or a scheme of its own for an app on a computer. */
+  redirectHost: string;
+  createdAt: string;
+  lastUsedAt: string;
+}
+
+const appsKey = ["account", "apps"];
+
+/** The apps let in with a sign-in rather than a token, such as claude.ai or ChatGPT with appShots as a connector. */
+function ConnectedApps() {
+  const queryClient = useQueryClient();
+  const apps = useQuery({ queryKey: appsKey, queryFn: () => api<ConnectedApp[]>("GET", "/account/apps") });
+  const disconnect = (app: ConnectedApp) =>
+    attempt(async () => {
+      if (!confirm(`Disconnect "${app.name}"? It stops reaching your projects at once, until you let it in again.`)) return;
+      await api("DELETE", `/account/apps/${app.id}`);
+      await queryClient.invalidateQueries({ queryKey: appsKey });
+    });
+
+  return (
+    <Part title="Connected apps" sub="Apps you added appShots to as a connector, such as claude.ai, Claude Desktop or ChatGPT. Each one reaches your projects only.">
+      {!apps.data ? (
+        <Loading error={apps.error} />
+      ) : apps.data.length ? (
+        <div className="list">
+          {apps.data.map((app) => (
+            <Row key={app.id} title={app.name} sub={`goes back to ${app.redirectHost} · connected ${day(app.createdAt)} · last used ${day(app.lastUsedAt)}`}>
+              <button className="btn small quiet danger" type="button" onClick={disconnect(app)}>
+                Disconnect
+              </button>
+            </Row>
+          ))}
+        </div>
+      ) : (
+        <p className="hint">
+          None yet. To add appShots to one, give it <code>{location.origin}/mcp</code> as the address and sign in when it asks.
+        </p>
+      )}
     </Part>
   );
 }
