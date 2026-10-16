@@ -203,6 +203,60 @@ test("a project deleted elsewhere stops saving", async () => {
   assert.equal(await store.flush(), false);
 });
 
+test("going back to what is saved drops edits the server turns down, and undo brings them back", async () => {
+  const { store, sent, wait } = harness(remote(doc(["One"]), 1));
+  const saved = store.getState().base;
+  store.edit((value) => void (value.name = ""), true);
+  await wait(0);
+  sent.shift()!.fail(new SaveError("Name is required", 400));
+  await settle();
+  store.revert();
+  assert.deepEqual(store.getState().draft, saved.doc);
+  assert.equal(store.getState().base, saved);
+  assert.equal(store.getState().save.kind, "saved");
+  assert.equal(store.dirty, false);
+  await wait(60_000);
+  assert.equal(sent.length, 0, "nothing is left to save");
+  store.undo();
+  assert.equal(store.getState().draft.name, "");
+  await wait(500);
+  assert.equal(sent.length, 1, "the edits brought back are saved again");
+});
+
+test("a restored revision becomes the base and the draft, and unsaved edits give way to it as one undo step", async () => {
+  const { store, sent, wait, accept } = harness(remote(doc(["One", "Two"]), 3));
+  store.edit((value) => void (value.slides[0]!.headline = "Unsaved"));
+  store.receive(remote(doc(["One", "Two"], { theme: { font: "lora" } }), 4));
+  await store.pause();
+  assert.equal(sent.length, 0, "the edit waiting for a pause in typing is held back");
+  const restored = remote(doc(["Old"]), 5);
+  store.replace(restored);
+  store.resume();
+  assert.equal(store.getState().base, restored);
+  assert.deepEqual(store.getState().draft, restored.doc);
+  assert.deepEqual(store.getState().conflicts, []);
+  assert.equal(store.getState().save.kind, "saved");
+  await wait(1000);
+  assert.equal(sent.length, 0);
+  store.undo();
+  assert.deepEqual(headlines(store.getState().draft), ["Unsaved", "Two"]);
+  await wait(500);
+  assert.equal(sent[0]!.revision, 5, "undoing the restore is saved over it");
+  await accept(restored);
+  assert.equal(store.getState().save.kind, "saved");
+});
+
+test("a deleted project takes no restored copy", async () => {
+  const { store, sent, wait } = harness(remote(doc(["One"]), 1));
+  store.edit((value) => void (value.name = "Renamed"), true);
+  await wait(0);
+  sent.shift()!.fail(new SaveError('No project "demo"', 404));
+  await settle();
+  store.replace(remote(doc(["Old"]), 2));
+  assert.equal(store.getState().save.kind, "gone");
+  assert.equal(store.getState().draft.name, "Renamed");
+});
+
 test("undo restores the draft as it was, and redo brings the edit back", async () => {
   const { store, wait } = harness(remote(doc(["One", "Two"]), 1));
   const before = store.getState().draft;
