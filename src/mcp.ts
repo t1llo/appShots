@@ -350,7 +350,7 @@ function unknownImages(project: Project, images: StoredImage[]): string[] {
 
 /** What a project names without having it: screenshots come out as placeholders, images are left out. */
 async function missingNote(space: Space, project: Project, shots?: Shot[]): Promise<string> {
-  const screenshots = unknownScreenshots(project, shots ?? (await listShots(space, project.id)));
+  const screenshots = unknownScreenshots(project, shots ?? (await listShots(space, project.id, project.locales)));
   const images = unknownImages(project, await listImages(space, project.id));
   return [
     screenshots.length ? `\nNot uploaded yet, so these will render as placeholders: ${screenshots.join(", ")}.` : "",
@@ -438,7 +438,11 @@ export function createMcpServer(base: string, space: Space): McpServer {
       inputSchema: { project },
       annotations: { readOnlyHint: true },
     },
-    (input) => guard(async () => json(describe(await getProject(space, input.project), await listShots(space, input.project), await listImages(space, input.project), base))),
+    (input) =>
+      guard(async () => {
+        const current = await getProject(space, input.project);
+        return json(describe(current, await listShots(space, input.project, current.locales), await listImages(space, input.project), base));
+      }),
   );
 
   server.registerTool(
@@ -454,7 +458,11 @@ export function createMcpServer(base: string, space: Space): McpServer {
         targets: targetsSchema.optional().describe("Sizes every render and the ZIP hold from now on. [] goes back to the standard sizes of the devices the project has screenshots of"),
       },
     },
-    ({ project: id, ...patch }) => guard(async () => json(describe(await updateProject(space, id, patch, { actor: "mcp" }), await listShots(space, id), await listImages(space, id), base))),
+    ({ project: id, ...patch }) =>
+      guard(async () => {
+        const updated = await updateProject(space, id, patch, { actor: "mcp" });
+        return json(describe(updated, await listShots(space, id, updated.locales), await listImages(space, id), base));
+      }),
   );
 
   server.registerTool(
@@ -603,7 +611,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
           },
           { actor: "mcp" },
         );
-        const shots = await listShots(space, id);
+        const shots = await listShots(space, id, updated.locales);
         const lines = PLACEMENT_IDS.filter((placement) => updated.creatives[placement]).map((placement) => {
           const creative = updated.creatives[placement]!;
           const layout = creativeLayout(creative, placement);
@@ -705,7 +713,7 @@ export function createMcpServer(base: string, space: Space): McpServer {
                   { actor: "mcp" },
                 )
               ).project;
-        const shots = await listShots(space, id);
+        const shots = await listShots(space, id, current.locales);
         if (shots.length === 0) throw new InputError(`This project has no screenshots yet, so there is nothing to make mockups of.\n\n${uploadHelp(base, id)}`);
         const language = locale ? (shotLocale(current, locale) ?? current.locales[0]!) : current.locales[0]!;
         const unknown = (screenshots ?? []).filter((name) => !shots.some((shot) => shot.name === name));

@@ -36,7 +36,7 @@ export function mockupRoutes(): Router {
     const project = await getProject(space, req.params.id);
     const locale = mockupLocale(project, req.query.locale);
     const settings = mockupSettings(project, req.query);
-    const items = mockupShots(project, await listShots(space, project.id), locale).map((shot) => {
+    const items = mockupShots(project, await listShots(space, project.id, project.locales), locale).map((shot) => {
       const stage = mockupStage(shot, settings);
       const file = encodeURIComponent(shot.file);
       return {
@@ -58,7 +58,7 @@ export function mockupRoutes(): Router {
   api.get("/projects/:id/mockups.zip", async (req, res) => {
     const space = spaceOf(res);
     const project = await getProject(space, req.params.id);
-    const shots = await listShots(space, project.id);
+    const shots = await listShots(space, project.id, project.locales);
     if (shots.length === 0) throw new InputError("This project has no screenshots yet, so there is nothing to make mockups of.");
     const settings = mockupSettings(project, req.query);
     const one = req.query.locale == null || req.query.locale === "" ? undefined : mockupLocale(project, req.query.locale);
@@ -84,7 +84,7 @@ export function mockupRoutes(): Router {
   api.get("/projects/:id/mockups/:file", async (req, res) => {
     const space = spaceOf(res);
     const project = await getProject(space, req.params.id);
-    const shot = (await listShots(space, project.id)).find((each) => each.file === req.params.file);
+    const shot = (await listShots(space, project.id, project.locales)).find((each) => each.file === req.params.file);
     if (!shot) throw new NotFoundError(`This project has no screenshot file "${req.params.file}"`);
     const mockup = await renderMockup(space, project, shot, mockupSettings(project, req.query));
     res

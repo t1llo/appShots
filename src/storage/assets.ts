@@ -248,9 +248,12 @@ export async function readShots(space: Space, id: string, locales?: string[]): P
   return result;
 }
 
-/** The screenshots of a project's languages: what slides, renders and mockups draw from. */
-export async function listShots(space: Space, id: string): Promise<Shot[]> {
-  return (await readShots(space, id)).shots;
+/**
+ * The screenshots of a project's languages: what slides, renders and mockups draw from. A caller that holds the
+ * project passes its `locales`, so that they are not read from its project.json again.
+ */
+export async function listShots(space: Space, id: string, locales?: string[]): Promise<Shot[]> {
+  return (await readShots(space, id, locales)).shots;
 }
 
 /** The screenshots of a language filed in a folder, the first language's being those without one. */

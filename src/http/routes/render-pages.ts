@@ -14,7 +14,7 @@ async function drawn(space: Space, req: Request<{ id: string }>) {
   const frozen = frozenFor(space, req.query.job);
   if (frozen?.project.id === req.params.id) return frozen;
   const project = await getProject(space, req.params.id);
-  return { project, shots: await listShots(space, project.id) };
+  return { project, shots: await listShots(space, project.id, project.locales) };
 }
 
 /** The pages the renderer draws and the Studio previews, under /render. */
@@ -34,7 +34,7 @@ export function renderPageRoutes(): Router {
   pages.get("/:id/mockup/:file", async (req, res) => {
     const space = spaceOf(res);
     const project = await getProject(space, req.params.id);
-    const shot = (await listShots(space, project.id)).find((each) => each.file === req.params.file);
+    const shot = (await listShots(space, project.id, project.locales)).find((each) => each.file === req.params.file);
     if (!shot) throw new NotFoundError(`This project has no screenshot file "${req.params.file}"`);
     res.set("Cache-Control", "no-store").type("html").send(await mockupHtml(space, project, shot, mockupSettings(project, req.query), req.query.bare === "1"));
   });

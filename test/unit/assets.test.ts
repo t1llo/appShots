@@ -167,6 +167,8 @@ test("screenshots of a language the project no longer has stand in for no other 
   // Adding the language again brings it back; moving it to another language keeps it.
   await updateProject(space, id, { locales: ["en-US", "de-DE", "fr-FR"] });
   assert.deepEqual((await listShots(space, id)).map((shot) => shot.file), [french.file]);
+  // A caller that holds the project gives its languages, and they are not read again.
+  assert.deepEqual(await listShots(space, id, ["en-US", "de-DE"]), []);
   await updateProject(space, id, { locales: ["en-US", "de-DE"] });
   const moved = await moveShot(space, id, french.file, { locale: "de-DE" });
   assert.deepEqual((await listShots(space, id)).map((shot) => shot.file), [moved.file]);

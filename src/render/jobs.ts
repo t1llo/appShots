@@ -130,7 +130,8 @@ export function startRender(space: Space, id: string, request: RenderRequest = {
   const job: RenderJob = { id: randomBytes(8).toString("hex"), project: id, name, state: "queued", done: 0, total: 0, createdAt: new Date().toISOString() };
   // Read now, not when its turn comes, so the run draws what was there when it was asked for. A request that cannot
   // be drawn, such as one for a language the project does not have, fails here without waiting its turn.
-  const loaded = Promise.all([getProject(space, id), listShots(space, id), listImages(space, id)]).then(([project, shots, images]) => {
+  const loaded = getProject(space, id).then(async (project) => {
+    const [shots, images] = await Promise.all([listShots(space, id, project.locales), listImages(space, id)]);
     job.name = project.name;
     return { project, shots, plan: planRender(project, shots, images, request) };
   });
