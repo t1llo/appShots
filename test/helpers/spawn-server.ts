@@ -4,6 +4,7 @@ import { createServer } from "node:net";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { format } from "node:util";
+import type { AppDeps } from "../../src/app.ts";
 import { type TmpData, tmpData } from "./tmp-data.ts";
 
 // A test talks to the server over HTTP, on a free port and with a data directory of its own. By default the server
@@ -33,6 +34,8 @@ export interface ServerOptions {
   timeoutMs?: number;
   /** Builds the app in this process rather than starting src/server.ts. One such server per test file. */
   inProcess?: boolean;
+  /** What the app is built with in place of the real thing, such as a stand-in for the web. Needs `inProcess`. */
+  deps?: Omit<AppDeps, "log">;
 }
 
 const root = path.resolve(import.meta.dirname, "..", "..");
@@ -69,6 +72,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 /** Starts the server with sign-in off and resolves once /healthz answers. Rejects with its output if it stops first. */
 export async function startServer(options: ServerOptions = {}): Promise<TestServer> {
   if (options.inProcess) return startInProcess(options);
+  if (options.deps) throw new Error("Only a server built in this process can be given deps.");
   const made = options.dataDir ? undefined : await tmpData("server");
   const dataDir = options.dataDir ?? made!.dir;
   // A free port can be taken again before the server binds it, by another test's server or by an outgoing
@@ -176,7 +180,7 @@ async function startInProcess(options: ServerOptions): Promise<TestServer> {
   Object.assign(process.env, options.env, { DATA_DIR: dataDir, PORT: String(port) });
   try {
     const { createApp } = await import("../../src/app.ts");
-    handle = await createApp({ log });
+    handle = await createApp({ ...options.deps, log });
   } catch (error) {
     server.close();
     await made?.remove();
