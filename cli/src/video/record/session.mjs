@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Failure, fail } from "../../fail.mjs";
 import { run } from "../../proc.mjs";
+import { writeAtomic } from "../../update.mjs";
 import { readJson } from "../../util.mjs";
 import { startDriver } from "./drive.mjs";
 import { sidecarTouches, touchLog } from "./touches.mjs";
@@ -108,9 +109,7 @@ export function sidecar(fields) {
 export function writeJson(file, data) {
   const text = JSON.stringify(data, null, 2).replace(/\[\s+(-?[\d.]+(?:,\s+-?[\d.]+)*)\s+\]/g, (_, inner) => `[${inner.split(/,\s+/).join(", ")}]`);
   mkdirSync(path.dirname(file), { recursive: true });
-  const part = `${file}.${process.pid}.part`;
-  writeFileSync(part, `${text}\n`);
-  renameSync(part, file);
+  writeAtomic(file, `${text}\n`);
 }
 
 /**
