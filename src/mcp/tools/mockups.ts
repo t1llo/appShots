@@ -5,6 +5,7 @@ import { type Mockup, mockupSheet, renderMockup } from "../../render.ts";
 import { localeSchema, mockupsSchema, slugSchema } from "../../schema.ts";
 import { NothingToDraw, prepare } from "../../services/mockups.ts";
 import { projectInput as project, type RegisterTools } from "../context.ts";
+import { mockupDeviceInput } from "../inputs.ts";
 import { uploadHelp } from "../guide/index.ts";
 import { guard } from "../result.ts";
 
@@ -21,7 +22,9 @@ export const registerMockupTools: RegisterTools = (server, tools) => {
         project,
         screenshots: z.array(slugSchema).optional().describe("Screenshot names to draw; every screenshot when omitted"),
         locale: localeSchema.optional().describe("The language whose screenshots are drawn. Defaults to the project's first"),
-        device: mockupsSchema.shape.device.describe("How every mockup is drawn. Saved with the project and laid over what was set before, so a call can change one field; {} goes back to the defaults. Left out, the saved one is used"),
+        device: mockupDeviceInput(
+          "How every mockup is drawn: {frame, style, color, shadow, rotate, perspective, statusBar, statusBarTime, statusBarColor}, as in design guide topic device. Saved with the project and laid over what was set before, so a call can change one field; {} goes back to the defaults. Left out, the saved one is used",
+        ),
         width: mockupsSchema.shape.width.unwrap().nullable().optional().describe("Width of each PNG in pixels, saved with the project. null goes back to showing the screenshot pixel for pixel"),
       },
     },

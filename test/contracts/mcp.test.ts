@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
+import { isDeepStrictEqual } from "node:util";
+import { BACKGROUNDS, CREATIVE_LAYOUT_IDS, FONT_IDS, ICON_IDS, LAYOUT_IDS } from "../../src/design.ts";
 import { png } from "../helpers/images.ts";
 import { callTool, jsonOf, rpc, textOf, type ToolResult } from "../helpers/mcp.ts";
 import { startServer, type TestServer } from "../helpers/spawn-server.ts";
@@ -356,6 +358,119 @@ describe("tools", () => {
     const result = await callTool(server, "get_project", { project: "mcp-damaged" });
     assertRefused(result);
     assert.doesNotMatch(textOf(result), /JSON|position|\//);
+  });
+});
+
+// tools/list shows the fields of the parts of a slide, the icons and the fonts no more, so that a model with a small
+// context has room for its work. The tools still check with the schemas they always did: what they took, they take.
+describe("a tools/list a small model can read", () => {
+  const chunks = <T>(list: readonly T[], size: number): T[][] => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, i * size + size));
+  const stored = async (id: string) => (await rest(`/api/projects/${id}`)).project;
+
+  before(async () => {
+    await callTool(server, "create_project", { name: "MCP Values", locales: ["en-US", "de-DE"] });
+  });
+
+  test("is under 30 KB", async () => {
+    const { body } = await rpc(server, "tools/list");
+    const bytes = Buffer.byteLength(JSON.stringify(body));
+    assert.ok(bytes < 30_000, `tools/list is ${bytes} bytes`);
+  });
+
+  test("still shows the fields of a slide and of the theme", async () => {
+    const { body } = await rpc(server, "tools/list");
+    const setSlides = body.result.tools.find((tool: { name: string }) => tool.name === "set_slides").inputSchema;
+    const slide = Object.keys(setSlides.properties.slides.items.properties);
+    for (const field of ["layout", "eyebrow", "headline", "subheadline", "screenshot", "screenshot2", "screenshot3", "badges", "features", "iconRow", "logo", "images", "background", "font", "device"]) assert.ok(slide.includes(field), field);
+    assert.ok(setSlides.properties.slides.items.properties.layout.enum.includes("device-bottom"));
+    for (const field of ["background", "textColor", "accentColor", "font", "device"]) assert.ok(field in setSlides.properties.theme.properties, field);
+  });
+
+  test("every icon is still taken by a feature, a badge and an icon row", async () => {
+    for (const icons of chunks(ICON_IDS, 80)) {
+      const slides = chunks(icons, 8).map((eight) => ({ layout: "features", headline: "Icons", features: eight.map((icon) => ({ icon, title: icon })), badges: eight.map((icon) => ({ type: "icon", icon, title: icon })), iconRow: { icons: eight } }));
+      assertSucceeded(await callTool(server, "set_slides", { project: "mcp-values", slides }));
+      const saved = await stored("mcp-values");
+      assert.deepEqual(
+        saved.slides.flatMap((slide: { features: { icon: string }[] }) => slide.features.map((feature) => feature.icon)),
+        icons,
+      );
+      assert.deepEqual(
+        saved.slides.flatMap((slide: { iconRow: { icons: string[] } }) => slide.iconRow.icons),
+        icons,
+      );
+    }
+  });
+
+  test("every font, background preset and layout is still taken, on a slide and in the theme", async () => {
+    const backgrounds = ["auto", ...Object.keys(BACKGROUNDS), "#1E3A8A", { type: "mesh", colors: ["#0B1020", "#1A2B52"], noise: 0.4 }, { colors: ["#123", "#456"], angle: 90 }];
+    const values = [...FONT_IDS.map((font) => ({ font })), ...backgrounds.map((background) => ({ background })), ...LAYOUT_IDS.map((layout) => ({ layout }))];
+    for (const ten of chunks(values, 10)) {
+      const slides = ten.map((value) => ({ headline: { "en-US": "Values", "de-DE": "Werte" }, screenshot: "home", ...value }));
+      assertSucceeded(await callTool(server, "set_slides", { project: "mcp-values", slides, theme: ten.find((value) => "font" in value) ?? {} }));
+      const saved = await stored("mcp-values");
+      // A background object is stored with its defaults filled in, so it is compared field by field.
+      for (const [i, value] of ten.entries()) for (const [key, given] of Object.entries(value)) assert.ok(isDeepStrictEqual(saved.slides[i][key], given) || typeof given === "object", `${key} ${JSON.stringify(given)}`);
+    }
+    for (const font of FONT_IDS) assertSucceeded(await callTool(server, "update_slide", { project: "mcp-values", slide: 1, changes: { font, device: { style: "clay", color: "silver", statusBar: "cover", statusBarTime: "9:41" } } }));
+    assert.equal((await stored("mcp-values")).slides[0].font, FONT_IDS.at(-1));
+    assertSucceeded(await callTool(server, "update_project", { project: "mcp-values", theme: { font: "fraunces", background: "midnight", accentColor: "#FF2D78", device: { frame: "iphone", shadow: "soft" } } }));
+    assertSucceeded(await callTool(server, "create_project", { name: "MCP Values Two", theme: { font: "geist", background: { type: "solid", colors: ["#F6F3EC"] } } }));
+  });
+
+  test("every part of an asset is still taken, by every placement", async () => {
+    const asset = (layout: string) => ({
+      layout,
+      eyebrow: "New",
+      headline: { "en-US": "One *idea*", "de-DE": "Eine *Idee*" },
+      subheadline: "Plain",
+      screenshots: ["home", "stats"],
+      badges: [{ type: "laurel", icon: "trophy", title: "4.9", subtitle: "Rating", stars: 5, tone: "gold" }],
+      badgePosition: "top",
+      logo: { image: "logo", size: "small", shape: "app-icon" },
+      background: "aurora",
+      textColor: "#FFFFFF",
+      accentColor: "#FFD60A",
+      font: "syne",
+      textScale: 1.2,
+      emphasis: "marker",
+      device: { frame: "iphone", style: "outline", color: "gold", scale: 1.1, shadow: "strong", statusBar: "overlay" },
+    });
+    const given = Object.fromEntries(["header", "search", "universal", "readme", "social", "link", "post"].map((placement, i) => [placement, asset(CREATIVE_LAYOUT_IDS[i % CREATIVE_LAYOUT_IDS.length]!)]));
+    assertSucceeded(await callTool(server, "set_creative_assets", { project: "mcp-values", ...given }));
+    assert.deepEqual((await stored("mcp-values")).creatives, given);
+  });
+
+  test("what was refused is still refused, by the same schemas, and saves nothing", async () => {
+    const before = await stored("mcp-values");
+    const slide = { layout: "statement", headline: "x" };
+    for (const [args, says] of [
+      [{ slides: [{ ...slide, features: [{ icon: "nope", title: "y" }] }] }, /slides\[0\]\.features\[0\]\.icon/],
+      [{ slides: [{ ...slide, badges: [{ type: "laurel", icon: "nope" }] }] }, /slides\[0\]\.badges\[0\]\.icon/],
+      [{ slides: [{ ...slide, iconRow: { icons: ["nope"] } }] }, /slides\[0\]\.iconRow\.icons\[0\]/],
+      [{ slides: [{ ...slide, iconRow: { icons: [] } }] }, /iconRow\.icons/],
+      [{ slides: [{ ...slide, font: "comic" }] }, /slides\[0\]\.font/],
+      [{ slides: [{ ...slide, background: "neon" }] }, /slides\[0\]\.background/],
+      [{ slides: [{ ...slide, layout: "grid" }] }, /slides\[0\]\.layout/],
+      [{ slides: [{ ...slide, headline: "x".repeat(401) }] }, /slides\[0\]\.headline/],
+      [{ slides: [{ ...slide, headline: { "not a locale": "x" } }] }, /slides\[0\]\.headline/],
+      [{ slides: [{ ...slide, features: [{ icon: "star" }] }] }, /features\[0\]\.title/],
+      [{ slides: [{ ...slide, device: { scale: 9 } }] }, /device\.scale/],
+      [{ slides: [{ ...slide, logo: { size: "small" } }] }, /logo\.image/],
+      [{ slides: [{ ...slide, images: [{ image: "x", layer: "middle" }] }] }, /images\[0\]\.layer/],
+      [{ slides: [slide], theme: { font: "comic" } }, /theme\.font/],
+      [{ slides: [slide], theme: { device: { color: "pink" } } }, /theme\.device\.color/],
+    ] as const) {
+      assertRefused(await callTool(server, "set_slides", { project: "mcp-values", ...args }), says);
+    }
+    assertRefused(await callTool(server, "update_slide", { project: "mcp-values", slide: 1, changes: { font: "comic" } }), /font/);
+    assertRefused(await callTool(server, "update_slide", { project: "mcp-values", slide: 1, changes: { badges: [{ type: "medal" }] } }), /badges\[0\]\.type/);
+    assertRefused(await callTool(server, "update_project", { project: "mcp-values", theme: { background: { type: "mesh", colors: [] } } }), /theme\.background/);
+    assertRefused(await callTool(server, "create_project", { name: "MCP Refused", theme: { font: "comic" } }), /theme\.font/);
+    assertRefused(await callTool(server, "set_creative_assets", { project: "mcp-values", readme: { layout: "stack" } }), /readme\.layout/);
+    assertRefused(await callTool(server, "set_creative_assets", { project: "mcp-values", header: { badges: [{}, {}, {}, {}] } }), /header\.badges/);
+    assertRefused(await callTool(server, "render_mockups", { project: "mcp-values", device: { style: "glossy" } }), /device\.style/);
+    assert.deepEqual(await stored("mcp-values"), before);
   });
 });
 

@@ -1,9 +1,9 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { slideSchema, themeSchema } from "../../schema.ts";
 import { setSlides, updateSlide } from "../../services/slides.ts";
 import { DEVICE_LABELS } from "../../sizes.ts";
 import { deviceKind, projectInput as project, type RegisterTools, slideNumber } from "../context.ts";
+import { slideChangesInput, slideInput, themeInput } from "../inputs.ts";
 import { guard, json, noted, notes, text } from "../result.ts";
 
 export const registerSlideTools: RegisterTools = (server, tools) => {
@@ -18,9 +18,9 @@ export const registerSlideTools: RegisterTools = (server, tools) => {
       inputSchema: {
         project,
         // Loose, so that a field slides do not have reaches the tool and can be named in the answer.
-        slides: z.array(slideSchema.loose()).max(10),
+        slides: z.array(slideInput.loose()).max(10),
         device: deviceKind.optional().describe("The device this set is for: it then draws these slides in place of the shared ones. Left out, the shared set is replaced"),
-        theme: themeSchema.optional().describe("Replaces the project theme when given"),
+        theme: themeInput.optional().describe("Replaces the project theme when given"),
       },
     },
     ({ project: id, slides, device, theme }) =>
@@ -49,8 +49,7 @@ export const registerSlideTools: RegisterTools = (server, tools) => {
         project,
         slide: slideNumber,
         of: deviceKind.optional().describe("Change the slide in this device's own set (see A set for each device). Left out, the shared set"),
-        // Loose, so that a field slides do not have reaches the tool and can be named in the answer.
-        changes: slideSchema.loose().optional(),
+        changes: slideChangesInput,
         remove: z.array(z.string()).optional().describe("Slide fields to clear, e.g. [\"subheadline\", \"badges\"]"),
       },
     },

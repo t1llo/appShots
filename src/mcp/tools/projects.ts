@@ -1,10 +1,11 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { localesSchema, targetsSchema, themeSchema } from "../../schema.ts";
+import { localesSchema, targetsSchema } from "../../schema.ts";
 import * as service from "../../services/projects.ts";
 import { listImages, listShots } from "../../store.ts";
 import { projectInput as project, type RegisterTools } from "../context.ts";
 import { uploadHelp } from "../guide/index.ts";
+import { themeInput } from "../inputs.ts";
 import { guard, json, noted, notes, text } from "../result.ts";
 
 export const registerProjectTools: RegisterTools = (server, tools) => {
@@ -28,7 +29,7 @@ export const registerProjectTools: RegisterTools = (server, tools) => {
       inputSchema: {
         name: z.string().min(1).max(80).describe("App or project name"),
         locales: localesSchema.optional().describe('Locales to render, default ["en"]'),
-        theme: themeSchema.optional().describe("Styling shared by every slide"),
+        theme: themeInput.optional().describe("Styling shared by every slide"),
       },
     },
     (input) =>
@@ -58,7 +59,7 @@ export const registerProjectTools: RegisterTools = (server, tools) => {
         project,
         name: z.string().min(1).max(80).optional(),
         locales: localesSchema.optional(),
-        theme: themeSchema.optional(),
+        theme: themeInput.optional(),
         targets: targetsSchema.optional().describe("Sizes every render and the ZIP hold from now on. [] goes back to the standard sizes of the devices the project has screenshots of"),
       },
     },
