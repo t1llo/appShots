@@ -4,7 +4,7 @@
 // runs on Node 18 with nothing installed. Run `npm run build:cli` after changing cli/src; `npm run check:cli`
 // fails when the file in the repository is not what the sources make.
 
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { rolldown } from "rolldown";
 
@@ -28,34 +28,79 @@ const BANNER = `// Generated from cli/src by \`npm run build:cli\`. Do not edit 
 // No dependencies, so it runs straight from a checkout: \`node cli/appshots.mjs\` or \`npm link\`.
 `;
 
-const bundle = await rolldown({
-  input: path.join(root, "cli", "src", "main.mjs"),
-  platform: "node",
-  cwd: root,
-  // Node's own modules stay imports; nothing else may, as the file has to stand alone.
-  external: [/^node:/],
-});
-const { output } = await bundle.generate({
-  format: "esm",
-  banner: BANNER,
-  comments: { jsdoc: true, legal: true, annotation: false },
-});
-await bundle.close();
+/** What cli/src/assets.mjs reads its files from when it runs from the sources, and the build fills in. */
+const ASSETS_MARKER = "const INLINED = null;";
 
-const [chunk, ...more] = output;
-if (more.length > 0 || chunk.type !== "chunk") throw new Error(`The CLI came out as ${output.length} files; it has to be one.`);
-// A type in a comment that names another module, as in {import("./config.mjs").Config}, names one that is not
-// there any more, and reads like an import to whoever checks that the file stands alone. Within one file the
-// type's own name is enough.
-const code = chunk.code.replace(/\bimport\("\.{1,2}\/[^"]+\.mjs"\)\./g, "");
-const imports = [...code.matchAll(/(?:^import\s[^;]*?from\s*|(?<![\w.])import\()\s*["']([^"']+)["']/gm)].map((match) => match[1]).filter((name) => !name.startsWith("node:"));
-if (imports.length > 0) throw new Error(`The CLI imports ${imports.join(", ")}, and it has to stand alone.`);
-if (!code.startsWith("#!/usr/bin/env node\n")) throw new Error("The CLI has to start with #!/usr/bin/env node: older copies check for it before they replace themselves.");
+/**
+ * The files of cli/assets by their path there, with "/" between folders, in a fixed order. Hidden files, such as
+ * a Finder's .DS_Store, and installed packages are left out: they differ from one checkout to the next, and the
+ * bundle has to come out the same everywhere.
+ * @param {string} folder
+ */
+export function assetFiles(folder) {
+  return readdirSync(folder, { recursive: true })
+    .map((name) => String(name).split(path.sep).join("/"))
+    .filter((name) => !name.split("/").some((part) => part.startsWith(".") || part === "node_modules") && statSync(path.join(folder, name)).isFile())
+    .sort();
+}
 
-let before = "";
-try {
-  before = readFileSync(out, "utf8");
-} catch {}
-if (before !== code) writeFileSync(out, code);
-chmodSync(out, 0o755);
-console.log(`${before === code ? "Unchanged" : "Wrote"} ${path.relative(root, out)} (${Math.round(code.length / 1024)} KB)`);
+/**
+ * A rolldown plugin that puts the text of every file in cli/assets into the bundle, in place of the null that
+ * cli/src/assets.mjs reads them from disk for. A bundle in which no module imports assets.mjs does not change.
+ * @param {{ module?: string, folder?: string }} [where] assets.mjs and the folder; the repository's by default.
+ * @returns {import("rolldown").Plugin}
+ */
+export function inlineAssets({ module = path.join(root, "cli", "src", "assets.mjs"), folder = path.join(root, "cli", "assets") } = {}) {
+  return {
+    name: "appshots-assets",
+    transform(code, id) {
+      if (path.resolve(id) !== module) return null;
+      if (!code.includes(ASSETS_MARKER)) throw new Error(`${path.relative(root, module)} has no "${ASSETS_MARKER}" any more, which the build fills in with the files of cli/assets.`);
+      const files = Object.fromEntries(assetFiles(folder).map((name) => [name, readFileSync(path.join(folder, name), "utf8")]));
+      return { code: code.replace(ASSETS_MARKER, `const INLINED = ${JSON.stringify(files, null, 2)};`), map: null };
+    },
+  };
+}
+
+/**
+ * Bundles the CLI from `input` and returns its code, after checking that it stands alone.
+ * @param {string} input
+ */
+export async function bundleCli(input) {
+  const bundle = await rolldown({
+    input,
+    platform: "node",
+    cwd: root,
+    // Node's own modules stay imports; nothing else may, as the file has to stand alone.
+    external: [/^node:/],
+    plugins: [inlineAssets()],
+  });
+  const { output } = await bundle.generate({
+    format: "esm",
+    banner: BANNER,
+    comments: { jsdoc: true, legal: true, annotation: false },
+  });
+  await bundle.close();
+
+  const [chunk, ...more] = output;
+  if (more.length > 0 || chunk.type !== "chunk") throw new Error(`The CLI came out as ${output.length} files; it has to be one.`);
+  // A type in a comment that names another module, as in {import("./config.mjs").Config}, names one that is not
+  // there any more, and reads like an import to whoever checks that the file stands alone. Within one file the
+  // type's own name is enough.
+  const code = chunk.code.replace(/\bimport\("\.{1,2}\/[^"]+\.mjs"\)\./g, "");
+  const imports = [...code.matchAll(/(?:^import\s[^;]*?from\s*|(?<![\w.])import\()\s*["']([^"']+)["']/gm)].map((match) => match[1]).filter((name) => !name.startsWith("node:"));
+  if (imports.length > 0) throw new Error(`The CLI imports ${imports.join(", ")}, and it has to stand alone.`);
+  if (!code.startsWith("#!/usr/bin/env node\n")) throw new Error("The CLI has to start with #!/usr/bin/env node: older copies check for it before they replace themselves.");
+  return code;
+}
+
+if (import.meta.main) {
+  const code = await bundleCli(path.join(root, "cli", "src", "main.mjs"));
+  let before = "";
+  try {
+    before = readFileSync(out, "utf8");
+  } catch {}
+  if (before !== code) writeFileSync(out, code);
+  chmodSync(out, 0o755);
+  console.log(`${before === code ? "Unchanged" : "Wrote"} ${path.relative(root, out)} (${Math.round(code.length / 1024)} KB)`);
+}
