@@ -90,7 +90,7 @@ export async function commitSet(space: Space, id: string, staging: string, set: 
     await prune(space, id, set);
     return true;
   });
-  if (!placed) await discardStaging(space, staging);
+  await discardStaging(space, staging);
   return placed;
 }
 
