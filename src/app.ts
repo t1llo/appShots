@@ -18,6 +18,7 @@ import { publicRoutes } from "./http/routes/public.ts";
 import { renderPageRoutes } from "./http/routes/render-pages.ts";
 import { renderRoutes } from "./http/routes/renders.ts";
 import { siteRoutes } from "./http/routes/site.ts";
+import { videoFileRoutes, videoPageRoutes, videoRoutes } from "./http/routes/video.ts";
 import { allowedHost, privateCache, securityHeaders } from "./http/security.ts";
 import type { DocumentFetcher } from "./oauth/clients.ts";
 
@@ -72,6 +73,7 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
   api.use(express.json({ limit: LIMITS.json }));
   api.use(projectRoutes());
   api.use(assetRoutes());
+  api.use(videoRoutes(log));
   api.use(renderRoutes(log));
   api.use(exportRoutes());
   api.use(mockupRoutes());
@@ -80,6 +82,8 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
   app.use("/api", api);
 
   app.use("/files", fileRoutes());
+  app.use("/files", videoFileRoutes());
+  app.use("/render", videoPageRoutes());
   app.use("/render", renderPageRoutes());
 
   app.use(notFound);
