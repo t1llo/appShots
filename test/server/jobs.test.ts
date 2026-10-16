@@ -168,6 +168,8 @@ describe("renders, without sign-in", () => {
     const response = await server.fetch(`/api/projects/${id}/export.zip?render=1`);
     assert.equal(response.status, 200);
     assert.ok((await response.arrayBuffer()).byteLength > 0);
+    // A link on another site is refused without sign-in too: it would replace what was rendered.
+    assert.equal((await call(`/api/projects/${id}/export.zip?render=1`, { headers: { "Sec-Fetch-Site": "cross-site" } })).status, 403);
   });
 
   test("an agent starts a render in the background, follows it and gets the pictures once it is done", async () => {
