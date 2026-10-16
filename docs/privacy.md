@@ -50,6 +50,7 @@ That is all the server keeps. It writes no log of the pages you open or the requ
 | `appshots.guides` | Local storage | Whether the safe area guides are shown | Until you clear it |
 | `appshots.zoom` | Local storage | How large the Studio shows the slide previews | Until you clear it |
 | `appshots.backdrop` | Local storage | The backdrop behind the mockups in the Studio | Until you clear it |
+| `appshots.storeLook` | Local storage | Whether the store preview shows light, dark or both | Until you clear it |
 
 These are needed for the site to work. None of them follows you to other sites.
 
