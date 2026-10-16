@@ -4977,6 +4977,7 @@ async function take(run, job, simulator) {
 		locale: job.locale
 	}, () => captureSettled(simulator, job.file, wait));
 	else {
+		if (front) run.started.set(simulator.udid, front);
 		if (app) {
 			const args = [
 				...screen.app ? [] : plan.app.args,
@@ -4992,7 +4993,6 @@ async function take(run, job, simulator) {
 				...args
 			]);
 			if (result.status !== 0) fail(`Could not launch ${app} on ${simulator.name}:\n${result.stderr.trim()}`);
-			run.started.set(simulator.udid, app);
 		}
 		if (screen.url) {
 			const result = await xcrun([
@@ -5002,7 +5002,6 @@ async function take(run, job, simulator) {
 				screen.url
 			]);
 			if (result.status !== 0) fail(`Could not open ${screen.url} on ${simulator.name}${app ? `. Does ${app} take that link?` : ""}\n${result.stderr.trim()}`);
-			if (!app && front) run.started.set(simulator.udid, front);
 		}
 		await captureSettled(simulator, job.file, wait);
 	}

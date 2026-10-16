@@ -325,6 +325,37 @@ test("a web link opened with no app comes up in Safari, which is closed before t
   ]);
 });
 
+test("an app a failed launch or link may have brought up is closed before the next screen all the same", async (t) => {
+  const file = writePlan({
+    project: "demo",
+    wait: 0,
+    locales: ["en"],
+    screens: [{ id: "web", launch: { url: "https://appshots.example.com/slow" } }, { id: "settings", app: "com.apple.Preferences" }, { id: "maps", app: "com.apple.Maps" }, { id: "home", app: "com.example.notes" }],
+  });
+  // simctl gives up on the link and on Maps, though each may have come up by then.
+  const before = setRunner(async (command, args, options) => {
+    if (args[1] === "openurl" || (args[1] === "launch" && args.includes("com.apple.Maps"))) {
+      calls.push(short([command, ...args].join(" ")));
+      return { status: 1, signal: null, stdout: "", stderr: "Operation timed out", timedOut: false };
+    }
+    return runner(command, args, options);
+  });
+  t.after(() => setRunner(before));
+  t.mock.method(console, "error", () => {});
+  await assert.rejects(shootWith(["--plan", file]), (error) => error instanceof Failure && /^2 of 4 screenshots not taken:\n {2}web \(iphone-6\.9, en\): Could not open https:\/\/appshots\.example\.com\/slow on iPhone 18 Pro Max\n {2}maps \(iphone-6\.9, en\): Could not launch com\.apple\.Maps/.test(error.message));
+  const steps = calls.filter((call) => / (launch|terminate|openurl) /.test(call)).map((call) => call.replace("xcrun simctl ", "").replace(" --terminate-running-process", "").replace(/ -AppleLanguages .*$/, ""));
+  assert.deepEqual(steps, [
+    "openurl <phone> https://appshots.example.com/slow",
+    "terminate <phone> com.apple.mobilesafari",
+    "launch <phone> com.apple.Preferences",
+    "terminate <phone> com.apple.Preferences",
+    "launch <phone> com.apple.Maps",
+    "terminate <phone> com.apple.Maps",
+    "launch <phone> com.example.notes",
+  ]);
+  assert.deepEqual(uploads(), ["settings?device=iphone&locale=en", "home?device=iphone&locale=en"]);
+});
+
 test("a screen that fails is reported at the end, and a device is given up after three in a row", async (t) => {
   const file = writePlan({ ...NOTES, locales: ["en"], screens: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }, { id: "e" }] });
   launchStatus = 1;

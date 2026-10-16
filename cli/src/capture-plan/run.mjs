@@ -135,17 +135,17 @@ async function take(run, job, simulator) {
     const options = { project: run.xcodeProject, scheme: run.scheme, test: screen.uitest, simulator, locale: job.locale };
     await runUITest(options, () => captureSettled(simulator, job.file, wait));
   } else {
+    // Noted before it is started: a launch or a link that fails or runs out of time can have brought it up all the same.
+    if (front) run.started.set(simulator.udid, front);
     if (app) {
       const args = [...(screen.app ? [] : plan.app.args), ...screen.args, ...languageArguments(job.locale)];
       // One that is still running would come to the front with the arguments it was started with.
       const result = await xcrun(["simctl", "launch", "--terminate-running-process", simulator.udid, app, ...args]);
       if (result.status !== 0) fail(`Could not launch ${app} on ${simulator.name}:\n${result.stderr.trim()}`);
-      run.started.set(simulator.udid, app);
     }
     if (screen.url) {
       const result = await xcrun(["simctl", "openurl", simulator.udid, screen.url]);
       if (result.status !== 0) fail(`Could not open ${screen.url} on ${simulator.name}${app ? `. Does ${app} take that link?` : ""}\n${result.stderr.trim()}`);
-      if (!app && front) run.started.set(simulator.udid, front);
     }
     await captureSettled(simulator, job.file, wait);
   }
