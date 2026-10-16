@@ -253,7 +253,7 @@ export async function shootPlan(args) {
   const run = { plan, config, project, bundleId: plan.app.bundleId, started: new Map() };
   if (builds || tests) {
     run.xcodeProject = planXcodeProject(plan, tests ? "A UI test" : "Building the app");
-    run.scheme = await pickScheme(run.xcodeProject, plan.app.scheme);
+    run.scheme = await pickScheme(run.xcodeProject, plan.app.scheme, `name the app's in app.scheme of ${plan.file}`);
   }
 
   // The simulators boot while the app builds, as each takes a while and neither needs the other.

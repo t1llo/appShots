@@ -2428,14 +2428,15 @@ function obviousScheme(project, schemes) {
 * seconds; the build says when there is no such scheme.
 * @param {string} project
 * @param {string | true | undefined} given
+* @param {string} [how] What to do when several could be meant: where the command that asks takes the name.
 */
-async function pickScheme(project, given) {
+async function pickScheme(project, given, how = "pick the app's with --scheme <name>") {
 	if (typeof given === "string") return given;
 	const schemes = await schemesOf(project);
 	const list = schemes.map((scheme) => `  ${scheme}`).join("\n");
 	if (schemes.length === 0) fail(`${path.basename(project)} has no scheme. Open it in Xcode and share one under Product > Scheme > Manage Schemes.`);
 	const scheme = obviousScheme(project, schemes);
-	if (!scheme) fail(`${path.basename(project)} has several schemes; pick the app's with --scheme <name>:\n${list}`);
+	if (!scheme) fail(`${path.basename(project)} has several schemes; ${how}:\n${list}`);
 	return scheme;
 }
 /**
@@ -5135,7 +5136,7 @@ async function shootPlan(args) {
 	};
 	if (builds || tests) {
 		run.xcodeProject = planXcodeProject(plan, tests ? "A UI test" : "Building the app");
-		run.scheme = await pickScheme(run.xcodeProject, plan.app.scheme);
+		run.scheme = await pickScheme(run.xcodeProject, plan.app.scheme, `name the app's in app.scheme of ${plan.file}`);
 	}
 	const first = simulators.get(working[0]);
 	const bootedHere = [...simulators.values()].filter((sim) => !sim.booted);

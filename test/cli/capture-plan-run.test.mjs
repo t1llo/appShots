@@ -274,6 +274,16 @@ test("with app.xcode the plan builds the app once, installs it, and starts it by
   assert.deepEqual(uploads(), ["home?device=iphone&locale=en", "home?device=ipad&locale=en"]);
 });
 
+test("a project with several schemes, none named like it, is told to name the app's in the plan", async (t) => {
+  const file = writePlan({ project: "demo", app: { xcode: "." }, wait: 0, locales: ["en"], screens: [{ id: "home" }] });
+  const schemes = JSON.stringify({ project: { name: "Notes", schemes: ["Notes Free", "Notes Pro"] } });
+  const before = setRunner(async (command, args, options) => (command === "xcodebuild" && args.includes("-list") ? { status: 0, signal: null, stdout: schemes, stderr: "", timedOut: false } : runner(command, args, options)));
+  t.after(() => setRunner(before));
+  // shoot takes no --scheme, so the plan's own field is the one named.
+  await assert.rejects(shootWith(["--plan", file]), (error) => error instanceof Failure && error.message === `Notes.xcodeproj has several schemes; name the app's in app.scheme of ${file}:\n  Notes Free\n  Notes Pro`);
+  assert.ok(!calls.some((call) => call.endsWith(" build") || call.includes(" launch ")));
+});
+
 test("a UI test brings its screen up and waits while the screenshot is taken", async () => {
   const file = writePlan({ project: "demo", app: { xcode: "Notes.xcodeproj", scheme: "Notes" }, wait: 0, locales: ["de"], screens: [{ id: "share", uitest: "NotesUITests/Shots/testShare" }] });
   await shootWith(["--plan", file]);
