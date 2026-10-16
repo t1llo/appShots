@@ -359,6 +359,8 @@
 }
 .store-carousel {
   display: flex;
+  /* Room for the ring round the selected slide, which the scrolling would cut off. */
+  padding-block: 4px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;

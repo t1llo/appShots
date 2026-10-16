@@ -75,14 +75,24 @@ dialog.drawer .callout.list-error {
   list-style: none;
 }
 .revision {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
   border-radius: 8px;
 }
-.revision + .revision {
-  box-shadow: inset 0 1px 0 var(--line);
+/* A line between two rows, which a row's own background takes the place of. */
+.revision + .revision::before {
+  position: absolute;
+  inset: 0 12px auto;
+  height: 1px;
+  background: var(--line);
+  content: "";
+}
+.revision:is(:hover, .current)::before,
+.revision:is(:hover, .current) + .revision::before {
+  display: none;
 }
 .revision:hover {
   background: var(--hover);
