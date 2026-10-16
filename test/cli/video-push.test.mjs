@@ -5,11 +5,9 @@ import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { libraryStandIn, REF_DATA } from "./helpers/asc-library-standin.mjs";
 import { cliHome, quietly } from "./helpers.mjs";
-import { useDoubles } from "./video-push-doubles.mjs";
 
 // 'appshots video push' against a stand-in for App Store Connect's asset library on this machine. Apple is never
 // called: APPSHOTS_STORE_API only takes a localhost address.
-useDoubles();
 const home = await cliHome("video-push");
 after(() => home.remove());
 
