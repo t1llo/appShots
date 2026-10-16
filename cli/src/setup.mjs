@@ -7,7 +7,7 @@ import { AGENTS, CLAUDE_SKILL, CONFIG_FILE, SHARED_SKILL, exists, saveConfig, ti
 import { fail } from "./fail.mjs";
 import { run } from "./proc.mjs";
 import { promptHidden } from "./prompt.mjs";
-import { latest, plainHttp, writeAtomic } from "./update.mjs";
+import { installReferences, latest, latestReferences, plainHttp, writeAtomic } from "./update.mjs";
 
 /** The file of this command as it is installed: the built one, also when this runs from the sources in cli/src. */
 function selfFile() {
@@ -158,7 +158,18 @@ export async function setup(url, flags) {
     open(`This server has no appshots skill to install (${error.cause?.message ?? error.message}).`);
   }
   if (skill) {
-    for (const dir of dirs) writeAtomic(path.join(dir, "SKILL.md"), skill);
+    // The files SKILL.md sends the agent to for each step in full. Without them it still works: it says to
+    // fetch one that is missing, and 'appshots update' brings them all.
+    let references = {};
+    try {
+      references = await latestReferences(server);
+    } catch (error) {
+      open(`The skill's reference files could not be fetched (${error.cause?.message ?? error.message}). 'appshots update' fetches them later.`);
+    }
+    for (const dir of dirs) {
+      installReferences(dir, references);
+      writeAtomic(path.join(dir, "SKILL.md"), skill);
+    }
     done(`Skill installed: ${tilde(agent.dir)}`);
   }
 

@@ -15,13 +15,13 @@ Everything on the server: the Studio, the layouts, fonts and badges, the MCP too
 
 ## What lives on your Mac
 
-Two files, installed by the [setup command](/docs/connect): the skill (`SKILL.md`) and the `appshots` command (`appshots.mjs`). The server hands out the versions it was deployed with. Bring your copies up to date with:
+Two files, installed by the [setup command](/docs/connect): the skill (`SKILL.md`) and the `appshots` command (`appshots.mjs`). Beside the skill, a `references` folder holds the full text of each of its steps. The server hands out the versions it was deployed with. Bring your copies up to date with:
 
 ```bash
 appshots update
 ```
 
-It needs no token and leaves your agent's connection alone. If you set up several agents, all of their copies are updated.
+It needs no token and leaves your agent's connection alone. If you set up several agents, all of their copies are updated. It also fetches the reference files a copy from before them lacks, and leaves any the server no longer has where they are.
 
 ## How you find out
 

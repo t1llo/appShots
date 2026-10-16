@@ -113,6 +113,33 @@ describe("public addresses", () => {
     assert.equal(answer.headers.get("cache-control"), "no-cache");
   });
 
+  test("/skill.json lists the skill's reference files, each served at /skill/<name> with this server's address in it", async () => {
+    const { body } = await call("/skill.json");
+    const references = body.references as Record<string, string>;
+    assert.ok(Object.keys(references).includes("start.md"), JSON.stringify(references));
+    for (const [name, hash] of Object.entries(references)) {
+      assert.match(name, /^[a-z0-9-]+\.md$/);
+      const answer = await call(`/skill/${name}`);
+      assert.equal(answer.status, 200, name);
+      assert.match(answer.headers.get("content-type")!, /^text\/markdown/);
+      assert.match(answer.headers.get("cache-control")!, /private/);
+      assert.ok(answer.body.startsWith("# "), name);
+      assert.ok(!answer.body.includes("{{SERVER}}"), name);
+      assert.equal(createHash("sha256").update(answer.body).digest("hex").slice(0, 16), hash, name);
+    }
+    // The skill's own hash keeps its meaning: what /skill.md serves.
+    const skill = await call("/skill.md");
+    assert.equal(createHash("sha256").update(skill.body).digest("hex").slice(0, 16), body.skill);
+  });
+
+  test("a reference file the skill does not have is not found, and not kept", async () => {
+    for (const route of ["/skill/nothing.md", "/skill/SKILL.md", "/skill/..%2Fpackage.json", "/skill/start.txt"]) {
+      const answer = await call(route);
+      assert.equal(answer.status, 404, route);
+      assert.equal(answer.headers.get("cache-control"), "no-store", route);
+    }
+  });
+
   test("/install.sh is the setup script for this server", async () => {
     const answer = await call("/install.sh");
     assert.equal(answer.status, 200);

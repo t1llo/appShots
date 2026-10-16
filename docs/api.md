@@ -245,7 +245,8 @@ These need no token:
 | --- | --- |
 | `/healthz` | Answers when the server is up |
 | `/skill.md` | The skill, as the server hands it out |
-| `/skill.json` | A short hash of the skill and one of the command, which `appshots` compares its own copies with |
+| `/skill.json` | A short hash of the skill and one of the command, which `appshots` compares its own copies with, and under `references` one of each of the skill's reference files |
+| `/skill/<file>.md` | One of the skill's reference files, such as `/skill/screens.md`: the full text of a step that `/skill.md` names |
 | `/install.sh` | The setup script. Without `PUBLIC_URL`, a request whose `Host` is not a plain name and port is a 400 |
 | `/cli/appshots.mjs` | The `appshots` command |
 | `/docs/<page>.md` | Any page of these docs as Markdown. Pages come with an `ETag`, so a reader that sends it back in `If-None-Match` gets a 304 while the page is the same |

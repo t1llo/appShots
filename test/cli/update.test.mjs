@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { cliHome, quietly, stubServer } from "./helpers.mjs";
@@ -13,28 +13,46 @@ const NEW = { skill: "---\nname: appshots\n---\nNew skill\n", cli: "#!/usr/bin/e
 const hash = (text) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 
 /** What the stand-in server hands out: the files, and what /skill.json says about them. */
-const served = { skill: NEW.skill, cli: NEW.cli, hashes: /** @type {unknown} */ ({ skill: hash(NEW.skill), cli: hash(NEW.cli) }), status: 200 };
+const served = {
+  skill: NEW.skill,
+  cli: NEW.cli,
+  hashes: /** @type {unknown} */ ({ skill: hash(NEW.skill), cli: hash(NEW.cli) }),
+  status: 200,
+  /** @type {Record<string, string>} The skill's reference files. A server from before them lists none. */
+  references: {},
+};
 const server = await stubServer(({ url }) => {
   if (url === "/skill.md") return [200, served.skill];
   if (url === "/cli/appshots.mjs") return [200, served.cli];
   if (url === "/skill.json") return [served.status, served.hashes];
+  const reference = url.match(/^\/skill\/([a-z0-9-]+\.md)$/)?.[1];
+  if (reference && Object.hasOwn(served.references, reference)) return [200, served.references[reference]];
   return [404, "not found"];
 });
 after(() => server.close());
 process.env.APPSHOTS_URL = server.url;
 
-const { latest, update } = await import("../../cli/src/update.mjs");
+const { latest, latestReferences, skillStatus, update } = await import("../../cli/src/update.mjs");
 const { Failure } = await import("../../cli/src/fail.mjs");
 const skill = path.join(home.home, ".claude", "skills", "appshots");
 
 beforeEach(() => {
+  rmSync(skill, { recursive: true, force: true });
   mkdirSync(skill, { recursive: true });
   writeFileSync(path.join(skill, "SKILL.md"), OLD.skill);
   writeFileSync(path.join(skill, "appshots.mjs"), OLD.cli, { mode: 0o755 });
-  Object.assign(served, { skill: NEW.skill, cli: NEW.cli, hashes: { skill: hash(NEW.skill), cli: hash(NEW.cli) }, status: 200 });
+  Object.assign(served, { skill: NEW.skill, cli: NEW.cli, hashes: { skill: hash(NEW.skill), cli: hash(NEW.cli) }, status: 200, references: {} });
 });
 
 const installed = (name) => readFileSync(path.join(skill, name), "utf8");
+
+const REFERENCES = { "start.md": "# Steps 1 to 5 in full\n\nNew start\n", "web.md": "# Step 6 F: a web app\n\nNew web\n" };
+
+/** A server that lists the skill's reference files in /skill.json beside the two hashes, and serves them. */
+function withReferences(references = REFERENCES) {
+  served.references = { ...references };
+  served.hashes = { skill: hash(NEW.skill), cli: hash(NEW.cli), references: Object.fromEntries(Object.entries(references).map(([name, text]) => [name, hash(text)])) };
+}
 
 test("latest returns the files when they match /skill.json", async () => {
   assert.deepEqual(await latest(server.url), { "SKILL.md": NEW.skill, "appshots.mjs": NEW.cli });
@@ -76,4 +94,65 @@ test("update with nothing new says so", async () => {
   writeFileSync(path.join(skill, "SKILL.md"), NEW.skill);
   writeFileSync(path.join(skill, "appshots.mjs"), NEW.cli);
   assert.match(await quietly(() => update()), /are up to date\./);
+});
+
+test("a server without reference files has none to fetch, and its skill is up to date without them", async () => {
+  assert.deepEqual(await latestReferences(server.url), {});
+  writeFileSync(path.join(skill, "SKILL.md"), NEW.skill);
+  writeFileSync(path.join(skill, "appshots.mjs"), NEW.cli);
+  assert.equal(await skillStatus(), "up to date");
+  assert.equal(existsSync(path.join(skill, "references")), false);
+});
+
+test("latestReferences returns each reference file the server lists, checked against its hash", async () => {
+  withReferences();
+  assert.deepEqual(await latestReferences(server.url), REFERENCES);
+  served.references["web.md"] = `${REFERENCES["web.md"]}Changed on the way\n`;
+  await assert.rejects(latestReferences(server.url), /\/skill\/web\.md does not match its hash/);
+});
+
+test("a listed name that is not a reference file's is neither fetched nor written", async () => {
+  withReferences();
+  served.hashes.references["../SKILL.md"] = hash(NEW.skill);
+  served.hashes.references["notes.txt"] = hash("x");
+  assert.deepEqual(Object.keys(await latestReferences(server.url)), ["start.md", "web.md"]);
+  served.hashes.references = ["start.md"];
+  assert.deepEqual(await latestReferences(server.url), {});
+});
+
+test("update installs the reference files beside the skill, and the skill counts as behind without them", async () => {
+  withReferences();
+  writeFileSync(path.join(skill, "SKILL.md"), NEW.skill);
+  writeFileSync(path.join(skill, "appshots.mjs"), NEW.cli);
+  assert.match(await skillStatus(), /the server has a newer one/);
+  assert.match(await quietly(() => update()), /^Updated the appshots skill and command in /m);
+  assert.deepEqual(readdirSync(path.join(skill, "references")).sort(), ["start.md", "web.md"]);
+  assert.equal(installed("references/start.md"), REFERENCES["start.md"]);
+  assert.equal(await skillStatus(), "up to date");
+  assert.match(await quietly(() => update()), /are up to date\./);
+});
+
+test("update replaces a changed reference file and keeps one the server no longer lists", async () => {
+  withReferences();
+  mkdirSync(path.join(skill, "references"));
+  writeFileSync(path.join(skill, "references", "start.md"), "# Old start\n");
+  writeFileSync(path.join(skill, "references", "gone.md"), "# Gone\n");
+  await quietly(() => update());
+  assert.equal(installed("references/start.md"), REFERENCES["start.md"]);
+  assert.equal(installed("references/gone.md"), "# Gone\n");
+});
+
+test("update with a reference file that does not match its hash changes nothing", async () => {
+  withReferences();
+  served.references["start.md"] = "# Injected\n";
+  await assert.rejects(quietly(() => update()), (error) => error instanceof Failure && /\/skill\/start\.md does not match its hash/.test(error.message));
+  assert.equal(installed("SKILL.md"), OLD.skill);
+  assert.equal(installed("appshots.mjs"), OLD.cli);
+  assert.equal(existsSync(path.join(skill, "references")), false);
+});
+
+test("update refuses an error page in place of a reference file", async () => {
+  withReferences({ "start.md": "<html>Bad gateway</html>" });
+  await assert.rejects(quietly(() => update()), (error) => error instanceof Failure && /not what an appShots server sends/.test(error.message));
+  assert.equal(installed("SKILL.md"), OLD.skill);
 });

@@ -7,6 +7,15 @@ import { CLAUDE_SKILL, LATEST_FILE, SHARED_SKILL, loadConfig, readConfig, tilde 
 /** The folders on this Mac that hold an installed copy of the skill. */
 export const installedSkills = () => [CLAUDE_SKILL, SHARED_SKILL].filter((dir) => existsSync(path.join(dir, "SKILL.md")));
 
+/** How the skill's reference files are named. Nothing else is ever written into their folder. */
+const REFERENCE = /^[a-z0-9-]+\.md$/;
+
+/**
+ * Where a copy of the skill keeps its reference files: each step in full, which SKILL.md sends the agent to.
+ * @param {string} dir
+ */
+export const referencesOf = (dir) => path.join(dir, "references");
+
 /**
  * What /skill.json gives for a file: the start of its SHA-256.
  * @param {string} text
@@ -45,10 +54,11 @@ async function download(server, route, start) {
 }
 
 /**
- * The hashes of the skill and the command the server hands out now. Null for a server from before /skill.json.
+ * The hashes of the skill, the command and the skill's reference files the server hands out now. Null for a server
+ * from before /skill.json, and no references for one from before they were split out of SKILL.md.
  * @param {string} server
  * @param {number} [ms]
- * @returns {Promise<{ skill: string, cli: string } | null>}
+ * @returns {Promise<{ skill: string, cli: string, references: Record<string, string> } | null>}
  */
 export async function serverHashes(server, ms = 15000) {
   const response = await fetch(`${server}/skill.json`, { signal: AbortSignal.timeout(ms) });
@@ -56,7 +66,10 @@ export async function serverHashes(server, ms = 15000) {
   if (!response.ok) throw new Error(`/skill.json answered ${response.status}`);
   // An older server may answer with its web app for any address it does not know.
   const hashes = await response.json().catch(() => null);
-  return typeof hashes?.skill === "string" && typeof hashes?.cli === "string" ? { skill: hashes.skill, cli: hashes.cli } : null;
+  if (typeof hashes?.skill !== "string" || typeof hashes?.cli !== "string") return null;
+  const listed = hashes.references !== null && typeof hashes.references === "object" && !Array.isArray(hashes.references) ? hashes.references : {};
+  const references = Object.fromEntries(Object.entries(listed).filter(([name, hash]) => REFERENCE.test(name) && typeof hash === "string"));
+  return { skill: hashes.skill, cli: hashes.cli, references };
 }
 
 /**
@@ -72,6 +85,56 @@ export async function latest(server) {
   }
   return { "SKILL.md": skill, "appshots.mjs": cli };
 }
+
+/**
+ * The skill's reference files as the server hands them out now, by name, each checked against its hash in
+ * /skill.json as `latest` checks the skill. None from a server that lists none.
+ * @param {string} server
+ * @returns {Promise<Record<string, string>>}
+ */
+export async function latestReferences(server) {
+  const hashes = await serverHashes(server);
+  const listed = Object.entries(hashes?.references ?? {});
+  const texts = await Promise.all(listed.map(([name]) => download(server, `/skill/${name}`, "# ")));
+  return Object.fromEntries(
+    listed.map(([name, hash], index) => {
+      if (stamp(texts[index]) !== hash) throw new Error(`/skill/${name} does not match its hash in /skill.json. Run it again in a minute`);
+      return [name, texts[index]];
+    }),
+  );
+}
+
+/**
+ * Writes the reference files into a copy of the skill. One the server no longer lists stays: SKILL.md names only
+ * the ones it uses, so it does no harm, and it may be one the user keeps.
+ * @param {string} dir
+ * @param {Record<string, string>} references
+ * @returns {number} How many files changed.
+ */
+export function installReferences(dir, references) {
+  let changed = 0;
+  for (const [name, text] of Object.entries(references)) {
+    if (!REFERENCE.test(name)) continue;
+    const file = path.join(referencesOf(dir), name);
+    if (existsSync(file) && readFileSync(file, "utf8") === text) continue;
+    mkdirSync(referencesOf(dir), { recursive: true });
+    writeAtomic(file, text);
+    changed++;
+  }
+  return changed;
+}
+
+/**
+ * Whether a copy of the skill has every reference file the server lists, as the server has it.
+ * @param {string} dir
+ * @param {Record<string, string>} hashes
+ */
+const hasReferences = (dir, hashes) =>
+  Object.entries(hashes).every(([name, hash]) => {
+    if (!REFERENCE.test(name)) return true;
+    const file = path.join(referencesOf(dir), name);
+    return existsSync(file) && stamp(readFileSync(file, "utf8")) === hash;
+  });
 
 /**
  * Writes a file whole or not at all: a command that stops half way through leaves the old one in place.
@@ -102,7 +165,7 @@ export async function skillStatus() {
   const read = (dir, name) => (existsSync(path.join(dir, name)) ? readFileSync(path.join(dir, name), "utf8") : null);
   let current;
   if (hashes) {
-    current = dirs.every((dir) => read(dir, "SKILL.md") !== null && stamp(read(dir, "SKILL.md")) === hashes.skill && read(dir, "appshots.mjs") !== null && stamp(read(dir, "appshots.mjs")) === hashes.cli);
+    current = dirs.every((dir) => read(dir, "SKILL.md") !== null && stamp(read(dir, "SKILL.md")) === hashes.skill && read(dir, "appshots.mjs") !== null && stamp(read(dir, "appshots.mjs")) === hashes.cli && hasReferences(dir, hashes.references));
   } else {
     const now = await latest(config.url).catch(() => null);
     if (!now) return null;
@@ -128,7 +191,7 @@ export async function staleNotice() {
       const now = await serverHashes(config.url, 3000);
       // A server from before this file existed has nothing to compare with.
       if (!now) return;
-      known = { url: config.url, at: Date.now(), skill: now.skill, cli: now.cli };
+      known = { url: config.url, at: Date.now(), skill: now.skill, cli: now.cli, references: now.references };
       mkdirSync(path.dirname(LATEST_FILE), { recursive: true });
       writeFileSync(LATEST_FILE, `${JSON.stringify(known)}\n`);
     } catch {
@@ -137,7 +200,9 @@ export async function staleNotice() {
   }
   if (typeof known.skill !== "string" || typeof known.cli !== "string") return;
   const same = (name, hash) => dirs.every((dir) => existsSync(path.join(dir, name)) && stamp(readFileSync(path.join(dir, name), "utf8")) === hash);
-  if (same("SKILL.md", known.skill) && same("appshots.mjs", known.cli)) return;
+  // What an older copy of this command remembered has no references, and nothing to compare them with.
+  const references = known.references !== null && typeof known.references === "object" ? known.references : {};
+  if (same("SKILL.md", known.skill) && same("appshots.mjs", known.cli) && dirs.every((dir) => hasReferences(dir, references))) return;
   console.error("appshots: the server has a newer skill and command. Run 'appshots update', then read SKILL.md again from the top.");
 }
 
@@ -152,13 +217,16 @@ export async function update() {
   const warning = plainHttp(url);
   if (warning) console.error(`appshots: ${warning}`);
   let now;
+  let references;
   try {
-    now = await latest(url);
+    // All of it is fetched and checked before anything is written, so a refused file changes nothing.
+    [now, references] = await Promise.all([latest(url), latestReferences(url)]);
   } catch (error) {
     fail(`Cannot get the skill from ${url}: ${error.cause?.message ?? error.message}`);
   }
   let changed = 0;
   for (const dir of dirs) {
+    changed += installReferences(dir, references);
     for (const [name, text] of Object.entries(now)) {
       const file = path.join(dir, name);
       if (existsSync(file) && readFileSync(file, "utf8") === text) continue;

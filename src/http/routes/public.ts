@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import express, { type Router } from "express";
 import { FONTS, ICON_IDS } from "../../design.ts";
@@ -36,6 +36,32 @@ async function keptFile(file: string): Promise<() => Promise<{ text: string; sta
   };
 }
 
+/** The hash of a file as it is served, with the server's address filled in. Worked out again only when either changes. */
+function servedStamp(): (text: string, server: string) => string {
+  let last = { text: "", server: "", stamp: "" };
+  return (text, server) => {
+    if (last.text !== text || last.server !== server) last = { text, server, stamp: stamp(text.replaceAll("{{SERVER}}", server)) };
+    return last.stamp;
+  };
+}
+
+/** How a reference file of the skill is named: on disk, in its address and in /skill.json. */
+const REFERENCE = /^[a-z0-9-]+\.md$/;
+
+interface Reference {
+  read: Awaited<ReturnType<typeof keptFile>>;
+  stamped: ReturnType<typeof servedStamp>;
+}
+
+/**
+ * The skill's reference files: each step in full, beside a SKILL.md short enough for a small model to follow.
+ * A checkout without the folder has none, and its skill is the one file.
+ */
+async function keptReferences(dir: string): Promise<Map<string, Reference>> {
+  const names = (await readdir(dir).catch(() => [] as string[])).filter((name) => REFERENCE.test(name)).sort();
+  return new Map(await Promise.all(names.map(async (name): Promise<[string, Reference]> => [name, { read: await keptFile(path.join(dir, name)), stamped: servedStamp() }])));
+}
+
 /** What anybody may fetch: the health check, what a Mac needs to work with this server, the fonts and the icons. */
 export async function publicRoutes(): Promise<Router> {
   const routes = express.Router();
@@ -49,9 +75,16 @@ export async function publicRoutes(): Promise<Router> {
   // None of them holds a secret, so they are public. The server fills in its own address.
   const skill = await keptFile(path.join(root, "skill", "SKILL.md"));
   const cli = await keptFile(path.join(root, "cli", "appshots.mjs"));
+  const references = await keptReferences(path.join(root, "skill", "references"));
   const installer = await readFile(path.join(root, "cli", "install.sh"), "utf8");
   routes.get("/skill.md", async (req, res) => {
     res.type("text/markdown").set("Cache-Control", "no-cache").send((await skill()).text.replaceAll("{{SERVER}}", baseUrl(req)));
+  });
+  // The files SKILL.md sends the agent to, which setup and update install in the skill's references folder.
+  routes.get("/skill/:name", async (req, res) => {
+    const reference = references.get(req.params.name);
+    if (!reference) return void res.status(404).set("Cache-Control", "no-store").end();
+    res.type("text/markdown").set("Cache-Control", "private, no-cache").send((await reference.read()).text.replaceAll("{{SERVER}}", baseUrl(req)));
   });
   routes.get("/install.sh", (req, res) => {
     // The address ends up inside a shell script, and one that points somewhere other than where it was asked is no
@@ -63,13 +96,14 @@ export async function publicRoutes(): Promise<Router> {
   routes.get("/cli/appshots.mjs", (_req, res) => {
     res.set("Content-Disposition", 'attachment; filename="appshots.mjs"').sendFile("appshots.mjs", { root: path.join(root, "cli") });
   });
-  // The skill's hash depends on the address filled into it, which is the same for nearly every request.
-  let skillStamp = { text: "", server: "", stamp: "" };
+  // The skill's hash depends on the address filled into it, which is the same for nearly every request. The
+  // reference files have a key of their own, so that `skill` and `cli` mean what a Mac has always compared them with.
+  const skillStamp = servedStamp();
   routes.get("/skill.json", async (req, res) => {
-    const [{ text }, { stamp: cliStamp }] = await Promise.all([skill(), cli()]);
+    const [{ text }, { stamp: cliStamp }, kept] = await Promise.all([skill(), cli(), Promise.all([...references.values()].map(({ read }) => read()))]);
     const server = baseUrl(req);
-    if (skillStamp.text !== text || skillStamp.server !== server) skillStamp = { text, server, stamp: stamp(text.replaceAll("{{SERVER}}", server)) };
-    res.set("Cache-Control", "no-cache").json({ skill: skillStamp.stamp, cli: cliStamp });
+    const stamps = Object.fromEntries([...references].map(([name, { stamped }], index) => [name, stamped(kept[index].text, server)]));
+    res.set("Cache-Control", "no-cache").json({ skill: skillStamp(text, server), cli: cliStamp, references: stamps });
   });
 
   const fontCss = await buildFontCss();

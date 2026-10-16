@@ -8,6 +8,7 @@ store-screenshots
 notes
 *.md
 !skill/SKILL.md
+!skill/references/*.md
 !docs/*.md
 docs/examples
 assets

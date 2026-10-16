@@ -132,7 +132,7 @@ describe("sessions", () => {
 
   test("a session is renewed on the account's own answers only, never on public ones a CDN may keep (srv-5)", async () => {
     const aged = sessionCookie("u1", 1, SESSION_TTL - 2 * DAY);
-    for (const route of ["/healthz", "/", "/home", "/icons.svg", "/fonts/fonts.css", "/og.jpg", "/skill.md", "/skill.json", "/cli/appshots.mjs", "/docs/api.md", "/auth/config", "/nothing-here"]) {
+    for (const route of ["/healthz", "/", "/home", "/icons.svg", "/fonts/fonts.css", "/og.jpg", "/skill.md", "/skill.json", "/skill/start.md", "/cli/appshots.mjs", "/docs/api.md", "/auth/config", "/nothing-here"]) {
       const answer = await server.fetch(route, { headers: { Cookie: aged }, redirect: "manual" });
       assert.equal(answer.headers.get("set-cookie"), null, route);
     }

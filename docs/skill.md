@@ -6,6 +6,8 @@ description: What the appshots skill makes a coding agent do, step by step. It c
 
 The skill is a page of instructions your agent follows to turn the app in the current folder into a finished set. It works the same way every time, which is what keeps a set to ten or twenty minutes. You can read it at [`/skill.md`](/skill.md).
 
+That page is the short version, small enough for an agent on a local model with little context. Each step's full text is in a reference file it names, such as [`/skill/screens.md`](/skill/screens.md) for getting the screens of an iPhone app or [`/skill/copy-and-render.md`](/skill/copy-and-render.md) for the copy and the render. The setup command installs them in a `references` folder beside `SKILL.md`, and the agent reads each one when it reaches its step. One that is missing on your Mac, it fetches from the server.
+
 ## Start it
 
 Open the agent in your app's repository, in a new session, then:
