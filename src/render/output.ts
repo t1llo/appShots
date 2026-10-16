@@ -64,6 +64,8 @@ export class Cancelled extends InputError {
 export interface Drawing {
   readonly cancelled: boolean;
   job: { id: string; done: number };
+  /** Called each time `job.done` has grown. */
+  progressed?(): void;
 }
 
 const slideFile = (index: number) => `${String(index + 1).padStart(2, "0")}.png`;
@@ -139,6 +141,7 @@ export async function draw(run: Drawing, space: Space, project: Project, plan: R
           await meanwhile(
             Promise.all([written, ...tiles.slice(-1)]).then(() => {
               run.job.done++;
+              run.progressed?.();
             }),
           );
         }
@@ -180,6 +183,7 @@ export async function draw(run: Drawing, space: Space, project: Project, plan: R
         await meanwhile(
           written.then(() => {
             run.job.done++;
+            run.progressed?.();
           }),
         );
       }

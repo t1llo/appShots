@@ -3,6 +3,7 @@ import path from "node:path";
 import sharp, { type Metadata } from "sharp";
 import { InputError, NotFoundError, TooLargeError } from "../domain/errors.ts";
 import type { Project } from "../schema.ts";
+import { events } from "../services/events.ts";
 import { DEVICE_KINDS, type DeviceKind, deviceKindOf } from "../sizes.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { checkPixels, decodeError, JPEG_MAX_PIXELS, MAX_PIXELS, MAX_SIDE, openImage, readHeader } from "./images.ts";
@@ -15,6 +16,12 @@ import { assertRoom, usageChanged, withRoom } from "./usage.ts";
 
 // A project's uploads: its screenshots, one per name, device and language, and its logos and other images. They are
 // listed from the folder and its index (index-cache.ts), so a listing reads no picture it has read before.
+
+/** After an upload, a move or a delete: the account's usage is counted again, and whoever follows it is told. */
+function changed(space: Space, id: string, kind: "shots" | "images"): void {
+  usageChanged(space);
+  events.publish(space.id, { type: "assets", project: id, kind });
+}
 
 export interface Shot {
   name: string;
@@ -312,7 +319,7 @@ export async function saveShot(space: Space, id: string, name: string, data: Buf
     const shown = window ? corner : 0;
     return { name, device: kind, ...(locale ? { locale } : {}), file, width, height, bytes: info.size, version: Math.round(info.mtimeMs), ...(shown ? { corner: shown } : {}) } satisfies Shot;
   });
-  usageChanged(space);
+  changed(space, id, "shots");
   return shot;
 }
 
@@ -323,7 +330,7 @@ export async function deleteShot(space: Space, id: string, file: string): Promis
     await rm(path.join(dir, file), { force: true });
     await recordFiles(dir, { [file]: null });
   });
-  usageChanged(space);
+  changed(space, id, "shots");
 }
 
 /**
@@ -352,7 +359,7 @@ export async function moveShot(space: Space, id: string, file: string, to: { dev
     if (!found) throw new InputError(`"${moved}" cannot be read as a picture. Upload it again.`);
     return found;
   });
-  usageChanged(space);
+  changed(space, id, "shots");
   return shot;
 }
 
@@ -462,7 +469,7 @@ export async function saveImage(space: Space, id: string, name: string, data: Bu
     await recordFiles(dir, { [file]: { stamp: stampOf(info), meta: { width, height } } });
     return { name, file, width, height, bytes: info.size, version: Math.round(info.mtimeMs) } satisfies StoredImage;
   });
-  usageChanged(space);
+  changed(space, id, "images");
   return image;
 }
 
@@ -473,5 +480,5 @@ export async function deleteImage(space: Space, id: string, file: string): Promi
     await rm(path.join(dir, file), { force: true });
     await recordFiles(dir, { [file]: null });
   });
-  usageChanged(space);
+  changed(space, id, "images");
 }

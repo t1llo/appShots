@@ -1,6 +1,7 @@
 import express, { type Response, type Router } from "express";
 import { createToken, describeToken, revokeToken } from "../../accounts.ts";
 import { endGrant, grantsOf } from "../../oauth/store.ts";
+import { events } from "../../services/events.ts";
 import { deleteAccount } from "../../services/lifecycle.ts";
 import { identityOf, requireSession, SESSION_COOKIE } from "../auth.ts";
 
@@ -20,6 +21,8 @@ export function accountRoutes(): Router {
   });
   account.delete("/tokens/:id", async (req, res) => {
     await revokeToken(userOf(res), req.params.id);
+    // An event stream opened with the token closes now.
+    events.recheck();
     res.status(204).end();
   });
   // The apps connected over OAuth, such as claude.ai or ChatGPT, one entry each time somebody let one in.
@@ -29,6 +32,7 @@ export function accountRoutes(): Router {
   account.delete("/apps/:id", async (req, res) => {
     const grant = grantsOf(userOf(res).id).find((entry) => entry.id === req.params.id);
     if (grant) await endGrant(grant);
+    events.recheck();
     res.status(204).end();
   });
   account.delete("/", async (req, res) => {

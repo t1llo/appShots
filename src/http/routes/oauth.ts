@@ -8,6 +8,7 @@ import { type Approval, approvalOf, checkAuthorization, issueCode, RedirectError
 import { AUTHORIZATION_SERVER, authorizationServer, originOf, PROTECTED_RESOURCE, protectedResource } from "../../oauth/metadata.ts";
 import { sendConsent, sendProblem } from "../../oauth/pages.ts";
 import { registeredClient } from "../../oauth/store.ts";
+import { events } from "../../services/events.ts";
 import type { Log } from "../errors.ts";
 import { cookie, OAUTH_COOKIE, refuseCrossSite, sameOrigin, SESSION_COOKIE, setSession } from "../auth.ts";
 import { baseUrl, visitorAddress } from "../security.ts";
@@ -99,7 +100,11 @@ export function oauthRoutes(log: Log): Router {
 export async function logout(req: Request, res: Response): Promise<void> {
   if (!sameOrigin(req)) return refuseCrossSite(res);
   const holder = config.auth ? sessionHolder(cookie(req, SESSION_COOKIE)) : null;
-  if (holder) await endSessions(holder);
+  if (holder) {
+    await endSessions(holder);
+    // The event streams the sessions have open in other tabs close now, not at their next heartbeat.
+    events.recheck();
+  }
   res.clearCookie(SESSION_COOKIE, { path: "/" });
   res.redirect("/");
 }
@@ -198,6 +203,7 @@ export function authorizationRoutes(log: Log, fetchDocument?: DocumentFetcher): 
 
   routes.post("/oauth/revoke", ...params, async (req, res) => {
     await revoke(req.get("authorization"), req.body ?? {});
+    events.recheck();
     res.status(200).end();
   });
 

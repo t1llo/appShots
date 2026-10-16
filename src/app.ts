@@ -8,6 +8,7 @@ import { LIMITS } from "./http/limits.ts";
 import { accountRoutes } from "./http/routes/account.ts";
 import { adminRoutes } from "./http/routes/admin.ts";
 import { assetRoutes, uploadRoutes } from "./http/routes/assets.ts";
+import { eventRoutes } from "./http/routes/events.ts";
 import { exportRoutes } from "./http/routes/exports.ts";
 import { fileRoutes } from "./http/routes/files.ts";
 import { mcpRoutes } from "./http/routes/mcp.ts";
@@ -73,6 +74,7 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
   const api = express.Router();
   api.use(privateCache);
   api.use(renewSession);
+  api.use(eventRoutes());
   api.use(uploadRoutes());
   api.use(express.json({ limit: LIMITS.json }));
   api.use(projectRoutes());

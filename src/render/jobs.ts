@@ -4,6 +4,7 @@ import path from "node:path";
 import { holdRender } from "../accounts.ts";
 import type { LintWarning } from "../domain/lint.ts";
 import type { Project } from "../schema.ts";
+import { events, jobEvent } from "../services/events.ts";
 import { getProject, InputError, listImages, listShots, NotFoundError, projectDir, type Shot, shotsDir, type Space, UnavailableError } from "../store.ts";
 import { commitOutputs, discardStaging, sweepStaging } from "../storage/outputs.ts";
 import { projectKey } from "../storage/paths.ts";
@@ -56,6 +57,30 @@ interface Run {
   /** Settles once the run has read the project and taken its place in the queue, or could not. */
   placed: Promise<void>;
   finished: Promise<RenderResult>;
+  /** Tells the account's followers that the run drew another picture, no more often than PROGRESS_MS. */
+  progressed: () => void;
+  /** When the run was last told, and the telling that waits for PROGRESS_MS to pass. */
+  told: number;
+  telling?: NodeJS.Timeout;
+}
+
+/** How often a run's pictures are told as they are drawn, at most. Its start and its end are told at once. */
+const PROGRESS_MS = 250;
+
+/** Tells the account's followers, such as the Studio, how the run stands. */
+function announce(run: Run): void {
+  clearTimeout(run.telling);
+  run.telling = undefined;
+  run.told = Date.now();
+  events.publish(run.space, jobEvent(run.job));
+}
+
+function progressed(run: Run): void {
+  if (run.telling || ended(run)) return;
+  const wait = run.told + PROGRESS_MS - Date.now();
+  if (wait <= 0) return announce(run);
+  run.telling = setTimeout(() => announce(run), wait);
+  run.telling.unref();
 }
 
 const waiting = new Map<string, number>();
@@ -189,7 +214,7 @@ export function startRender(space: Space, id: string, request: RenderRequest = {
     job.name = project.name;
     return { project, shots, plan: planRender(project, shots, images, request) };
   });
-  const run: Run = { job, space: space.id, cancelled: false, stop: () => {}, placed: Promise.resolve(), finished: undefined as never };
+  const run: Run = { job, space: space.id, cancelled: false, stop: () => {}, placed: Promise.resolve(), finished: undefined as never, progressed: () => progressed(run), told: 0 };
   const stopped = new Promise<never>((_resolve, reject) => {
     run.stop = () => reject(new Cancelled());
   });
@@ -201,6 +226,7 @@ export function startRender(space: Space, id: string, request: RenderRequest = {
       job.state = "running";
       job.startedAt = new Date().toISOString();
       job.total = plan.total;
+      announce(run);
       return renderNow(run, space, plan);
     });
   });
@@ -237,9 +263,11 @@ export function startRender(space: Space, id: string, request: RenderRequest = {
       const left = (waiting.get(space.id) ?? 1) - 1;
       if (left > 0) waiting.set(space.id, left);
       else waiting.delete(space.id);
+      announce(run);
     });
   runs.set(job.id, run);
   forget();
+  announce(run);
   if (options.signal?.aborted) cancel(run);
   else options.signal?.addEventListener("abort", () => cancel(run), { once: true });
   return { job, finished: run.finished, read: loaded.then(() => undefined, () => undefined) };

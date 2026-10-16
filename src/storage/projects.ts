@@ -3,6 +3,7 @@ import path from "node:path";
 import { ConflictError, DamagedError, InputError, NotFoundError } from "../domain/errors.ts";
 import { readStored, withUnknownKeys } from "../domain/stored.ts";
 import { type Creatives, type Project, projectSchema, SLUG, type Slide, type Theme } from "../schema.ts";
+import { type EventBus, events } from "../services/events.ts";
 import type { DeviceKind } from "../sizes.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { loadRaw, migrate, SCHEMA_VERSION } from "./migrate.ts";
@@ -98,12 +99,13 @@ async function refileShots(space: Space, id: string, was: string, locales: strin
 /**
  * Where every project.json is read and written. Each change runs under the project's lock, on the project as it is
  * at that moment, and is written whole as the next revision; the versions before it stay in a .history folder
- * beside it, the last `keepHistory` of them.
+ * beside it, the last `keepHistory` of them. Each new revision and each new project is told on `events`.
  */
-export function createProjectRepository(options: { now?: () => Date; keepHistory?: number; log?: (message: string) => void } = {}) {
+export function createProjectRepository(options: { now?: () => Date; keepHistory?: number; log?: (message: string) => void; events?: Pick<EventBus, "publish"> } = {}) {
   const now = () => (options.now?.() ?? new Date()).toISOString();
   const keepHistory = Math.max(1, options.keepHistory ?? 50);
   const log = options.log ?? ((message: string) => console.warn(message));
+  const bus = options.events;
   /** Projects being deleted: nothing writes to them any more. */
   const tombstones = new Set<string>();
   /** Projects whose folder exists while their first project.json is still being written. */
@@ -186,6 +188,8 @@ export function createProjectRepository(options: { now?: () => Date; keepHistory
     await quietly(record(space, id, revision, actor, text), `keep revision ${revision} of ${space.id}/${id}`);
     // Only once the project names its new first language: a write that failed leaves the shots filed as it says.
     if (next.locales[0] !== current.project.locales[0]) await refileShots(space, id, current.project.locales[0]!, next.locales);
+    // Still under the lock, so two changes are told in the order they were made.
+    bus?.publish(space.id, { type: "project", id, revision, actor });
     return { project: next, revision, warnings: [] };
   }
 
@@ -259,6 +263,7 @@ export function createProjectRepository(options: { now?: () => Date; keepHistory
           const text = JSON.stringify(created, null, 2);
           await writeFileAtomic(projectFile(space, id), text);
           await quietly(record(space, id, 1, actorOf(options.actor), text), `keep revision 1 of ${space.id}/${id}`);
+          bus?.publish(space.id, { type: "project-created", id, actor: actorOf(options.actor) });
           return { project: created, revision: 1, warnings: [] };
         } catch (error) {
           await rm(projectDir(space, id), { recursive: true, force: true });
@@ -405,4 +410,4 @@ export function createProjectRepository(options: { now?: () => Date; keepHistory
 export type ProjectRepository = ReturnType<typeof createProjectRepository>;
 
 /** The repository the server uses. Its lock and its marks for projects being deleted are shared by every caller. */
-export const projects = createProjectRepository();
+export const projects = createProjectRepository({ events });

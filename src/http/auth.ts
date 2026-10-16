@@ -32,7 +32,8 @@ export function fromRenderer(req: IncomingMessage): boolean {
   return typeof secret === "string" && safeEqual(secret, config.internalSecret);
 }
 
-export function identify(req: Request): Identity | null {
+/** Who a request comes from. `path` is the one it asked for, from the root: what an OAuth access token is checked against. */
+export function identify(req: Request, path = req.path): Identity | null {
   // With sign-in off, whoever reaches the port works in the server's own space.
   if (!config.auth) return { space: mainSpace, session: true };
   if (fromRenderer(req)) {
@@ -43,11 +44,23 @@ export function identify(req: Request): Identity | null {
   if (header?.startsWith("Bearer ")) {
     // An API token, or an access token an app got over OAuth, which works only where it was meant to.
     const token = header.slice(7).trim();
-    const user = userByToken(token) ?? userByAccessToken(token, originOf(baseUrl(req)), req.path);
+    const user = userByToken(token) ?? userByAccessToken(token, originOf(baseUrl(req)), path);
     return user && { space: spaceOfUser(user), user, session: false };
   }
   const holder = sessionHolder(cookie(req, SESSION_COOKIE));
   return holder && { space: spaceOfUser(holder), user: holder, session: true };
+}
+
+/**
+ * Asks again, later, whether the sign-in a request came with still holds, for the account it was let in as. An answer
+ * that stays open, such as the event stream, ends once its session is signed out, its token revoked or its account
+ * removed. Routers take the front of the path off while they handle a request, so the whole of it is kept now.
+ */
+export function stillSignedIn(req: Request, res: Response): () => boolean {
+  if (!config.auth) return () => true;
+  const path = `${req.baseUrl}${req.path}`;
+  const space = spaceOf(res).id;
+  return () => identify(req, path)?.space.id === space;
 }
 
 /** Whether an address is on this server: the host the request came to, or the public address it is known by. */

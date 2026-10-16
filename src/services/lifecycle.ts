@@ -5,6 +5,7 @@ import type { Space } from "../storage/paths.ts";
 import { projects } from "../storage/projects.ts";
 import { usageChanged } from "../storage/usage.ts";
 import { videoService } from "../video/service.ts";
+import { events } from "./events.ts";
 
 // How projects and accounts end, and move, and how the server stops. Each first makes sure nothing works on what goes
 // any more: from the first moment it is not found, so no change or upload starts on it, and what draws for it, its
@@ -22,13 +23,23 @@ export async function deleteProject(space: Space, id: string): Promise<void> {
   await stopDrawing(space, id);
   await projects.remove(space, id);
   usageChanged(space);
+  events.publish(space.id, { type: "project-deleted", id });
+}
+
+/**
+ * Ends what is under way for an account that goes. Its sign-ins hold no more by then, so the event streams it has
+ * open are closed too.
+ */
+async function endAccount(space: Space): Promise<void> {
+  events.recheck();
+  await stopDrawing(space);
 }
 
 /** Deletes the account of whoever confirms it with their address, with everything it owns. */
-export const deleteAccount = (user: User, confirmation: unknown) => confirmDelete(user, confirmation, (space) => stopDrawing(space));
+export const deleteAccount = (user: User, confirmation: unknown) => confirmDelete(user, confirmation, endAccount);
 
 /** Takes an address off the list, and removes the account behind it with everything it owns. */
-export const removeAccount = (email: unknown) => removePerson(email, (space) => stopDrawing(space));
+export const removeAccount = (email: unknown) => removePerson(email, endAccount);
 
 /**
  * Moves a project, whole and as it is, from one space to another: for the admin, when the projects of a person are
@@ -42,15 +53,19 @@ export async function moveProject(from: Space, id: string, to: Space): Promise<s
   const moved = await projects.move(from, id, to);
   usageChanged(from);
   usageChanged(to);
+  events.publish(from.id, { type: "project-deleted", id });
+  events.publish(to.id, { type: "project-created", id: moved, actor: "admin" });
   return moved;
 }
 
 /**
  * Lets the renders and the video layer runs under way finish, for up to `timeoutMs`, and starts no more of either
  * meanwhile: they wait in the same queue. What still goes then is cancelled: it keeps nothing and uses no render.
- * Resolves true when everything finished in time.
+ * The event streams are closed at once, as they would keep the server from closing. Resolves true when everything
+ * finished in time.
  */
 export async function drain(timeoutMs: number): Promise<boolean> {
+  events.endAll();
   videoService.close();
   return drainRenders(timeoutMs, (wait) => videoService.cancelAll(wait));
 }
