@@ -63,7 +63,7 @@ const tools = { ffmpeg: "", ffprobe: "ffprobe", version: "9.0", encoders: new Se
 /**
  * A folder with a plan, recordings of each scene for each display and language, and the layers the server
  * would have drawn, and the parts compose takes, standing in for the other modules.
- * @param {object} [options]
+ * @param {{ displays?: string[], locales?: string[], intro?: boolean, outro?: boolean, wall?: number, reuse?: boolean, scenes?: any[], [key: string]: unknown }} [options]
  */
 function project({ displays = ["iphone"], locales = ["en", "de"], intro = true, outro = true, wall = 6, reuse = true, ...plan } = {}) {
   const base = path.join(dir, `project-${Math.random().toString(36).slice(2, 8)}`);
@@ -78,6 +78,7 @@ function project({ displays = ["iphone"], locales = ["en", "de"], intro = true, 
   for (const display of displays) {
     const set = `set${display.replace(/\W/g, "")}0123456`.slice(0, 16);
     const size = /** @type {any} */ (doubles.PREVIEW_SPECS)[display][display === "mac" ? "landscape" : "portrait"];
+    /** @type {any[]} */
     const layers = [{ id: "plate", locale: null, kind: "plate" }, { id: "touch", locale: null, kind: "touch" }];
     mkdirSync(path.join(root, "layers", set), { recursive: true });
     writeFileSync(path.join(root, "layers", set, "plate.png"), PIXEL);
@@ -205,7 +206,7 @@ test("a second compose builds nothing that did not change, and a changed caption
   const made = calls();
   assert.equal(made.length, 2);
   assert.ok(made[0].args.some((arg) => arg.endsWith(path.join("de", "caption-search.png"))));
-  assert.ok(isJoin(made[1]) && made[1].args.at(-1).includes(path.join("out", "de", "iphone")));
+  assert.ok(isJoin(made[1]) && made[1].args.at(-1)?.includes(path.join("out", "de", "iphone")));
 
   // A recording made again is new footage, even at the same path.
   rmSync(log, { force: true });

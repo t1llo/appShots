@@ -173,6 +173,7 @@ export function sceneSeconds(plan, scene, sidecar) {
  */
 export function joinOffsets(durations, transition = {}) {
   const overlap = transition.type === "none" ? 0 : (transition.seconds ?? 0.4);
+  /** @type {number[]} */
   const offsets = [];
   let end = 0;
   durations.forEach((seconds, at) => {

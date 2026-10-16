@@ -155,7 +155,7 @@ function sizeOf(display, plan) {
   const orientation = display === "mac" ? "landscape" : (plan.orientation ?? "portrait");
   const size = spec[orientation];
   if (!Array.isArray(size)) fail(`An app preview for ${display} cannot be ${orientation}.`);
-  return size;
+  return /** @type {[number, number]} */ (size);
 }
 
 /**
@@ -492,7 +492,7 @@ export async function compose(plan, flags) {
   const results = [];
   for (const output of outputs) results.push(await composeOne(output, { engine, music, name, draft, encoder }));
   if (draft) console.log("These are drafts: quick to make and good to look at, but 'appshots video push' does not take them. Compose without --draft for the App Store.");
-  const failing = results.filter((result) => result.check.errors.some((rule) => !(draft && isDraftRule(rule))));
+  const failing = results.filter((result) => result.check.errors.some((/** @type {{ rule: string }} */ rule) => !(draft && isDraftRule(rule))));
   if (failing.length > 0)
     fail(`${failing.length} of ${results.length} preview${results.length === 1 ? " does" : "s do"} not pass Apple's specification: ${failing.map((result) => path.relative(process.cwd(), result.file)).join(", ")}. The errors are above, and in each one's .check.json.`);
   return results;

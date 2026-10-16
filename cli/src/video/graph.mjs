@@ -172,6 +172,7 @@ export function cardArgs({ size, frames, plate, logo, text, at = 0, codec }) {
  * @param {number} overlap The transition's length in frames.
  */
 export function joinPoints(lengths, overlap) {
+  /** @type {number[]} */
   const offsets = [];
   let end = 0;
   lengths.forEach((frames, at) => {

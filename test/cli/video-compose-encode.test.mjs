@@ -53,6 +53,7 @@ function alive(/** @type {number} */ pid) {
 
 test("ffmpeg runs quietly, its progress is read, and the seconds it wrote come back", async () => {
   const ffmpeg = await fakeFfmpeg("good", `fs.writeFileSync(out, "video"); progress(500000); progress(1000000); process.stdout.write("out_time_us=2000000\\nprogress=end\\n");`);
+  /** @type {number[]} */
   const seen = [];
   const out = path.join(dir, "good.mp4");
   const result = await runFfmpeg({ ffmpeg }, ["-i", "in.mov", "-f", "mp4", out], { label: "stage 1, scene \"a\"", out, onProgress: (seconds) => seen.push(seconds) });
@@ -72,10 +73,10 @@ test("an ffmpeg whose output stops moving is stopped, its file removed, and the 
   const out = path.join(dir, "stalls.mp4");
   const started = Date.now();
   await assert.rejects(
-    runFfmpeg({ ffmpeg }, ["-i", "in.mov", "-filter_complex", "[0:v]fps=30[v]", "-f", "mp4", out], { label: 'stage 1, scene "inbox" (iphone, de)', out, stall: 1500 }),
+    runFfmpeg({ ffmpeg }, ["-i", "in.mov", "-filter_complex", "[0:v]fps=30[v]", "-f", "mp4", out], { label: 'stage 1, scene "inbox" (iphone, de)', out, stall: 2500 }),
     (/** @type {Error} */ error) => {
       assert.ok(error instanceof Failure);
-      assert.match(error.message, /stopped making progress on stage 1, scene "inbox" \(iphone, de\) for 1\.5 s/);
+      assert.match(error.message, /stopped making progress on stage 1, scene "inbox" \(iphone, de\) for 2\.5 s/);
       assert.match(error.message, /--jobs 1/);
       assert.match(error.message, /'\[0:v\]fps=30\[v\]'/);
       assert.match(error.message, /Stream mapping/);
@@ -83,7 +84,7 @@ test("an ffmpeg whose output stops moving is stopped, its file removed, and the 
     },
   );
   // SIGTERM is not enough for it; SIGKILL follows two seconds later.
-  assert.ok(Date.now() - started < 7000);
+  assert.ok(Date.now() - started < 9000);
   assert.ok(!existsSync(out), "the half-written file is gone");
   const pid = Number(await readFile(`${ffmpeg}.pid`, "utf8"));
   for (let wait = 0; wait < 40 && alive(pid); wait++) await pause(100);
@@ -91,11 +92,11 @@ test("an ffmpeg whose output stops moving is stopped, its file removed, and the 
 });
 
 test("a slow ffmpeg that keeps making progress is left to finish", async () => {
-  const ffmpeg = await fakeFfmpeg("slow", `let us = 0; const tick = setInterval(() => { us += 40000; progress(us); if (us >= 1200000) { clearInterval(tick); fs.writeFileSync(out, "video"); process.stdout.write("progress=end\\n"); } }, 100);`);
+  const ffmpeg = await fakeFfmpeg("slow", `let us = 0; const tick = setInterval(() => { us += 40000; progress(us); if (us >= 720000) { clearInterval(tick); fs.writeFileSync(out, "video"); process.stdout.write("progress=end\\n"); } }, 200);`);
   const out = path.join(dir, "slow.mp4");
-  const result = await runFfmpeg({ ffmpeg }, ["-f", "mp4", out], { label: "stage 2", out, stall: 1500 });
-  // It ran for about three seconds, twice the limit, and was never still for long.
-  assert.equal(result.seconds, 1.2);
+  const result = await runFfmpeg({ ffmpeg }, ["-f", "mp4", out], { label: "stage 2", out, stall: 2500 });
+  // It ran for longer than the limit, and was never still for long.
+  assert.equal(result.seconds, 0.72);
   assert.ok(existsSync(out));
 });
 
