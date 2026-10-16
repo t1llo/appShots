@@ -97,6 +97,12 @@ test("the set is named by what it draws: a change to the copy or the theme makes
   const theme = await layers(id, BODY);
   assert.equal(new Set([before.set, copy.set, theme.set]).size, 3);
   assert.deepEqual(settled, [true, true, true]);
+
+  // The same languages in another order draw the same pictures: the same set, not charged again.
+  const reordered = await layers(id, { ...BODY, locales: ["de", "en"] });
+  assert.equal(reordered.set, theme.set);
+  assert.equal(reordered.charged, false);
+  assert.deepEqual(reordered.locales, ["en", "de"]);
 });
 
 test("copy missing in a language is drawn in the first one and named in the warnings, as is English small print", async () => {

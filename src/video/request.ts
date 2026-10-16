@@ -116,12 +116,14 @@ export function normaliseRequest(project: Pick<Project, "locales">, body: VideoL
   const { size, display } = settleSize(body);
   const intro = body.intro ? { ...(body.intro.headline !== undefined ? { headline: body.intro.headline } : {}), logo: body.intro.logo ?? true } : null;
   const outro = body.outro ? { lines: body.outro.lines ?? [], logo: body.outro.logo ?? true, disclosure: [...new Set(body.outro.disclosure ?? [])] } : null;
+  const wanted = resolveLocales(project, body.locales);
   return {
     size,
     display,
     // A size of no display takes the slides of the shape it has.
     device: display ? previewDevice(display) : size[0] > size[1] ? "mac" : "iphone",
-    locales: resolveLocales(project, body.locales),
+    // In the project's order, so the same languages asked for in another order are the same set.
+    locales: project.locales.filter((locale) => wanted.includes(locale)),
     captionStyle: body.captionStyle ?? "panel",
     captions: (body.captions ?? []).map((entry) => ({ id: entry.id, text: entry.text, position: entry.position ?? "top" })),
     intro,

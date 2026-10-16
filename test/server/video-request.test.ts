@@ -51,6 +51,8 @@ test("what is left out is filled in, and small print is asked for once", () => {
   const none = settle({ display: "iphone", locales: ["de"], intro: false, outro: false, plate: false, touch: true });
   assert.deepEqual([none.locales, none.intro, none.outro, none.plate, none.touch], [["de"], null, null, false, true]);
   assert.throws(() => settle({ display: "iphone", locales: ["fr"] }), /no language "fr"/);
+  // Languages come in the project's order whatever order they were asked in, each once.
+  assert.deepEqual(settle({ display: "iphone", locales: ["ar", "EN", "de-DE", "en"] }).locales, ["en", "de", "ar"]);
 });
 
 test("the body has limits, and takes a plan's card timing as it is", () => {
