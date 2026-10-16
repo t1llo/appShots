@@ -220,6 +220,34 @@ test("--no-wait stops after the upload, and --resume places what Apple has proce
   assert.match(second.printed, /^2 previews placed\.$/m);
 });
 
+test("while Apple processes the uploads, each round asks about all of them in one request", async () => {
+  asc.reset({ processAfter: 3 });
+  const root = project([
+    { locale: "en", display: "iphone" },
+    { locale: "en", display: "ipad" },
+    { locale: "de", display: "iphone" },
+  ]);
+  const { code } = await push(planOf(root));
+  assert.equal(code, 0);
+  assert.deepEqual(asc.violations, []);
+  assert.equal(asc.state.placements.size, 3);
+  const asked = asc.requests.filter((request) => request.method === "GET" && request.url.includes("filter[id]="));
+  assert.equal(asked.length, 3);
+  for (const request of asked) assert.equal(new URLSearchParams(request.url.split("?")[1]).get("filter[id]")?.split(",").length, 3);
+  assert.equal(asc.requests.filter((request) => request.method === "GET" && request.url.startsWith("/v1/appAssetLibraryVideos/")).length, 0);
+
+  // A video the list leaves out is asked for alone.
+  asc.reset();
+  asc.state.listsById = false;
+  const next = project([
+    { locale: "en", display: "iphone" },
+    { locale: "de", display: "iphone" },
+  ]);
+  assert.equal((await push(planOf(next))).code, 0);
+  assert.equal(asc.state.placements.size, 2);
+  assert.equal(asc.requests.filter((request) => request.method === "GET" && request.url.startsWith("/v1/appAssetLibraryVideos/")).length, 2);
+});
+
 test("an upload that stopped before it was finished is uploaded anew by the next push, and placed", async () => {
   const root = project([{ locale: "en", display: "iphone" }]);
   asc.state.loseCommits = 1;

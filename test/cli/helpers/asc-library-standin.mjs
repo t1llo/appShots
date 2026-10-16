@@ -130,6 +130,8 @@ export async function libraryStandIn(publicKey) {
     partSize: 4096,
     /** How many of the next uploads lose their commit, as when the connection drops or the command is stopped. */
     loseCommits: 0,
+    /** Whether the library's list of videos answers filter[id]; without it, it lists none for it. */
+    listsById: true,
   };
   let next = 0;
   let clock = 0;
@@ -146,6 +148,19 @@ export async function libraryStandIn(publicKey) {
   const versionOf = (localization) => state.versions.find((version) => state.languages.get(version.id)?.some((entry) => entry.id === localization));
   /** @param {string} code @param {string} title @param {number} [status] */
   const refuse = (code, title, status = 409) => /** @type {[number, unknown]} */ ([status, { errors: [{ status: String(status), code, title, detail: title }] }]);
+  /**
+   * A video asked for by its id, alone or in the library's list: Apple has processed it after processAfter times.
+   * @param {StoredVideo} video
+   */
+  const asked = (video) => {
+    if (video.state !== "UPLOAD_COMPLETE" || ++video.polls < state.processAfter) return;
+    if (state.refuse.some((name) => video.referenceName.startsWith(name))) {
+      video.state = "FAILED";
+      video.details = [{ code: "VIDEO_TOO_SHORT", description: "The video is shorter than the placement allows." }];
+    } else {
+      video.state = "PREPARE_FOR_SUBMISSION";
+    }
+  };
 
   const server = await stubServer(async ({ method, url, headers, body }) => {
     const [route, query = ""] = url.split("?");
@@ -230,19 +245,14 @@ export async function libraryStandIn(publicKey) {
     if (method === "GET" && (match = /^\/v1\/appAssetLibraryVideos\/([^/]+)$/.exec(route))) {
       const video = state.videos.get(match[1]);
       if (!video) return refuse("NOT_FOUND", "No such video.", 404);
-      if (video.state === "UPLOAD_COMPLETE" && ++video.polls >= state.processAfter) {
-        if (state.refuse.some((name) => video.referenceName.startsWith(name))) {
-          video.state = "FAILED";
-          video.details = [{ code: "VIDEO_TOO_SHORT", description: "The video is shorter than the placement allows." }];
-        } else {
-          video.state = "PREPARE_FOR_SUBMISSION";
-        }
-      }
+      asked(video);
       return [200, { data: videoBody(match[1], video) }];
     }
     if (method === "GET" && route === `/v1/appAssetLibraries/${state.library}/videos`) {
       const name = params.get("filter[referenceName]");
-      const found = [...state.videos.entries()].filter(([, video]) => !name || video.referenceName === name);
+      const ids = params.get("filter[id]")?.split(",");
+      const found = [...state.videos.entries()].filter(([id, video]) => (!name || video.referenceName === name) && (!ids || (state.listsById && ids.includes(id))));
+      if (ids) for (const [, video] of found) asked(video);
       return [200, { data: found.map(([id, video]) => videoBody(id, video)), links: {} }];
     }
 
@@ -312,6 +322,7 @@ export async function libraryStandIn(publicKey) {
       state.processAfter = processAfter;
       state.refuse = [];
       state.loseCommits = 0;
+      state.listsById = true;
       for (const [platform, versionState, codes] of /** @type {const} */ ([["IOS", ios, locales], ["MAC_OS", mac, macLocales]])) {
         // An older version that is on the App Store, under the one given.
         state.versions.push({ id: `${platform}-1.0`, platform, versionString: "1.0", appVersionState: "READY_FOR_DISTRIBUTION", createdDate: "2026-06-01T00:00:00Z" });

@@ -25,6 +25,8 @@
 // | An ordering request names every placement of the group, ours and the user's.   | orderPlacements          |
 // | The library's list of videos takes filter[referenceName] and limit=200, and    | videosNamed              |
 // | is matched exactly here in any case.                                           |                          |
+// | Its filter[id] takes several ids between commas. A video the list leaves out   | videoStates              |
+// | is asked for alone.                                                            |                          |
 // | The reference data comes as one item; several are merged.                      | referenceData            |
 // | A key with the role Marketing may use the library. Apple names Admin and App   | (a 403 says what to do)  |
 // | Manager for the API, and Marketing for the website.                            |                          |
@@ -36,6 +38,9 @@ import { apple, appleList, sendParts } from "./asc.mjs";
 
 /** How many parts of a video go to Apple at once. */
 const SENDS = 3;
+
+/** How many videos one question about their state names, so that its address stays short. */
+const ASKED = 50;
 
 const PREVIEW = "APP_PREVIEW";
 
@@ -254,6 +259,9 @@ export async function videosNamed(account, library, referenceName) {
     .map(videoOf);
 }
 
+/** @param {any} entry @returns {Video & { details: string[] }} */
+const detailedOf = (entry) => ({ ...videoOf(entry), details: (entry.attributes?.stateDetails ?? []).map((/** @type {any} */ detail) => detail.description || detail.code).filter(Boolean) });
+
 /**
  * How far Apple is with a video, and why it refused it if it did.
  * @param {import("./asc.mjs").Account} account
@@ -262,8 +270,27 @@ export async function videosNamed(account, library, referenceName) {
  */
 export async function videoState(account, id) {
   const reply = await apple(account, "GET", `/v1/appAssetLibraryVideos/${id}?fields[appAssetLibraryVideos]=referenceName,state,stateDetails,previewFrameTimeCode`, "check the uploaded previews");
-  const details = (reply?.data?.attributes?.stateDetails ?? []).map((/** @type {any} */ detail) => detail.description || detail.code).filter(Boolean);
-  return { ...videoOf(reply.data), details };
+  return detailedOf(reply.data);
+}
+
+/**
+ * How far Apple is with each of several videos, in the order of their ids. A push waits on every preview it
+ * uploaded, for many minutes, so they are asked for together, through the library's list, rather than one request
+ * each per round: a plan of many languages would otherwise run into the key's hourly limit.
+ * @param {import("./asc.mjs").Account} account
+ * @param {string} library
+ * @param {string[]} ids
+ * @returns {Promise<Array<Video & { details: string[] }>>}
+ */
+export async function videoStates(account, library, ids) {
+  /** @type {Map<string, Video & { details: string[] }>} */
+  const found = new Map();
+  for (let start = 0; start < ids.length; start += ASKED) {
+    const asked = ids.slice(start, start + ASKED);
+    const route = `/v1/appAssetLibraries/${library}/videos?filter[id]=${asked.map(encodeURIComponent).join(",")}&fields[appAssetLibraryVideos]=referenceName,state,stateDetails,previewFrameTimeCode&limit=200`;
+    for (const entry of await appleList(account, route, "check the uploaded previews")) if (asked.includes(entry.id)) found.set(entry.id, detailedOf(entry));
+  }
+  return Promise.all(ids.map((id) => found.get(id) ?? videoState(account, id)));
 }
 
 /**

@@ -32,7 +32,7 @@ import {
   setPosterTime,
   specProblems,
   uploadVideo,
-  videoState,
+  videoStates,
   videosNamed,
 } from "../store/library.mjs";
 import { sameLanguage, storeLocale } from "../store/locales.mjs";
@@ -244,9 +244,10 @@ async function openVersion(account, app, platform, flags) {
 /**
  * Asks Apple how far it is with each video until all are processed, or refused, or the wait is over.
  * @param {import("../store/asc.mjs").Account} account
+ * @param {string} library
  * @param {Map<string, Preview>} pending By video id.
  */
-async function processing(account, pending) {
+async function processing(account, library, pending) {
   /** @type {Array<{ preview: Preview, video: string, details: string[] }>} */
   const refused = [];
   /** @type {Set<string>} */
@@ -254,7 +255,7 @@ async function processing(account, pending) {
   let waiting = [...pending.keys()];
   const until = Date.now() + PUSH_TIMING.wait;
   for (let tries = 1; waiting.length > 0; tries++) {
-    const answers = await Promise.all(waiting.map((id) => videoState(account, id)));
+    const answers = await videoStates(account, library, waiting);
     const still = [];
     for (const answer of answers) {
       const preview = /** @type {Preview} */ (pending.get(answer.id));
@@ -456,7 +457,7 @@ export async function videoPush(plan, flags) {
     late = pending.size;
   } else if (pending.size > 0) {
     console.log(`Waiting for Apple to process ${counted(pending.size, "preview")}. That takes some minutes; --no-wait stops after the upload.`);
-    const result = await processing(account, pending);
+    const result = await processing(account, library, pending);
     for (const { preview, video, details } of result.refused) {
       console.log(`  ! ${labelOf(preview)}  Apple did not take ${preview.shown}: ${details.join(" ") || "it gave no reason"}`);
       // The next push uploads it anew; the refused video stays in the library, where the user can delete it.
