@@ -322,7 +322,7 @@ These need the admin's signed-in browser, and answer `Cache-Control: private, no
 | Request | What it does |
 | --- | --- |
 | `GET /api/admin/health` | How the server is doing: the browser that draws, the render and mockup queues, the renders under way, the mockups and usage numbers kept in memory, and the projects whose stored file cannot be read. Those of the server's own space are named; for an account only their number is given |
-| `POST /api/admin/projects/move` | Moves a project between spaces. Body: `project`, `from` and `to`, each space as `main` for the server's own or the address of an account. Answers with `project`, its id where it went: its own, or its own with a number behind it when that is taken there. Its renders are cancelled first |
+| `POST /api/admin/projects/move` | Moves a project between spaces. Body: `project`, `from` and `to`, each space as `main` for the server's own or the address of an account. Answers with `project`, its id where it went: its own, or its own with a number behind it when that is taken there. Its renders are cancelled first. An account that has as many projects as it may keep gets none: that is a 400 |
 
 The admin's projects are the server's own space, and the projects an account made are in a folder of its own. When `ADMIN_EMAIL` comes to name somebody else, the new admin works in the server's space, and what they made before is in their own folder, which the Studio does not show them. Moving names that folder by the admin's address.
 

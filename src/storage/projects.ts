@@ -70,6 +70,9 @@ export async function countProjects(space: Space): Promise<number> {
   return entries.filter((entry) => entry.isDirectory() && SLUG.test(entry.name)).length;
 }
 
+/** Whether a space may have one project more. The server's own space has no cap. */
+const hasRoom = async (space: Space) => !space.limits || (await countProjects(space)) < space.limits.projects;
+
 /** Pages of the Studio that stand where a project's id would: a project named so gets a number behind its id. */
 const RESERVED_IDS = new Set(["settings", "admin"]);
 
@@ -231,9 +234,7 @@ export function createProjectRepository(options: { now?: () => Date; keepHistory
     async create(space: Space, input: NewProject, options: Pick<WriteOptions, "actor"> = {}): Promise<Stored> {
       // One at a time per space, so the quota and the choice of id see the projects made just before.
       return withProjectLock(`${space.id}:create`, async () => {
-        if (space.limits && (await countProjects(space)) >= space.limits.projects) {
-          throw new InputError(`This account is limited to ${space.limits.projects} projects. Delete one to make room.`);
-        }
+        if (!(await hasRoom(space))) throw new InputError(`This account is limited to ${space.limits!.projects} projects. Delete one to make room.`);
         const base = slugify(input.name);
         const time = now();
         const project = projectSchema.parse({
@@ -306,7 +307,8 @@ export function createProjectRepository(options: { now?: () => Date; keepHistory
     /**
      * Moves a project, whole and as it is, into another space under an id that is free there: its own, or its own
      * with a number behind it. Mark it with tombstone() first, as for a delete, so nothing writes to it on the way.
-     * Returns the id it has in the space it went to.
+     * Returns the id it has in the space it went to. An account that has as many projects as it may keep gets none,
+     * as it could not make one more itself.
      */
     async move(from: Space, id: string, to: Space): Promise<string> {
       const dir = projectDir(from, id);
@@ -316,6 +318,7 @@ export function createProjectRepository(options: { now?: () => Date; keepHistory
         return await withProjectLock(`${to.id}:create`, () =>
           withProjectLock(key, async () => {
             if (!(await stat(dir).then((info) => info.isDirectory(), () => false))) throw new NotFoundError(`No project "${id}"`);
+            if (!(await hasRoom(to))) throw new InputError(`That account is limited to ${to.limits!.projects} projects and has as many. It has to delete one first.`);
             await mkdir(projectsDir(to), { recursive: true });
             const base = id.slice(0, 56).replace(/-+$/, "");
             let next = id;

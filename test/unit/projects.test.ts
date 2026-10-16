@@ -90,6 +90,20 @@ describe("changes", () => {
     await projects.remove(limited, "quota-0");
     assert.equal((await projects.create(limited, { name: "One More" })).project.id, "one-more");
   });
+
+  test("a move into an account counts against its quota, as a project it made would", async () => {
+    const full: Space = { id: "full", root: path.join(data.dir, "users", "full"), limits: { projects: 2, shots: 100 } };
+    for (const name of ["Its own", "Its other"]) await projects.create(full, { name });
+    const { project } = await projects.create(space, { name: "Handed over" });
+    await projects.tombstone(space, project.id);
+    await assert.rejects(projects.move(space, project.id, full), /limited to 2 projects and has as many/);
+    assert.equal(await countProjects(full), 2);
+    // Left where it was, and found again.
+    assert.equal((await projects.get(space, project.id)).project.name, "Handed over");
+    await projects.tombstone(space, project.id);
+    assert.equal(await projects.move(space, project.id, { ...full, limits: { projects: 3, shots: 100 } }), project.id);
+    assert.equal(await countProjects(full), 3);
+  });
 });
 
 describe("reading what is on disk", () => {
