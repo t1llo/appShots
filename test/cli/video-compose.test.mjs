@@ -334,6 +334,15 @@ test("everything that would stop a compose is found before the first encode", as
   sized.manifests.iphone.size = [1200, 1600];
   await assert.rejects(compose(sized.plan, sized.flags), /The iphone layers are 1200×1600, and its previews are 886×1920/);
 
+  // A manifest's names become folders and a file, and none of them may reach outside layers/.
+  const outside = project({ locales: ["en"] });
+  writeFileSync(path.join(outside.root, "plate.png"), PIXEL);
+  outside.manifests.iphone.layers.find((/** @type {any} */ layer) => layer.id === "plate").id = "../../plate";
+  await assert.rejects(compose(outside.plan, outside.flags), /The layers' manifest names a layer "setiphone0123456\/\.\.\/\.\.\/plate", which is not a layer's name\. Fetch the layers again: appshots video layers --display iphone/);
+  const elsewhere = project({ locales: ["en"] });
+  elsewhere.manifests.iphone.set = "../elsewhere";
+  await assert.rejects(compose(elsewhere.plan, elsewhere.flags), /names a layer "\.\.\/elsewhere\/plate"/);
+
   assert.equal(calls().length, 0);
 });
 

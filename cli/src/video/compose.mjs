@@ -169,6 +169,9 @@ function layerOf(ctx, kind, id) {
   return ctx.layers.layers.find((layer) => fits(layer) && layer.locale === ctx.locale) ?? ctx.layers.layers.find((layer) => fits(layer) && layer.locale === null) ?? null;
 }
 
+/** A layer set's id, a language code or a layer's id: the names a layer's file is found by. */
+const LAYER_NAME = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
+
 /**
  * Where a layer's PNG is, as the set's layers.zip lays it out: <set>/<locale>/<id>.png, or <set>/<id>.png for
  * one that every language shares.
@@ -176,7 +179,11 @@ function layerOf(ctx, kind, id) {
  * @param {Layer} layer
  */
 function layerFile(ctx, layer) {
-  const file = path.join(ctx.root, "layers", ctx.layers.set, ...(layer.locale ? [layer.locale] : []), `${layer.id}.png`);
+  const folders = [ctx.layers.set, ...(layer.locale ? [layer.locale] : [])];
+  // The names become folders and a file, so a manifest that came apart must not reach outside layers/.
+  if (![...folders, layer.id].every((name) => typeof name === "string" && LAYER_NAME.test(name)))
+    fail(`The layers' manifest names a layer ${JSON.stringify([...folders, layer.id].join("/"))}, which is not a layer's name. Fetch the layers again: appshots video layers --display ${ctx.display}`);
+  const file = path.join(ctx.root, "layers", ...folders, `${layer.id}.png`);
   if (!existsSync(file)) fail(`The layer ${layer.id}${layer.locale ? ` for ${layer.locale}` : ""} is not in ${path.dirname(file)}. Fetch the layers again: appshots video layers --display ${ctx.display}`);
   return file;
 }
