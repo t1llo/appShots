@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { DeviceKind } from "../domain/devices.ts";
 import { displayForSize, PREVIEW_DISPLAYS, type PreviewDisplay, PREVIEW_SPECS, previewDevice, previewSize } from "../domain/previews.ts";
 import { resolveLocales } from "../render/plan.ts";
-import { localeSchema, type Project, type Text } from "../schema.ts";
+import { localeSchema, type Project } from "../schema.ts";
 import { InputError } from "../store.ts";
 
 /**
@@ -132,6 +132,3 @@ export function normaliseRequest(project: Pick<Project, "locales">, body: VideoL
 }
 
 export const isSlideText = (text: TextRef): text is z.infer<typeof slideText> => typeof text === "object" && "slide" in text && typeof text.slide === "number";
-
-/** The project's own copy a reference names, before a language is picked. */
-export type ResolvedText = Text;
