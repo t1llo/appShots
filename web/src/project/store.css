@@ -272,7 +272,13 @@
 }
 .store-shot {
   flex: none;
+  border-radius: var(--radius);
   cursor: pointer;
+}
+/* Inside the room kept for the selected ring, which the scrolling would cut off further out. */
+.store-shot:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 1px;
 }
 .store-shot .stage {
   border-radius: var(--radius);

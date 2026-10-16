@@ -184,7 +184,7 @@ function PlacedHandles(props: { placed: PlacedImage[]; shown: PlacedImage[]; ima
 }
 
 /** Enter and Space press a card the way they press a button. */
-const pressed = (run: () => void) => (event: KeyboardEvent) => {
+export const pressed = (run: () => void) => (event: KeyboardEvent) => {
   if ((event.key !== "Enter" && event.key !== " ") || event.target !== event.currentTarget) return;
   event.preventDefault();
   run();

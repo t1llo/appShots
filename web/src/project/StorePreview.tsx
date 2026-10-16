@@ -7,7 +7,7 @@ import "./store.css";
 import { type CSSProperties, type ReactNode, useState } from "react";
 import type { DeviceKind, Slide, StoredImage, Target, Theme } from "../api.ts";
 import { type Choice, Segmented } from "../ui/index.ts";
-import { Stage, useWidth } from "./Previews.tsx";
+import { pressed, Stage, useWidth } from "./Previews.tsx";
 
 type Look = "light" | "dark";
 type Looks = Look | "both";
@@ -153,13 +153,13 @@ export function StorePreview(props: {
 
 type Scene = Parameters<typeof StorePreview>[0] & { form: Form; formId: FormId; screen: { width: number; zoom: number }; landscape: boolean };
 
-/** One screen of the store, in light or dark. */
+/** One screen of the store, in light or dark. What surrounds the slides is hidden from a screen reader; the slides are buttons. */
 function Screen({ look, form, formId, screen, label, children }: Scene & { look: Look; label: string; children: ReactNode }) {
   const height = Math.round((form.height * screen.width) / form.width);
   return (
     <figure className="store-figure">
-      <div className={`store-screen ${look} ${formId}`} role="img" aria-label={label} style={{ width: screen.width, height, zoom: screen.zoom === 1 ? undefined : screen.zoom }}>
-        {formId === "desktop" ? <div className="store-titlebar" /> : <StatusBar />}
+      <div className={`store-screen ${look} ${formId}`} role="group" aria-label={label} style={{ width: screen.width, height, zoom: screen.zoom === 1 ? undefined : screen.zoom }}>
+        {formId === "desktop" ? <div className="store-titlebar" aria-hidden="true" /> : <StatusBar />}
         <div className="store-scroll">{children}</div>
         {formId === "phone" ? <TabBar /> : null}
       </div>
@@ -180,7 +180,7 @@ function SearchResults(scene: Scene) {
   const height = (width * size.height) / size.width;
   return (
     <>
-      <div className="store-search" style={{ marginInline: form.margin }}>
+      <div className="store-search" style={{ marginInline: form.margin }} aria-hidden="true">
         <Glyph path={MAGNIFIER} />
         <span>{scene.name}</span>
       </div>
@@ -220,11 +220,11 @@ function ProductPage(scene: Scene) {
   const width = landscape && scene.formId !== "desktop" ? screen.width - 2 * form.margin - 24 : screen.width * form.page;
   return (
     <>
-      <div className="store-nav" style={{ paddingInline: form.margin - 6 }}>
+      <div className="store-nav" style={{ paddingInline: form.margin - 6 }} aria-hidden="true">
         <Glyph path={BACK} />
         <span>Search</span>
       </div>
-      <div className="store-head" style={{ paddingInline: form.margin }}>
+      <div className="store-head" style={{ paddingInline: form.margin }} aria-hidden="true">
         <AppIcon icon={scene.icon} name={scene.name} theme={scene.theme} projectId={scene.projectId} size={form.pageIcon} />
         <div className="store-head-text">
           <b className="store-title">{scene.name}</b>
@@ -249,7 +249,7 @@ function ProductPage(scene: Scene) {
           <Shot key={index} {...scene} entry={entry} index={index} width={width} />
         ))}
       </div>
-      <div className="store-device-line" style={{ paddingInline: form.margin }}>
+      <div className="store-device-line" style={{ paddingInline: form.margin }} aria-hidden="true">
         <Glyph path={scene.formId === "desktop" ? LAPTOP : scene.formId === "tablet" ? TABLET : PHONE} />
         <span>{scene.deviceLabel}</span>
       </div>
@@ -269,9 +269,10 @@ const radius = (width: number) => Math.max(4, Math.round(width * 0.075));
 
 function Shot({ entry, index, width, size, selected, select }: Scene & { entry: StoreSlide; index: number; width: number }) {
   const style = { "--radius": `${radius(width)}px` } as CSSProperties;
-  // A pointer that picks a slide here opens it in the editor beside; the keyboard has the slides page for that.
+  const on = selected === index;
+  // Picking a slide here opens it in the editor beside, as a card on the slides page does.
   return (
-    <div className={`store-shot${selected === index ? " selected" : ""}`} style={style} title={`Slide ${index + 1}. Click to edit it.`} onClick={() => select(index)}>
+    <div className={`store-shot${on ? " selected" : ""}`} style={style} role="button" tabIndex={0} aria-pressed={on} aria-label={`Slide ${index + 1}`} title={`Slide ${index + 1}. Click to edit it.`} onClick={() => select(index)} onKeyDown={pressed(() => select(index))}>
       <Stage src={entry.src} frameKey={entry.frameKey} width={size.width} height={size.height} scale={width / size.width} />
     </div>
   );
@@ -280,7 +281,7 @@ function Shot({ entry, index, width, size, selected, select }: Scene & { entry: 
 /** The app's line in a search result: its icon, name, a line under it, a rating and the button. */
 function AppLine(scene: Scene & { iconSize: number }) {
   return (
-    <div className="store-app">
+    <div className="store-app" aria-hidden="true">
       <AppIcon icon={scene.icon} name={scene.name} theme={scene.theme} projectId={scene.projectId} size={scene.iconSize} />
       <div className="store-app-text">
         <b>{scene.name}</b>
