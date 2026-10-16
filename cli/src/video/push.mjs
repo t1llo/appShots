@@ -132,14 +132,17 @@ function checked(file, display) {
  */
 async function previewsOf(plan, flags, out) {
   const name = plan.name ?? "preview";
+  const planLocales = Array.isArray(plan.locales) ? plan.locales : null;
+  const planDisplays = Array.isArray(plan.displays) ? plan.displays : null;
+  // --lang is read here rather than with the other steps' flags: it may name a folder by another code of its
+  // language, such as en-GB for en, and the store language a folder goes onto, as in en=en-GB.
   const languages = languageFlag(flags);
+  for (const { from } of languages ?? []) if (planLocales && !planLocales.some((/** @type {string} */ locale) => sameLanguage(from, locale))) fail(`--lang ${from}: the plan's languages are ${planLocales.join(", ")}.`);
   const displays = listFlag(flags, "display", "iphone,ipad");
   for (const display of displays ?? []) if (!Object.hasOwn(PREVIEW_SPECS, display)) fail(`--display takes ${Object.keys(PREVIEW_SPECS).join(", ")}.`);
   if (!existsSync(out)) fail(`There are no previews in ${shown(out)}. Make them first: appshots video compose`);
   /** @param {string} dir */
   const folders = (dir) => readdirSync(dir).filter((entry) => !entry.startsWith(".") && statSync(path.join(dir, entry)).isDirectory()).sort();
-  const planLocales = Array.isArray(plan.locales) ? plan.locales : null;
-  const planDisplays = Array.isArray(plan.displays) ? plan.displays : null;
   const locales = folders(out).filter((locale) => !planLocales || planLocales.includes(locale));
   /** @param {string} a @param {string} b */
   const same = (a, b) => a.toLowerCase() === b.toLowerCase();

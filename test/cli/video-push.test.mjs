@@ -413,6 +413,13 @@ test("--lang picks the languages and says which store language each goes onto; -
   assert.deepEqual(asc.page("en-US", IPHONE), []);
   assert.deepEqual(asc.page("en-GB", IPAD), []);
   assert.deepEqual(asc.page("de-DE", IPHONE), []);
+  // A code of the folder's language that names a region says where it goes; a language the plan has not, nothing.
+  assert.equal((await push(planOf(root), { lang: "en-GB", display: "ipad" })).code, 0);
+  assert.deepEqual(asc.page("en-GB", IPAD), [nameOf(root, "en", "ipad")]);
+  assert.deepEqual(asc.page("en-US", IPAD), []);
+  asc.requests.length = 0;
+  await refused(planOf(root), { lang: "de,fr" }, /^--lang fr: the plan's languages are en, de\.$/);
+  assert.equal(asc.requests.length, 0);
 
   // Without --lang, en goes onto the app's primary language among its English pages, and it says so.
   const next = project([{ locale: "en", display: "ipad" }]);
