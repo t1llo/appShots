@@ -5,6 +5,12 @@ export class NotFoundError extends Error {}
 export class InputError extends Error {}
 
 /**
+ * An upload refused for its size: a picture with more pixels than any screen has, or one the account has no room
+ * left for. Answered 413, like a body over its limit.
+ */
+export class TooLargeError extends InputError {}
+
+/**
  * A project whose project.json cannot be read at all. It is listed and can be deleted or restored from its history,
  * but not opened or changed.
  */

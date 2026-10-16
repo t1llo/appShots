@@ -8,7 +8,7 @@ import { defaultTargets } from "../../render.ts";
 import { creativesSchema, deviceSlidesSchema, localesSchema, mockupsSchema, repeatedLocales, slideSchema, targetsSchema, themeSchema, unknownFields } from "../../schema.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, PLACEMENTS, TARGETS } from "../../sizes.ts";
 import { projects, type WriteOptions } from "../../storage/projects.ts";
-import { ConflictError, createProject, deleteProject, getProject, InputError, listCreativeOutputs, listImages, listOutputs, listShots, projectSummary, type Space, updateProject, usageOf } from "../../store.ts";
+import { ConflictError, createProject, deleteProject, getProject, InputError, listCreativeOutputs, listImages, listOutputs, projectSummary, readShots, type Space, updateProject, usageOf } from "../../store.ts";
 import { identityOf, spaceOf } from "../auth.ts";
 
 const projectPatch = z.object({
@@ -32,10 +32,16 @@ export async function creativeOutputs(space: Space, id: string) {
   return outputs.filter((output) => project.creatives[output.placement] && languages.has(output.locale.toLowerCase()));
 }
 
+/**
+ * A project with everything it has. `orphanedShots` are the screenshots of languages it no longer has: kept, so that
+ * adding the language again brings them back, but drawn for no other language, and listed so they can be deleted.
+ */
 async function projectDetail(space: Space, id: string) {
-  const [stored, shots, images, outputs, creatives] = await Promise.all([projects.get(space, id), listShots(space, id), listImages(space, id), listOutputs(space, id), creativeOutputs(space, id)]);
-  const { project, revision, warnings } = stored;
-  return { project, revision, shots, images, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots, project.targets), ...(warnings.length ? { warnings } : {}) };
+  const withShots = projects.get(space, id).then(async (stored) => ({ ...stored, files: await readShots(space, id, stored.project.locales) }));
+  const [{ project, revision, warnings: stored, files }, images, outputs, creatives] = await Promise.all([withShots, listImages(space, id), listOutputs(space, id), creativeOutputs(space, id)]);
+  const { shots, orphaned, unreadable } = files;
+  const warnings = [...stored, ...unreadable.map((file) => `The screenshot ${file} cannot be read and is left out. Upload it again or delete it.`)];
+  return { project, revision, shots, orphanedShots: orphaned, images, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots, project.targets), ...(warnings.length ? { warnings } : {}) };
 }
 
 /**

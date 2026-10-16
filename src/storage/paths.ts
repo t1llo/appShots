@@ -11,7 +11,12 @@ export interface Space {
   id: string;
   root: string;
   /** Caps for accounts other than the admin. */
-  limits?: { projects: number; shots: number };
+  limits?: {
+    projects: number;
+    shots: number;
+    /** Bytes of screenshots and images the account may keep, across its projects. None: as many as the disk holds. */
+    bytes?: number;
+  };
 }
 
 export const projectsDir = (space: Space) => path.join(space.root, "projects");
@@ -35,6 +40,8 @@ export const historyDir = (space: Space, id: string) => path.join(projectDir(spa
 /** A screenshot's file: its name, the device it is for and, unless it is the first language's, its language. */
 export const SHOT_FILE = /^([a-z0-9][a-z0-9_-]{0,63})\.(iphone|duo|ipad|mac)(?:\.([a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*))?\.png$/;
 export const shotFile = (name: string, device: DeviceKind, locale?: string) => `${name}.${device}${locale ? `.${locale}` : ""}.png`;
+/** An uploaded image's file: a logo, a sticker, a character. */
+export const IMAGE_FILE = /^([a-z0-9][a-z0-9_-]{0,63})\.png$/;
 
 /** The key of the project lock (storage/mutex.ts): every read-modify-write of one project holds it. */
 export const projectKey = (space: Space, id: string) => `${space.id}/${id}`;

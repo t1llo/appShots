@@ -167,6 +167,7 @@ With a hosting panel that builds and deploys a Compose file from a repository, o
 | `ADMIN_EMAIL` | none | Your own Google address, which becomes the admin |
 | `USER_MAX_PROJECTS` | `20` | Projects an account other than the admin can hold |
 | `USER_MAX_SHOTS` | `40` | Screenshots per project and language, and images per project |
+| `USER_MAX_UPLOADS_MB` | `2048` | Megabytes of screenshots and images an account other than the admin keeps across its projects. Renders do not count |
 | `USER_RENDER_CREDITS` | `10` | Renders each account other than the admin gets |
 | `OPERATOR_NAME`, `CONTACT_EMAIL` | none | Who runs the server and where to write, as the privacy policy and the terms name them |
 | `UMAMI_URL`, `UMAMI_WEBSITE_ID`, `UMAMI_RECORDER` | off | Page analytics, see [Analytics](#analytics) |
@@ -223,7 +224,7 @@ People manage their own tokens, or delete their account, under **Settings**.
 The server makes no paid calls. The agent runs on each person's own subscription, on their own machine, so more people cost nothing per use. What they use is this one machine:
 
 - **CPU and memory.** A render drives a headless Chromium: about a second per slide on a recent Mac, more on a small server, and a few hundred megabytes of memory while it runs. Renders are queued one at a time for the whole server, so many people at once means waiting, not a bigger bill.
-- **Disk.** This is what grows. An account can hold 20 projects of 40 screenshots per language, each up to 40 MB when uploaded, plus the rendered sets. Lower `USER_MAX_PROJECTS` and `USER_MAX_SHOTS` if the disk is small, and keep an eye on the volume.
+- **Disk.** This is what grows. An account can hold 20 projects of 40 screenshots per language, up to 2 GB of uploads in all, plus the rendered sets. Lower `USER_MAX_UPLOADS_MB`, `USER_MAX_PROJECTS` and `USER_MAX_SHOTS` if the disk is small, and keep an eye on the volume.
 - **Abuse.** Anyone can sign in, so somebody may script uploads or renders. The caps, the counted renders and the render queue bound the damage, and **Remove** on the Admin page deletes an account with everything in it.
 
 If that is more than you want to carry, switch to **Only the people listed here** on the Admin page.

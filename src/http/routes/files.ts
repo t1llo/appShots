@@ -1,11 +1,12 @@
 import path from "node:path";
 import express, { type Response, type Router } from "express";
-import { getProject, imagesDir, NotFoundError, outDir, safeJoin, shotsDir } from "../../store.ts";
+import { imagesDir, NotFoundError, outDir, safeJoin, shotsDir } from "../../store.ts";
 import { spaceOf } from "../auth.ts";
 
 /**
  * Sends a file from inside `dir`. The folder goes in as the root, so only the part below it is checked for hidden
- * names: a data directory such as ~/.appshots must not hide every file in it.
+ * names: a data directory such as ~/.appshots must not hide every file in it. Hidden files below it, such as the
+ * index of a folder of screenshots, are not sent.
  */
 function sendFrom(res: Response, dir: string, relative: string): void {
   const file = path.relative(dir, safeJoin(dir, relative));
@@ -14,19 +15,19 @@ function sendFrom(res: Response, dir: string, relative: string): void {
   res.sendFile(file, { root: dir });
 }
 
-/** A project's uploaded and rendered files, under /files. */
+/**
+ * A project's uploaded and rendered files, under /files. They are looked for in the account's own folders without
+ * reading the project first: one that is not there has no files either, and its id is checked as a name.
+ */
 export function fileRoutes(): Router {
   const files = express.Router();
-  files.get("/:id/shots/:file", async (req, res) => {
-    await getProject(spaceOf(res), req.params.id);
+  files.get("/:id/shots/:file", (req, res) => {
     sendFrom(res.set("Cache-Control", "private, max-age=31536000, immutable"), shotsDir(spaceOf(res), req.params.id), req.params.file);
   });
-  files.get("/:id/images/:file", async (req, res) => {
-    await getProject(spaceOf(res), req.params.id);
+  files.get("/:id/images/:file", (req, res) => {
     sendFrom(res.set("Cache-Control", "private, max-age=31536000, immutable"), imagesDir(spaceOf(res), req.params.id), req.params.file);
   });
-  files.get("/:id/out/*file", async (req, res) => {
-    await getProject(spaceOf(res), req.params.id);
+  files.get("/:id/out/*file", (req, res) => {
     const relative = (req.params.file as unknown as string[]).join("/");
     sendFrom(res.set("Cache-Control", "private, no-cache"), outDir(spaceOf(res), req.params.id), relative);
   });

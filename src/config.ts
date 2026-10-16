@@ -80,6 +80,7 @@ const settingsSchema = z.object({
   ),
   USER_MAX_PROJECTS: count(20),
   USER_MAX_SHOTS: count(40),
+  USER_MAX_UPLOADS_MB: count(2048),
   USER_RENDER_CREDITS: count(10),
 });
 
@@ -92,6 +93,7 @@ const HAS_TO_BE: Record<keyof z.input<typeof settingsSchema>, string> = {
   TRUST_PROXY: "true, false, a number of proxies, or addresses and subnets separated by commas, such as loopback, 10.0.0.0/8",
   USER_MAX_PROJECTS: "a whole number from 0 up",
   USER_MAX_SHOTS: "a whole number from 0 up",
+  USER_MAX_UPLOADS_MB: "a whole number of megabytes from 0 up",
   USER_RENDER_CREDITS: "a whole number from 0 up",
 };
 
@@ -231,6 +233,8 @@ export const config = {
   limits: {
     projects: settings.USER_MAX_PROJECTS,
     shots: settings.USER_MAX_SHOTS,
+    /** Bytes of screenshots and images an account keeps across its projects. Renders do not count. */
+    bytes: settings.USER_MAX_UPLOADS_MB * 1024 * 1024,
     /** Renders an account gets. The admin can give one account more on the Admin page. */
     renders: settings.USER_RENDER_CREDITS,
   },

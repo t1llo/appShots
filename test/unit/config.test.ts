@@ -20,6 +20,7 @@ test("unset and empty settings keep today's defaults", () => {
     assert.equal(settings.ALLOWED_HOSTS, undefined);
     assert.equal(settings.TRUST_PROXY, "loopback, linklocal, uniquelocal");
     assert.deepEqual([settings.USER_MAX_PROJECTS, settings.USER_MAX_SHOTS, settings.USER_RENDER_CREDITS], [20, 40, 10]);
+    assert.equal(settings.USER_MAX_UPLOADS_MB, 2048);
   }
 });
 
@@ -50,6 +51,7 @@ test("a value that cannot be right stops the server with its name (srv-19)", () 
     { ALLOWED_HOSTS: "*.example.com" },
     { TRUST_PROXY: "somewhere" },
     { USER_MAX_SHOTS: "-1" },
+    { USER_MAX_UPLOADS_MB: "1.5" },
     { USER_RENDER_CREDITS: "2.5" },
   ];
   for (const env of refused) {

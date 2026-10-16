@@ -2,7 +2,7 @@ import { STATUS_CODES } from "node:http";
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { AuthError } from "../accounts.ts";
-import { ConflictError, InputError, NotFoundError } from "../store.ts";
+import { ConflictError, InputError, NotFoundError, TooLargeError } from "../store.ts";
 import { tooLarge } from "./limits.ts";
 
 /** Where the server reports what went wrong on its side. */
@@ -30,6 +30,7 @@ export function errorHandler(log: Log) {
     // answer takes the file's place, and must be neither kept nor saved.
     res.set("Cache-Control", "no-store").removeHeader("Content-Disposition");
     if (error instanceof z.ZodError) return void res.status(400).json({ error: z.prettifyError(error) });
+    if (error instanceof TooLargeError) return void res.status(413).json({ error: error.message });
     if (error instanceof InputError) return void res.status(400).json({ error: error.message });
     if (error instanceof NotFoundError) return void res.status(404).json({ error: error.message });
     if (error instanceof AuthError) return void res.status(401).json({ error: error.message });

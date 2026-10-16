@@ -87,11 +87,16 @@ test("a damaged project.json is listed, not hidden", async () => {
   assert.ok(!(await listProjects(space)).some((project) => project.id === id));
 });
 
-test("one unreadable screenshot does not stop the project from loading", { todo: "store-5" }, async () => {
+test("one unreadable screenshot does not stop the project from loading", async (t) => {
+  const warn = t.mock.method(console, "warn", () => {});
   const { id } = await createProject(space, { name: "Broken Shot" });
   await mkdir(path.join(projectDir(space, id), "shots"));
   await writeFile(path.join(projectDir(space, id), "shots", "broken.iphone.png"), "");
   assert.deepEqual(await listShots(space, id), []);
+  // Said once, not on every listing: the index remembers the file cannot be read.
+  assert.deepEqual(await listShots(space, id), []);
+  assert.equal(warn.mock.callCount(), 1);
+  assert.match(String(warn.mock.calls[0]!.arguments[0]), /broken\.iphone\.png/);
 });
 
 test("a project's languages are each listed once", () => {

@@ -2,7 +2,7 @@ import express, { type Router } from "express";
 import { z } from "zod";
 import { allowEmail, hasAccess, isAdmin, listAllowed, listUsers, mainSpace, removePerson, rendersOf, setRendersLeft, setSignupMode, signupMode, spaceOfUser } from "../../accounts.ts";
 import { config } from "../../config.ts";
-import { countProjects, usageOf } from "../../store.ts";
+import { usageOf } from "../../store.ts";
 import { identityOf, requireSession } from "../auth.ts";
 
 /** Who may sign in, and the server in numbers, under /api/admin. */
@@ -18,17 +18,21 @@ export function adminRoutes(): Router {
   admin.get("/people", async (_req, res) => {
     const listed = new Set(listAllowed());
     const users = listUsers();
+    // Every account's folders are walked side by side, and the overview asked for with this list reuses the numbers.
     const accounts = await Promise.all(
-      users.map(async (user) => ({
-        email: user.email,
-        name: user.name,
-        admin: isAdmin(user),
-        joinedAt: user.createdAt,
-        projects: await countProjects(spaceOfUser(user)),
-        bytes: (await usageOf(spaceOfUser(user))).bytes,
-        access: hasAccess(user),
-        renders: rendersOf(user),
-      })),
+      users.map(async (user) => {
+        const usage = await usageOf(spaceOfUser(user));
+        return {
+          email: user.email,
+          name: user.name,
+          admin: isAdmin(user),
+          joinedAt: user.createdAt,
+          projects: usage.projects,
+          bytes: usage.bytes,
+          access: hasAccess(user),
+          renders: rendersOf(user),
+        };
+      }),
     );
     const known = new Set(users.map((user) => user.email));
     const waiting = [config.adminEmail, ...listed].filter((email) => !known.has(email)).map((email) => ({ email, admin: email === config.adminEmail, access: true }));
