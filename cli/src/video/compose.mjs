@@ -504,7 +504,7 @@ export async function compose(plan, flags) {
   if (displays.length === 0) fail("The plan names no displays. Add some to it, such as \"displays\": [\"iphone\"].");
   if (!Array.isArray(plan.scenes) || plan.scenes.length === 0) fail("The plan has no scenes to compose.");
   const music = engine === "ffmpeg" ? musicOf(plan, base) : null;
-  // ffmpeg.mjs asks before it installs ffmpeg, and only a person at a terminal, with no as the answer to Return.
+  // ffmpeg.mjs asks before it installs ffmpeg, and only a person at a terminal; Return alone means no.
   const tools = await parts.findFfmpeg({ root });
   const encoder = encoderOf(tools);
   if (music) {
