@@ -11,7 +11,7 @@ const rules = (text: string) => findPhrases(text).map(({ rule, match }) => `${ru
 
 test("Apple's own recognitions are found in the languages the store shows them in", () => {
   assert.deepEqual(rules("Editors’ Choice"), ["apple-recognition: Editors’ Choice"]);
-  assert.deepEqual(rules("Editor's choice 2025"), ["apple-recognition: Editor's choice"]);
+  assert.deepEqual(rules("Editor's choice 2025"), ["apple-recognition: Editor's choice", "date: 2025"]);
   assert.deepEqual(rules("An *App of the Day*"), ["apple-recognition: App of the Day"]);
   assert.deepEqual(rules("Apple Design Award finalist"), ["apple-recognition: Apple Design Award"]);
   assert.deepEqual(rules("App des Tages"), ["apple-recognition: App des Tages"]);
@@ -27,6 +27,7 @@ test("a price, a discount and a claim that it costs nothing are found", () => {
   assert.deepEqual(rules("Free"), ["free: Free"]);
   assert.deepEqual(rules("Try it free"), ["free: free"]);
   assert.deepEqual(rules("Totally free"), ["free: free"]);
+  assert.deepEqual(rules("The app stays free"), ["free: free"]);
   assert.deepEqual(rules("Sale –30%"), ["price: –30%"]);
   assert.deepEqual(rules("Kostenlos testen"), ["free: Kostenlos"]);
   assert.deepEqual(rules("無料で始める"), ["free: 無料"]);
@@ -40,6 +41,8 @@ test("free in its other senses, and figures that are no price, pass", () => {
     "Stress free planning",
     "Hands-free calls",
     "Feel free to explore",
+    "Stay free",
+    "Set yourself free",
     "Free up space",
     "Free of tracking",
     "Your free time",
@@ -65,9 +68,16 @@ test("rankings and dates are found, a bare figure is not", () => {
   assert.deepEqual(rules("Out on March 3rd"), ["date: March 3rd"]);
   assert.deepEqual(rules("Ab 3. März"), ["date: 3. März"]);
   assert.deepEqual(rules("Best of 2025"), ["date: of 2025"]);
+  assert.deepEqual(rules("App of the Year 2024"), ["apple-recognition: App of the Year", "date: 2024"]);
+  assert.deepEqual(rules("Top rated 2025"), ["ranking: Top rated", "date: 2025"]);
+  assert.deepEqual(rules("Out 3.10.2025"), ["date: 3.10.2025"]);
   assert.deepEqual(rules("2048 colours"), []);
   assert.deepEqual(rules("Choose from 2000 recipes"), []);
   assert.deepEqual(rules("A community of 2000 teams"), []);
+  assert.deepEqual(rules("Top rated 2000 recipes"), ["ranking: Top rated"]);
+  assert.deepEqual(rules("Version 2.1.12"), []);
+  assert.deepEqual(rules("Build 1.2.3.45"), []);
+  assert.deepEqual(rules("There is no 1 way"), []);
   assert.deepEqual(rules("May the plan hold"), []);
 });
 

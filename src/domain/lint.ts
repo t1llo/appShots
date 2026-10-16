@@ -65,8 +65,8 @@ export function lineLimit(layout: LayoutId | undefined, placement: PlacementId |
 
 // ---------------------------------------------------------------- the copy
 
-/** A pattern that matches whole words only, in any script. */
-const word = (source: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${source})(?![\\p{L}\\p{N}])`, "giu");
+/** A pattern that matches whole words only, in any script, and in either case unless `flags` leave out the "i". */
+const word = (source: string, flags = "giu") => new RegExp(`(?<![\\p{L}\\p{N}])(?:${source})(?![\\p{L}\\p{N}])`, flags);
 /** A pattern for a script without spaces between words, or one that carries its own edges. */
 const raw = (source: string) => new RegExp(source, "giu");
 
@@ -74,9 +74,15 @@ const MONTHS =
   "january|february|march|april|may|june|july|august|september|october|november|december|januar|februar|märz|mai|juni|juli|oktober|dezember";
 const SHORT_MONTHS = "jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec";
 const YEAR = "(?:199\\d|20[0-3]\\d)";
+/** A plural after a figure, which makes it count things, as in "2000 recipes" or "2000 people". */
+const COUNTED = "\\s+(?!(?:is|as|us|was|has|its|this)(?!\\p{L}))(?:\\p{L}+s|people)(?![\\p{L}\\p{N}])";
+/** A year right after a recognition or a ranking, as in "Editors' Choice 2025", unless it counts things. */
+const YEAR_AFTER = new RegExp(`^,?\\s+(${YEAR})(?![\\p{L}\\p{N}])(?!${COUNTED})`, "iu");
 /** Words that make "free" mean "without", as "ad free" and "distraction free" do. Joined by a hyphen, any word does. */
 const WITHOUT =
   "ads?|advert|distraction|stress|worry|clutter|hassle|guilt|pain|trouble|bug|crash|error|lag|spam|tracking|tracker|cookie|noise|paper|cable|cord|wire|hands|sugar|gluten|dairy|lactose|fat|caffeine|alcohol|nut|meat|cruelty|plastic|carbon|smoke|commission";
+/** Words that make "free" mean "at liberty", as "feel free" and "set yourself free" do. "The app stays free" is a price. */
+const LIBERTY = "feel|set|break|go|stay|run|roam|yourself|yourselves|myself|ourselves|themselves";
 
 /** The words each rule looks for. Kept narrow: a warning that is wrong half the time teaches people to ignore them all. */
 const PHRASES: Partial<Record<LintRule, RegExp[]>> = {
@@ -105,14 +111,15 @@ const PHRASES: Partial<Record<LintRule, RegExp[]>> = {
   ],
   free: [
     // Not "ad-free", "ad free", "feel free", "free time" or "free up space": those say nothing about the price.
-    word(`(?<![-‐]|(?:feel|set|break|go)\\s|(?<![\\p{L}\\p{N}])(?:${WITHOUT})\\s)free(?![-‐](?!to[-‐ ]play))(?!\\s+(?:of|from|up|yourself|your|time|space|form|hands?|flow|style|will|speech)(?![\\p{L}]))`),
+    word(`(?<![-‐]|(?<![\\p{L}\\p{N}])(?:${LIBERTY}|${WITHOUT})\\s)free(?![-‐](?!to[-‐ ]play))(?!\\s+(?:of|from|up|yourself|your|time|space|form|hands?|flow|style|will|speech)(?![\\p{L}]))`),
     word("free[-‐ ]to[-‐ ]play"),
     word("kostenlos\\p{L}*|umsonst|gratis|gratuit\\p{L}*|grátis|darmow\\p{L}*|za darmo|bezpłatn\\p{L}*|бесплатн\\p{L}*|ücretsiz"),
     raw("無料|免费|免費|무료"),
   ],
   ranking: [
     raw("(?<![\\p{L}\\p{N}&])#\\s?\\d{1,3}(?!\\p{N})"),
-    word("(?:no|nr|n[º°])\\.?\\s?1"),
+    // "No 1" with a capital or a period: "there is no 1 way" says no such thing.
+    word("(?:N[oO]\\.?|no\\.|[Nn][rR]\\.?|[Nn][º°]\\.?)\\s?1", "gu"),
     word("number one"),
     word("top[- ](?:rated|ranked|selling|grossing|charts?)"),
     word("best[- ]?(?:selling|seller|rated)|highest[- ]rated|chart[- ]topping|most (?:popular|downloaded)"),
@@ -121,10 +128,11 @@ const PHRASES: Partial<Record<LintRule, RegExp[]>> = {
   date: [
     word(`(?:since|until|seit|im|ab|bis|depuis|desde|dal|sinds|est\\.?|copyright|${MONTHS}|${SHORT_MONTHS})\\s+${YEAR}`),
     // After these a figure can count things, as in "from 2000 recipes" or "a team of 2000 people": a plural follows it.
-    word(`(?:in|of|from|by)\\s+${YEAR}(?!\\s+(?!(?:is|as|us|was|has|its|this)(?!\\p{L}))(?:\\p{L}+s|people)(?![\\p{L}\\p{N}]))`),
+    word(`(?:in|of|from|by)\\s+${YEAR}(?!${COUNTED})`),
     raw(`©\\s?${YEAR}(?!\\p{N})`),
     word(`${YEAR}\\s+(?:edition|update|release|version|ausgabe|édition|edición)`),
-    word("\\d{1,2}[./-]\\d{1,2}[./-](?:\\d{4}|\\d{2})"),
+    // Not a version number, as in "Version 2.1.12", nor three groups of a longer one, as in "1.2.3.45".
+    word("(?<!(?:version|versión|versione|build|release|update):?\\s?|\\d[./-])\\d{1,2}[./-]\\d{1,2}[./-](?:\\d{4}|\\d{2})(?![./-]\\d)"),
     word("(?:19|20)\\d\\d-\\d{2}-\\d{2}"),
     word(`(?:${MONTHS}|${SHORT_MONTHS})\\.?\\s\\d{1,2}(?:st|nd|rd|th)?`),
     word(`\\d{1,2}(?:st|nd|rd|th|\\.)?\\s(?:of\\s)?(?:${MONTHS})`),
@@ -152,10 +160,19 @@ const plain = (text: string) => text.replace(/\*/g, "").replace(/\s+/g, " ").tri
 export function findPhrases(text: string): { rule: LintRule; match: string }[] {
   const said = plain(text);
   const found: { rule: LintRule; match: string }[] = [];
+  // A bare year can count things, but right after a recognition or a ranking it dates them. Dates are read last.
+  const years = new Set<string>();
   for (const rule of TEXT_RULES) {
     if (!HINTS[rule]!.test(said)) continue;
-    const matches = new Set<string>();
-    for (const pattern of PHRASES[rule]!) for (const match of said.matchAll(pattern)) matches.add(match[0].trim());
+    const matches = new Set<string>(rule === "date" ? years : []);
+    for (const pattern of PHRASES[rule]!) {
+      for (const match of said.matchAll(pattern)) {
+        matches.add(match[0].trim());
+        if (rule !== "apple-recognition" && rule !== "ranking") continue;
+        const year = YEAR_AFTER.exec(said.slice(match.index + match[0].length));
+        if (year) years.add(year[1]!);
+      }
+    }
     // A price also reads as a figure; the shorter of two overlapping finds is part of the longer.
     for (const match of matches) if (![...matches].some((other) => other !== match && other.includes(match))) found.push({ rule, match });
   }
