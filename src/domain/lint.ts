@@ -74,6 +74,9 @@ const MONTHS =
   "january|february|march|april|may|june|july|august|september|october|november|december|januar|februar|märz|mai|juni|juli|oktober|dezember";
 const SHORT_MONTHS = "jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec";
 const YEAR = "(?:199\\d|20[0-3]\\d)";
+/** Words that make "free" mean "without", as "ad free" and "distraction free" do. Joined by a hyphen, any word does. */
+const WITHOUT =
+  "ads?|advert|distraction|stress|worry|clutter|hassle|guilt|pain|trouble|bug|crash|error|lag|spam|tracking|tracker|cookie|noise|paper|cable|cord|wire|hands|sugar|gluten|dairy|lactose|fat|caffeine|alcohol|nut|meat|cruelty|plastic|carbon|smoke|commission";
 
 /** The words each rule looks for. Kept narrow: a warning that is wrong half the time teaches people to ignore them all. */
 const PHRASES: Partial<Record<LintRule, RegExp[]>> = {
@@ -96,12 +99,13 @@ const PHRASES: Partial<Record<LintRule, RegExp[]>> = {
     raw("(?<![\\p{L}\\p{N}.,])\\d+(?:[.,]\\d+)?\\s?[$€£¥₹₩₽₺]"),
     word("\\d+(?:[.,]\\d+)?\\s?(?:usd|eur|gbp|chf|jpy|cad|aud|sek|nok|dkk|pln|kr|zł)"),
     word("\\d{1,3}\\s?%\\s?(?:off|rabatt|de réduction|de descuento|di sconto|de desconto|korting)"),
-    raw("(?<![\\p{L}\\p{N}])[-−–]\\s?\\d{1,3}\\s?%"),
+    // "-30%", but not the dash that sets a phrase apart, as in "Battery life – 30% longer".
+    raw("(?<![\\p{L}\\p{N}])[-−–]\\d{1,3}\\s?%"),
     word("on sale|half[- ]price"),
   ],
   free: [
-    // Not "ad-free", "feel free", "free time" or "free up space": those say nothing about the price.
-    word("(?<![-‐]|(?:feel|set|break|go)\\s)free(?![-‐](?!to[-‐ ]play))(?!\\s+(?:of|from|up|yourself|your|time|space|form|hands?|flow|style|will|speech)(?![\\p{L}]))"),
+    // Not "ad-free", "ad free", "feel free", "free time" or "free up space": those say nothing about the price.
+    word(`(?<![-‐]|(?:feel|set|break|go)\\s|(?<![\\p{L}\\p{N}])(?:${WITHOUT})\\s)free(?![-‐](?!to[-‐ ]play))(?!\\s+(?:of|from|up|yourself|your|time|space|form|hands?|flow|style|will|speech)(?![\\p{L}]))`),
     word("free[-‐ ]to[-‐ ]play"),
     word("kostenlos\\p{L}*|umsonst|gratis|gratuit\\p{L}*|grátis|darmow\\p{L}*|za darmo|bezpłatn\\p{L}*|бесплатн\\p{L}*|ücretsiz"),
     raw("無料|免费|免費|무료"),
@@ -115,7 +119,9 @@ const PHRASES: Partial<Record<LintRule, RegExp[]>> = {
     word("platz (?:1|eins)|meistgeladen\\p{L}*|bestbewertet\\p{L}*"),
   ],
   date: [
-    word(`(?:in|of|since|from|until|by|seit|im|ab|bis|depuis|desde|dal|sinds|est\\.?|copyright|${MONTHS}|${SHORT_MONTHS})\\s+${YEAR}`),
+    word(`(?:since|until|seit|im|ab|bis|depuis|desde|dal|sinds|est\\.?|copyright|${MONTHS}|${SHORT_MONTHS})\\s+${YEAR}`),
+    // After these a figure can count things, as in "from 2000 recipes" or "a team of 2000 people": a plural follows it.
+    word(`(?:in|of|from|by)\\s+${YEAR}(?!\\s+(?!(?:is|as|us|was|has|its|this)(?!\\p{L}))(?:\\p{L}+s|people)(?![\\p{L}\\p{N}]))`),
     raw(`©\\s?${YEAR}(?!\\p{N})`),
     word(`${YEAR}\\s+(?:edition|update|release|version|ausgabe|édition|edición)`),
     word("\\d{1,2}[./-]\\d{1,2}[./-](?:\\d{4}|\\d{2})"),

@@ -2,6 +2,7 @@ import type { Page } from "playwright";
 import { config } from "../config.ts";
 import { type PageFit, readFit } from "../domain/lint.ts";
 import { InputError, NotFoundError, type Space } from "../store.ts";
+import { FONTS } from "../template/design.ts";
 import { getBrowser } from "./engine.ts";
 
 export interface Size {
@@ -9,11 +10,14 @@ export interface Size {
   height: number;
 }
 
+/** The families a page can wait for. A "font:" mark that names anything else, such as an exception, is no font's. */
+const FAMILIES = new Set<string>(Object.values(FONTS).map((font) => font.family));
+
 /**
  * What a page could not draw, in the words of its readiness mark: "<kind>:<detail>", such as "screenshot:home missing",
  * several joined by "; ".
  */
-function described(reason: string): string {
+export function described(reason: string): string {
   const problems = reason.split("; ").filter(Boolean);
   return problems.length > 1 ? problems.map(described).join(" Also, ") : describedOne(problems[0] ?? "");
 }
@@ -27,7 +31,7 @@ function describedOne(reason: string): string {
       ? `the screenshot "${name}" could not be read as a picture. Upload it again, then render once more.`
       : `the screenshot "${name}" is not there any more. It was deleted or replaced while the render waited: upload it again, then render once more.`;
   }
-  if (kind === "font" && detail) {
+  if (kind === "font" && FAMILIES.has(detail)) {
     return `the font "${detail}" did not load, and the copy would have been set in another. Render once more; if it fails again, pick another font.`;
   }
   return `the page could not be drawn (${reason || "no reason given"}).`;

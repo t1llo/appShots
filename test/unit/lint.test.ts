@@ -26,12 +26,30 @@ test("a price, a discount and a claim that it costs nothing are found", () => {
   assert.deepEqual(rules("19 USD a year"), ["price: 19 USD"]);
   assert.deepEqual(rules("Free"), ["free: Free"]);
   assert.deepEqual(rules("Try it free"), ["free: free"]);
+  assert.deepEqual(rules("Totally free"), ["free: free"]);
+  assert.deepEqual(rules("Sale –30%"), ["price: –30%"]);
   assert.deepEqual(rules("Kostenlos testen"), ["free: Kostenlos"]);
   assert.deepEqual(rules("無料で始める"), ["free: 無料"]);
 });
 
 test("free in its other senses, and figures that are no price, pass", () => {
-  for (const text of ["Ad-free", "Hands-free calls", "Feel free to explore", "Free up space", "Free of tracking", "Your free time", "100% private", "Save 5 minutes a day", "24/7 support", "C# and Swift", "Track 3 habits"]) {
+  for (const text of [
+    "Ad-free",
+    "100% ad free",
+    "Distraction free writing",
+    "Stress free planning",
+    "Hands-free calls",
+    "Feel free to explore",
+    "Free up space",
+    "Free of tracking",
+    "Your free time",
+    "100% private",
+    "Battery life – 30% longer",
+    "Save 5 minutes a day",
+    "24/7 support",
+    "C# and Swift",
+    "Track 3 habits",
+  ]) {
     assert.deepEqual(findPhrases(text), [], text);
   }
 });
@@ -46,7 +64,10 @@ test("rankings and dates are found, a bare figure is not", () => {
   assert.deepEqual(rules("The 2026 edition"), ["date: 2026 edition"]);
   assert.deepEqual(rules("Out on March 3rd"), ["date: March 3rd"]);
   assert.deepEqual(rules("Ab 3. März"), ["date: 3. März"]);
+  assert.deepEqual(rules("Best of 2025"), ["date: of 2025"]);
   assert.deepEqual(rules("2048 colours"), []);
+  assert.deepEqual(rules("Choose from 2000 recipes"), []);
+  assert.deepEqual(rules("A community of 2000 teams"), []);
   assert.deepEqual(rules("May the plan hold"), []);
 });
 
