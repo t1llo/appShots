@@ -12,7 +12,7 @@ Everything the Studio does goes through a small JSON API. Use it from a script o
 | Base address | `{{SERVER}}/api` |
 | Sign-in | The header `Authorization: Bearer <token>` |
 | Bodies | JSON up to 2 MB, except file uploads, which send the file itself as the body |
-| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404 or 413, or 409 for a change made on an older revision. A body over its limit gets 413, and the sentence names the limit, as does a picture with too many pixels or an upload the account has no room left for. A render asked for while the server shuts down gets 503 with `Retry-After`. Something the server did not expect is a 500, `{ "error": "Internal error", "ref": "1a2b3c4d" }`: whoever runs the server finds the details under `ref` in its log |
+| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404 or 413, or 409 for a change made on an older revision. A body over its limit gets 413, and the sentence names the limit, as does a picture with too many pixels or an upload the account has no room left for. While the server shuts down, a request gets 503 with `Retry-After`. Something the server did not expect is a 500, `{ "error": "Internal error", "ref": "1a2b3c4d" }`: whoever runs the server finds the details under `ref` in its log |
 
 Create the token under **Connect an agent** in the Studio. The examples expect it in `APPSHOTS_TOKEN`.
 
@@ -183,7 +183,7 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/render \
 
 Ask `GET /api/renders/<id>` until `state` is no longer `queued` or `running`. It ends as `done`, `failed` (with `error`) or `cancelled`. `done` of `total` is how many pictures are drawn so far. Then fetch `export.zip`. `POST /api/projects/:id/exports` with `"background": true` answers the same way, with `download` added: the address of that ZIP.
 
-A server that is told to stop, such as for an update, takes no new render, gives the ones under way a few seconds to finish, and cancels the rest. A cancelled render keeps nothing and uses no render, so ask for it again once the server is back. The render draws the project as it was when you asked, so changes made while it runs are not in it. Its files replace the old ones all at once when it is done; one that fails or is cancelled leaves the old ones as they were.
+A server that is told to stop, such as for an update, answers every request from then on with 503, gives the renders under way a few seconds to finish, and cancels the rest. A cancelled render keeps nothing and uses no render, so ask for it again once the server is back. The render draws the project as it was when you asked, so changes made while it runs are not in it. Its files replace the old ones all at once when it is done; one that fails or is cancelled leaves the old ones as they were.
 
 `locales` takes the project's own languages, matched without regard to case, and `de` finds `de-DE`. A language the project does not have is refused with status 400 before anything is drawn or counted.
 

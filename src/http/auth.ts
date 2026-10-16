@@ -1,3 +1,4 @@
+import type { IncomingMessage } from "node:http";
 import type { NextFunction, Request, Response } from "express";
 import { mainSpace, renewedSession, safeEqual, SESSION_TTL, sessionHolder, spaceById, spaceOfUser, type User, userByToken } from "../accounts.ts";
 import { config } from "../config.ts";
@@ -25,10 +26,16 @@ export function cookie(req: Request, name: string): string | undefined {
   return undefined;
 }
 
+/** Whether a request comes from the server's own browser, which loads the pages it draws from this server. */
+export function fromRenderer(req: IncomingMessage): boolean {
+  const secret = req.headers["x-appshots-internal"];
+  return typeof secret === "string" && safeEqual(secret, config.internalSecret);
+}
+
 export function identify(req: Request): Identity | null {
   // With sign-in off, whoever reaches the port works in the server's own space.
   if (!config.auth) return { space: mainSpace, session: true };
-  if (safeEqual(req.get("x-appshots-internal") ?? "", config.internalSecret)) {
+  if (fromRenderer(req)) {
     const space = spaceById(req.get("x-appshots-space"));
     return space && { space, session: false };
   }

@@ -12,7 +12,11 @@ import { type TmpData, tmpData } from "../helpers/tmp-data.ts";
 
 // Renders over HTTP from start to end, drawn by a stand-in for the browser that takes as long per page as a test
 // needs: waiting, cancelling, a client that goes away, deleting and moving what is being drawn, exporting, and the
-// server stopping in the middle of it. Everything but the pictures is the real thing.
+// server stopping in the middle of it. Everything but the pictures is the real thing. The server stopping is tried
+// with the browser too, which loads its pages from the server and has to be let finish.
+
+const RENDER = process.env.RENDER_TESTS === "1";
+const renderTier = { skip: RENDER ? false : "draws with Chromium; run with RENDER_TESTS=1" };
 
 const FAKE = ["test/helpers/fake-renderer-preload.ts"];
 /** Quick to encode: the made-up pictures are scaled to the full size of the slot, and compressing them hard costs time. */
@@ -348,7 +352,15 @@ describe("stopping the server", () => {
       for (const id of [short, long]) assert.equal((await server.fetch(`/api/projects/${id}/render`, as(json("POST", { background: true })))).status, 202);
 
       const started = Date.now();
-      const code = await server.signal!("SIGTERM");
+      const exited = server.signal!("SIGTERM");
+      // While it stops, it answers nobody but its own browser.
+      await until(async () => server.output().includes("Stopping"), 5000, "the server to say it stops");
+      const refused = await server.fetch("/api/renders", as());
+      assert.equal(refused.status, 503);
+      assert.equal(refused.headers.get("cache-control"), "no-store");
+      assert.ok(refused.headers.get("retry-after"));
+      assert.match((await refused.json()).error, /shutting down/);
+      const code = await exited;
       const took = Date.now() - started;
       assert.equal(code, 0);
       assert.ok(took < 9000, `stopped in ${took} ms`);
@@ -360,6 +372,42 @@ describe("stopping the server", () => {
       const saved = JSON.parse(await readFile(path.join(data.dir, "accounts.json"), "utf8"));
       assert.equal(saved.users[0].renders, 1, "the finished render was counted and saved, the cancelled one was not");
       assert.match(server.output(), /Stopping/);
+    } finally {
+      await server.stop();
+      await data.remove();
+    }
+  });
+
+  test("with the browser drawing, a signal lets the render under way finish and cancels the one that takes too long", renderTier, async () => {
+    const data = await tmpData("jobs-stop-browser");
+    const token = newToken();
+    await writeAccounts(data.dir, [{ id: "u2", email: "two@example.com", token, renders: 0 }]);
+    const server = await startServer({ dataDir: data.dir, env: { ...SIGN_IN, ...QUICK, USER_RENDER_CREDITS: "5", RENDER_PREWARM: "on" } });
+    try {
+      await until(async () => server.output().includes("The renderer draws with Chromium"), 30_000, "the browser to start");
+      const as = (init: RequestInit = {}): RequestInit => ({ ...init, headers: { Authorization: `Bearer ${token}`, ...init.headers } });
+      const make = async (name: string, body: object) => (await (await server.fetch("/api/projects", as(json("POST", { name, ...body })))).json()).id as string;
+      const short = await make("Short", { locales: ["en"], targets: ["iphone-6.9"], slides: statement(2) });
+      // Sixty pages to draw, iPads among them: far more than a few seconds' work.
+      const slides = Array.from({ length: 10 }, (_, i) => ({ layout: "statement", headline: { en: `Slide ${i + 1}`, de: `Folie ${i + 1}` } }));
+      const long = await make("Long", { locales: ["en", "de"], targets: ["iphone-6.9", "iphone-6.3", "iphone-6.5", "iphone-6.1", "ipad-13", "ipad-10.5"], slides });
+      for (const id of [short, long]) assert.equal((await server.fetch(`/api/projects/${id}/render`, as(json("POST", { background: true })))).status, 202);
+
+      const started = Date.now();
+      const code = await server.signal!("SIGTERM");
+      const took = Date.now() - started;
+      assert.equal(code, 0);
+      assert.ok(took > 5000, `waited for the render under way, stopped after ${took} ms`);
+      assert.ok(took < 9500, `stopped in ${took} ms`);
+
+      const projects = path.join(data.dir, "users", "u2", "projects");
+      assert.ok(await exists(path.join(projects, short, "out", "en", "iphone-6.9", "02.png")), "the short render finished and was put in place");
+      assert.equal(await exists(path.join(projects, long, "out")), false, "the long one was cancelled and kept nothing");
+      const saved = JSON.parse(await readFile(path.join(data.dir, "accounts.json"), "utf8"));
+      assert.equal(saved.users[0].renders, 1, "the finished render was counted, the cancelled one was not");
+      // A cancelled render logs nothing. One that failed, because the browser was closed under it or could not
+      // load its pages any more, logs what it stopped with.
+      assert.doesNotMatch(server.output(), /Error|has been closed|ERR_CONNECTION_REFUSED/);
     } finally {
       await server.stop();
       await data.remove();

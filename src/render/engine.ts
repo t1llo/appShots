@@ -22,7 +22,8 @@ let lastError: { message: string; at: string } | undefined;
 
 export function getBrowser(): Promise<Browser> {
   browser ??= chromium
-    .launch({ args: ARGS })
+    // Playwright would close the browser on a signal, under the renders the server lets finish: it closes it itself.
+    .launch({ args: ARGS, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false })
     .then((instance) => {
       if (version !== instance.version()) console.log(`The renderer draws with Chromium ${instance.version()}.`);
       version = instance.version();

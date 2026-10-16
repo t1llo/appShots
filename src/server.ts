@@ -5,6 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { accountsSaved } from "./accounts.ts";
 import { createApp } from "./app.ts";
 import { config } from "./config.ts";
+import { fromRenderer } from "./http/auth.ts";
 import { webDir } from "./http/routes/site.ts";
 import { grantsSaved } from "./oauth/store.ts";
 import { closeBrowser, prewarm } from "./render.ts";
@@ -18,7 +19,17 @@ const app = await createApp();
 // Before the first request, so no write is under way while the files writes left behind are cleared.
 await sweepProjects(config.dataDir).catch((error: unknown) => console.warn(`Could not look the projects over: ${error instanceof Error ? error.message : String(error)}`));
 
-const server = http.createServer(app);
+let stopping = false;
+
+const server = http.createServer((req, res) => {
+  // While the server stops it answers its own browser alone, which loads the pages of the renders that finish
+  // meanwhile from it. Anybody else is told to come back.
+  if (stopping && !fromRenderer(req)) {
+    res.writeHead(503, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Retry-After": "30", "X-Content-Type-Options": "nosniff", Connection: "close" });
+    return void res.end(JSON.stringify({ error: "The server is shutting down. Try again in a minute." }));
+  }
+  app(req, res);
+});
 // A port that cannot be had ends the start with a reason and a non-zero exit, so a supervisor or a script sees it.
 server.once("error", (error: NodeJS.ErrnoException) => {
   const reason =
@@ -39,21 +50,21 @@ server.listen({ port: config.port, host: config.host }, () => {
 });
 
 /**
- * Stops within the ten seconds a container is given before it is killed. No connection or render is taken any more,
+ * Stops within the ten seconds a container is given before it is killed. No request or render is taken any more,
  * and what is under way gets most of that time to finish: a render still going then is cancelled, keeps nothing and
  * uses no render, and a download still going is cut off. The accounts and grants are on disk before the process ends.
  */
 async function shutDown(): Promise<void> {
-  const closed = new Promise((resolve) => server.close(resolve));
-  // drain() lets renders and video layers finish for this long, then gives what still goes two seconds to stop.
-  await Promise.race([Promise.all([closed, drain(5500)]), sleep(7500)]);
+  // drain() lets renders and video layers finish for this long, then gives what still goes two seconds to stop. The
+  // port stays open until then, for the browser that draws them.
+  const finished = drain(5500).then(() => new Promise((resolve) => server.close(resolve)));
+  await Promise.race([finished, sleep(7500)]);
   server.closeAllConnections();
   await Promise.all([accountsSaved(), grantsSaved()]);
   await closeBrowser();
 }
 
-let stopping = false;
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   process.on(signal, () => {
     // A second signal, such as Ctrl-C pressed again, does not wait.
     if (stopping) process.exit(1);
