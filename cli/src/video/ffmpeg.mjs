@@ -272,7 +272,7 @@ export async function findFfmpeg({ root, ask = true, need = "compose" } = {}) {
   const missing = lacking(tools, need);
   if (missing.length > 0) {
     const upgrade = tools.from === "Homebrew" ? "'brew upgrade ffmpeg' brings Homebrew's up to date" : `Homebrew's ffmpeg has all of it (${INSTALL})`;
-    fail(`The ffmpeg at ${tools.ffmpeg}${tools.version ? ` (${tools.version})` : ""} has no ${missing.join(", no ")}. ${upgrade}; APPSHOTS_FFMPEG points appshots at another build.`);
+    fail(`The ffmpeg at ${tools.ffmpeg}${tools.version ? ` (${tools.version})` : ""} cannot ${PURPOSE[need]}: that needs ${missing.join(", ")}. ${upgrade}; APPSHOTS_FFMPEG points appshots at another build.`);
   }
   return tools;
 }
@@ -295,6 +295,6 @@ export async function ffmpegStatus(root) {
   const tools = found.value;
   const missing = lacking(tools, "compose");
   const what = `${tools.ffmpeg}${tools.version ? `, version ${tools.version}` : ""}${tools.from === "Remotion" ? ", Remotion's" : ""}`;
-  if (missing.length > 0) return `${what}, without ${missing.join(", ")}, so it cannot cut a preview. ${tools.from === "Homebrew" ? "'brew upgrade ffmpeg'" : `'${INSTALL}'`} brings one that can.`;
+  if (missing.length > 0) return `${what}, which cannot cut a preview: that needs ${missing.join(", ")}. ${tools.from === "Homebrew" ? "'brew upgrade ffmpeg'" : `'${INSTALL}'`} brings one that can.`;
   return `${what}, with ${tools.h264} and every filter 'appshots video compose' needs`;
 }
