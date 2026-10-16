@@ -111,6 +111,18 @@ async function checkInstalled(simulator, apps, plan) {
  */
 
 /**
+ * Closes the app the last screen brought to the front on a simulator, if there is one.
+ * @param {Run} run
+ * @param {Simulator} simulator
+ */
+async function closeStarted(run, simulator) {
+  const app = run.started.get(simulator.udid);
+  if (!app) return;
+  await xcrun(["simctl", "terminate", simulator.udid, app]);
+  run.started.delete(simulator.udid);
+}
+
+/**
  * Brings up the screen of one job, takes it once it has come to rest, and uploads it.
  * @param {Run} run
  * @param {Job} job
@@ -126,11 +138,7 @@ async function take(run, job, simulator) {
   // screen brought to the front is closed first, unless it is the same. A web link with no app comes up in Safari;
   // what takes another link with no app is not known here, which is why the docs ask to name it in screens[].app.
   const front = app ?? (screen.url && /^https?:/i.test(screen.url) ? SAFARI : undefined);
-  const before = run.started.get(simulator.udid);
-  if (before && before !== front) {
-    await xcrun(["simctl", "terminate", simulator.udid, before]);
-    run.started.delete(simulator.udid);
-  }
+  if (run.started.get(simulator.udid) !== front) await closeStarted(run, simulator);
   let blank = false;
   if (screen.uitest && run.xcodeProject && run.scheme) {
     const options = { project: run.xcodeProject, scheme: run.scheme, test: screen.uitest, simulator, locale: job.locale };
@@ -313,6 +321,9 @@ export async function shootPlan(args) {
           break;
         }
       } finally {
+        // The simulator is left at its home screen, where the next run starts: a link opened while another app is
+        // in front can take long enough to run out of time.
+        await closeStarted(run, simulator);
         if (before && appearance !== before) await setAppearance(simulator, before);
       }
     };

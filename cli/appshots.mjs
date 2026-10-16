@@ -4964,6 +4964,22 @@ async function checkInstalled(simulator, apps, plan) {
 * @property {Map<string, string>} started The app the last screen brought to the front on each simulator, by its udid.
 */
 /**
+* Closes the app the last screen brought to the front on a simulator, if there is one.
+* @param {Run} run
+* @param {Simulator} simulator
+*/
+async function closeStarted(run, simulator) {
+	const app = run.started.get(simulator.udid);
+	if (!app) return;
+	await xcrun([
+		"simctl",
+		"terminate",
+		simulator.udid,
+		app
+	]);
+	run.started.delete(simulator.udid);
+}
+/**
 * Brings up the screen of one job, takes it once it has come to rest, and uploads it.
 * @param {Run} run
 * @param {Job} job
@@ -4976,16 +4992,7 @@ async function take(run, job, simulator) {
 	mkdirSync(path.dirname(job.file), { recursive: true });
 	const app = screenApp(plan, screen, run.bundleId);
 	const front = app ?? (screen.url && /^https?:/i.test(screen.url) ? SAFARI : void 0);
-	const before = run.started.get(simulator.udid);
-	if (before && before !== front) {
-		await xcrun([
-			"simctl",
-			"terminate",
-			simulator.udid,
-			before
-		]);
-		run.started.delete(simulator.udid);
-	}
+	if (run.started.get(simulator.udid) !== front) await closeStarted(run, simulator);
 	let blank = false;
 	if (screen.uitest && run.xcodeProject && run.scheme) await runUITest({
 		project: run.xcodeProject,
@@ -5202,6 +5209,7 @@ async function shootPlan(args) {
 					break;
 				}
 			} finally {
+				await closeStarted(run, simulator);
 				if (before && appearance !== before) await setAppearance(simulator, before);
 			}
 		};

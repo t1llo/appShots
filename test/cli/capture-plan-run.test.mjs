@@ -198,6 +198,9 @@ test("a plan is taken device by device, appearance by appearance, then language 
   assert.equal(launches[0], "xcrun simctl launch --terminate-running-process <phone> com.example.notes -demo -AppleLanguages (en) -AppleLocale en");
   assert.equal(launches[5], "xcrun simctl launch --terminate-running-process <pad> com.example.notes -demo -tab board -AppleLanguages (en) -AppleLocale en");
   assert.equal(calls[calls.indexOf(launches[5]) + 1], "xcrun simctl openurl <pad> notes://board");
+  // The app is closed once a simulator's screens are done, and only then, so that a next run starts at the home screen.
+  assert.deepEqual(simctl("terminate"), ["xcrun simctl terminate <phone> com.example.notes", "xcrun simctl terminate <pad> com.example.notes"]);
+  assert.ok(calls.indexOf("xcrun simctl terminate <phone> com.example.notes") > calls.lastIndexOf(launches[3]));
   assert.ok(existsSync(path.join(work, "raw-shots", "de", "ipad-13", "board-dark.png")));
   assert.equal(printed.split("\n")[0], `${file}: 12 screenshots for demo, 2 screens in en and de in light and dark, on iphone-6.9 and ipad-13`);
   assert.match(printed, /^1\/12 home \(iphone-6\.9, en, light\): launch com\.example\.notes -demo$/m);
@@ -313,6 +316,7 @@ test("the app the last screen started is closed before another one starts, so th
     "terminate <phone> com.apple.mobilesafari",
     "launch <phone> com.example.notes -demo -tab stats",
     "launch <phone> com.example.notes -demo",
+    "terminate <phone> com.example.notes",
   ]);
 });
 
@@ -332,6 +336,7 @@ test("a web link opened with no app comes up in Safari, which is closed before t
     "openurl <phone> https://appshots.example.com/faq",
     "terminate <phone> com.apple.mobilesafari",
     "launch <phone> com.apple.Preferences",
+    "terminate <phone> com.apple.Preferences",
   ]);
 });
 
@@ -362,6 +367,7 @@ test("an app a failed launch or link may have brought up is closed before the ne
     "launch <phone> com.apple.Maps",
     "terminate <phone> com.apple.Maps",
     "launch <phone> com.example.notes",
+    "terminate <phone> com.example.notes",
   ]);
   assert.deepEqual(uploads(), ["settings?device=iphone&locale=en", "home?device=iphone&locale=en"]);
 });
