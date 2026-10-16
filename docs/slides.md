@@ -42,7 +42,7 @@ In a language read from right to left, such as Arabic or Hebrew, every layout is
 
 - `*Asterisks*` around a word mark it. By default it takes the accent colour, and `emphasis` picks another way. See [Marked words](#marked-words).
 - `\n` forces a line break.
-- Text shrinks to fit its space, so nothing is cut off.
+- Text shrinks to fit its space, so nothing is cut off. A render warns when it had to shrink a lot. See [What a render checks](#what-a-render-checks).
 - Each text is a string, or one string per language. See [Languages](/docs/languages).
 
 ## Screenshots
@@ -297,3 +297,25 @@ A device can have its own set instead, in `deviceSlides`. The iPad's or the Mac'
 **Brand logos** ({{BRAND_COUNT}}): {{BRANDS}}
 
 A brand logo is somebody's trademark. See [What App Review accepts](/docs/app-review#other-companies-names-and-logos).
+
+## What a render checks
+
+Every render reads the copy of each slide and header or search results image in every language it draws, and measures each page once its copy is fitted. What it finds comes back among the render's warnings, one sentence per finding that names the languages it is in. Nothing it finds stops the render.
+
+How the copy came out:
+
+- **Shrunk.** The copy was set below three quarters of its size to fit, so it reads smaller than the rest of the set. Usually a translation that runs long.
+- **Does not fit.** It does not fit even at half its size and runs into what is around it.
+- **Too many lines.** The headline takes more than three lines, or four beside a device and on a `statement` slide. On a header or search results image, more than two.
+- **Outside the safe area.** Text of a header or search results image stands where some devices crop it away, or text runs off the edge of a slide.
+
+What App Review turns away. These follow the words, in English and the common store languages, so a check can miss a phrasing or warn about one that is fine:
+
+- One of Apple's own recognitions, such as Editors' Choice, App of the Day or an Apple Design Award, unless Apple gave it to the app. Never on a header or search results image.
+- A price or a discount, such as "$4.99" or "50% off", and a claim that the app is free.
+- A ranking, such as "#1", "No. 1" or "top-rated".
+- A date or a year, which makes the set look old once it has passed.
+- The Apple logo or the App Store's anywhere, and another platform's, such as Android or Google Play.
+- A brand logo where it reads as an endorsement: in an icon row without a label, as a badge's icon, and on a header or search results image.
+
+A font that does not load stops the render with an error, instead of setting the copy in another. See [What App Review accepts](/docs/app-review).

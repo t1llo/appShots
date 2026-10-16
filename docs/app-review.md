@@ -26,7 +26,7 @@ A badge with a rating, a download count, an award or a review is a claim. So is 
 - "#1", "best" and "most popular" need proof you can show Apple.
 - Do not show a price. Prices differ by country and change.
 
-appShots has no way to check these, so it is up to you. The [skill](/docs/skill) never invents them.
+A render warns about the words it recognises, such as a price, "free", a ranking or one of Apple's own awards. Whether a figure is real it cannot check, so that is up to you. The [skill](/docs/skill) never invents them. See [What a render checks](/docs/slides#what-a-render-checks).
 
 ## Other companies' names and logos
 

@@ -24,7 +24,7 @@ Apple reviews these assets and is stricter than with screenshots:
 - No prices, discounts, web addresses or copyright symbols, and no logos of or references to other platforms.
 - No claims or awards that cannot be verified, and no Apple accolades at all (Editors' Choice, App of the Day, Game of the Day, Apple Design Award).
 - Translate the text for every language the asset is uploaded for, or leave it out. The content has to suit a 4+ age rating.
-\`render\` returns a preview of each asset with the safe area drawn as a dashed frame, which is not part of the PNG. Check that nothing important falls outside it.`,
+\`render\` returns a preview of each asset with the safe area drawn as a dashed frame, which is not part of the PNG. Check that nothing important falls outside it; the render warns when text does.`,
   },
   {
     id: "banners",

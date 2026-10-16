@@ -75,7 +75,7 @@ describe("a render's warnings about the copy", renderTier, () => {
   test("a recognition of Apple's is said once, with the words found in each language", () => {
     assert.equal(answer.status, 200, JSON.stringify(answer.body));
     const { warnings, lint } = answer.body;
-    assert.ok(warnings.includes(`Slide 2: the headline names "App of the Day" (en), "App des Tages" (de), one of Apple's own recognitions. App Review does not accept them in store images.`), warnings.join("\n"));
+    assert.ok(warnings.includes(`Slide 2: the headline names "App of the Day" (en), "App des Tages" (de), one of Apple's own recognitions. App Review turns it away unless Apple really gave it to the app.`), warnings.join("\n"));
     assert.deepEqual(
       lint.filter((each: any) => each.rule === "apple-recognition").map((each: any) => [each.locale, each.slide, each.field, each.match]),
       [

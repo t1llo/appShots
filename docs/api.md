@@ -144,6 +144,13 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/render \
 
 **`slides` counts from 0 here**, unlike the MCP tool, which counts from 1.
 
+A finished render answers with `files`, `sheets`, `creatives` and `warnings`, one sentence each. Two more keys hold what the warnings about the copy say, as data:
+
+- `lint`: one entry per finding and language, with its `rule` (such as `price`, `apple-recognition`, `headline-scaled` or `safe-area`), where it is (`slide` counting from 0, `ownSet` for a device's own set, or `placement`), the `locale`, the `field` such as `headline` or `badges[0].title`, the words or icons found under `match`, a measured `value` with its `limit`, and the `text` of the warning. A finished job of `GET /api/renders` has it too.
+- `fit`: how the copy of each page came out: the share of its size it was set at (`scale`), whether it fits at all (`fits`), the `lines` of its headline, and whether text stands `outside` the safe area or the picture.
+
+See [Slides](/docs/slides#what-a-render-checks) for what is checked.
+
 The whole set in one request:
 
 ```bash

@@ -370,7 +370,8 @@ function sentence(findings: Finding[], all?: string[]): string {
   const store = first.placement !== undefined;
   switch (first.rule) {
     case "apple-recognition":
-      return `${said} names ${words}, one of Apple's own recognitions. App Review does not accept them in store images.`;
+      if (store) return `${said} names ${words}, one of Apple's own recognitions. Apple allows none of them in header and search results assets.`;
+      return `${said} names ${words}, one of Apple's own recognitions. App Review turns it away unless Apple really gave it to the app.`;
     case "price":
       return `${said} shows a price, ${words}. Prices differ by country and change, so store images show none.`;
     case "free":

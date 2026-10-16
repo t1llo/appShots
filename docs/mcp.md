@@ -122,8 +122,12 @@ Sets the wide pictures of `project`: `header`, `search` or `universal` for App S
 | `creatives` | Header and search results images and banners to render. Left out: all of them, along with the slides. Given alone: the slides are left as they are. `[]` skips them |
 | `targets` | Sizes for this render only. Left out: every size the project exports, which is the standard sizes of each device it has screenshots of. See [Sizes](/docs/sizes) |
 | `locales` | Languages. Default: all of the project's |
+| `previews` | `false` answers without pictures: the links, the warnings, and how small each language's copy was set. For a render of many languages, or to check the copy after an edit. Default `true` |
+| `preview` | `"store"` shows, in place of the contact sheets, the first three slides as the App Store shows them: in a search result and on the product page, light and dark |
 
-Returns the contact sheets of the first language as pictures, one per device first and four at most, with links to any it leaves out, a preview of each wide image, the store's with their safe area marked, a link to every PNG, a link to the ZIP, warnings such as a missing screenshot, and how many renders the account has left.
+Returns the contact sheets of the first language as pictures, one per device first and four at most, with links to any it leaves out, a preview of each wide image, the store's with their safe area marked, a link to every PNG, a link to the ZIP, warnings, and how many renders the account has left.
+
+The warnings say what the pictures would not show at a glance: a screenshot that is missing, copy that had to shrink below three quarters of its size to fit or does not fit at all, a headline of more lines than read well, text outside the safe area of a header or search results image, and copy or logos App Review turns away, such as a price, "free", a ranking, a date, one of Apple's own awards, or another platform's logo. A finding in several languages is one warning that names them. See [Slides](/docs/slides#what-a-render-checks).
 
 ### render_mockups
 

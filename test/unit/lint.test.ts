@@ -148,7 +148,7 @@ test("a render's warnings say each finding once, with the languages it is in", (
     ...lintFit([{ report: page({ locale: "de", slide: 1, device: "iphone", scale: 0.62 }) }, { report: page({ locale: "fr", slide: 1, device: "iphone", scale: 0.71 }) }]),
   ];
   assert.deepEqual(lintTexts(found, ["en", "de", "fr"]), [
-    `Slide 1: the headline names "App of the Day" (en), "App des Tages" (de), "App du jour" (fr), one of Apple's own recognitions. App Review does not accept them in store images.`,
+    `Slide 1: the headline names "App of the Day" (en), "App des Tages" (de), "App du jour" (fr), one of Apple's own recognitions. App Review turns it away unless Apple really gave it to the app.`,
     "Slide 2 on iPhone: the copy was set at de 62%, fr 71% of its size to fit. Shorten it there, or it reads smaller than the rest of the set.",
   ]);
   // Words that differ by language name each its own, and the place none.
