@@ -181,7 +181,7 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/render \
 { "job": { "id": "5f0c…", "project": "streaks", "name": "Streaks", "state": "queued", "done": 0, "total": 0 }, "rendersLeft": 6 }
 ```
 
-Ask `GET /api/renders/<id>` until `state` is no longer `queued` or `running`. It ends as `done`, `failed` (with `error`) or `cancelled`. `done` of `total` is how many pictures are drawn so far. Then fetch `export.zip`. `POST /api/projects/:id/exports` with `"background": true` answers the same way, with `download` added: the address of that ZIP.
+Ask `GET /api/renders/<id>` until `state` is no longer `queued` or `running`, or follow it on [the event stream](#live-updates). It ends as `done`, `failed` (with `error`) or `cancelled`. `done` of `total` is how many pictures are drawn so far. Then fetch `export.zip`. `POST /api/projects/:id/exports` with `"background": true` answers the same way, with `download` added: the address of that ZIP.
 
 A server that is told to stop, such as for an update, answers every request from then on with 503, gives the renders under way a few seconds to finish, and cancels the rest. A cancelled render keeps nothing and uses no render, so ask for it again once the server is back. The render draws the project as it was when you asked, so changes made while it runs are not in it. Its files replace the old ones all at once when it is done; one that fails or is cancelled leaves the old ones as they were.
 
@@ -308,6 +308,45 @@ With `"background": true`, a new set answers at once with status 202, the run as
 `GET /api/renders/<job id>` follows it, as it does a render, and `DELETE /api/renders/<job id>` cancels it. When `state` is `done`, fetch the set with `GET /api/projects/:id/video-layers/<set>`. A set drawn before is answered at once, with status 200, background or not. One account has at most two runs of layers waiting or running at a time.
 
 `/files/:id/video/…` pictures never change, as a set's id says what is in it, so they are sent with `Cache-Control: private, max-age=31536000, immutable`. No answer under `/api` is kept by a shared cache: answers are sent with `private, no-cache` or `private, no-store`, and errors with `no-store`.
+
+## Live updates
+
+`GET /api/events` tells what changes in the account as it happens, as [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html), for as long as the connection stays open. The Studio follows it, so a change made through MCP, the CLI or this API shows up there at once. A script can follow it instead of asking again and again:
+
+```bash
+curl -sN {{SERVER}}/api/events \
+  -H "Authorization: Bearer $APPSHOTS_TOKEN"
+```
+
+```text
+retry: 5000
+
+event: ready
+data: {"heartbeatMs":20000}
+
+event: project
+data: {"id":"streaks","revision":9,"actor":"mcp"}
+```
+
+Each event's name says what happened, and its `data` is one line of JSON:
+
+| Event | When | Fields |
+| --- | --- | --- |
+| `ready` | Once, first. The stream works from end to end | `heartbeatMs` |
+| `project` | A project was changed or restored | `id`, the new `revision`, and the `actor` that made the change, as in [Revisions](#revisions) |
+| `project-created` | A project was made, or moved into the account | `id`, `actor`: `admin` for one the admin moved |
+| `project-deleted` | A project was deleted, or moved out of the account | `id` |
+| `assets` | A screenshot or an image was uploaded, moved or deleted | `project`, and `kind`: `shots` or `images` |
+| `job` | A render was queued, drew more, or ended | `id`, `project`, `name`, `state`, `done`, `total`, `createdAt`, and once they are known `startedAt`, `finishedAt`, `files` and `error`. Warnings and `lint` stay with `GET /api/renders/:job` |
+
+An event names what changed, not all of it: fetch what you show of it again, such as `GET /api/projects/:id` when its `revision` is newer than the one you have. Progress of a render is told at most four times a second, and its start and end at once.
+
+- A comment line goes down a quiet stream every 20 seconds, so a proxy in between does not take it for dead.
+- Nothing is kept for a client that was not connected: there is no replay and no `Last-Event-ID`. After the stream was cut off, open it again and fetch everything you show once more. `retry` tells a browser's `EventSource` to wait five seconds before it does that by itself.
+- A stream ends when the sign-in it was opened with ends: when its session signs out, its token is revoked or its account is deleted. It ends as well when the server stops, such as for an update. A client that reads more slowly than events come is cut off.
+- One account may hold 10 streams open at once. One more is refused with 429 and `Retry-After`.
+- It takes a token or the session of a browser, like the rest of `/api`. An OAuth access token that was issued for the MCP endpoint alone reaches only that, so an MCP client follows its own changes through the tools.
+- The answer is sent with `Cache-Control: private, no-store, no-transform` and `X-Accel-Buffering: no`, so that neither a cache nor a proxy holds it back or compresses it. A proxy of your own in front of the server must still pass the answer on as it comes rather than collect it. Where one does not, the Studio never gets `ready` and asks for what it shows every few seconds instead.
 
 ## What a token cannot do
 
