@@ -308,6 +308,61 @@ test("a check record is read only for the file it was written for", () => {
   assert.equal(readCheckRecord(file), null);
 });
 
+/**
+ * A check record as the compose may leave it: no bytes of its own, the poster's time as `at`, the findings under
+ * `result`, and a key of the compose's own.
+ * @param {string} file
+ * @param {any} probed
+ * @param {object} [fields]
+ */
+function composedRecord(file, probed, fields = {}) {
+  const { errors, warnings } = checkProbe(probed, "iphone", { draft: true });
+  const record = { version: 1, key: "5f3a9c", file: path.basename(file), display: "iphone", locale: "en", draft: true, seconds: 16, poster: { at: 1.5, file: "composed.poster.png" }, result: { errors, warnings }, probe: probed, ...fields };
+  writeFileSync(checkFileOf(file), JSON.stringify(record));
+}
+
+/**
+ * A stored probe of a file of `bytes` bytes.
+ * @param {string} name
+ * @param {number} bytes
+ */
+function probeOfSize(name, bytes) {
+  const probed = stored(name);
+  probed.format.size = String(bytes);
+  return probed;
+}
+
+test("a record without its bytes is told by its probe's, and the poster's `at` and the findings under `result` are read", () => {
+  const file = path.join(home.home, "composed.mp4");
+  writeFileSync(file, Buffer.alloc(300));
+  composedRecord(file, probeOfSize("good", 300));
+  const record = readCheckRecord(file);
+  assert.equal(record?.draft, true);
+  assert.equal(record?.display, "iphone");
+  assert.deepEqual(record?.poster, { seconds: 1.5, timecode: "00:00:01:15" });
+  assert.deepEqual(ids(record?.errors ?? []), ["draft"]);
+  assert.equal(/** @type {any} */ (record)?.key, "5f3a9c");
+  writeFileSync(file, Buffer.alloc(301));
+  assert.equal(readCheckRecord(file), null);
+});
+
+test("a poster chosen with --at keeps what else the record held, such as the compose's key", async () => {
+  const file = path.join(home.home, "composed.mp4");
+  writeFileSync(file, Buffer.alloc(300));
+  const probed = probeOfSize("good", 300);
+  composedRecord(file, probed);
+  answers.probe = probed;
+  await choosePoster(file, 2, TOOLS);
+  const written = JSON.parse(readFileSync(checkFileOf(file), "utf8"));
+  assert.equal(written.key, "5f3a9c");
+  assert.equal(written.locale, "en");
+  assert.equal(written.draft, true);
+  assert.deepEqual(ids(written.result.errors), ["draft"]);
+  assert.equal(written.bytes, 300);
+  assert.deepEqual(written.poster, { seconds: 2, timecode: "00:00:02:00", chosen: true });
+  answers.probe = stored("good");
+});
+
 test("the contact sheet is one ffmpeg run: a tile per video, stacked, and no split", async () => {
   runs.length = 0;
   answers.probe = stored("good");
@@ -352,6 +407,36 @@ test("appshots video check prints a block a file, ends with 1 on an error, and g
     await assert.rejects(checkFiles([movie], { display: "tv" }), (error) => error instanceof Failure && /--display takes one of iphone, ipad, mac/.test(error.message));
     await assert.rejects(checkFiles([]), (error) => error instanceof Failure && /Name the video to check/.test(error.message));
   } finally {
+    delete process.env.APPSHOTS_FFMPEG;
+    delete process.env.APPSHOTS_FFPROBE;
+  }
+});
+
+test("appshots video check goes by the record beside a composed preview: its display, and whether it is a draft", async () => {
+  const bin = path.join(home.home, "bin");
+  mkdirSync(bin, { recursive: true });
+  for (const name of ["ffmpeg", "ffprobe"]) writeFileSync(path.join(bin, name), "#!/bin/sh\n", { mode: 0o755 });
+  process.env.APPSHOTS_FFMPEG = path.join(bin, "ffmpeg");
+  const before = process.exitCode;
+  try {
+    // 1920x1080 is the Mac's size and the 5.5-inch iPhone's landscape one: only the record tells them apart.
+    const file = path.join(home.home, "landscape.mp4");
+    writeFileSync(file, Buffer.alloc(400));
+    answers.probe = probeOfSize("good-mac", 400);
+    composedRecord(file, answers.probe, { display: "iphone-5.5", poster: { at: 3 } });
+    const json = JSON.parse(await quietly(() => checkFiles([file], { json: true })));
+    assert.equal(json.files[0].display, "iphone-5.5");
+    assert.deepEqual(ids(json.files[0].errors), ["draft"]);
+    assert.deepEqual(json.files[0].poster, { seconds: 3, timecode: "00:00:03:00" });
+    assert.equal(process.exitCode, 1);
+    process.exitCode = before;
+    // --display says otherwise, and wins; a record naming no display Apple has is left aside.
+    assert.equal(JSON.parse(await quietly(() => checkFiles([file], { display: "mac", json: true }))).files[0].display, "mac");
+    composedRecord(file, answers.probe, { display: "tv" });
+    assert.equal(JSON.parse(await quietly(() => checkFiles([file], { json: true }))).files[0].display, "mac");
+  } finally {
+    process.exitCode = before;
+    answers.probe = stored("good");
     delete process.env.APPSHOTS_FFMPEG;
     delete process.env.APPSHOTS_FFPROBE;
   }

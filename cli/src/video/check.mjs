@@ -1,9 +1,11 @@
-import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fail } from "../fail.mjs";
+import { writeAtomic } from "../update.mjs";
 import { findFfmpeg } from "./ffmpeg.mjs";
 import { audioStreams, durationOf, numberOf, playedSize, probe, rateOf, videoStreams } from "./probe.mjs";
 import { displayForSize, PREVIEW_FORMAT, PREVIEW_SPECS } from "./specs.mjs";
+import { timecode } from "./timecode.mjs";
 
 /**
  * @typedef {{ rule: string, value: string | number, expected: string }} Rule One finding: what was measured,
@@ -257,7 +259,8 @@ export const checkFileOf = (file) => `${file.replace(/\.(mp4|mov|m4v)$/i, "")}.c
 
 /**
  * @typedef {object} CheckRecord What the compose leaves beside a preview, for 'video check', 'video poster' and
- *   'video push'.
+ *   'video push'. What else it holds, such as the key the compose knows its inputs by, is kept when 'video poster'
+ *   writes it again.
  * @property {1} version
  * @property {string} file The preview's name in its folder.
  * @property {number} bytes Its size when it was checked: a record of another file of the same name is not its.
@@ -273,17 +276,28 @@ export const checkFileOf = (file) => `${file.replace(/\.(mp4|mov|m4v)$/i, "")}.c
 
 /**
  * The check record beside a preview, or null when there is none or it belongs to an earlier file of that name.
+ * A record that does not say its bytes is told by its probe's, which are the same; one that keeps the poster's
+ * time as `at` and its findings under `result` is read as though it said them the way this module writes them.
  * @param {string} file
  * @returns {CheckRecord | null}
  */
 export function readCheckRecord(file) {
+  let record;
   try {
-    const record = JSON.parse(readFileSync(checkFileOf(file), "utf8"));
-    if (record?.version !== 1 || record.bytes !== statSync(file).size) return null;
-    return record;
+    record = JSON.parse(readFileSync(checkFileOf(file), "utf8"));
+    const bytes = typeof record?.bytes === "number" ? record.bytes : numberOf(record?.probe?.format?.size);
+    if (record?.version !== 1 || bytes !== statSync(file).size) return null;
   } catch {
     return null;
   }
+  const { poster, ...rest } = record;
+  const seconds = typeof poster?.seconds === "number" ? poster.seconds : poster?.at;
+  return {
+    ...rest,
+    errors: record.errors ?? record.result?.errors ?? [],
+    warnings: record.warnings ?? record.result?.warnings ?? [],
+    ...(typeof seconds === "number" && Number.isFinite(seconds) ? { poster: { seconds, timecode: poster.timecode ?? timecode(seconds), ...(poster.chosen ? { chosen: true } : {}) } } : {}),
+  };
 }
 
 /**
@@ -292,11 +306,8 @@ export function readCheckRecord(file) {
  * @param {Omit<CheckRecord, "version" | "file" | "bytes" | "checkedAt">} record
  */
 export function writeCheckRecord(file, record) {
-  const target = checkFileOf(file);
-  const temporary = `${target}.${process.pid}.tmp`;
   const whole = { version: 1, file: path.basename(file), bytes: statSync(file).size, ...record, checkedAt: new Date().toISOString() };
-  writeFileSync(temporary, `${JSON.stringify(whole, null, 2)}\n`);
-  renameSync(temporary, target);
+  writeAtomic(checkFileOf(file), `${JSON.stringify(whole, null, 2)}\n`);
   return /** @type {CheckRecord} */ (whole);
 }
 
@@ -332,8 +343,8 @@ export function formatCheck(file, verdict, probed) {
 
 /**
  * 'appshots video check <file…>': checks each file, prints a block for each (or JSON with --json), and ends
- * with 1 when any file has an error. A preview the compose made is checked with what its record says: whether
- * it is a draft, and the warnings of its cut.
+ * with 1 when any file has an error. A preview the compose made is checked with what its record says: its
+ * display, unless --display names another, whether it is a draft, and the warnings of its cut.
  * @param {string[]} files
  * @param {{ display?: string, json?: boolean, root?: string }} [options]
  */
@@ -346,7 +357,9 @@ export async function checkFiles(files, { display, json = false, root } = {}) {
   for (const file of files) {
     const probed = await probe(file, tools);
     const record = readCheckRecord(file);
-    const verdict = checkProbe(probed, display ?? null, { draft: record?.draft === true, file });
+    // The display the compose made it for, which the size alone cannot tell where two displays share it.
+    const recorded = record?.display && Object.hasOwn(PREVIEW_SPECS, record.display) ? record.display : null;
+    const verdict = checkProbe(probed, display ?? recorded, { draft: record?.draft === true, file });
     verdict.warnings.push(...(record?.cut ?? []));
     results.push({ file, ...verdict, ...(record?.poster ? { poster: record.poster } : {}) });
     if (!json) {
