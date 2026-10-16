@@ -264,7 +264,7 @@ appshots call render '{"project":"streaks","slides":[3]}'
 appshots call set_slides @slides.json
 ```
 
-Arguments are JSON: inline, `@file.json`, or `-` for standard input. Pictures a tool returns are saved in a temporary folder, or in the folder after `--out`, and the command prints where. See [MCP tools](/docs/mcp).
+Arguments are JSON: inline, `@file.json`, or `-` for standard input. Pictures a tool returns are saved in a temporary folder, or in the folder after `--out`, and the command prints where. `appshots tools <tool>` shows the parts of a slide, such as its badges or its device, as objects without their fields, and says where they are: `appshots call get_design_guide '{"topic":"fields"}'` lists every one. See [MCP tools](/docs/mcp).
 
 ## Clean up
 

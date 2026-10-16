@@ -34,12 +34,14 @@ If the `Skill:` line says the server has a newer one, run `appshots update`, the
 - Through the command, in every other case, including an MCP server that answers 401:
 
   ```bash
-  appshots tools set_slides                        # one tool's arguments in full
+  appshots tools set_slides                        # one tool's arguments
   appshots call list_projects
   appshots call set_slides @slides.json            # arguments from a file, for anything long
   ```
 
   A tool that returns pictures saves them and prints where. Open those files to look at them.
+
+The tools show the parts of a slide, such as `badges`, `features` or `device`, as objects, to keep their list short. `get_design_guide` with the topic `fields` lists what each of them takes; without MCP, that is `appshots call get_design_guide '{"topic":"fields"}'`.
 
 If `check` says the server is not set up or did not accept the token, the setup has not been run on this Mac. One command does all of it, and only the user can get it, because it carries their token. Tell them exactly this, as numbered steps, and stop:
 

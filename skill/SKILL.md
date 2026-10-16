@@ -51,12 +51,12 @@ Each line says what to do when something is missing. If a command fails because 
 **The server's tools** are `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets`, `check_project`, `render`, `render_mockups`, `list_revisions` and `restore_project`. Use them as MCP tools when this session has an MCP server called `appshots` and its `list_projects` answers. Otherwise, also when it answers 401, use the command:
 
 ```bash
-appshots tools set_slides                        # one tool's arguments in full
+appshots tools set_slides                        # one tool's arguments
 appshots call list_projects
 appshots call set_slides @slides.json            # arguments from a file, for anything long
 ```
 
-A tool that returns pictures saves them and prints where. Open those files to look at them.
+The tools show the parts of a slide, such as `badges` or `device`, as objects; `get_design_guide` with the topic `fields` lists what each takes. A tool that returns pictures saves them and prints where. Open those files to look at them.
 
 If `check` says the server is not set up or did not accept the token, tell the user exactly this, as numbered steps, and stop:
 

@@ -6,6 +6,23 @@ import { fail } from "./fail.mjs";
 
 /** @typedef {import("./config.mjs").Config} Config */
 
+const FIELDS = `appshots call get_design_guide '{"topic":"fields"}'`;
+
+/**
+ * Whether a tool's arguments, as tools/list shows them, hold an object whose fields are left out. The server shows
+ * the parts of a slide that way to keep the list small, and its design guide writes their fields out instead. A
+ * server from before that shows every field, and has no such topic to point to.
+ * @param {unknown} schema
+ * @returns {boolean}
+ */
+export function leavesFieldsOut(schema) {
+  if (!schema || typeof schema !== "object") return false;
+  const { type, properties, additionalProperties } = /** @type {Record<string, unknown>} */ (schema);
+  const empty = (/** @type {unknown} */ value) => !!value && typeof value === "object" && Object.keys(value).length === 0;
+  if (type === "object" && empty(properties) && empty(additionalProperties)) return true;
+  return Object.values(schema).some((value) => (Array.isArray(value) ? value.some(leavesFieldsOut) : leavesFieldsOut(value)));
+}
+
 /**
  * @param {Config} config
  * @param {string} [name]
@@ -16,10 +33,13 @@ export async function tools(config, name) {
     const tool = list.find((entry) => entry.name === name);
     if (!tool) fail(`No tool "${name}". Run 'appshots tools' for the list.`);
     console.log(`${tool.name}: ${tool.description}\n\nArguments, as a JSON Schema:\n${JSON.stringify(tool.inputSchema, null, 2)}`);
+    if (leavesFieldsOut(tool.inputSchema)) console.log(`\nAn object shown without its fields takes the ones the design guide lists:\n  ${FIELDS}`);
     return;
   }
   console.log(`Tools of the appShots server at ${config.url}. Call one with:  appshots call <tool> '<arguments as JSON>'`);
-  console.log("Start with get_design_guide. 'appshots tools <tool>' prints one tool's arguments in full; a ? marks an optional one.\n");
+  console.log("Start with get_design_guide. 'appshots tools <tool>' prints one tool's arguments; a ? marks an optional one.");
+  if (list.some((tool) => leavesFieldsOut(tool.inputSchema))) console.log(`Every field of a slide's parts, such as its badges or device:  ${FIELDS}`);
+  console.log("");
   for (const tool of list) {
     const required = new Set(tool.inputSchema?.required ?? []);
     const args = Object.keys(tool.inputSchema?.properties ?? {}).map((key) => (required.has(key) ? key : `${key}?`));
