@@ -3071,6 +3071,21 @@ function writeAtomic(file, text, mode) {
 		rmSync(temporary, { force: true });
 	}
 }
+/**
+* Which of the installed copies' files are behind the server's: SKILL.md, appshots.mjs, and "references" when a
+* reference file the server lists is missing or different in one of them.
+* @param {string[]} dirs
+* @param {{ skill: string, cli: string, references: Record<string, string> }} hashes
+* @returns {Set<string>}
+*/
+function behind(dirs, hashes) {
+	const same = (name, hash) => dirs.every((dir) => existsSync(path.join(dir, name)) && stamp(readFileSync(path.join(dir, name), "utf8")) === hash);
+	const parts = new Set();
+	if (!same("SKILL.md", hashes.skill)) parts.add("SKILL.md");
+	if (!same("appshots.mjs", hashes.cli)) parts.add("appshots.mjs");
+	if (!dirs.every((dir) => hasReferences(dir, hashes.references))) parts.add("references");
+	return parts;
+}
 /** The Skill line of 'appshots check'. Nothing to say when there is no server to compare with. */
 async function skillStatus() {
 	const { value: config } = await attempt(readConfig);
@@ -3079,15 +3094,17 @@ async function skillStatus() {
 	if (dirs.length === 0) return "not installed on this Mac. The setup command from Connect in the Studio installs it.";
 	const hashes = await serverHashes(config.url).catch(() => void 0);
 	if (hashes === void 0) return null;
-	const read = (dir, name) => existsSync(path.join(dir, name)) ? readFileSync(path.join(dir, name), "utf8") : null;
-	let current;
-	if (hashes) current = dirs.every((dir) => read(dir, "SKILL.md") !== null && stamp(read(dir, "SKILL.md")) === hashes.skill && read(dir, "appshots.mjs") !== null && stamp(read(dir, "appshots.mjs")) === hashes.cli && hasReferences(dir, hashes.references));
+	let parts;
+	if (hashes) parts = behind(dirs, hashes);
 	else {
 		const now = await latest(config.url).catch(() => null);
 		if (!now) return null;
-		current = dirs.every((dir) => Object.entries(now).every(([name, text]) => read(dir, name) === text));
+		const read = (dir, name) => existsSync(path.join(dir, name)) ? readFileSync(path.join(dir, name), "utf8") : null;
+		parts = new Set(Object.keys(now).filter((name) => dirs.some((dir) => read(dir, name) !== now[name])));
 	}
-	return current ? "up to date" : "the server has a newer one. Run 'appshots update', then read SKILL.md again from the top before going on.";
+	if (parts.size === 0) return "up to date";
+	if (parts.has("SKILL.md")) return "the server has a newer one. Run 'appshots update', then read SKILL.md again from the top before going on.";
+	return `the server has a newer one, with the same SKILL.md. ${goOn(parts)}`;
 }
 /**
 * Says so when the server has a newer skill or command than this Mac. It asks at most twice a day, for two
@@ -3117,10 +3134,19 @@ async function staleNotice() {
 		return;
 	}
 	if (typeof known.skill !== "string" || typeof known.cli !== "string") return;
-	const same = (name, hash) => dirs.every((dir) => existsSync(path.join(dir, name)) && stamp(readFileSync(path.join(dir, name), "utf8")) === hash);
 	const references = known.references !== null && typeof known.references === "object" ? known.references : {};
-	if (same("SKILL.md", known.skill) && same("appshots.mjs", known.cli) && dirs.every((dir) => hasReferences(dir, references))) return;
-	console.error("appshots: the server has a newer skill and command. Run 'appshots update', then read SKILL.md again from the top.");
+	const parts = behind(dirs, {
+		skill: known.skill,
+		cli: known.cli,
+		references
+	});
+	if (parts.size === 0) return;
+	if (parts.has("SKILL.md")) {
+		console.error("appshots: the server has a newer skill and command. Run 'appshots update', then read SKILL.md again from the top.");
+		return;
+	}
+	const what = [parts.has("appshots.mjs") ? "a newer command" : "", parts.has("references") ? "newer reference files for the skill" : ""].filter(Boolean).join(" and ");
+	console.error(`appshots: the server has ${what}, with the same SKILL.md. ${goOn(parts)}`);
 }
 /**
 * Brings every installed copy of the skill, and the CLI next to it, up to date with the server's. A deploy
@@ -3171,7 +3197,7 @@ function updated(where, changed, references) {
 	const files = one ? `the skill's reference file ${references[0]}` : `the skill's reference files ${references.join(", ")}`;
 	return `Updated ${[changed.size ? "the appshots command" : "", references.length ? files : ""].filter(Boolean).join(" and ")} in ${where}. SKILL.md has not changed${!references.length ? "." : one ? "; read that file again where a step names it." : "; read those files again where a step names them."}`;
 }
-var installedSkills, REFERENCE, referencesOf, stamp, hasReferences;
+var installedSkills, REFERENCE, referencesOf, stamp, hasReferences, goOn;
 var init_update = __esmMin((() => {
 	init_fail();
 	init_config();
@@ -3184,6 +3210,7 @@ var init_update = __esmMin((() => {
 		const file = path.join(referencesOf(dir), name);
 		return existsSync(file) && stamp(readFileSync(file, "utf8")) === hash;
 	});
+	goOn = (parts) => `Run 'appshots update' and go on. SKILL.md need not be read again${parts.has("references") ? "; update names the reference files that changed." : "."}`;
 }));
 //#endregion
 //#region cli/src/video/guide.mjs

@@ -153,6 +153,29 @@ export function writeAtomic(file, text, mode) {
   }
 }
 
+/**
+ * Which of the installed copies' files are behind the server's: SKILL.md, appshots.mjs, and "references" when a
+ * reference file the server lists is missing or different in one of them.
+ * @param {string[]} dirs
+ * @param {{ skill: string, cli: string, references: Record<string, string> }} hashes
+ * @returns {Set<string>}
+ */
+function behind(dirs, hashes) {
+  const same = (name, hash) => dirs.every((dir) => existsSync(path.join(dir, name)) && stamp(readFileSync(path.join(dir, name), "utf8")) === hash);
+  const parts = new Set();
+  if (!same("SKILL.md", hashes.skill)) parts.add("SKILL.md");
+  if (!same("appshots.mjs", hashes.cli)) parts.add("appshots.mjs");
+  if (!dirs.every((dir) => hasReferences(dir, hashes.references))) parts.add("references");
+  return parts;
+}
+
+/**
+ * What to do about copies that are behind when SKILL.md is not among them. Reading it again would cost a small
+ * agent its whole core for nothing; update names the reference files that changed, as it says when it is done.
+ * @param {Set<string>} parts
+ */
+const goOn = (parts) => `Run 'appshots update' and go on. SKILL.md need not be read again${parts.has("references") ? "; update names the reference files that changed." : "."}`;
+
 /** The Skill line of 'appshots check'. Nothing to say when there is no server to compare with. */
 export async function skillStatus() {
   const { value: config } = await attempt(readConfig);
@@ -162,16 +185,19 @@ export async function skillStatus() {
   // Two hashes say as much as the two files, and are quicker to fetch.
   const hashes = await serverHashes(config.url).catch(() => undefined);
   if (hashes === undefined) return null;
-  const read = (dir, name) => (existsSync(path.join(dir, name)) ? readFileSync(path.join(dir, name), "utf8") : null);
-  let current;
+  let parts;
   if (hashes) {
-    current = dirs.every((dir) => read(dir, "SKILL.md") !== null && stamp(read(dir, "SKILL.md")) === hashes.skill && read(dir, "appshots.mjs") !== null && stamp(read(dir, "appshots.mjs")) === hashes.cli && hasReferences(dir, hashes.references));
+    parts = behind(dirs, hashes);
   } else {
     const now = await latest(config.url).catch(() => null);
     if (!now) return null;
-    current = dirs.every((dir) => Object.entries(now).every(([name, text]) => read(dir, name) === text));
+    const read = (dir, name) => (existsSync(path.join(dir, name)) ? readFileSync(path.join(dir, name), "utf8") : null);
+    parts = new Set(Object.keys(now).filter((name) => dirs.some((dir) => read(dir, name) !== now[name])));
   }
-  return current ? "up to date" : "the server has a newer one. Run 'appshots update', then read SKILL.md again from the top before going on.";
+  if (parts.size === 0) return "up to date";
+  // The skill acts on "the server has a newer one", so every line that wants an update starts with it.
+  if (parts.has("SKILL.md")) return "the server has a newer one. Run 'appshots update', then read SKILL.md again from the top before going on.";
+  return `the server has a newer one, with the same SKILL.md. ${goOn(parts)}`;
 }
 
 /**
@@ -199,11 +225,16 @@ export async function staleNotice() {
     }
   }
   if (typeof known.skill !== "string" || typeof known.cli !== "string") return;
-  const same = (name, hash) => dirs.every((dir) => existsSync(path.join(dir, name)) && stamp(readFileSync(path.join(dir, name), "utf8")) === hash);
   // What an older copy of this command remembered has no references, and nothing to compare them with.
   const references = known.references !== null && typeof known.references === "object" ? known.references : {};
-  if (same("SKILL.md", known.skill) && same("appshots.mjs", known.cli) && dirs.every((dir) => hasReferences(dir, references))) return;
-  console.error("appshots: the server has a newer skill and command. Run 'appshots update', then read SKILL.md again from the top.");
+  const parts = behind(dirs, { skill: known.skill, cli: known.cli, references });
+  if (parts.size === 0) return;
+  if (parts.has("SKILL.md")) {
+    console.error("appshots: the server has a newer skill and command. Run 'appshots update', then read SKILL.md again from the top.");
+    return;
+  }
+  const what = [parts.has("appshots.mjs") ? "a newer command" : "", parts.has("references") ? "newer reference files for the skill" : ""].filter(Boolean).join(" and ");
+  console.error(`appshots: the server has ${what}, with the same SKILL.md. ${goOn(parts)}`);
 }
 
 /**

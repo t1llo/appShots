@@ -46,7 +46,7 @@ A set takes about ten minutes when the user supplies or opens the screens, and a
 appshots check
 ```
 
-Each line says what to do when something is missing. If a command fails because your shell is sandboxed, ask the user to allow it. If the `Skill:` line says the server has a newer one, run `appshots update`, then read this file again from the top.
+Each line says what to do when something is missing. If a command fails because your shell is sandboxed, ask the user to allow it. If the `Skill:` line says the server has a newer one, run `appshots update`, and read this file again from the top when the line says to.
 
 **The server's tools** are `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets`, `check_project`, `render`, `render_mockups`, `list_revisions` and `restore_project`. Use them as MCP tools when this session has an MCP server called `appshots` and its `list_projects` answers. Otherwise, also when it answers 401, use the command:
 

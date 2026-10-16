@@ -26,7 +26,7 @@ appshots check
 
 It reports in one go: whether the server answers, whether this skill is the current one, whether an App Store Connect key is saved on this Mac, which Xcode there is, the project in this folder and what it is made with, the commands that start it, the simulators it would use, the apps installed on the booted ones, and plugged-in devices. Each line says what to do when something is missing. These commands need the network and, depending on the app, Xcode and the simulator or a browser; if your shell is sandboxed and one fails for that reason, ask the user to allow it.
 
-If the `Skill:` line says the server has a newer one, run `appshots update`, then read SKILL.md again from the top and follow the new one. If `check` is not a command this copy knows, it is an old one: ask the user to run the setup command again, as described below.
+If the `Skill:` line says the server has a newer one, run `appshots update`. When the line says to read SKILL.md again, read it from the top and follow the new one; otherwise go on. If `check` is not a command this copy knows, it is an old one: ask the user to run the setup command again, as described below.
 
 **The server's tools** are `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets`, `check_project`, `render`, `render_mockups`, `list_revisions` and `restore_project`. There are two ways to reach them, and the rest of this skill names only the tool:
 

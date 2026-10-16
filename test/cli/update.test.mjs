@@ -32,8 +32,9 @@ const server = await stubServer(({ url }) => {
 after(() => server.close());
 process.env.APPSHOTS_URL = server.url;
 
-const { latest, latestReferences, skillStatus, update } = await import("../../cli/src/update.mjs");
+const { latest, latestReferences, skillStatus, staleNotice, update } = await import("../../cli/src/update.mjs");
 const { Failure } = await import("../../cli/src/fail.mjs");
+const { LATEST_FILE } = await import("../../cli/src/config.mjs");
 const skill = path.join(home.home, ".claude", "skills", "appshots");
 
 beforeEach(() => {
@@ -163,6 +164,62 @@ test("update says SKILL.md changed only when it did", async () => {
   writeFileSync(path.join(skill, "SKILL.md"), OLD.skill);
   writeFileSync(path.join(skill, "references", "start.md"), "# Old start\n");
   assert.match(await quietly(() => update()), /^Updated the appshots skill and command in .*\. Read SKILL\.md again from the top: it has changed\.$/m);
+});
+
+/** What staleNotice prints, asking the server each time rather than going by what it remembered. */
+async function notice() {
+  rmSync(LATEST_FILE, { force: true });
+  const lines = [];
+  const error = console.error;
+  console.error = (...parts) => void lines.push(parts.join(" "));
+  try {
+    await staleNotice();
+  } finally {
+    console.error = error;
+  }
+  return lines.join("\n");
+}
+
+test("check and the notice say to read SKILL.md again only when it is behind", async () => {
+  withReferences();
+  writeFileSync(path.join(skill, "SKILL.md"), NEW.skill);
+  writeFileSync(path.join(skill, "appshots.mjs"), NEW.cli);
+  await quietly(() => update());
+  assert.equal(await skillStatus(), "up to date");
+  assert.equal(await notice(), "");
+
+  // A reference file alone: update, and go on with the SKILL.md already read.
+  withReferences({ ...REFERENCES, "web.md": `${REFERENCES["web.md"]}A new line\n` });
+  const status = await skillStatus();
+  assert.match(status, /^the server has a newer one, with the same SKILL\.md\. Run 'appshots update' and go on\. SKILL\.md need not be read again; update names the reference files that changed\.$/);
+  assert.match(await notice(), /^appshots: the server has newer reference files for the skill, with the same SKILL\.md\. Run 'appshots update' and go on\./);
+  rmSync(path.join(skill, "references", "start.md"));
+  assert.doesNotMatch(await skillStatus(), /read SKILL\.md again/);
+  await quietly(() => update());
+
+  // The command alone.
+  writeFileSync(path.join(skill, "appshots.mjs"), OLD.cli);
+  assert.equal(await skillStatus(), "the server has a newer one, with the same SKILL.md. Run 'appshots update' and go on. SKILL.md need not be read again.");
+  assert.match(await notice(), /^appshots: the server has a newer command, with the same SKILL\.md\./);
+
+  // SKILL.md, with or without the rest, says what it always said.
+  writeFileSync(path.join(skill, "SKILL.md"), OLD.skill);
+  assert.equal(await skillStatus(), "the server has a newer one. Run 'appshots update', then read SKILL.md again from the top before going on.");
+  assert.equal(await notice(), "appshots: the server has a newer skill and command. Run 'appshots update', then read SKILL.md again from the top.");
+  writeFileSync(path.join(skill, "appshots.mjs"), NEW.cli);
+  assert.match(await skillStatus(), /then read SKILL\.md again from the top/);
+});
+
+test("a server from before /skill.json is compared file by file, and SKILL.md is told apart", async () => {
+  served.status = 404;
+  served.hashes = { error: "not found" };
+  writeFileSync(path.join(skill, "SKILL.md"), NEW.skill);
+  assert.match(await skillStatus(), /with the same SKILL\.md/);
+  writeFileSync(path.join(skill, "SKILL.md"), OLD.skill);
+  writeFileSync(path.join(skill, "appshots.mjs"), NEW.cli);
+  assert.match(await skillStatus(), /then read SKILL\.md again from the top/);
+  writeFileSync(path.join(skill, "SKILL.md"), NEW.skill);
+  assert.equal(await skillStatus(), "up to date");
 });
 
 test("update with a reference file that does not match its hash changes nothing", async () => {
