@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, test } from "node:test";
-import { type Commit, commitOutputs, discardStaging, listSets, readManifest, type StagedSet, stagingDir, sweepStaging } from "../../src/storage/outputs.ts";
+import { type Commit, commitOutputs, discardStaging, listSets, makeStaged, readManifest, type StagedSet, stagingDir, sweepStaging } from "../../src/storage/outputs.ts";
 import { isTargetId, TARGETS } from "../../src/sizes.ts";
 import { tmpData } from "../helpers/tmp-data.ts";
 
@@ -181,6 +181,18 @@ test("staging folders no run is using are swept away", async () => {
   await put(stagingDir(dir, "running"), { "en/iphone-6.9/01.png": "drawing" });
   await sweepStaging(dir, new Set(["running"]));
   assert.deepEqual(await readdir(path.join(path.dirname(dir), ".staging")), ["running"]);
+});
+
+test("a run starts staging while the last export of the account ends and takes the staging folder with it", async () => {
+  const dir = await projectFolder();
+  // The window is short, so it is tried many times: each time the export's folder is the last one, and goes along
+  // with .staging while the run makes its own in it.
+  for (let i = 0; i < 300; i++) {
+    await makeStaged(stagingDir(dir, "export"));
+    await Promise.all([discardStaging(dir, "export"), makeStaged(path.join(stagingDir(dir, `run${i}`), "en", "iphone-6.9"))]);
+    await discardStaging(dir, `run${i}`);
+  }
+  assert.deepEqual(await readdir(path.dirname(dir)), ["p"]);
 });
 
 test("a manifest that cannot be read counts as none", async () => {

@@ -1,10 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type FitReport, type LintWarning, lintFit, lintTexts } from "../domain/lint.ts";
 import { type Project, slidesFor } from "../schema.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, PLACEMENT_IDS, PLACEMENTS, type PlacementId, TARGETS, type TargetId } from "../sizes.ts";
 import { creativeDir, InputError, projectDir, type Space } from "../store.ts";
-import { type Commit, type StagedSet, stagingDir } from "../storage/outputs.ts";
+import { type Commit, makeStaged, type StagedSet, stagingDir } from "../storage/outputs.ts";
 import type { LayoutId } from "../template/layouts/index.ts";
 import { openWindow } from "./capture.ts";
 import { contactSheet, contactSheetOf, opaquePng, type Tile, tileOf, tileSize } from "./encode.ts";
@@ -111,7 +111,7 @@ export async function draw(run: Drawing, space: Space, project: Project, plan: R
         if (!pass.indexes.length) continue;
         const size = TARGETS[pass.source];
         await window.resize(size);
-        for (const target of pass.targets) await mkdir(path.join(stage, locale, target), { recursive: true });
+        for (const target of pass.targets) await makeStaged(path.join(stage, locale, target));
         const shown = pass.targets[0]!;
         // The sheet of a whole set is drawn from the pictures at hand; of a part, once the set's other slides are in place.
         const tile = pass.sheet && pass.full ? tileSize(TARGETS[shown], pass.indexes.length) : undefined;
@@ -168,7 +168,7 @@ export async function draw(run: Drawing, space: Space, project: Project, plan: R
         if (fit) fitted.push({ report: { ...fit, locale, placement } });
         const picture = await window.shoot(size);
         const relative = path.join(locale, creativeDir(placement), `${placement}.png`);
-        await mkdir(path.dirname(path.join(stage, relative)), { recursive: true });
+        await makeStaged(path.dirname(path.join(stage, relative)));
         const written = opaquePng(picture).then(async (png) => {
           await writeFile(path.join(stage, relative), png);
           if (placement === "social" && png.length > SOCIAL_LIMIT) {

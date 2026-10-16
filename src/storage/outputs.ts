@@ -64,6 +64,22 @@ export async function readManifest(dir: string): Promise<Manifest> {
 export const stagingDir = (dir: string, job: string) => path.join(path.dirname(dir), STAGING, job);
 
 /**
+ * Makes a folder in a staging folder, and the staging folders on the way. The .staging folder they all sit in goes
+ * as the last run or export in it ends, which can fall between the moments a recursive mkdir makes it and makes the
+ * next folder in it. That mkdir then finds no parent, and is tried again.
+ */
+export async function makeStaged(folder: string): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await mkdir(folder, { recursive: true });
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT" || attempt === 3) throw error;
+    }
+  }
+}
+
+/**
  * The languages a project.json lists, in lower case: on a Mac's disk de-de and de-DE are one folder. None when it
  * lists none that can be read.
  */
@@ -285,7 +301,7 @@ export async function exportStage(dir: string): Promise<{ dir: string; release()
     exporting.delete(name);
   };
   try {
-    await mkdir(stagingDir(dir, name), { recursive: true });
+    await makeStaged(stagingDir(dir, name));
   } catch (error) {
     await release();
     throw error;
