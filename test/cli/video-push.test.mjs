@@ -405,6 +405,32 @@ test("a poster frame chosen after the upload is moved on the video that is there
   assert.match(printed, /moved the poster frame of .*preview\.mp4 to 00:00:08:00/);
 });
 
+test("a dry run says which poster frames the push would move, and which stay as they are", async () => {
+  // Uploaded with --no-wait, not placed yet, and its poster chosen again since.
+  const root = project([{ locale: "en", display: "iphone", poster: 3 }]);
+  await push(planOf(root), { "no-wait": true });
+  const record = path.join(root, "appshots-video", "out", "en", "iphone", "preview.check.json");
+  writeFileSync(record, JSON.stringify({ ...JSON.parse(readFileSync(record, "utf8")), poster: { seconds: 8, timecode: "00:00:08:00", chosen: true } }));
+  asc.requests.length = 0;
+  const dry = await push(planOf(root), { "dry-run": true });
+  assert.ok(asc.requests.every((request) => request.method === "GET"));
+  assert.match(dry.printed, /^en-US +iphone +would place .*preview\.mp4, uploaded before, in IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE, as preview 1 of at most 3; its poster frame would move to 00:00:08:00$/m);
+  const real = await push(planOf(root));
+  assert.deepEqual(asc.writes(), ["PATCH /v1/appAssetLibraryVideos/video-n", "POST /v1/appAssetLibraryPlacements"]);
+  assert.match(real.printed, /moved the poster frame of .*preview\.mp4 to 00:00:08:00/);
+
+  // A video that is in review keeps its poster frame, in the dry run as in the push.
+  const placed = project([{ locale: "de", display: "iphone", poster: 8 }]);
+  asc.seed({ locale: "de-DE", group: IPHONE, referenceName: nameOf(placed, "de", "iphone"), state: "IN_REVIEW" });
+  asc.requests.length = 0;
+  const looked = await push(planOf(placed), { "dry-run": true });
+  assert.match(looked.printed, /^de-DE +iphone +.*preview\.mp4 is there already, in IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE$/m);
+  assert.match(looked.printed, /! .*preview\.mp4: Apple has the poster frame at 00:00:01:00, and the video is in review, so it stays there\./);
+  const left = await push(planOf(placed));
+  assert.deepEqual(asc.writes(), []);
+  assert.match(left.printed, /so it stays there\. Change it in App Store Connect\./);
+});
+
 test("the group of a preview comes from the reference data: the largest display of its size, on its platform", () => {
   const group = (/** @type {string} */ display, /** @type {number} */ width, /** @type {number} */ height, ref = REF_DATA) => library.previewGroup(/** @type {any} */ (ref), { display, width, height })?.group ?? null;
   assert.equal(group("iphone", 886, 1920), "IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE");

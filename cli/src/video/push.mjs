@@ -9,10 +9,11 @@
 // upload of the same preview by appShots.
 
 import { createHash } from "node:crypto";
-import { createReadStream, existsSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fail } from "../fail.mjs";
 import { confirm } from "../prompt.mjs";
+import { writeAtomic } from "../update.mjs";
 import { pause, readJson } from "../util.mjs";
 import { STORE_OPEN, plainState, storeAccount, storeApp, storeVersions, versionLanguages, versionState } from "../store/asc.mjs";
 import { STORE_PLATFORMS } from "../store/displays.mjs";
@@ -198,10 +199,20 @@ function readState(file) {
  * @param {string} file
  * @param {PushState} state
  */
-function saveState(file, state) {
-  const temporary = `${file}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`);
-  renameSync(temporary, file);
+const saveState = (file, state) => writeAtomic(file, `${JSON.stringify(state, null, 2)}\n`);
+
+/**
+ * Whether the poster frame of a video in App Store Connect moves to the one the check record names. A video that
+ * is in review, or on the App Store, keeps its own: that is for App Store Connect to change, and a note says so.
+ * @param {import("../store/library.mjs").Video | null | undefined} video
+ * @param {Preview} preview
+ * @param {Set<string>} notes
+ */
+function posterMoves(video, preview, notes) {
+  if (!video || !preview.timecode || video.timecode === preview.timecode) return false;
+  if (POSTER_MOVABLE.has(video.state)) return true;
+  notes.add(`${preview.shown}: Apple has the poster frame at ${video.timecode ?? "its own choice"}, and the video is ${plainState(video.state)}, so it stays there. Change it in App Store Connect.`);
+  return false;
 }
 
 /**
@@ -370,21 +381,32 @@ export async function videoPush(plan, flags) {
 
   if (dry) {
     const sending = new Set();
+    /** @type {Set<string>} */
+    const moving = new Set();
+    /** @param {import("../store/library.mjs").Video | null | undefined} video @param {Preview} preview */
+    const moves = (video, preview) => {
+      if (!video || moving.has(video.id) || !posterMoves(video, preview, notes)) return "";
+      moving.add(video.id);
+      return `; its poster frame would move to ${preview.timecode}`;
+    };
     for (const target of targets) {
       const { preview } = target;
       const group = /** @type {import("../store/library.mjs").Group} */ (preview.group);
       if (target.action === "there") {
         const placed = target.placements.find((placement) => placement.video?.referenceName === preview.referenceName);
-        const moves = preview.timecode && placed?.video?.timecode !== preview.timecode ? `; its poster frame would move to ${preview.timecode}` : "";
-        console.log(`${target.label}  ${preview.shown} is there already, in ${group.group}${moves}`);
+        console.log(`${target.label}  ${preview.shown} is there already, in ${group.group}${moves(placed?.video, preview)}`);
         continue;
       }
       if (target.action === "full") continue;
       const uploaded = before.get(preview.key);
-      const sends = uploaded || sending.has(preview.key) ? `would place ${preview.shown} as uploaded before` :`would upload ${preview.shown} (${megabytes(preview.bytes)}, ${preview.seconds?.toFixed(1) ?? "?"} s, poster at ${preview.timecode ?? "Apple's choice"})`;
+      const sends = uploaded
+        ? `would place ${preview.shown}, uploaded before,`
+        : sending.has(preview.key)
+          ? `would place the same upload of ${preview.shown}`
+          : `would upload ${preview.shown} (${megabytes(preview.bytes)}, ${preview.seconds?.toFixed(1) ?? "?"} s, poster at ${preview.timecode ?? "Apple's choice"}) and place it`;
       sending.add(preview.key);
       const how = target.action === "replace" ? `in place of appShots' earlier upload${replace ? "" : " (with --replace)"}` : `as preview ${target.placements.length + 1} of at most ${group.limit}`;
-      console.log(`${target.label}  ${sends} and place it in ${group.group}, ${how}`);
+      console.log(`${target.label}  ${sends} in ${group.group}, ${how}${moves(uploaded, preview)}`);
     }
     for (const line of fullLines) console.log(`  ! ${line}`);
     if (replacing.length > 0 && !replace) notes.add("appShots takes its earlier uploads off a page only with --replace. Ask the user before adding it.");
@@ -415,7 +437,6 @@ export async function videoPush(plan, flags) {
     videos.set(preview.key, video.id);
     if (!isReady(video.state)) pending.set(video.id, preview);
   }
-  // A video that is in review, or on the App Store, keeps its poster frame: that is for App Store Connect to change.
   /** @type {Set<string>} */
   const moved = new Set();
   for (const target of targets) {
@@ -423,12 +444,8 @@ export async function videoPush(plan, flags) {
     const placed = target.placements.find((placement) => placement.video?.referenceName === preview.referenceName)?.video;
     const id = videos.get(preview.key);
     const video = placed ?? (id ? (before.get(preview.key) ?? { id, referenceName: preview.referenceName, state: "UPLOAD_COMPLETE", timecode: preview.timecode }) : null);
-    if (!video || !preview.timecode || video.timecode === preview.timecode || moved.has(video.id)) continue;
+    if (!video || moved.has(video.id) || !posterMoves(video, preview, notes)) continue;
     moved.add(video.id);
-    if (!POSTER_MOVABLE.has(video.state)) {
-      notes.add(`${preview.shown}: Apple has the poster frame at ${video.timecode ?? "its own choice"}, and the video is ${plainState(video.state)}, so it stays there. Change it in App Store Connect.`);
-      continue;
-    }
     await setPosterTime(account, video.id, preview.timecode);
     console.log(`${target.label}  moved the poster frame of ${preview.shown} to ${preview.timecode}`);
   }
