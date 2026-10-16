@@ -71,3 +71,29 @@ test("the list of an earlier pull reaches nothing outside the folder", async () 
   assert.equal(readFileSync(path.join(home.home, "outside.png"), "utf8"), "theirs");
   assert.equal(has(dir, "01.png"), true);
 });
+
+test("a pull that renders first says what the render warned about, then downloads the set", async () => {
+  const { stubServer } = await import("./helpers.mjs");
+  const { fetchExport } = await import("../../cli/src/pull.mjs");
+  const zip = readFileSync(await download(["README.txt", "en/iphone-6.9/01.png"]));
+  const warning = 'Slide 2: the headline names "App of the Day", one of Apple\'s own recognitions. App Review does not accept them in store images.';
+  const server = await stubServer(({ method, url }) => {
+    if (method === "POST" && url === "/api/projects/demo/render") return [200, { files: [], sheets: [], creatives: [], warnings: [warning], lint: [], fit: [] }];
+    if (method === "GET" && url === "/api/projects/demo/export.zip") return [200, zip, { "content-type": "application/zip" }];
+    return [404, { error: "Not here" }];
+  });
+  const said = [];
+  const log = console.log;
+  console.log = (...parts) => said.push(parts.join(" "));
+  try {
+    const dir = folder("rendered");
+    await fetchExport({ url: server.url, token: "test-token" }, "demo", dir, true);
+    assert.equal(has(dir, "en/iphone-6.9/01.png"), true);
+  } finally {
+    console.log = log;
+    await server.close();
+  }
+  assert.deepEqual(server.requests.map(({ method, url }) => `${method} ${url}`), ["POST /api/projects/demo/render", "GET /api/projects/demo/export.zip"]);
+  assert.equal(server.requests[0].body.toString(), "{}");
+  assert.deepEqual(said, [`Warnings from the render:\n- ${warning}`]);
+});

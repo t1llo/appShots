@@ -108,13 +108,30 @@ async function download(config, route, outDir) {
 }
 
 /**
- * Downloads the rendered set as the server zips it and unpacks it into a folder.
+ * Renders the project and says what the render warned about, such as copy that had to shrink to fit or that the
+ * App Store does not accept.
+ * @param {Config} config
+ * @param {string} project
+ */
+async function renderWithWarnings(config, project) {
+  const response = await request(config, "POST", projectRoute(project, "/render"), { body: "{}", headers: { "content-type": "application/json" } });
+  /** @type {{ warnings?: unknown }} */
+  const result = await response.json().catch(() => ({}));
+  const warnings = Array.isArray(result.warnings) ? result.warnings.filter((warning) => typeof warning === "string") : [];
+  if (warnings.length) console.log(["Warnings from the render:", ...warnings.map((warning) => `- ${warning}`)].join("\n"));
+}
+
+/**
+ * Downloads the rendered set as the server zips it and unpacks it into a folder, rendering it first when asked to.
  * @param {Config} config
  * @param {string} project
  * @param {string} outDir
  * @param {unknown} render
  */
-export const fetchExport = (config, project, outDir, render) => download(config, projectRoute(project, `/export.zip${render ? "?render=1" : ""}`), outDir);
+export async function fetchExport(config, project, outDir, render) {
+  if (render) await renderWithWarnings(config, project);
+  return download(config, projectRoute(project, "/export.zip"), outDir);
+}
 
 /**
  * @param {Config} config

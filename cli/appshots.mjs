@@ -3410,6 +3410,32 @@ async function download(config, route, outDir) {
 	}
 }
 /**
+* Renders the project and says what the render warned about, such as copy that had to shrink to fit or that the
+* App Store does not accept.
+* @param {Config} config
+* @param {string} project
+*/
+async function renderWithWarnings(config, project) {
+	/** @type {{ warnings?: unknown }} */
+	const result = await (await request(config, "POST", projectRoute(project, "/render"), {
+		body: "{}",
+		headers: { "content-type": "application/json" }
+	})).json().catch(() => ({}));
+	const warnings = Array.isArray(result.warnings) ? result.warnings.filter((warning) => typeof warning === "string") : [];
+	if (warnings.length) console.log(["Warnings from the render:", ...warnings.map((warning) => `- ${warning}`)].join("\n"));
+}
+/**
+* Downloads the rendered set as the server zips it and unpacks it into a folder, rendering it first when asked to.
+* @param {Config} config
+* @param {string} project
+* @param {string} outDir
+* @param {unknown} render
+*/
+async function fetchExport(config, project, outDir, render) {
+	if (render) await renderWithWarnings(config, project);
+	return download(config, projectRoute(project, "/export.zip"), outDir);
+}
+/**
 * @param {Config} config
 * @param {string} project
 * @param {Record<string, string | true>} flags
@@ -3453,14 +3479,13 @@ async function mockups(config, project, flags) {
 	const count = (await download(config, projectRoute(project, `/mockups.zip${language ? `?locale=${encodeURIComponent(language)}` : ""}`), outDir)).filter((name) => name.endsWith(".png")).length;
 	console.log(`${count ? `${count} mockup${count === 1 ? " is" : "s are"}` : "The mockups are"} in ${outDir}`);
 }
-var MANIFEST, fetchExport, MOCKUP_FLAGS;
+var MANIFEST, MOCKUP_FLAGS;
 var init_pull = __esmMin((() => {
 	init_fail();
 	init_proc();
 	init_shot();
 	init_util();
 	MANIFEST = ".appshots-files.json";
-	fetchExport = (config, project, outDir, render) => download(config, projectRoute(project, `/export.zip${render ? "?render=1" : ""}`), outDir);
 	MOCKUP_FLAGS = {
 		frame: "frame",
 		style: "style",
