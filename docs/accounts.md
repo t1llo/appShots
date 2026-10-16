@@ -9,7 +9,7 @@ Sign in with a Google account on the [home page](/home). There is no password to
 
 Your projects are yours alone. No account can see another's.
 
-You stay signed in on that browser for 30 days after your last visit, so you are not signed out while you keep coming back. The [home page](/home) knows you too and takes you straight to your projects. **Sign out** under **Settings** signs you out on every browser at once. Your API tokens keep working; revoke them one by one below.
+You stay signed in on that browser for 30 days after your last visit, so you are not signed out while you keep coming back. The [home page](/home) knows you too and takes you straight to your projects. **Sign out** under **Settings** signs you out on every browser at once. Your API tokens and connected apps keep working; revoke or disconnect them one by one below.
 
 ## Who can sign in
 
@@ -37,6 +37,22 @@ Good to know:
 - Treat it like a password. Do not commit it, and do not paste it into a chat.
 - An account holds up to 20 tokens. One per Mac or per agent makes it easy to revoke the right one.
 
+## Connected apps
+
+An app that adds appShots as a connector, such as claude.ai, Claude Desktop or ChatGPT, signs in with your account instead of using a token. appShots asks you first, on a page of its own that names the app and the address it sends you back to. Allow only an app you are adding yourself, right then. See [Add it as a connector](/docs/connect#add-it-as-a-connector).
+
+**See them** under **Settings → Connected apps**: each app you let in, where it goes back to, the day you connected it and the day it was last used. Letting the same app in twice lists it twice.
+
+**Disconnect one** with **Disconnect** beside it. It stops working at once. To use it again, connect it again in the app.
+
+Good to know:
+
+- An app reaches what a token reaches: your projects, screenshots and renders. It cannot change your account, make tokens or see anybody else's work.
+- The name on the page is the one the app gave. The address it sends you back to is the part appShots checks, so look at that.
+- An app renews its access by itself. One that goes unused for 30 days has to be let in again.
+- The server stores fingerprints of the keys it gives an app, not the keys.
+- An account keeps up to 50 connected apps. Letting in one more disconnects the one used longest ago.
+
 ## Limits
 
 | | Limit |
@@ -63,7 +79,7 @@ The Studio shows how many are left beside **Renders** in the sidebar and under *
 
 ## Delete your account
 
-**Settings → Delete account**, then type your email address to confirm. It deletes your account, every project, every screenshot, image and render, and every token, at once and for good. There is no undo and no backup to restore from.
+**Settings → Delete account**, then type your email address to confirm. It deletes your account, every project, every screenshot, image and render, every token and every connected app, at once and for good. There is no undo and no backup to restore from.
 
 One number outlives the account: how many renders it used, kept with a scrambled form of Google's id for you and nothing else. It is there so that deleting an account and signing up again does not hand out a fresh set of renders.
 
@@ -71,4 +87,4 @@ To leave one project only, delete the project. See [The Studio](/docs/studio#pro
 
 ## What is stored about you
 
-Your email address, your name, the fingerprints of your tokens and the number of renders you made, besides the projects you make. The [privacy policy](/privacy) has the full list.
+Your email address, your name, the fingerprints of your tokens, the apps you connected and the number of renders you made, besides the projects you make. The [privacy policy](/privacy) has the full list.

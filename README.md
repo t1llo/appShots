@@ -162,7 +162,7 @@ With a hosting panel that builds and deploys a Compose file from a repository, o
 
 | Variable | Default | What it sets |
 | --- | --- | --- |
-| `PUBLIC_URL` | each request's host | The public origin. Used for the Google redirect, in the links an agent gets back, in the skill and in the sitemap |
+| `PUBLIC_URL` | each request's host | The public origin. Used for the Google redirect, as the OAuth issuer that connectors sign in with, in the links an agent gets back, in the skill and in the sitemap |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | none | The OAuth client people sign in with |
 | `ADMIN_EMAIL` | none | Your own Google address, which becomes the admin |
 | `USER_MAX_PROJECTS` | `20` | Projects an account other than the admin can hold |
@@ -312,7 +312,7 @@ Then ask in plain words, for example:
 
 The agent answers with a contact sheet of the rendered set, a link to the Studio and a ZIP link. Tools: `get_design_guide`, `list_projects`, `create_project`, `get_project`, `update_project`, `set_slides`, `update_slide`, `set_creative_assets`, `render`, `render_mockups`, `list_revisions`, `restore_project`. Every tool works inside the space the token belongs to.
 
-The endpoint is Streamable HTTP and authenticates with a bearer header, so it works with any client that can send one. It does not implement OAuth.
+The endpoint is Streamable HTTP and authenticates with a bearer header, so it works with any client that can send one. While sign-in is on, it is also its own OAuth 2.1 authorization server, so claude.ai, Claude Desktop, ChatGPT and other apps that add a remote MCP server as a connector need only the address `https://appshots.example.com/mcp`: they register or name themselves with a client ID metadata document, send the person to sign in with Google and allow them, and get tokens bound to the MCP endpoint. The discovery documents are at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`. Behind a reverse proxy, `PUBLIC_URL` is what they name as the issuer and the resource. See [docs/connect.md](docs/connect.md#add-it-as-a-connector).
 
 ### Without MCP
 
@@ -473,7 +473,7 @@ Issues and pull requests are welcome. Run `npm run typecheck` before sending one
 - Put only real figures, reviews and awards in badges, on a `stat` slide and on a `reviews` slide. App Review rejects screenshots with invented download counts, ratings or rankings.
 - Logos are other companies' trademarks. Show them only for services the app really works with, and none in the header and search results assets, where Apple does not allow them.
 - The device frames are drawn in CSS, not Apple's product images.
-- No passwords are stored. `accounts.json` on the data volume holds each person's name, email address, Google account id and number of renders, the list of allowed addresses, and API tokens as SHA-256 hashes; a token is shown once when it is created.
+- No passwords are stored. `accounts.json` on the data volume holds each person's name, email address, Google account id and number of renders, the list of allowed addresses, and API tokens as SHA-256 hashes; a token is shown once when it is created. `oauth.json` beside it holds the apps that registered for OAuth, and for each app somebody let in its name, where it goes back to and its tokens as SHA-256 hashes.
 - appShots is not affiliated with Apple. Apple, App Store, iPhone, iPad and Mac are trademarks of Apple Inc.
 
 ## License

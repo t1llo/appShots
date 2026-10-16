@@ -11,12 +11,12 @@ appShots is a remote MCP server. An agent connects to it once and can then build
 | --- | --- |
 | Address | `{{SERVER}}/mcp` |
 | Transport | Streamable HTTP, `POST` only |
-| Sign-in | The header `Authorization: Bearer <token>`, with a token from **Connect an agent** in the Studio |
+| Sign-in | OAuth, for an app that adds appShots as a connector, or the header `Authorization: Bearer <token>`, with a token from **Connect an agent** in the Studio |
 | Sessions | None. Every request stands alone |
 
-There is no OAuth, so add it with a header. Pasting the address into a connector dialog that expects a sign-in page does not work. The exact commands for each agent are in [Connect an agent](/docs/connect#only-the-mcp-connection).
+claude.ai, Claude Desktop, ChatGPT and other apps that take a connector need only the address: they sign in with OAuth, and you allow them on a page of appShots. See [Add it as a connector](/docs/connect#add-it-as-a-connector). Agents set up with a command send a token in the header instead; the commands for each are in [Connect an agent](/docs/connect#only-the-mcp-connection).
 
-A token reaches the projects of the account it belongs to and nothing else. See [Accounts, tokens and limits](/docs/accounts).
+A token, or an app you let in, reaches the projects of the account it belongs to and nothing else. See [Accounts, tokens and limits](/docs/accounts).
 
 ## The order of work
 

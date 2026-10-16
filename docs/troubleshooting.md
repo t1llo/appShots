@@ -35,7 +35,9 @@ export PATH="$HOME/.local/bin:$PATH"
 
 **The setup command stops at "Node.js 18 or newer is needed".** Node.js is missing, or the one first on your `PATH` is older; the message names its version. Install Node.js 18 or newer from [nodejs.org](https://nodejs.org) or with `brew install node`, then run it again. `node --version` says which one a new Terminal window finds.
 
-**You connected through a connector dialog and it asks for a sign-in page.** appShots has no OAuth. Add it with a header instead. See [Connect an agent](/docs/connect#only-the-mcp-connection).
+**A connector in claude.ai, Claude Desktop or ChatGPT cannot connect.** The app connects from its maker's servers, so the server has to be reachable from the internet over HTTPS: one on `localhost` or in your home network is out of its reach. Behind a reverse proxy, `PUBLIC_URL` has to be the public address. When appShots' own page says the app cannot connect, it says why. Remove appShots from the app and add it again. See [Add it as a connector](/docs/connect#add-it-as-a-connector).
+
+**A connector worked and now asks to connect again.** It was disconnected under **Settings → Connected apps**, it went unused for 30 days, or the account it signed in with was deleted. Connect it again in the app.
 
 ## Capturing
 

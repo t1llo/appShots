@@ -2,7 +2,7 @@
 title: Privacy policy
 nav: Privacy
 description: What appShots stores about you, why, for how long, and who else receives it. In short, your email and name from Google, your projects and screenshots, and nothing sold or shared for ads.
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 This page says what this appShots server stores about you and what happens to it. It applies to {{SERVER}}.
@@ -33,6 +33,8 @@ For anything about your data, contact whoever gave you access to this server.
 **Your account.** From Google: your email address, your name and Google's id for your account. Also the day the account was created and the number of renders you made.
 
 **Your API tokens.** For each token: a fingerprint (a SHA-256 hash), its last four characters, the day it was created and the day it was last used. The token itself is not stored.
+
+**Your connected apps.** For each app you add appShots to as a connector and let in: the name it gave, the address it sends you back to, the day you let it in, the day it last used appShots, and fingerprints (SHA-256 hashes) of the keys it was given. The keys themselves are not stored. An app that registers with the server leaves the name and addresses it registered with, which say nothing about you.
 
 **Your work.** The projects you make: their names, the texts and settings of every slide, the screenshots and images you upload, and the rendered files. Each project also keeps its last 50 versions of the names, texts and settings, so that a change can be undone. Screenshots and images are not part of them.
 
@@ -92,7 +94,7 @@ This server uses no analytics and no tracking.
 ## Security
 
 - Connections are encrypted with HTTPS.
-- Sign-in attempts are counted per IP address for fifteen minutes, in memory only, to stop guessing. Nothing of it is written to disk.
+- Sign-in attempts are counted per IP address for fifteen minutes, and apps registering or being looked up for ten, in memory only, to stop guessing and flooding. Nothing of it is written to disk.
 - Each account's files are kept apart, and every request is checked against the account that sent it.
 - The company hosting the server may keep technical connection logs of its own.
 
@@ -110,12 +112,15 @@ Nobody else. Your data is not sold, rented or shared for advertising, and it is 
 
 **Your agent is separate.** If you connect a coding agent, what it reads on your Mac and sends to its own maker is governed by that maker's terms, not by this page. appShots only receives what the agent uploads here.
 
+**So are the apps you connect.** An app you let in, such as claude.ai or ChatGPT, receives what its tools return from your projects, and its maker's terms cover what it does with that. You can disconnect it under **Settings** at any time.
+
 ## How long it is kept
 
 Until you delete it.
 
 - Deleting a screenshot, an image or a project removes it at once. A project's earlier versions go with it.
-- Deleting your account removes the account, every project, every file and every token at once.
+- Disconnecting an app removes what it was given at once.
+- Deleting your account removes the account, every project, every file, every token and every connected app at once.
 - One thing stays after that: the number of renders the account used, next to a SHA-256 hash of Google's id for it. It holds no name and no address, and it only serves to give you the same count back if you sign up again.
 - If the person running the server keeps backups of its disk, deleted data can remain in those until they are overwritten.
 

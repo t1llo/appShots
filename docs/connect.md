@@ -1,6 +1,6 @@
 ---
 title: Connect an agent
-description: Set up Claude Code, Codex, OpenCode, Pi or any other coding agent to make App Store screenshots with appShots. One command installs the skill, the CLI and the MCP connection.
+description: Set up Claude Code, Codex, OpenCode, Pi or any other coding agent to make App Store screenshots with appShots, or add it to claude.ai, Claude Desktop or ChatGPT as a connector. One command installs the skill, the CLI and the MCP connection.
 ---
 
 An agent needs three things to make a set on its own: the **skill** (what to do), the **`appshots` command** (to run your app and capture its screens) and a **connection to the server** (to build and render the set). One command installs all three.
@@ -47,6 +47,26 @@ Using several agents? Run the command once per agent. A copy that was set up for
 | Tell it what to do | Paste one command, add your screenshots, describe the set in a sentence | The MCP connection only |
 | Make it by hand | Nothing | Nothing. You work in the Studio |
 
+## Add it as a connector
+
+claude.ai, Claude Desktop, ChatGPT and other apps that take a remote MCP server as a connector sign in to appShots by themselves. There is nothing to install and no token to paste.
+
+1. Open the place where the app adds a connector. In claude.ai and Claude Desktop, that is **Settings → Connectors → Add custom connector**. In ChatGPT, it is under **Settings → Apps**, once developer mode is on in the advanced settings there.
+2. Give it the address `{{SERVER}}/mcp`. Leave the client ID and secret empty. If it asks how to sign in, pick OAuth.
+3. Click **Connect**. A page of appShots opens. Sign in with Google if you are not signed in on this browser already.
+4. The page asks whether to let the app use your appShots account, and shows where it sends you back to. Check that this is the app you are adding, then click **Allow**.
+
+The app can then use [the tools](/docs/mcp) as you: see, create, change and delete your projects, and render them, which uses your renders. It cannot change your account, make tokens or see anybody else's work. It renews its access by itself, so you are asked again only after it was disconnected or went unused for 30 days.
+
+**Settings → Connected apps** in the Studio lists the apps you let in, where each one goes back to and when it was last used. **Disconnect** cuts one off at once.
+
+Good to know:
+
+- These apps connect from their maker's servers, not from your computer. The appShots server has to be reachable from the internet over HTTPS; one on `localhost` works with the agents above, but not as a connector.
+- Behind a reverse proxy, set `PUBLIC_URL` to the public address. The app is told to sign in there.
+- On a server without sign-in there is nothing to sign in to. Add the address and leave the authentication settings empty.
+- MCP has no way to send files, so a connector cannot upload your screenshots. Add them in the [Studio](/docs/studio) or with the [command line](/docs/cli), then ask for the set.
+
 ## Only the MCP connection
 
 If you add the screenshots yourself and only want the agent to design the set, the connection is enough.
@@ -56,6 +76,8 @@ Claude Code:
 ```bash
 claude mcp add --transport http --scope user appshots {{SERVER}}/mcp --header "Authorization: Bearer <your token>"
 ```
+
+Claude Code can also sign in like a connector, without a token: leave out `--header`, then run `/mcp` in Claude Code, pick `appshots` and sign in.
 
 OpenCode:
 
@@ -71,7 +93,7 @@ url = "{{SERVER}}/mcp"
 http_headers = { Authorization = "Bearer <your token>" }
 ```
 
-Any other client works if it speaks Streamable HTTP and can send a bearer header. The endpoint does not do OAuth. Then ask in plain words:
+Any other client works if it speaks Streamable HTTP and either signs in with OAuth, as a connector does, or sends a bearer header. Then ask in plain words:
 
 > Make App Store screenshots for my habit tracker in project "streaks". Six slides, dark purple look. Open with a hero slide, then one slide per feature using the screenshots home, stats and widgets.
 
@@ -99,7 +121,7 @@ It reports whether the server answers and accepts your token, whether the skill 
 
 ## Tokens
 
-An agent cannot sign in with Google, so it uses a token of yours. A token reaches your projects and nothing else: it cannot create more tokens, change your account or see anybody else's work.
+The `appshots` command cannot sign in with Google, so it and the agents the one command sets up use a token of yours. A token reaches your projects and nothing else: it cannot create more tokens, change your account or see anybody else's work.
 
 - A token is shown once, when it is created. Lost it? Create a new one and run the command again.
 - **Settings** in the Studio's sidebar lists your tokens with the day each was last used, and revokes them.
@@ -107,6 +129,6 @@ An agent cannot sign in with Google, so it uses a token of yours. A token reache
 
 ## Disconnect
 
-1. Revoke the token under **Settings**. Nothing on your Mac can reach your projects after that.
+1. Revoke the token under **Settings**. Nothing on your Mac can reach your projects after that. For a connector, click **Disconnect** under **Settings → Connected apps**, then remove it in the app.
 2. Remove the agent's entry: `claude mcp remove appshots --scope user`, `codex mcp remove appshots`, or the `appshots` entry in your agent's MCP settings.
 3. Delete the skill folder from the table above, the link named `appshots` on your `PATH`, and the folder `~/.config/appshots`.
