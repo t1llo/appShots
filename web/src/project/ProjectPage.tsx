@@ -15,7 +15,7 @@ import { ExportButton } from "./ExportButton.tsx";
 import { HistoryButton } from "./History.tsx";
 import { ConflictBar, ProjectBar, SaveStatus, UndoButtons } from "./ProjectBar.tsx";
 import { CreativeCard, creativeKey, SlideCard, slideKey, useWidth } from "./Previews.tsx";
-import { setOf } from "./sets.ts";
+import { appIcon, setOf } from "./sets.ts";
 import { StorePreview } from "./StorePreview.tsx";
 
 /** How large the previews are drawn: the height of a slide, the width a landscape one may take at most, and the height of an asset. */
@@ -314,11 +314,7 @@ export function ProjectPage({ meta, detail, view, openConnect }: { meta: Meta; d
   );
   const languageSwitch = <LanguageSwitch locales={draft.locales} value={locale} onChange={setLocale} onAdd={addLanguage} />;
 
-  // The project's icon in the store: an uploaded image named as one, or else the logo its slides show.
-  const icon = useMemo(() => {
-    const logo = shownSlides.find((slide) => slide.logo?.image)?.logo?.image;
-    return images.find((image) => /icon/i.test(image.name)) ?? images.find((image) => image.name === logo);
-  }, [images, shownSlides]);
+  const icon = useMemo(() => appIcon(images, shownSlides), [images, shownSlides]);
 
   const canvas = (
     <div className="workspace" hidden={view !== "slides"}>

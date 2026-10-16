@@ -1,6 +1,6 @@
 // The sets of slides a project has, and what its slides and assets name, as the project's pages need them.
 
-import type { DeviceKind, PlacementId, Project, Slide } from "../api.ts";
+import type { DeviceKind, PlacementId, Project, Slide, StoredImage } from "../api.ts";
 
 type Sets = Pick<Project, "slides" | "deviceSlides">;
 
@@ -22,4 +22,13 @@ export function usedNames(project: Sets & Pick<Project, "creatives">): { shots: 
       ...creatives.map((creative) => creative?.logo?.image),
     ]),
   };
+}
+
+/** An image named as the app's icon, such as "icon", "app-icon" or "icon-1024", but not "silicon" or "icons". */
+const ICON = /(^|[-_])(app)?icon($|[-_\d])/i;
+
+/** The app's icon in the store: an image named just that, then one named as one, or else the logo the slides show. */
+export function appIcon(images: StoredImage[], slides: Slide[]): StoredImage | undefined {
+  const logo = slides.find((slide) => slide.logo?.image)?.logo?.image;
+  return images.find((image) => /^(app[-_]?)?icon$/i.test(image.name)) ?? images.find((image) => ICON.test(image.name)) ?? images.find((image) => image.name === logo);
 }
