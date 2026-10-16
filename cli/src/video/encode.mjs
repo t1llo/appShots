@@ -38,9 +38,10 @@ export const commandLine = (command, args) => [command, ...args].map((arg) => (/
  * @param {string} [options.out] The file it writes, removed when it fails or stalls.
  * @param {number} [options.stall] Milliseconds without progress before it is stopped.
  * @param {(seconds: number) => void} [options.onProgress] Seconds of output written so far.
+ * @param {() => number} [options.now] The clock the stall is measured by, in milliseconds; a test's own or Date.now.
  * @returns {Promise<{ seconds: number }>}
  */
-export function runFfmpeg(tools, args, { label, out, stall = stallLimit(), onProgress }) {
+export function runFfmpeg(tools, args, { label, out, stall = stallLimit(), onProgress, now = Date.now }) {
   const argv = [...QUIET, ...args];
   return new Promise((resolve, reject) => {
     /** @type {string[]} */
@@ -48,7 +49,7 @@ export function runFfmpeg(tools, args, { label, out, stall = stallLimit(), onPro
     let partial = "";
     let pending = "";
     let written = -1;
-    let moved = Date.now();
+    let moved = now();
     let stalled = false;
     let settled = false;
     const child = spawn(tools.ffmpeg, argv, { stdio: ["ignore", "pipe", "pipe"] });
@@ -68,11 +69,11 @@ export function runFfmpeg(tools, args, { label, out, stall = stallLimit(), onPro
       for (const line of parts) {
         const match = /^out_time_us=(\d+)/.exec(line.trim());
         if (!match) continue;
-        const now = Number(match[1]);
-        if (now === written) continue;
-        written = now;
-        moved = Date.now();
-        onProgress?.(now / 1e6);
+        const time = Number(match[1]);
+        if (time === written) continue;
+        written = time;
+        moved = now();
+        onProgress?.(time / 1e6);
       }
     });
     const settle = (/** @type {() => void} */ done) => {
@@ -86,7 +87,7 @@ export function runFfmpeg(tools, args, { label, out, stall = stallLimit(), onPro
     };
     const watch = setInterval(
       () => {
-        if (stalled || Date.now() - moved < stall) return;
+        if (stalled || now() - moved < stall) return;
         stalled = true;
         child.kill("SIGTERM");
         // A stalled graph may not hear SIGTERM at all.

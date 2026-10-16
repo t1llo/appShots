@@ -92,11 +92,15 @@ test("an ffmpeg whose output stops moving is stopped, its file removed, and the 
 });
 
 test("a slow ffmpeg that keeps making progress is left to finish", async () => {
-  // It says where it is as soon as it starts, so all it has to beat is Node's own start, however busy the machine.
-  const ffmpeg = await fakeFfmpeg("slow", `let us = 0; progress(us); const tick = setInterval(() => { us += 40000; progress(us); if (us >= 1000000) { clearInterval(tick); fs.writeFileSync(out, "video"); process.stdout.write("progress=end\\n"); } }, 200);`);
+  // The watchdog reads a clock that moves 10 ms with each step ffmpeg makes and stands still in between, so a busy
+  // machine that is slow to start the stand-in, or to run it, cannot make it look stalled. By the wall clock, the
+  // 20 ms limit would stop a stand-in that steps every 40 ms.
+  let clock = 0;
+  const ffmpeg = await fakeFfmpeg("slow", `let us = 0; progress(us); const tick = setInterval(() => { us += 40000; progress(us); if (us >= 1000000) { clearInterval(tick); fs.writeFileSync(out, "video"); process.stdout.write("progress=end\\n"); } }, 40);`);
   const out = path.join(dir, "slow.mp4");
-  const result = await runFfmpeg({ ffmpeg }, ["-f", "mp4", out], { label: "stage 2", out, stall: 4000 });
-  // It ran for about five seconds, longer than the limit, and was never still for long.
+  const result = await runFfmpeg({ ffmpeg }, ["-f", "mp4", out], { label: "stage 2", out, stall: 20, now: () => clock, onProgress: () => (clock += 10) });
+  // By that clock it ran thirteen times the limit, and was never still for long.
+  assert.equal(clock, 260);
   assert.equal(result.seconds, 1);
   assert.ok(existsSync(out));
 });
