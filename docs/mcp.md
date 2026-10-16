@@ -1,6 +1,6 @@
 ---
 title: MCP tools
-description: Reference for the appShots MCP server. The endpoint, how to authenticate, and the tools an agent uses to create a project, build slides, render App Store screenshots, draw device mockups and draw the layers of app preview videos.
+description: Reference for the appShots MCP server. The endpoint, how to authenticate, and the tools an agent uses to create a project, build slides, render App Store screenshots, follow a render, draw device mockups and draw the layers of app preview videos.
 ---
 
 appShots is a remote MCP server. An agent connects to it once and can then build and render sets by itself.
@@ -119,7 +119,7 @@ Sets the wide pictures of `project`: `header`, `search` or `universal` for App S
 
 ### check_project
 
-Takes the arguments of `render` and says what a render with them would do, without drawing anything or using a render: whether it would be refused and why, in the words the render would use; what it would draw, by device, language and size; and what it would warn about, such as a screenshot or image name nothing is uploaded under, or copy App Review turns away. How the copy fits is measured only as it is drawn, so those warnings come from the render alone. `previews` and `preview`, which say how a render answers, are taken and ignored. An agent calls it before each render and fixes what it names, so no render goes to a set that cannot come out right. A refusal here is an answer, not a failed call: only an unknown project, or an argument `render` would not take, fails.
+Takes the arguments of `render` and says what a render with them would do, without drawing anything or using a render: whether it would be refused and why, in the words the render would use; what it would draw, by device, language and size; and what it would warn about, such as a screenshot or image name nothing is uploaded under, or copy App Review turns away. How the copy fits is measured only as it is drawn, so those warnings come from the render alone. `previews`, `preview` and `background`, which say how a render answers, are taken and ignored. An agent calls it before each render and fixes what it names, so no render goes to a set that cannot come out right. A refusal here is an answer, not a failed call: only an unknown project, or an argument `render` would not take, fails.
 
 ### render
 
@@ -132,10 +132,21 @@ Takes the arguments of `render` and says what a render with them would do, witho
 | `locales` | Languages. Default: all of the project's |
 | `previews` | `false` answers without pictures: the links, the warnings, and how small each language's copy was set. For a render of many languages, or to check the copy after an edit. Default `true` |
 | `preview` | `"store"` shows, in place of the contact sheets, the first three slides as the App Store shows them: in a search result and on the product page, light and dark |
+| `background` | `true` answers at once with the render's job, rather than wait for its pictures. For a large set, or a client that gives up on long calls |
 
 Returns the contact sheets of the first language as pictures, one per device first and four at most, with links to any it leaves out, a preview of each wide image, the store's with their safe area marked, a link to every PNG, a link to the ZIP, warnings, and how many renders the account has left.
 
 The warnings say what the pictures would not show at a glance: a screenshot that is missing, copy that had to shrink below three quarters of its size to fit or does not fit at all, a headline of more lines than read well, text outside the safe area of a header or search results image, and copy or logos App Review turns away, such as a price, "free", a ranking, a date, one of Apple's own awards, or another platform's logo. A finding in several languages is one warning that names them. See [Slides](/docs/slides#what-a-render-checks).
+
+A client that gives up on the call, or cancels it, cancels the render, which then uses none. With `background`, the answer names the job, which `get_render` follows.
+
+### get_render
+
+`job` is the id `render` answered with. While the render waits or draws, the answer says so, and how many pictures are done. Once it is done, it answers as `render` does, with the pictures and the links, and takes the same `previews` and `preview`; one that failed says why. Without `job`, it lists the account's renders as JSON: those waiting or under way, and those that ended in the last hour, the newest eight at most. It changes nothing.
+
+### cancel_render
+
+`job` is the id `render` answered with. Stops a render that waits or draws. It keeps nothing it drew, the pictures of the render before stay as they were, and it uses no render.
 
 ### render_mockups
 

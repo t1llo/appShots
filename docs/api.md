@@ -12,7 +12,7 @@ Everything the Studio does goes through a small JSON API. Use it from a script o
 | Base address | `{{SERVER}}/api` |
 | Sign-in | The header `Authorization: Bearer <token>` |
 | Bodies | JSON up to 2 MB, except file uploads, which send the file itself as the body |
-| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404 or 413, or 409 for a change made on an older revision. A body over its limit gets 413, and the sentence names the limit, as does a picture with too many pixels or an upload the account has no room left for. Something the server did not expect is a 500, `{ "error": "Internal error", "ref": "1a2b3c4d" }`: whoever runs the server finds the details under `ref` in its log |
+| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404 or 413, or 409 for a change made on an older revision. A body over its limit gets 413, and the sentence names the limit, as does a picture with too many pixels or an upload the account has no room left for. A render asked for while the server shuts down gets 503 with `Retry-After`. Something the server did not expect is a 500, `{ "error": "Internal error", "ref": "1a2b3c4d" }`: whoever runs the server finds the details under `ref` in its log |
 
 Create the token under **Connect an agent** in the Studio. The examples expect it in `APPSHOTS_TOKEN`.
 
@@ -135,8 +135,9 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/render \
 | --- | --- |
 | `POST /api/projects/:id/render` | Renders and answers when it is done. Body, all optional: `targets`, `locales`, `slides`, `creatives`, `background`. Without `targets`, every size the project exports |
 | `POST /api/projects/:id/check` | Says what a render with the same body would do, without drawing anything or using a render. See [Check first](#check-first) |
-| `GET /api/renders` | Your renders that are waiting, running or ended in the last hour, newest first, and `rendersLeft` |
-| `GET /api/renders/:job` | One of them |
+| `POST /api/projects/:id/exports` | Renders and answers with the ZIP when it is done. The same body as a render. With `background`, answers at once with the job and where to fetch the ZIP |
+| `GET /api/renders` | Your renders that are waiting or running, and those that ended in the last hour, the newest eight at most. Newest first, with `rendersLeft` |
+| `GET /api/renders/:job` | One of them. One that ended longer ago, or is past the eight newest, is a 404 |
 | `DELETE /api/renders/:job` | Cancels one that is waiting or running. It keeps nothing it drew |
 | `GET /api/projects/:id/export.zip` | The files of the last render as a ZIP. `?render=1` renders everything first |
 | `GET /files/:id/out/<language>/<size>/<number>.png` | One rendered file |
@@ -159,7 +160,11 @@ curl -s -o streaks.zip "{{SERVER}}/api/projects/streaks/export.zip?render=1" \
   -H "Authorization: Bearer $APPSHOTS_TOKEN"
 ```
 
-Rendering takes a while, so give the request a generous timeout. See [Render and export](/docs/export) for the layout of the ZIP.
+Rendering takes a while, so give the request a generous timeout. A client that gives up and closes the connection cancels the render, which then uses none. See [Render and export](/docs/export) for the layout of the ZIP.
+
+A ZIP is sent with its `Content-Length`, so a download that was cut short is shorter than that and can be told from a whole one. It holds the files as they were when the download began, even when a render finishes meanwhile. Archives past 4 GB or 65,535 files are written as ZIP64, which `unzip` and the archive tools of macOS and Windows open.
+
+`?render=1` with the session of a browser, rather than a token, renders only for a request from the Studio's own pages or one typed into the address bar: browsers send `Sec-Fetch-Site`, older ones `Referer`, and a link on another site is refused with 403, so it cannot spend a render. A page uses `POST /api/projects/:id/exports` instead.
 
 ### Without waiting
 
@@ -176,7 +181,9 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/render \
 { "job": { "id": "5f0c…", "project": "streaks", "name": "Streaks", "state": "queued", "done": 0, "total": 0 }, "rendersLeft": 6 }
 ```
 
-Ask `GET /api/renders/<id>` until `state` is no longer `queued` or `running`. It ends as `done`, `failed` (with `error`) or `cancelled`. `done` of `total` is how many pictures are drawn so far. Then fetch `export.zip`. The render draws the project as it was when you asked, so changes made while it runs are not in it. Its files replace the old ones all at once when it is done; one that fails or is cancelled leaves the old ones as they were.
+Ask `GET /api/renders/<id>` until `state` is no longer `queued` or `running`. It ends as `done`, `failed` (with `error`) or `cancelled`. `done` of `total` is how many pictures are drawn so far. Then fetch `export.zip`. `POST /api/projects/:id/exports` with `"background": true` answers the same way, with `download` added: the address of that ZIP.
+
+A server that is told to stop, such as for an update, takes no new render, gives the ones under way a few seconds to finish, and cancels the rest. A cancelled render keeps nothing and uses no render, so ask for it again once the server is back. The render draws the project as it was when you asked, so changes made while it runs are not in it. Its files replace the old ones all at once when it is done; one that fails or is cancelled leaves the old ones as they were.
 
 `locales` takes the project's own languages, matched without regard to case, and `de` finds `de-DE`. A language the project does not have is refused with status 400 before anything is drawn or counted.
 
@@ -305,6 +312,19 @@ With `"background": true`, a new set answers at once with status 202, the run as
 ## What a token cannot do
 
 Creating and revoking tokens, deleting the account and managing who can sign in need a signed-in browser. A token that leaks can therefore not make more tokens.
+
+Deleting a project or an account first cancels its renders and waits for them to stop, so nothing drawn for it comes back afterwards.
+
+## For the admin
+
+These need the admin's signed-in browser, and answer `Cache-Control: private, no-store`.
+
+| Request | What it does |
+| --- | --- |
+| `GET /api/admin/health` | How the server is doing: the browser that draws, the render and mockup queues, the renders under way, the mockups and usage numbers kept in memory, and the projects whose stored file cannot be read. Those of the server's own space are named; for an account only their number is given |
+| `POST /api/admin/projects/move` | Moves a project between spaces. Body: `project`, `from` and `to`, each space as `main` for the server's own or the address of an account. Answers with `project`, its id where it went: its own, or its own with a number behind it when that is taken there. Its renders are cancelled first |
+
+The admin's projects are the server's own space, and the projects an account made are in a folder of its own. When `ADMIN_EMAIL` comes to name somebody else, the new admin works in the server's space, and what they made before is in their own folder, which the Studio does not show them. Moving names that folder by the admin's address.
 
 ## Public addresses
 
