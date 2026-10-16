@@ -2,26 +2,40 @@
 
 import { type DeviceStyle, put, type Slide, type Theme } from "../api.ts";
 import { Field, Select } from "../ui/index.ts";
+import { atBase, rangeThrough } from "../ui/range.ts";
 import { type Change, useScope } from "./scope.ts";
 import { Section } from "./section.tsx";
 
 /** What a layout does to its device before the slide's own settings. */
 const LAYOUT_DEVICE: Record<string, { rotate?: number; offsetX?: number }> = { tilted: { rotate: -8, offsetX: 5 } };
 
-/** One device setting as a slider. `base` is where it stands when the slide does not set it; a double click goes back there. */
+/**
+ * One device setting as a slider. `base` is where it stands when the slide does not set it. A double click goes
+ * back there, as do Delete and Backspace, and so does moving it there with the arrow keys.
+ */
 export function Slider(props: { label: string; value: number | undefined; base: number; min: number; max: number; step: number; show: (value: number) => string; onChange: (value: number | null) => void }) {
-  const { value, base, onChange } = props;
+  const { value, base, step, onChange } = props;
+  const { min, max } = rangeThrough(base, props.min, props.max, step);
   return (
-    <label className={`slider${value == null ? "" : " set"}`} title="Double-click to reset">
+    <label className={`slider${value == null ? "" : " set"}`} title="Double-click or press Delete to reset">
       <span className="label">{props.label}</span>
       <input
         type="range"
-        min={props.min}
-        max={props.max}
-        step={props.step}
+        min={min}
+        max={max}
+        step={step}
         value={value ?? base}
-        onChange={(event) => onChange(Number(event.target.value) === base ? null : Number(event.target.value))}
+        aria-keyshortcuts="Delete"
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          onChange(atBase(next, base, step) ? null : next);
+        }}
         onDoubleClick={() => onChange(null)}
+        onKeyDown={(event) => {
+          if (event.key !== "Delete" && event.key !== "Backspace") return;
+          event.preventDefault();
+          onChange(null);
+        }}
       />
       <output>{props.show(value ?? base)}</output>
     </label>
