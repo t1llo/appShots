@@ -358,11 +358,27 @@ export async function moveShot(space: Space, id: string, file: string, to: { dev
 
 // ---------------------------------------------------------------- images
 
-export async function listImages(space: Space, id: string): Promise<StoredImage[]> {
+/** The images on disk, and the files among them that cannot be read. */
+export interface ImageFiles {
+  images: StoredImage[];
+  /** Files that cannot be read as a picture: left out, and named so they can be uploaded again or deleted. */
+  unreadable: string[];
+}
+
+/** Reads a project's images. */
+export async function readImages(space: Space, id: string): Promise<ImageFiles> {
   const listed = await readIndexed(imagesDir(space, id), IMAGE_FILE, sizeOf);
-  return listed.flatMap(({ file, stamp, meta }) =>
-    meta ? [{ name: IMAGE_FILE.exec(file)![1]!, file, width: meta.width, height: meta.height, bytes: stamp.size, version: Math.round(stamp.mtimeMs) }] : [],
-  );
+  const result: ImageFiles = { images: [], unreadable: [] };
+  for (const { file, stamp, meta } of listed) {
+    if (meta) result.images.push({ name: IMAGE_FILE.exec(file)![1]!, file, width: meta.width, height: meta.height, bytes: stamp.size, version: Math.round(stamp.mtimeMs) });
+    else result.unreadable.push(file);
+  }
+  return result;
+}
+
+/** The images slides can place: those that can be read. */
+export async function listImages(space: Space, id: string): Promise<StoredImage[]> {
+  return (await readImages(space, id)).images;
 }
 
 /** How an image is read: an SVG at the density it is drawn at, anything with the most pixels it may decode. */

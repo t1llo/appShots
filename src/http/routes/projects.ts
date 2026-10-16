@@ -8,7 +8,7 @@ import { defaultTargets } from "../../render.ts";
 import { creativesSchema, deviceSlidesSchema, localesSchema, mockupsSchema, repeatedLocales, slideSchema, targetsSchema, themeSchema, unknownFields } from "../../schema.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, PLACEMENTS, TARGETS } from "../../sizes.ts";
 import { projects, type WriteOptions } from "../../storage/projects.ts";
-import { ConflictError, createProject, deleteProject, getProject, InputError, listCreativeOutputs, listImages, listOutputs, projectSummary, readShots, type Space, updateProject, usageOf } from "../../store.ts";
+import { ConflictError, createProject, deleteProject, getProject, InputError, listCreativeOutputs, listOutputs, projectSummary, readImages, readShots, type Space, updateProject, usageOf } from "../../store.ts";
 import { identityOf, spaceOf } from "../auth.ts";
 
 const projectPatch = z.object({
@@ -38,10 +38,11 @@ export async function creativeOutputs(space: Space, id: string) {
  */
 async function projectDetail(space: Space, id: string) {
   const withShots = projects.get(space, id).then(async (stored) => ({ ...stored, files: await readShots(space, id, stored.project.locales) }));
-  const [{ project, revision, warnings: stored, files }, images, outputs, creatives] = await Promise.all([withShots, listImages(space, id), listOutputs(space, id), creativeOutputs(space, id)]);
-  const { shots, orphaned, unreadable } = files;
-  const warnings = [...stored, ...unreadable.map((file) => `The screenshot ${file} cannot be read and is left out. Upload it again or delete it.`)];
-  return { project, revision, shots, orphanedShots: orphaned, images, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots, project.targets), ...(warnings.length ? { warnings } : {}) };
+  const [{ project, revision, warnings: stored, files }, art, outputs, creatives] = await Promise.all([withShots, readImages(space, id), listOutputs(space, id), creativeOutputs(space, id)]);
+  const { shots, orphaned } = files;
+  const unreadable = (kind: string) => (file: string) => `The ${kind} ${file} cannot be read and is left out. Upload it again or delete it.`;
+  const warnings = [...stored, ...files.unreadable.map(unreadable("screenshot")), ...art.unreadable.map(unreadable("image"))];
+  return { project, revision, shots, orphanedShots: orphaned, images: art.images, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots, project.targets), ...(warnings.length ? { warnings } : {}) };
 }
 
 /**

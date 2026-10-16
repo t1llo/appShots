@@ -77,6 +77,18 @@ describe("uploads", () => {
     assert.equal(((await (await server.fetch(`/api/projects/${id}`)).json()) as { warnings?: string[] }).warnings, undefined);
   });
 
+  test("an unreadable image is named in the warnings too", async (t) => {
+    t.mock.method(console, "warn", () => {});
+    const id = await createProject("Unreadable image");
+    assert.equal((await server.fetch(`/api/projects/${id}/images/logo`, upload(await png(512, 512)))).status, 201);
+    await writeFile(path.join(server.dataDir, "projects", id, "images", "mascot.png"), "not a picture");
+    const detail = (await (await server.fetch(`/api/projects/${id}`)).json()) as { images: { file: string }[]; warnings?: string[] };
+    assert.deepEqual(detail.images.map((image) => image.file), ["logo.png"]);
+    assert.deepEqual(detail.warnings, ["The image mascot.png cannot be read and is left out. Upload it again or delete it."]);
+    assert.equal((await server.fetch(`/api/projects/${id}/images/mascot.png`, { method: "DELETE" })).status, 204);
+    assert.equal(((await (await server.fetch(`/api/projects/${id}`)).json()) as { warnings?: string[] }).warnings, undefined);
+  });
+
   test("the index of a folder is not sent as a file", async () => {
     const id = await createProject("Index");
     assert.equal((await server.fetch(`/api/projects/${id}/shots/home`, upload(await png(1320, 2868)))).status, 201);

@@ -11,7 +11,7 @@ import { usageChanged } from "./storage/usage.ts";
 // and written by the repository in storage/projects.ts, which locks, counts revisions and keeps the history; the
 // screenshots and images by storage/assets.ts, which lists them from an index and checks what is uploaded.
 export { ConflictError, DamagedError, InputError, NotFoundError, TooLargeError } from "./domain/errors.ts";
-export { deleteImage, deleteShot, listImages, listShots, moveShot, readShots, saveImage, saveShot, type Shot, type ShotFiles, shotLocale, type StoredImage } from "./storage/assets.ts";
+export { deleteImage, deleteShot, type ImageFiles, listImages, listShots, moveShot, readImages, readShots, saveImage, saveShot, type Shot, type ShotFiles, shotLocale, type StoredImage } from "./storage/assets.ts";
 export { imagesDir, outDir, projectDir, safeJoin, shotsDir, type Space } from "./storage/paths.ts";
 export { countProjects, slugify } from "./storage/projects.ts";
 export { type Usage, usageOf } from "./storage/usage.ts";

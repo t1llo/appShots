@@ -99,6 +99,8 @@ On a server with sign-in, each account other than the admin has room for {{MAX_U
 | `PUT /api/projects/:id/images/:name` | Uploads a logo or artwork. PNG, SVG, JPEG or WebP, up to 20 MB |
 | `DELETE /api/projects/:id/images/:file` | Deletes one |
 
+An image that cannot be read as a picture is left out of the project's `images`, and its `warnings` name it, as they do a screenshot.
+
 ## Render and download
 
 ```bash
