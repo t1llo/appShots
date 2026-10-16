@@ -1,11 +1,11 @@
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import sharp, { type Metadata } from "sharp";
-import { InputError, NotFoundError } from "../domain/errors.ts";
+import { InputError, NotFoundError, TooLargeError } from "../domain/errors.ts";
 import type { Project } from "../schema.ts";
-import { type DeviceKind, deviceKindOf } from "../sizes.ts";
+import { DEVICE_KINDS, type DeviceKind, deviceKindOf } from "../sizes.ts";
 import { writeFileAtomic } from "./atomic.ts";
-import { checkPixels, decodeError, openImage, readHeader } from "./images.ts";
+import { checkPixels, decodeError, JPEG_MAX_PIXELS, MAX_PIXELS, MAX_SIDE, openImage, readHeader } from "./images.ts";
 import { readIndexed, recordFiles, stampOf } from "./index-cache.ts";
 import { loadRaw } from "./migrate.ts";
 import { withProjectLock } from "./mutex.ts";
@@ -60,6 +60,9 @@ const NOT_AN_IMAGE = "Not a readable image. Upload a PNG, SVG, JPEG or WebP file
 const IMAGE_MAX = 2048;
 
 const getProject = async (space: Space, id: string) => (await projects.get(space, id)).project;
+
+/** The bytes of a stored file, 0 where there is none. */
+const sizeOnDisk = async (file: string) => (await stat(file).catch(() => null))?.size ?? 0;
 
 /**
  * The language a screenshot is filed under. The project's first language has none: its screenshots are the ones
@@ -270,11 +273,14 @@ async function assertShotRoom(space: Space, dir: string, locale: string | undefi
 export async function saveShot(space: Space, id: string, name: string, data: Buffer, device?: DeviceKind, language?: string): Promise<Shot> {
   // Refused before the picture is decoded: a project or a language that is not there, a picture larger than any
   // screen, and an account that has no room left.
-  shotLocale(await getProject(space, id), language);
+  const filedUnder = shotLocale(await getProject(space, id), language);
   assertSlug(name, "screenshot name");
   const header = await readHeader(data, NOT_A_SCREENSHOT);
   checkPixels(header.width, header.height);
-  await assertRoom(space, 1);
+  // A full account can still replace a screenshot with a smaller one. Without a device, which one it replaces is
+  // known only once it is decoded, so the largest it may replace counts as freed.
+  const replaced = await Promise.all((device ? [device] : DEVICE_KINDS).map((kind) => sizeOnDisk(path.join(shotsDir(space, id), shotFile(name, kind, filedUnder)))));
+  await assertRoom(space, 1, Math.max(...replaced));
   let encoded: Encoded;
   try {
     encoded = await encodeShot(data, header, device);
@@ -359,22 +365,59 @@ export async function listImages(space: Space, id: string): Promise<StoredImage[
   );
 }
 
+/** How an image is read: an SVG at the density it is drawn at, anything with the most pixels it may decode. */
+interface Reading {
+  density?: number;
+  limitInputPixels: number;
+}
+
+/**
+ * How an upload that is not a screenshot is read, from its header. Unlike a screenshot an image may be a photo, with
+ * more pixels than any screen: it is kept at no more than IMAGE_MAX a side, so what counts is how many pixels reading
+ * it decodes. One that would decode more than a screenshot may have is refused before anything of it is decoded.
+ */
+function imageReading(header: Metadata): Reading {
+  const { format, width, height } = header;
+  // Without a size in its header, the limit still holds as it is decoded.
+  if (!width || !height) return { limitInputPixels: MAX_PIXELS };
+  if (format === "svg") {
+    // An SVG is drawn at the size it declares, which for a logo is often a few dozen pixels and for a drawing many
+    // thousands: a small one is drawn at 1600 pixels to stay sharp, a large one no larger than it is kept.
+    const longest = Math.max(width, height);
+    const density = longest > IMAGE_MAX ? Math.max(1, (72 * IMAGE_MAX) / longest) : Math.min(2400, Math.max(72, Math.round((72 * 1600) / longest)));
+    const [drawnWidth, drawnHeight] = [width, height].map((side) => Math.round((side * density) / 72)) as [number, number];
+    if (drawnWidth * drawnHeight > MAX_PIXELS || Math.max(drawnWidth, drawnHeight) > MAX_SIDE) {
+      throw new TooLargeError(`The SVG says it is ${width}×${height} pixels, too large to draw. Give it a width and height of a few thousand pixels at most.`);
+    }
+    return { density, limitInputPixels: MAX_PIXELS };
+  }
+  const jpegMillions = Math.floor(JPEG_MAX_PIXELS / 1_000_000);
+  // A JPEG the way a camera saves it is read already shrunk to about the size it is kept at.
+  if (format === "jpeg" && !header.isProgressive) {
+    if (width * height <= JPEG_MAX_PIXELS) return { limitInputPixels: JPEG_MAX_PIXELS };
+    throw new TooLargeError(`The image is ${width}×${height} pixels. Upload one of at most ${jpegMillions} million pixels: it is kept at no more than ${IMAGE_MAX} pixels a side.`);
+  }
+  if (width * height <= MAX_PIXELS && Math.max(width, height) <= MAX_SIDE) return { limitInputPixels: MAX_PIXELS };
+  throw new TooLargeError(
+    `The image is ${width}×${height} pixels. Upload one of at most ${MAX_PIXELS / 1_000_000} million pixels and ${MAX_SIDE} pixels a side, or a JPEG of up to ${jpegMillions} million that is not progressive: it is kept at no more than ${IMAGE_MAX} pixels a side.`,
+  );
+}
+
 /** Stores a logo or other artwork as a PNG, transparency included. An SVG is drawn large enough to stay sharp. */
 export async function saveImage(space: Space, id: string, name: string, data: Buffer): Promise<StoredImage> {
   await getProject(space, id);
   assertSlug(name, "image name");
-  const header = await readHeader(data, NOT_AN_IMAGE);
-  // An SVG is drawn at the size it declares, which for a logo is often a few dozen pixels.
-  const vector = header.format === "svg" && header.width && header.height;
-  const density = vector ? Math.min(2400, Math.max(72, Math.round((72 * 1600) / Math.max(header.width, header.height)))) : undefined;
-  const scale = (density ?? 72) / 72;
-  checkPixels(Math.round(header.width * scale), Math.round(header.height * scale));
-  await assertRoom(space, 1);
+  const file = `${name}.png`;
+  const dir = imagesDir(space, id);
+  const full = path.join(dir, file);
+  const reading = imageReading(await readHeader(data, NOT_AN_IMAGE));
+  // A full account can still replace an image with a smaller one: what it replaces is counted as freed.
+  await assertRoom(space, 1, await sizeOnDisk(full));
   let png: Buffer;
   let width: number;
   let height: number;
   try {
-    const result = await openImage(data, density ? { density } : {})
+    const result = await openImage(data, reading)
       .rotate()
       .resize({ width: IMAGE_MAX, height: IMAGE_MAX, fit: "inside", withoutEnlargement: true })
       .png()
@@ -383,12 +426,9 @@ export async function saveImage(space: Space, id: string, name: string, data: Bu
     width = result.info.width;
     height = result.info.height;
   } catch (error) {
-    throw decodeError(error, NOT_AN_IMAGE);
+    throw decodeError(error, NOT_AN_IMAGE, `The image has more pixels than its header says, more than ${Math.floor(reading.limitInputPixels / 1_000_000)} million.`);
   }
   if (Math.min(width, height) < 16) throw new InputError(`Image is only ${width}×${height}; that is too small to show.`);
-  const file = `${name}.png`;
-  const dir = imagesDir(space, id);
-  const full = path.join(dir, file);
   const image = await withProjectLock(projectKey(space, id), async () => {
     await mkdir(dir, { recursive: true });
     const before = await stat(full).catch(() => null);

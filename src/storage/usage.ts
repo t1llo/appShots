@@ -24,8 +24,16 @@ const FRESH_FOR = 30_000;
 
 const MB = 1024 * 1024;
 
-/** A number of bytes as people read it: 512 MB, 1.5 GB, 2 GB. */
-export const megabytes = (bytes: number) => (bytes >= 1024 * MB ? `${Number((bytes / (1024 * MB)).toFixed(1))} GB` : `${Math.ceil(bytes / MB)} MB`);
+/**
+ * A number of bytes as people read it: 300 KB, 1.5 MB, 512 MB, 2 GB. `round` rounds what is shown, so that a refusal
+ * can round what an upload needs up and the room left down: neither then looks enough when it is not.
+ */
+export function megabytes(bytes: number, round: (value: number) => number = Math.round): string {
+  if (bytes >= 1024 * MB) return `${round((bytes / (1024 * MB)) * 10) / 10} GB`;
+  if (bytes >= 10 * MB || bytes === 0) return `${round(bytes / MB)} MB`;
+  if (bytes >= MB) return `${round((bytes / MB) * 10) / 10} MB`;
+  return `${round(bytes / 1024)} KB`;
+}
 
 async function folders(space: Space): Promise<string[]> {
   const entries = await readdir(projectsDir(space), { withFileTypes: true }).catch(() => []);
@@ -130,12 +138,17 @@ export function withRoom<T>(space: Space, write: () => Promise<T>): Promise<T> {
 
 /**
  * Refuses an upload of `adding` bytes, which replaces `freeing` bytes, that would take the account past its room.
- * Answered 413 with what it keeps and what it may keep.
+ * Answered 413 with the room the account has left and what the upload needs.
  */
 export async function assertRoom(space: Space, adding: number, freeing = 0): Promise<void> {
   const limit = space.limits?.bytes;
   if (limit === undefined || adding <= freeing) return;
   const used = await uploadBytes(space);
-  if (used - freeing + adding <= limit) return;
-  throw new TooLargeError(`This account keeps ${megabytes(used)} of screenshots and images and has room for ${megabytes(limit)}. Delete some to make room.`);
+  const left = limit - used;
+  if (adding - freeing <= left) return;
+  throw new TooLargeError(
+    left > 0
+      ? `This upload needs ${megabytes(adding - freeing, Math.ceil)}, and this account has ${megabytes(left, Math.floor)} left of the ${megabytes(limit)} it has for screenshots and images. Delete some to make room.`
+      : `This account has no room left of the ${megabytes(limit)} it has for screenshots and images. Delete some to make room.`,
+  );
 }

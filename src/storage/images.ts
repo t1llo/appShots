@@ -15,6 +15,13 @@ sharp.cache({ files: 0 });
 export const MAX_PIXELS = 40_000_000;
 /** The longest side an upload may have. A 6K display's is 6016 pixels. */
 export const MAX_SIDE = 10_000;
+/**
+ * The most pixels a logo or other image may have as a JPEG that is not progressive, the way a camera saves a photo:
+ * sharp's own limit. An image is kept far smaller than a screenshot, and such a JPEG is read already shrunk to about
+ * that size, so even this many decode to fewer pixels than a screenshot may have. A progressive JPEG is decoded whole
+ * first, and a WebP takes the whole picture's memory too, so they get the limit of every other picture.
+ */
+export const JPEG_MAX_PIXELS = 16_383 * 16_383;
 
 /** Opens a picture with the pixel limit in force: one whose header understates its size still cannot decode more. */
 export function openImage(input: Buffer | string, options: SharpOptions = {}) {
@@ -40,9 +47,12 @@ export async function readHeader(data: Buffer, refusal: string): Promise<Metadat
   }
 }
 
-/** What to throw for an error from decoding an upload: sharp's own when a picture is larger than its header said. */
-export function decodeError(error: unknown, refusal: string): InputError {
+/**
+ * What to throw for an error from decoding an upload: `refusal` when it is no picture, `tooLarge` when sharp finds it
+ * larger than its header said.
+ */
+export function decodeError(error: unknown, refusal: string, tooLarge = `The picture has more than ${MAX_PIXELS / 1_000_000} million pixels, more than any screen has.`): InputError {
   if (error instanceof InputError) return error;
-  if (error instanceof Error && /pixel limit/i.test(error.message)) return new TooLargeError(`The picture has more than ${MAX_PIXELS / 1_000_000} million pixels, more than any screen has.`);
+  if (error instanceof Error && /pixel limit/i.test(error.message)) return new TooLargeError(tooLarge);
   return new InputError(refusal);
 }

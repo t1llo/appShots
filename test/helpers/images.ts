@@ -51,3 +51,19 @@ export function bombPng(width: number, height: number): Buffer {
   const stream = Buffer.concat([Buffer.from([0x78, 0x01]), Buffer.concat(Array.from({ length: height }, () => row)), Buffer.from([0x01, 0x00, 0x00, 0xff, 0xff]), adler]);
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", stream), chunk("IEND", Buffer.alloc(0))]);
 }
+
+/**
+ * A copy of a JPEG whose header says it is `width`×`height`, whatever it holds: enough for what is refused before
+ * anything is decoded, without encoding that many pixels.
+ */
+export function jpegSaying(jpeg: Buffer, width: number, height: number): Buffer {
+  for (let at = 2; at + 9 <= jpeg.length; at += 2 + jpeg.readUInt16BE(at + 2)) {
+    // The frame header, baseline or progressive, holds the height and then the width after its length and precision.
+    if (jpeg[at] !== 0xff || jpeg[at + 1]! < 0xc0 || jpeg[at + 1]! > 0xc2) continue;
+    const copy = Buffer.from(jpeg);
+    copy.writeUInt16BE(height, at + 5);
+    copy.writeUInt16BE(width, at + 7);
+    return copy;
+  }
+  throw new Error("No frame header in this JPEG");
+}

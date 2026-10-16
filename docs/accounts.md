@@ -65,7 +65,8 @@ Good to know:
 | Languages per project | 40 |
 | A screenshot file | 40 MB |
 | An image file | 20 MB |
-| A picture | 40 million pixels, and 10000 pixels a side |
+| A screenshot's size | 40 million pixels, and 10000 pixels a side |
+| An image's size | The same, or 268 million pixels as a JPEG that is not progressive, such as a photo. It is kept at 2048 pixels a side at most |
 | Renders | {{RENDERS}} per account. See below |
 | Renders at once | One running and one waiting per account |
 

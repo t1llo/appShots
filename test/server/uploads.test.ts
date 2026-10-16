@@ -29,11 +29,15 @@ describe("uploads", () => {
 
   test("a decompression bomb is answered 413 and is not kept (srv-2)", async () => {
     const id = await createProject("Bomb");
-    for (const route of [`/api/projects/${id}/shots/bomb`, `/api/projects/${id}/images/bomb`]) {
+    const refusals = {
+      [`/api/projects/${id}/shots/bomb`]: /The picture is 16000×16000 pixels, more than any screen has/,
+      [`/api/projects/${id}/images/bomb`]: /The image is 16000×16000 pixels\. Upload one of at most 40 million pixels/,
+    };
+    for (const [route, refusal] of Object.entries(refusals)) {
       const answer = await server.fetch(route, upload(bombPng(16000, 16000)));
       assert.equal(answer.status, 413, route);
       assert.equal(answer.headers.get("cache-control"), "no-store");
-      assert.match(((await answer.json()) as { error: string }).error, /16000×16000 pixels, more than any screen has/);
+      assert.match(((await answer.json()) as { error: string }).error, refusal);
     }
     const detail = (await (await server.fetch(`/api/projects/${id}`)).json()) as { shots: unknown[]; images: unknown[] };
     assert.deepEqual([detail.shots, detail.images], [[], []]);
@@ -118,7 +122,8 @@ describe("an account's room for uploads", () => {
     assert.equal((await server.fetch(`/api/projects/${id}/shots/one?device=mac`, as(upload(await noise(0))))).status, 201);
     const refused = await server.fetch(`/api/projects/${id}/shots/two?device=mac`, as(upload(await noise(1))));
     assert.equal(refused.status, 413);
-    assert.match(((await refused.json()) as { error: string }).error, /has room for 1 MB\. Delete some to make room\./);
+    // It names the room left and what the upload needs, which a megabyte rounded up would make look the same.
+    assert.match(((await refused.json()) as { error: string }).error, /^This upload needs \d{3} KB, and this account has \d{3} KB left of the 1 MB it has for screenshots and images\. Delete some to make room\.$/);
     const usage = (await (await server.fetch("/api/usage", as())).json()) as { shots: number; uploadBytes: number; uploadLimit: number };
     assert.equal(usage.shots, 1);
     assert.equal(usage.uploadLimit, 1024 * 1024);

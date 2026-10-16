@@ -12,7 +12,7 @@ Everything the Studio does goes through a small JSON API. Use it from a script o
 | Base address | `{{SERVER}}/api` |
 | Sign-in | The header `Authorization: Bearer <token>` |
 | Bodies | JSON up to 2 MB, except file uploads, which send the file itself as the body |
-| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404 or 413, or 409 for a change made on an older revision. A body over its limit gets 413, and the sentence names the limit, as does a picture larger than any screen or an upload the account has no room left for |
+| Errors | `{ "error": "A sentence saying why" }` with status 400, 401, 403, 404 or 413, or 409 for a change made on an older revision. A body over its limit gets 413, and the sentence names the limit, as does a picture with too many pixels or an upload the account has no room left for |
 
 Create the token under **Connect an agent** in the Studio. The examples expect it in `APPSHOTS_TOKEN`.
 
@@ -88,7 +88,9 @@ The screenshots of a language taken out of `locales` are kept, so adding the lan
 
 ### Limits
 
-A screenshot or image of more than 40 million pixels, or of more than 10000 pixels on a side, is refused with status 413 before it is decoded: no screen has that many, and a 6K display has about 20 million. On a server with sign-in, each account other than the admin has room for {{MAX_UPLOADS}} of screenshots and images across its projects. Rendered files do not count. An upload past it is refused with status 413, and the sentence says how much the account keeps. Replacing a screenshot counts only what it adds. `GET /api/usage` gives `uploadBytes` and `uploadLimit`.
+A screenshot of more than 40 million pixels, or of more than 10000 pixels on a side, is refused with status 413 before it is decoded: no screen has that many, and a 6K display has about 20 million. A logo or other image is kept at no more than 2048 pixels a side, so it may also be a photo of up to 268 million pixels, as a JPEG that is not progressive, the way a camera saves one. Other images have the screenshot's limits. An SVG is drawn at a size that fits.
+
+On a server with sign-in, each account other than the admin has room for {{MAX_UPLOADS}} of screenshots and images across its projects. Rendered files do not count. An upload past it is refused with status 413, and the sentence says how much room is left and how much the upload needs. Replacing a screenshot or image counts only what it adds, so a full account can still replace one with a smaller one. `GET /api/usage` gives `uploadBytes` and `uploadLimit`.
 
 ## Logos and images
 
