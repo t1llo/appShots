@@ -9,7 +9,7 @@ import { getProject, InputError, listImages, listShots, NotFoundError, type Spac
 import { artboardsOf, type Draft, type LayerWarning, plain, prepareDraft } from "./cards.ts";
 import { browserCapturer, type PageCapturer } from "./pages.ts";
 import { normaliseRequest, type VideoLayersBody } from "./request.ts";
-import { commitSet, discardStaging, KEPT_SETS, type Layer, layerPath, type Manifest, readSet, touchSet, videoStaging } from "./store.ts";
+import { commitSet, discardStaging, KEPT_SETS, type Layer, layerPath, type Manifest, readSet, sweepStaging, touchSet, videoStaging } from "./store.ts";
 
 /**
  * Drawing the layers of an app preview: one run per set, queued with the renders and paid like one. A set is named
@@ -85,6 +85,7 @@ export function createVideoService(deps: VideoServiceDeps) {
   async function draw(run: Run, space: Space, set: string): Promise<Manifest> {
     const { draft, job, controller } = run;
     const staging = videoStaging(space, job.id);
+    await sweepStaging(space, new Set([job.id, ...[...runs.values()].filter((each) => !ended(each)).map((each) => each.job.id)]));
     await rm(staging, { recursive: true, force: true });
     const layers: Layer[] = [];
     const warnings: LayerWarning[] = [...draft.warnings];

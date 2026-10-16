@@ -15,7 +15,7 @@ import type { LayerKind, LayerWarning } from "./cards.ts";
 export const SET_ID = /^[0-9a-f]{16}$/;
 /** Sets kept per project. A set that is asked for again counts as new. */
 export const KEPT_SETS = 3;
-/** Beside the renders' .staging folder, which a render sweeps of every run but its own. */
+/** Beside the renders' .staging folder, and swept the same way: of every run but those going on. */
 const STAGING = ".video-staging";
 
 export interface Layer {
@@ -110,6 +110,17 @@ async function prune(space: Space, id: string, keep: string): Promise<void> {
 export async function discardStaging(space: Space, staging: string): Promise<void> {
   await rm(staging, { recursive: true, force: true });
   await rmdir(path.dirname(staging)).catch(() => {});
+}
+
+/**
+ * Removes the staging folders of runs that are not going on. A run cut off by a hard stop of the server never removes
+ * its own, and nothing else would.
+ */
+export async function sweepStaging(space: Space, running: Set<string>): Promise<void> {
+  const root = path.join(projectsDir(space), STAGING);
+  for (const job of await readdir(root).catch(() => [])) {
+    if (!running.has(job)) await rm(path.join(root, job), { recursive: true, force: true });
+  }
 }
 
 /** Every file of a set, as the ZIP lays it out: the manifest first, then the layers. */

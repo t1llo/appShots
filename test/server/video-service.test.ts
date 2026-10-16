@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdir, stat } from "node:fs/promises";
+import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { PageError } from "../../src/render/capture.ts";
@@ -207,6 +207,31 @@ test("a project deleted while its layers are drawn keeps nothing of them", async
   await assert.rejects(started.finished, /deleted while its video layers were drawn/);
   assert.deepEqual(settled, [false]);
   assert.equal(await exists(projectDir(space, id)), false);
+  assert.equal(await exists(staging), false);
+});
+
+test("a run clears what runs cut off by a stop of the server left in staging, and only that", async () => {
+  const id = await project();
+  const left = path.join(staging, "0123456789abcdef");
+  await mkdir(path.join(left, "en"), { recursive: true });
+  await writeFile(path.join(left, "plate.png"), "half a picture");
+  // Each run goes at once, so two draw side by side whatever the render lane allows.
+  service = createVideoService({ capturer: fake, hold: () => async (used) => void settled.push(used), schedule: (_space, work) => work() });
+  const hold = gate();
+  fake.before = (capture) => (capture.path.includes("locale=de") && capture.artboards.some((board) => board.id === "caption-a") ? hold.opened : undefined);
+  const first = await service.start(space, id, { ...BODY, captions: [{ id: "a", text: "A" }] });
+  assert.ok("job" in first);
+  while (fake.calls.length < 2) await new Promise((resolve) => setTimeout(resolve, 5));
+  const own = path.join(staging, first.job.id);
+  assert.ok(await exists(path.join(own, "plate.png")), "the first run has staged its first language");
+
+  await layers(id, { ...BODY, locales: ["en"], captions: [{ id: "b", text: "B" }] });
+  assert.equal(await exists(left), false, "the folder of a run that never finished is gone");
+  assert.ok(await exists(path.join(own, "plate.png")), "the folder of a run going on is kept");
+
+  hold.open();
+  const answer = await first.finished;
+  assert.ok(await readSet(space, id, answer.set));
   assert.equal(await exists(staging), false);
 });
 
