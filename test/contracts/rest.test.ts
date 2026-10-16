@@ -5,6 +5,7 @@ import http from "node:http";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
+import { openEvents } from "../helpers/events.ts";
 import { png, sizeOf, svgLogo } from "../helpers/images.ts";
 import { startServer, type TestServer } from "../helpers/spawn-server.ts";
 
@@ -432,6 +433,23 @@ describe("projects", () => {
     await createProject({ name: "Private" });
     for (const route of ["/api/meta", "/api/projects", "/api/projects/private", "/api/usage", "/api/renders", "/api/nothing", "/api/projects/private/export.zip"]) {
       assert.match((await server.fetch(route)).headers.get("cache-control") ?? "", /private|no-store/, route);
+    }
+  });
+
+  test("/api/events streams the account's changes as Server-Sent Events, and keeps none", async () => {
+    const stream = await openEvents(`${server.url}/api/events`);
+    try {
+      assert.equal(stream.response.status, 200);
+      assert.match(stream.response.headers.get("content-type") ?? "", /^text\/event-stream/);
+      assert.match(stream.response.headers.get("cache-control") ?? "", /private/);
+      assert.match(stream.response.headers.get("cache-control") ?? "", /no-store/);
+      assertKeys((await stream.next("ready")).data, ["heartbeatMs"]);
+      const id = await createProject({ name: "Streamed" });
+      assert.deepEqual((await stream.next("project-created")).data, { id, actor: "api" });
+      await call(`/api/projects/${id}`, send("PUT", { name: "Streamed on" }));
+      assertKeys((await stream.next("project")).data, ["id", "revision", "actor"]);
+    } finally {
+      stream.close();
     }
   });
 });
