@@ -127,6 +127,18 @@ const PHRASES: Partial<Record<LintRule, RegExp[]>> = {
 
 const TEXT_RULES = Object.keys(PHRASES) as LintRule[];
 
+/**
+ * What a text has to hold for a rule's patterns to be worth trying. Most copy holds none of it, and these plain
+ * searches are many times quicker than the patterns, which a render of forty languages runs on thousands of texts.
+ */
+const HINTS: Partial<Record<LintRule, RegExp>> = {
+  "apple-recognition": /choice|of the (?:day|year)|award|featured|we love|des (?:tages|jahres)|du jour|ann[ée]e|del (?:día|giorno)|do dia|van de dag/i,
+  price: /[$€£¥₹₩₽₺%]|\d\s?(?:usd|eur|gbp|chf|jpy|cad|aud|sek|nok|dkk|pln|kr|zł)|sale|half/i,
+  free: /free|kostenlos|umsonst|gratis|gratuit|grátis|darm|bezpłatn|бесплатн|ücretsiz|無料|免费|免費|무료/i,
+  ranking: /#|n[ro]\.?\s?1|n[º°]|number one|top|best|highest|chart|most |platz|meistgeladen/i,
+  date: /\d/,
+};
+
 /** The words of a text as a page shows them: without the asterisks that mark words, and with its breaks as spaces. */
 const plain = (text: string) => text.replace(/\*/g, "").replace(/\s+/g, " ").trim();
 
@@ -135,6 +147,7 @@ export function findPhrases(text: string): { rule: LintRule; match: string }[] {
   const said = plain(text);
   const found: { rule: LintRule; match: string }[] = [];
   for (const rule of TEXT_RULES) {
+    if (!HINTS[rule]!.test(said)) continue;
     const matches = new Set<string>();
     for (const pattern of PHRASES[rule]!) for (const match of said.matchAll(pattern)) matches.add(match[0].trim());
     // A price also reads as a figure; the shorter of two overlapping finds is part of the longer.
@@ -212,9 +225,14 @@ function logoFindings(item: Slide | Creative, place: Place): Finding[] {
 
 function copyFindings(item: Slide | Creative, place: Place, locales: string[], fallback: string): Finding[] {
   const found: Finding[] = [];
+  const fields = texts(item);
+  // A language without copy of its own shows another's, so the same words are read once.
+  const read = new Map<string, ReturnType<typeof findPhrases>>();
   for (const locale of locales) {
-    for (const [field, text] of texts(item)) {
-      for (const { rule, match } of findPhrases(pick(text, locale, fallback))) found.push({ rule, locale, ...place, field, match });
+    for (const [field, text] of fields) {
+      const said = pick(text, locale, fallback);
+      if (!read.has(said)) read.set(said, findPhrases(said));
+      for (const { rule, match } of read.get(said)!) found.push({ rule, locale, ...place, field, match });
     }
   }
   return found;
