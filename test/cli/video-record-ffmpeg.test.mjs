@@ -123,14 +123,15 @@ document.getElementById("go").addEventListener("click", () => (document.getEleme
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end(page);
   });
-  await new Promise((resolve) => server.listen(3371, "127.0.0.1", () => resolve(undefined)));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(undefined)));
   after(() => new Promise((resolve) => server.close(resolve)));
+  const { port } = /** @type {import("node:net").AddressInfo} */ (server.address());
   const project = path.join(bench, "web");
   mkdirSync(project, { recursive: true });
   const plan = {
     version: 1,
     project: "p_example",
-    app: { platform: "web", url: "http://127.0.0.1:3371/" },
+    app: { platform: "web", url: `http://127.0.0.1:${port}/` },
     displays: ["iphone"],
     locales: ["en"],
     scenes: [

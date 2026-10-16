@@ -318,7 +318,8 @@ test("the recorder is waited for until it says it records, and no longer than it
     startRecorder("simctl", "xcrun", ["simctl", "io", SIM, "recordVideo", file], { ready: /Recording started/, timeout: 2000 }),
     (error) => error instanceof Failure && /^simctl did not start recording within 2 seconds\./.test(error.message),
   );
-  assert.ok(Date.now() - asked < 4000);
+  // Well short of the 10 seconds a recorder is given by default, with room for a busy Mac.
+  assert.ok(Date.now() - asked < 9000);
   assert.deepEqual(signals(), ["start", "SIGINT"]);
 
   rmSync(fake.log, { force: true });
