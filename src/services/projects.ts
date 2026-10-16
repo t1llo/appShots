@@ -3,7 +3,7 @@ import { defaultTargets } from "../render.ts";
 import { allSlides, creativesSchema, deviceSlidesSchema, localesSchema, mockupsSchema, type Project, repeatedLocales, slideSchema, targetsSchema, themeSchema, unknownFields } from "../schema.ts";
 import type { Space } from "../storage/paths.ts";
 import { type Damaged, projects, type Stored } from "../storage/projects.ts";
-import { createProject, deleteProject, listCreativeOutputs, listImages, listOutputs, listShots, readImages, readShots, type Shot, type StoredImage } from "../store.ts";
+import { createProject, deleteProject, listCreativeOutputs, listImages, listOutputs, listShots, readImages, readShots, type Shot, type StoredImage, updateProject } from "../store.ts";
 import { deviceShape } from "../template.ts";
 import { type Ctx, type Warning, writeOptions } from "./context.ts";
 
@@ -119,11 +119,7 @@ export async function update(ctx: Ctx, id: string, body: unknown): Promise<{ pro
   const repeated = patch.locales && Array.isArray(given) ? repeatedLocales(given as string[]) : [];
   if (repeated.length) warnings.push({ kind: "locale", names: repeated, text: `Each language is kept once, in the first of its spellings: left out ${repeated.join(", ")} from locales.` });
 
-  const defined: Record<string, unknown> = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
-  // An empty choice of sizes means the standard ones again.
-  if (defined.targets === null || (Array.isArray(defined.targets) && defined.targets.length === 0)) defined.targets = undefined;
-  const { project } = await projects.mutate(ctx.space, id, (current) => ({ ...current, ...defined }), writeOptions(ctx));
-  return { project, warnings };
+  return { project: await updateProject(ctx.space, id, patch, writeOptions(ctx)), warnings };
 }
 
 /** Makes an earlier version current again, as a new revision. Works on a damaged project too. */
