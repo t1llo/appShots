@@ -296,6 +296,8 @@ describe("OAuth for MCP clients", () => {
     assert.equal(page.status, 200);
     assert.equal(page.headers.get("cache-control"), "no-store");
     assert.equal(page.headers.get("x-frame-options"), "DENY");
+    // With no-referrer, a browser sends the form with Origin: null, and the answer is refused as another site's.
+    assert.equal(page.headers.get("referrer-policy"), "same-origin");
     assert.match(page.headers.get("content-security-policy")!, /default-src 'none'.*frame-ancestors 'none'/);
     const html = await page.text();
     assert.match(html, /Let Test App use your appShots account\?/);
@@ -480,6 +482,8 @@ describe("OAuth for MCP clients", () => {
     const forged = await sendAnswer(sealed, "allow", { origin: "https://elsewhere.example.com" });
     assert.equal(forged.status, 403);
     assert.equal(forged.headers.get("location"), null);
+    // A sandboxed frame sends no origin of its own.
+    assert.equal((await sendAnswer(sealed, "allow", { origin: "null" })).status, 403);
     assert.equal((await sendAnswer(sealed, "allow", { user: "u2" })).status, 400);
     const changed = Buffer.from(JSON.stringify({ ...sealedData(sealed), redirectUri: "https://elsewhere.example.com/" })).toString("base64url");
     assert.equal((await sendAnswer(`${changed}.${sealed.split(".")[1]}`, "allow")).status, 400);

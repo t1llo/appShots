@@ -59,7 +59,8 @@ function send(res: Response, status: number, html: string): void {
       "Cache-Control": "no-store",
       "X-Frame-Options": "DENY",
       "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
-      "Referrer-Policy": "no-referrer",
+      // Not no-referrer: a browser would then send the form with Origin: null, which the answer has to refuse.
+      "Referrer-Policy": "same-origin",
     })
     .type("html")
     .send(html);
