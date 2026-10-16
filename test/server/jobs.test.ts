@@ -207,6 +207,18 @@ describe("renders, without sign-in", () => {
     await until(async () => (await jobs()).filter((each) => each.project === id).every((each) => each.state === "cancelled"), 5000, "the render to be cancelled");
   });
 
+  test("a render that ended past the newest eight is gone at once, whether the list was read or not", async () => {
+    const id = await create("Kept", 1);
+    const ids: string[] = [];
+    for (let i = 0; i < 9; i++) {
+      const { job } = (await call(`/api/projects/${id}/render`, json("POST", { background: true }))).body as { job: Job };
+      ids.push(job.id);
+      await until(async () => (await call(`/api/renders/${job.id}`)).body.state === "done", 10_000, "the render");
+    }
+    assert.equal((await call(`/api/renders/${ids[0]}`)).status, 404);
+    assert.equal((await call(`/api/renders/${ids[1]}`)).body.state, "done");
+  });
+
   test("mockups.zip of a project without screenshots is an error, not an empty file", async () => {
     const id = await create("Mockups", 1);
     const empty = await call(`/api/projects/${id}/mockups.zip`);

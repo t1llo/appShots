@@ -96,6 +96,7 @@ export function listRenders(space: Space): RenderJob[] {
 }
 
 function runOf(space: Space, job: string): Run {
+  forget();
   const run = runs.get(job);
   if (!run || run.space !== space.id) throw new NotFoundError(UNKNOWN);
   return run;
