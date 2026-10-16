@@ -14,8 +14,12 @@ import { dueOn, type Known, LiveLink, type LiveEvent, noWants, type Wants, want 
 const TICK_MS = 1000;
 /** Events are looked at together after this long, so a burst of them asks for each thing once. */
 const BATCH_MS = 150;
-/** A tab nobody has looked at for this long closes its stream, unless a render works: a browser lets a site keep only a few connections open. */
-const IDLE_MS = 60_000;
+/**
+ * A tab nobody has looked at for this long closes its stream, unless a render works. Over HTTP/1.1 a browser keeps
+ * six connections to a site across all its tabs, and streams held by tabs in the background would leave none for the
+ * requests of the one in front. A tab opened in the background opens none until it is looked at.
+ */
+const IDLE_MS = 15_000;
 
 /** Projects the clock leaves alone for now, such as one being deleted, whose page would otherwise see it gone. */
 const hushed = new Set<string>();
