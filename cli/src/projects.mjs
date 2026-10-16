@@ -20,9 +20,9 @@ export function xcodeProjects(dirs) {
   return [];
 }
 
-// This folder, or where a toolkit keeps the Xcode project it wraps: ./ios for React Native and Flutter,
-// ./ios/App for Capacitor, ./iosApp for Kotlin Multiplatform.
-export const projectDirs = () => [".", "ios", "ios/App", "iosApp"].map((dir) => path.join(process.cwd(), dir));
+// This folder (or another one given), or where a toolkit keeps the Xcode project it wraps: ./ios for React Native
+// and Flutter, ./ios/App for Capacitor, ./iosApp for Kotlin Multiplatform.
+export const projectDirs = (base = process.cwd()) => [".", "ios", "ios/App", "iosApp"].map((dir) => path.join(base, dir));
 
 /** @param {string} file */
 export const fromHere = (file) => path.relative(process.cwd(), file) || ".";

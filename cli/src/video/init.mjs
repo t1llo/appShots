@@ -94,9 +94,9 @@ export async function initPlan(given, flags) {
   // Each language must be one the project has, written as the project writes it.
   const locales = asked ? resolvePlan({ locales: asked }, project).locales : null;
 
-  // A web app is told by the folder: a dev server and nothing that runs in a simulator or a window.
+  // A web app is told by the plan's folder: a dev server and nothing that runs in a simulator or a window.
   const kits = toolkits(path.dirname(file));
-  const web = xcodeProjects(projectDirs()).length === 0 && kits.length > 0 && kits.every((kit) => kit.web && !kit.simulator && !kit.window) ? kits.find((kit) => kit.web)?.web : null;
+  const web = xcodeProjects(projectDirs(path.dirname(file))).length === 0 && kits.length > 0 && kits.every((kit) => kit.web && !kit.simulator && !kit.window) ? kits.find((kit) => kit.web)?.web : null;
   const plan = planFromProject(project, shots ?? [], { displays, locales, platform: web ? "web" : undefined, url: web?.address ?? null });
   const dropped = (displays ?? []).filter((key) => !plan.displays.includes(key));
   if (dropped.length > 0) console.error(`appshots: ${dropped.join(", ")} ${dropped.length === 1 ? "is" : "are"} not a display of this kind of app, so the plan leaves ${dropped.length === 1 ? "it" : "them"} out. A Mac app's previews need a plan of their own: --plan appshots.mac.video.json --display mac.`);
