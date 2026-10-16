@@ -2113,12 +2113,12 @@ function xcodeProjects(dirs) {
 }
 var projectDirs, fromHere;
 var init_projects = __esmMin((() => {
-	projectDirs = () => [
+	projectDirs = (base = process.cwd()) => [
 		".",
 		"ios",
 		"ios/App",
 		"iosApp"
-	].map((dir) => path.join(process.cwd(), dir));
+	].map((dir) => path.join(base, dir));
 	fromHere = (file) => path.relative(process.cwd(), file) || ".";
 }));
 //#endregion
@@ -4615,6 +4615,14 @@ function workFolders(plan) {
 	};
 }
 /**
+* A file as a message names it: from the current folder when it is in there, else in full.
+* @param {string} file
+*/
+function shown$2(file) {
+	const relative = path.relative(process.cwd(), file);
+	return relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) ? file : relative;
+}
+/**
 * The plan's languages --lang picks, in the plan's order; all of them without it.
 * @param {Plan & { locales: string[] }} plan
 * @param {Record<string, string | true>} flags
@@ -4736,12 +4744,12 @@ const MOST_SCENES = 4;
 */
 function planFromProject(project, shots, { displays, locales, platform, url } = {}) {
 	const has = new Set(shots.map((shot) => shot.device ?? "iphone"));
-	const shown = displays ?? [
+	const wanted = displays ?? [
 		"iphone",
 		"ipad",
 		"mac"
 	].filter((key) => has.has(key) || key === "iphone" && has.has("duo"));
-	const keys = shown.length > 0 ? shown : ["iphone"];
+	const keys = wanted.length > 0 ? wanted : ["iphone"];
 	const kind = platform ?? (keys.every((key) => key === "mac") ? "mac" : "ios");
 	const fitting = kind === "web" ? keys : keys.filter((key) => PREVIEW_DISPLAYS[key] === kind);
 	const slides = project.slides;
@@ -4797,7 +4805,7 @@ async function initPlan(given, flags) {
 	const asked = listFlag$1(flags, "lang", project.locales.slice(0, 2).join(","));
 	const locales = asked ? resolvePlan({ locales: asked }, project).locales : null;
 	const kits = toolkits(path.dirname(file));
-	const web = xcodeProjects(projectDirs()).length === 0 && kits.length > 0 && kits.every((kit) => kit.web && !kit.simulator && !kit.window) ? kits.find((kit) => kit.web)?.web : null;
+	const web = xcodeProjects(projectDirs(path.dirname(file))).length === 0 && kits.length > 0 && kits.every((kit) => kit.web && !kit.simulator && !kit.window) ? kits.find((kit) => kit.web)?.web : null;
 	const plan = planFromProject(project, shots ?? [], {
 		displays,
 		locales,
@@ -4815,7 +4823,7 @@ async function initPlan(given, flags) {
 		writeFileSync(ignore, GITIGNORE);
 	}
 	const scenes = plan.scenes.length;
-	console.log(`Wrote ${path.relative(process.cwd(), file) || file}: ${scenes} scene${scenes === 1 ? "" : "s"} from the slides of ${project.name ?? id}, for ${plan.displays.join(", ")} in ${plan.locales.join(", ")}.`);
+	console.log(`Wrote ${shown$2(file)}: ${scenes} scene${scenes === 1 ? "" : "s"} from the slides of ${project.name ?? id}, for ${plan.displays.join(", ")} in ${plan.locales.join(", ")}.`);
 	console.log("Next: give each scene its drive (how the app gets through that moment), then run 'appshots video plan'.");
 }
 /**
@@ -5012,7 +5020,7 @@ async function layersCommand(plan, { displays, locales }) {
 			locales
 		});
 		const count = manifest.layers.length;
-		console.log(`${display}: set ${manifest.set}, ${count} layer${count === 1 ? "" : "s"} in ${path.relative(process.cwd(), manifest.dir ?? "") || manifest.dir}. ${manifest.charged ? "Drawing it used one render." : "Drawn before, so no render was used."}`);
+		console.log(`${display}: set ${manifest.set}, ${count} layer${count === 1 ? "" : "s"} in ${shown$2(manifest.dir ?? "")}. ${manifest.charged ? "Drawing it used one render." : "Drawn before, so no render was used."}`);
 		for (const warning of manifest.warnings ?? []) console.log(`  ${warning.locale ? `${warning.locale} ` : ""}${warning.layer}: ${warning.detail}${warning.kind === "fit" ? " to fit" : ""}`);
 	}
 }
@@ -9875,7 +9883,7 @@ var remotion_exports = __exportAll({
 * A path as the user reads it: from the folder the command runs in when it is inside it, else in full.
 * @param {string} file
 */
-function shown$2(file) {
+function shown$1(file) {
 	const relative = path.relative(process.cwd(), file);
 	return relative.startsWith("..") || path.isAbsolute(relative) ? file : relative || ".";
 }
@@ -9907,7 +9915,7 @@ async function inProject(command, args, folder, timeout) {
 		]
 	});
 	if (result.error) fail(`${command} is not on this Mac. It comes with Node.js (nodejs.org), which Remotion needs as well. Install it, then run this again.`);
-	const line = `cd ${shown$2(folder)} && ${command} ${args.join(" ")}`;
+	const line = `cd ${shown$1(folder)} && ${command} ${args.join(" ")}`;
 	if (result.timedOut) fail(`${command} ${args[0]} took longer than ${Math.round(timeout / 6e4)} minutes and was stopped. Run it yourself to see where it stops: ${line}`);
 	if (result.status !== 0) {
 		const tail = (result.stderr.trim() || result.stdout.trim()).split("\n").slice(-20).join("\n");
@@ -9956,7 +9964,7 @@ async function scaffoldRemotion(root, { yes = false, install = true, again = fal
 	if (changed.length > 0) {
 		const list = changed.map((entry) => `  ${entry.file}`).join("\n");
 		const losing = `These differ from appShots' template, and putting it back loses the changes in them:\n${list}`;
-		if (!again) console.log(`${shown$2(folder)} is there already. These differ from appShots' template and stay as they are:\n${list}\nTo put the template back over them: appshots video remotion --again`);
+		if (!again) console.log(`${shown$1(folder)} is there already. These differ from appShots' template and stay as they are:\n${list}\nTo put the template back over them: appshots video remotion --again`);
 		else if (!replace && !process.stdin.isTTY) fail(`${losing}\n\nThis needs the user's yes, apart from the one to Remotion's licence. Show them the list and ask whether to replace these files; after a yes, run: ${rerun(true)}`);
 		else {
 			console.log(losing);
@@ -9971,13 +9979,13 @@ async function scaffoldRemotion(root, { yes = false, install = true, again = fal
 		writeFileSync(entry.target, entry.text);
 		written.push(entry.file);
 	}
-	if (written.length > 0) console.log(`Wrote ${written.length} file${written.length === 1 ? "" : "s"} into ${shown$2(folder)}: ${written.join(", ")}`);
-	else if (changed.length === 0) console.log(`${shown$2(folder)} has appShots' template already.`);
+	if (written.length > 0) console.log(`Wrote ${written.length} file${written.length === 1 ? "" : "s"} into ${shown$1(folder)}: ${written.join(", ")}`);
+	else if (changed.length === 0) console.log(`${shown$1(folder)} has appShots' template already.`);
 	let installed = existsSync(path.join(folder, "node_modules", "remotion", "package.json")) && !written.includes("package.json");
 	if (!install) console.log(installed ? "Remotion is installed there." : "Remotion is not installed there yet.");
 	else if (installed) console.log("Remotion is installed there already.");
 	else {
-		console.log(`Installing Remotion ${REMOTION_VERSION} in ${shown$2(folder)} with npm. This takes a few minutes.`);
+		console.log(`Installing Remotion ${REMOTION_VERSION} in ${shown$1(folder)} with npm. This takes a few minutes.`);
 		await inProject("npm", [
 			"install",
 			"--no-audit",
@@ -9986,7 +9994,7 @@ async function scaffoldRemotion(root, { yes = false, install = true, again = fal
 		installed = true;
 	}
 	if (installed) {
-		const skills = `cd ${shown$2(folder)} && npx remotion skills add`;
+		const skills = `cd ${shown$1(folder)} && npx remotion skills add`;
 		if (!process.stdin.isTTY) console.log(`Remotion has skills of its own for coding agents. To add them, ask the user, then run: ${skills}`);
 		else if (await agrees("Remotion has skills of its own for coding agents. Add them now (npx remotion skills add)?")) await inProject("npx", [
 			"remotion",
@@ -9994,7 +10002,7 @@ async function scaffoldRemotion(root, { yes = false, install = true, again = fal
 			"add"
 		], folder, 3e5);
 	}
-	console.log(`Next: ${installed ? "" : `cd ${shown$2(folder)} && npm install, then `}appshots video compose --engine remotion`);
+	console.log(`Next: ${installed ? "" : `cd ${shown$1(folder)} && npm install, then `}appshots video compose --engine remotion`);
 	return {
 		folder,
 		written,
@@ -10277,8 +10285,8 @@ function framesOf(props) {
 */
 async function composeRemotion(ctx, segments) {
 	const folder = path.join(ctx.root, "remotion");
-	if (!existsSync(path.join(folder, "package.json"))) fail(`There is no Remotion project in ${shown$2(folder)}. It comes with Remotion's licence, which the user has to agree to: run 'appshots video remotion', which explains it, then compose again.`);
-	if (!existsSync(path.join(folder, "node_modules", ".bin", "remotion"))) fail(`Remotion is not installed in ${shown$2(folder)} yet. Install it: cd ${shown$2(folder)} && npm install`);
+	if (!existsSync(path.join(folder, "package.json"))) fail(`There is no Remotion project in ${shown$1(folder)}. It comes with Remotion's licence, which the user has to agree to: run 'appshots video remotion', which explains it, then compose again.`);
+	if (!existsSync(path.join(folder, "node_modules", ".bin", "remotion"))) fail(`Remotion is not installed in ${shown$1(folder)} yet. Install it: cd ${shown$1(folder)} && npm install`);
 	const name = `${ctx.locale}-${ctx.display}`;
 	const props = await remotionProps(ctx, segments, path.join(folder, "public"));
 	writeWhole(path.join(folder, "props", `${name}.json`), `${JSON.stringify(props, null, 2)}\n`);
@@ -10287,7 +10295,7 @@ async function composeRemotion(ctx, segments) {
 	console.log(`  Remotion renders ${framesOf(props)} frames from props/${name}.json; a 30-second preview takes a minute or two.`);
 	if (!existsSync(path.join(folder, "node_modules", ".remotion"))) console.log("  The first render downloads Chrome Headless Shell (about 170 MB).");
 	await inProject("npx", renderArgs(name), folder, 18e5);
-	if (!existsSync(out) || statSync(out).size === 0) fail(`Remotion finished without writing ${shown$2(out)}. Render it yourself to see why: cd ${shown$2(folder)} && npx ${renderArgs(name).join(" ")}`);
+	if (!existsSync(out) || statSync(out).size === 0) fail(`Remotion finished without writing ${shown$1(out)}. Render it yourself to see why: cd ${shown$1(folder)} && npx ${renderArgs(name).join(" ")}`);
 	return out;
 }
 var REMOTION_VERSION, REMOTION_LICENCE, TEMPLATE_FILES, templateOf, FPS, toFrames, MUSIC_VERSION, RTL, partials, partialOf, fontsFetched, projectFonts, musicPrepared, LAYER_NAME$1, hasCaption$1, renderArgs;
@@ -11578,7 +11586,7 @@ async function previewsOf(plan, flags, out) {
 	for (const { from } of languages ?? []) if (planLocales && !planLocales.some((locale) => sameLanguage(from, locale))) fail(`--lang ${from}: the plan's languages are ${planLocales.join(", ")}.`);
 	const displays = listFlag$1(flags, "display", "iphone,ipad");
 	for (const display of displays ?? []) if (!Object.hasOwn(PREVIEW_SPECS, display)) fail(`--display takes ${Object.keys(PREVIEW_SPECS).join(", ")}.`);
-	if (!existsSync(out)) fail(`There are no previews in ${shown$1(out)}. Make them first: appshots video compose`);
+	if (!existsSync(out)) fail(`There are no previews in ${shown(out)}. Make them first: appshots video compose`);
 	/** @param {string} dir */
 	const folders = (dir) => readdirSync(dir).filter((entry) => !entry.startsWith(".") && statSync(path.join(dir, entry)).isDirectory()).sort();
 	const locales = folders(out).filter((locale) => !planLocales || planLocales.includes(locale));
@@ -11597,7 +11605,7 @@ async function previewsOf(plan, flags, out) {
 			if (!existsSync(file)) continue;
 			const result = checked(file, display);
 			if ("problem" in result) {
-				refused.push(`${shown$1(file)} ${result.problem}`);
+				refused.push(`${shown(file)} ${result.problem}`);
 				continue;
 			}
 			const hash = await hashOf(file);
@@ -11607,7 +11615,7 @@ async function previewsOf(plan, flags, out) {
 				locale,
 				display,
 				file,
-				shown: shown$1(file),
+				shown: shown(file),
 				bytes: statSync(file).size,
 				...result,
 				hash,
@@ -11619,8 +11627,8 @@ async function previewsOf(plan, flags, out) {
 	}
 	if (refused.length > 0) fail(`${refused.join("\n")}\nNothing was changed.`);
 	const missing = (languages ?? []).map((entry) => entry.from).filter((code) => !previews.some((preview) => sameLanguage(code, preview.locale)));
-	if (missing.length > 0) fail(`There is no ${name}.mp4 for ${missing.join(", ")} in ${shown$1(out)}. Compose it first: appshots video compose --lang ${missing.join(",")}`);
-	if (previews.length === 0) fail(`There is no ${name}.mp4 in ${shown$1(out)}${displays ? ` for ${displays.join(", ")}` : ""}. Compose the previews first: appshots video compose`);
+	if (missing.length > 0) fail(`There is no ${name}.mp4 for ${missing.join(", ")} in ${shown(out)}. Compose it first: appshots video compose --lang ${missing.join(",")}`);
+	if (previews.length === 0) fail(`There is no ${name}.mp4 in ${shown(out)}${displays ? ` for ${displays.join(", ")}` : ""}. Compose the previews first: appshots video compose`);
 	return previews;
 }
 /**
@@ -11727,7 +11735,7 @@ async function videoPush(plan, flags) {
 	let previews = await previewsOf(plan, flags, out);
 	const saved = readState(stateFile);
 	if (flags.resume) {
-		if (!saved) fail(`Nothing to resume: there is no ${shown$1(stateFile)}. Run it without --resume.`);
+		if (!saved) fail(`Nothing to resume: there is no ${shown(stateFile)}. Run it without --resume.`);
 		for (const preview of previews) if (saved.previews[preview.key] && saved.previews[preview.key].hash !== preview.hash) notes.add(`${preview.shown} changed after the last push. Run it without --resume to upload it.`);
 		previews = previews.filter((preview) => saved.previews[preview.key]?.hash === preview.hash && saved.previews[preview.key].video);
 		if (previews.length === 0) fail("Nothing to resume: the last push uploaded none of these previews as they are now. Run it without --resume.");
@@ -11975,7 +11983,7 @@ async function videoPush(plan, flags) {
 	if (skipped) process.exitCode = 1;
 	console.log(`Nothing was submitted for review. Apple can take up to 24 hours before a preview plays in App Store Connect. Look the version over and submit it yourself: https://appstoreconnect.apple.com/apps/${app.id}`);
 }
-var PUSH_TIMING, STATE_VERSION, shown$1, megabytes, counted, platformOf, hashOf, saveState;
+var PUSH_TIMING, STATE_VERSION, shown, megabytes, counted, platformOf, hashOf, saveState;
 var init_push = __esmMin((() => {
 	init_fail();
 	init_prompt();
@@ -11995,7 +12003,7 @@ var init_push = __esmMin((() => {
 		most: 3e4
 	};
 	STATE_VERSION = 1;
-	shown$1 = (file) => path.relative(process.cwd(), file) || file;
+	shown = (file) => path.relative(process.cwd(), file) || file;
 	megabytes = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
 	counted = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 	platformOf = (display) => display === "mac" ? "MAC_OS" : "IOS";
@@ -12323,11 +12331,9 @@ function previews(plan, flags) {
 		display,
 		file: path.join(out, locale, display, `${plan.name}.mp4`)
 	}))).filter(({ file }) => existsSync(file));
-	if (found.length === 0) fail(`There is no preview in ${path.relative(process.cwd(), out) || out} yet${flags.lang || flags.display ? " for what --lang and --display pick" : ""}. 'appshots video compose' makes them.`);
+	if (found.length === 0) fail(`There is no preview in ${shown$2(out)} yet${flags.lang || flags.display ? " for what --lang and --display pick" : ""}. 'appshots video compose' makes them.`);
 	return found;
 }
-/** @param {string} file */
-const shown = (file) => path.relative(process.cwd(), file) || file;
 /**
 * `appshots video check [files...]`: checks videos against Apple's specification; without files, the plan's
 * previews. Ends with 1 when any of them has an error.
@@ -12337,7 +12343,7 @@ const shown = (file) => path.relative(process.cwd(), file) || file;
 async function checkPreviews(files, flags) {
 	const checkFiles = await step("checkFiles", "check");
 	if (flags.display === true) fail("--display needs the display the files are for, such as --display iphone.");
-	if (files.length > 0) return checkFiles(files.map((file) => path.resolve(file)), {
+	if (files.length > 0) return checkFiles(files, {
 		display: flags.display,
 		json: Boolean(flags.json),
 		root: workFolderOf(flags)
@@ -12346,7 +12352,7 @@ async function checkPreviews(files, flags) {
 	const plan = await loadPlan(flags);
 	const found = previews(plan, flags);
 	const displays = [...new Set(found.map((each) => each.display))];
-	return checkFiles(found.map((each) => each.file), {
+	return checkFiles(found.map((each) => shown$2(each.file)), {
 		display: displays.length === 1 ? displays[0] : void 0,
 		json: Boolean(flags.json),
 		root: workFolders(plan).work
@@ -12409,7 +12415,7 @@ async function sheet(rest, flags) {
 		const made = await contactSheet(each.files, each.out, { every }, tools);
 		const rows = made.blocks ?? [];
 		const order = each.files.length > 1 && rows.length === each.files.length ? `; top to bottom: ${rows.map((block, at) => `${each.labels[at]} (${block.rows} row${block.rows === 1 ? "" : "s"})`).join(", ")}` : "";
-		console.log(`${shown(made.file ?? each.out)}: a picture every ${every} s${order}`);
+		console.log(`${shown$2(made.file ?? each.out)}: a picture every ${every} s${order}`);
 	}
 }
 /**
@@ -12440,7 +12446,7 @@ async function poster(rest, flags) {
 	});
 	for (const file of files) {
 		const made = await choosePoster(file, seconds, tools);
-		console.log(`${shown(made.file)}: the frame at ${made.seconds.toFixed(2)} s (${made.timecode}), which 'appshots video push' gives App Store Connect as the poster`);
+		console.log(`${shown$2(made.file)}: the frame at ${made.seconds.toFixed(2)} s (${made.timecode}), which 'appshots video push' gives App Store Connect as the poster`);
 	}
 }
 /** The ffmpeg line of 'appshots check', or null in a build without the video steps. It never asks or installs. */
