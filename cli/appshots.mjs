@@ -13,14 +13,34 @@
 // appshots skill for a coding agent and connects that agent to the server, `appshots update` brings that
 // skill up to date, and `appshots call` reaches the server's tools for agents that have no MCP.
 // No dependencies, so it runs straight from a checkout: `node cli/appshots.mjs` or `npm link`.
-import { chmodSync, closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { accessSync, chmodSync, closeSync, constants, copyFileSync, createReadStream, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import os, { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { inflateSync } from "node:zlib";
 import readline from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash, createPrivateKey, sign } from "node:crypto";
+//#region \0rolldown/runtime.js
+var __defProp = Object.defineProperty;
+var __esmMin = (fn, res, err) => () => {
+	if (err) throw err[0];
+	try {
+		return fn && (res = fn(fn = 0)), res;
+	} catch (e) {
+		throw err = [e], e;
+	}
+};
+var __exportAll = (all, no_symbols) => {
+	let target = {};
+	for (var name in all) __defProp(target, name, {
+		get: all[name],
+		enumerable: true
+	});
+	if (!no_symbols) __defProp(target, Symbol.toStringTag, { value: "Module" });
+	return target;
+};
+//#endregion
 //#region cli/src/args.mjs
 /** Flags that never take a value. */
 const BOOLEAN_FLAGS = new Set([
@@ -37,7 +57,18 @@ const BOOLEAN_FLAGS = new Set([
 	"add-languages",
 	"builds",
 	"create",
-	"again"
+	"again",
+	"realtime",
+	"manual",
+	"reuse-footage",
+	"json",
+	"draft",
+	"raw",
+	"yes",
+	"no-install",
+	"replace",
+	"no-wait",
+	"resume"
 ]);
 /**
 * Flags whose value may be left out: a bare --sim or --device is the only one there is, a bare --mac lists the
@@ -125,8 +156,6 @@ function unknownFlags(flags, known) {
 }
 //#endregion
 //#region cli/src/fail.mjs
-/** What fail() throws: a message for the person at the Terminal, which main() prints before it exits. */
-var Failure = class extends Error {};
 /**
 * Stops the command with a message that says what to do. It throws, so that what is open is closed on the way
 * out: a browser, a raw terminal, a status bar that was set.
@@ -150,40 +179,12 @@ async function attempt(work) {
 		return { problem: error.message };
 	}
 }
+var Failure;
+var init_fail = __esmMin((() => {
+	Failure = class extends Error {};
+}));
 //#endregion
 //#region cli/src/config.mjs
-const CONFIG_FILE = path.join(process.env.XDG_CONFIG_HOME ?? path.join(homedir(), ".config"), "appshots", "config.json");
-const LATEST_FILE = path.join(path.dirname(CONFIG_FILE), "latest.json");
-const CLAUDE_SKILL = path.join(homedir(), ".claude", "skills", "appshots");
-const SHARED_SKILL = path.join(homedir(), ".agents", "skills", "appshots");
-const AGENTS = {
-	claude: {
-		name: "Claude Code",
-		dir: CLAUDE_SKILL,
-		start: "type /appshots"
-	},
-	codex: {
-		name: "Codex",
-		dir: SHARED_SKILL,
-		start: "type $appshots"
-	},
-	opencode: {
-		name: "OpenCode",
-		dir: SHARED_SKILL,
-		start: "ask it for your App Store screenshots"
-	},
-	pi: {
-		name: "Pi",
-		dir: SHARED_SKILL,
-		start: "type /skill:appshots"
-	},
-	other: {
-		name: "your agent",
-		dir: SHARED_SKILL,
-		start: "tell it: Read ~/.agents/skills/appshots/SKILL.md and follow it"
-	}
-};
-const BUILD_CACHE = path.join(homedir(), "Library", "Caches", "appshots", "build");
 /**
 * @typedef {{ url: string, token: string }} Config
 */
@@ -215,8 +216,6 @@ function saveConfig(config) {
 	writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, { mode: 384 });
 	chmodSync(CONFIG_FILE, 384);
 }
-/** @param {string} file */
-const tilde = (file) => file.startsWith(homedir() + path.sep) ? `~${file.slice(homedir().length)}` : file;
 /** Whether anything is there, a link that points nowhere included. */
 function exists(file) {
 	try {
@@ -226,16 +225,45 @@ function exists(file) {
 		return false;
 	}
 }
+var CONFIG_FILE, LATEST_FILE, CLAUDE_SKILL, SHARED_SKILL, AGENTS, BUILD_CACHE, tilde;
+var init_config = __esmMin((() => {
+	init_fail();
+	CONFIG_FILE = path.join(process.env.XDG_CONFIG_HOME ?? path.join(homedir(), ".config"), "appshots", "config.json");
+	LATEST_FILE = path.join(path.dirname(CONFIG_FILE), "latest.json");
+	CLAUDE_SKILL = path.join(homedir(), ".claude", "skills", "appshots");
+	SHARED_SKILL = path.join(homedir(), ".agents", "skills", "appshots");
+	AGENTS = {
+		claude: {
+			name: "Claude Code",
+			dir: CLAUDE_SKILL,
+			start: "type /appshots"
+		},
+		codex: {
+			name: "Codex",
+			dir: SHARED_SKILL,
+			start: "type $appshots"
+		},
+		opencode: {
+			name: "OpenCode",
+			dir: SHARED_SKILL,
+			start: "ask it for your App Store screenshots"
+		},
+		pi: {
+			name: "Pi",
+			dir: SHARED_SKILL,
+			start: "type /skill:appshots"
+		},
+		other: {
+			name: "your agent",
+			dir: SHARED_SKILL,
+			start: "tell it: Read ~/.agents/skills/appshots/SKILL.md and follow it"
+		}
+	};
+	BUILD_CACHE = path.join(homedir(), "Library", "Caches", "appshots", "build");
+	tilde = (file) => file.startsWith(homedir() + path.sep) ? `~${file.slice(homedir().length)}` : file;
+}));
 //#endregion
 //#region cli/src/api.mjs
-/** @typedef {Config} Config */
-/**
-* The route of a project. Its id goes in encoded, so that a mistyped one is a project the server does not
-* have rather than another route.
-* @param {string} id
-* @param {string} [rest]
-*/
-const projectRoute = (id, rest = "") => `/api/projects/${encodeURIComponent(id)}${rest}`;
 /**
 * @param {Config} config
 * @param {string} method
@@ -320,12 +348,14 @@ async function rpc(config, method, params) {
 	if (reply.error) fail(reply.error.message ?? "The server refused the call.");
 	return reply.result;
 }
+var projectRoute;
+var init_api = __esmMin((() => {
+	init_fail();
+	init_config();
+	projectRoute = (id, rest = "") => `/api/projects/${encodeURIComponent(id)}${rest}`;
+}));
 //#endregion
 //#region cli/src/util.mjs
-/** @param {string} value */
-const slugify = (value) => value.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "shot";
-/** @param {number} ms */
-const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /**
 * Waits until `test` holds, for `ms` at most, and says whether it came to hold.
 * @param {() => boolean} test
@@ -402,41 +432,14 @@ function findMatch(candidates, query) {
 	const exact = candidates.filter((item) => item.udid.toLowerCase() === needle || item.name.toLowerCase() === needle);
 	return exact.length === 1 ? exact : candidates.filter((item) => item.name.toLowerCase().includes(needle));
 }
+var slugify, pause;
+var init_util = __esmMin((() => {
+	init_fail();
+	slugify = (value) => value.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "shot";
+	pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+}));
 //#endregion
 //#region cli/src/proc.mjs
-/**
-* @typedef {object} Result
-* @property {number | null} status
-* @property {string | null} signal
-* @property {string} stdout
-* @property {string} stderr
-* @property {boolean} timedOut Whether it was stopped for taking longer than its timeout.
-* @property {Error} [error] Set when the program could not be started at all.
-*
-* @typedef {object} RunOptions
-* @property {number} [timeout] Milliseconds before it is stopped; 0 for no limit. Left out, the program's own default.
-* @property {NodeJS.ProcessEnv} [env]
-* @property {string} [cwd]
-* @property {string} [input] What it reads on stdin.
-* @property {"inherit" | "ignore" | Array<"ignore" | "pipe" | "inherit" | number>} [stdio]
-*
-* @typedef {(command: string, args: string[], options: RunOptions & { timeout: number }) => Promise<Result>} Runner
-*/
-/**
-* How long each program gets before it is taken to hang. A simulator service that is stuck answers nothing at
-* all, and without a limit the command would wait for good. A build is given no limit by its caller.
-* @type {Record<string, number>}
-*/
-const TIMEOUTS = {
-	xcrun: 6e4,
-	xcodebuild: 3e5,
-	unzip: 3e5,
-	git: 1e4
-};
-/** @param {string} command */
-const defaultTimeout = (command) => TIMEOUTS[command] ?? 3e4;
-/** The system the commands run on. A test stands in for a Mac by changing it. */
-const host = { platform: process.platform };
 /** @type {Runner} */
 function spawnRunner(command, args, { timeout, env, cwd, input, stdio }) {
 	return new Promise((resolve) => {
@@ -487,7 +490,6 @@ function spawnRunner(command, args, { timeout, env, cwd, input, stdio }) {
 		}
 	});
 }
-let runner = spawnRunner;
 /**
 * Runs a program and waits for it, without blocking what else is going on.
 * @param {string} command
@@ -501,16 +503,20 @@ function run$1(command, args = [], options = {}) {
 		timeout: options.timeout ?? defaultTimeout(command)
 	});
 }
+var TIMEOUTS, defaultTimeout, host, runner;
+var init_proc = __esmMin((() => {
+	TIMEOUTS = {
+		xcrun: 6e4,
+		xcodebuild: 3e5,
+		unzip: 3e5,
+		git: 1e4
+	};
+	defaultTimeout = (command) => TIMEOUTS[command] ?? 3e4;
+	host = { platform: process.platform };
+	runner = spawnRunner;
+}));
 //#endregion
 //#region cli/src/xcode.mjs
-/**
-* @typedef {object} Xcode
-* @property {NodeJS.ProcessEnv} env What xcrun and xcodebuild run with.
-* @property {string} dir The developer folder in use, empty when there is none.
-* @property {boolean} picked Whether it was picked here because xcode-select points at the Command Line Tools.
-*/
-/** @type {Promise<Xcode> | undefined} */
-let found;
 /**
 * The Xcode the command uses, looked for once. Full Xcode is picked when xcode-select points at the Command Line
 * Tools, which lack simctl and devicectl: the one in /Applications/Xcode.app, or else the newest Xcode*.app.
@@ -546,7 +552,6 @@ function xcode() {
 	})();
 	return found;
 }
-const xcodeEnv = async () => (await xcode()).env;
 /**
 * The developer folders of the copies of Xcode in /Applications and ~/Applications that can run a simulator:
 * Xcode.app first, then the newest.
@@ -617,8 +622,18 @@ async function xcodebuild(args, options = {}) {
 	if (result.timedOut) fail(`xcodebuild did not answer within ${Math.round(timeout / 1e3)} seconds. If Xcode asks to install components or to agree to its licence, open it once and do so, then try again.`);
 	return result;
 }
+var found, xcodeEnv;
+var init_xcode = __esmMin((() => {
+	init_fail();
+	init_proc();
+	xcodeEnv = async () => (await xcode()).env;
+}));
 //#endregion
 //#region cli/src/capture/device.mjs
+init_api();
+init_fail();
+init_util();
+init_xcode();
 /**
 * The iPhones and iPads plugged into this Mac or paired with it, as devicectl lists them.
 * @param {{ timeout?: number }} [options]
@@ -732,6 +747,10 @@ async function captureMac(window, file) {
 	if (result.status !== 0 || !existsSync(file) || statSync(file).size === 0) fail(`Could not capture the window of ${window.app}.${result.stderr ? `\n${result.stderr.trim()}` : ""}\nmacOS lets a program capture windows only with the Screen Recording permission: System Settings, Privacy & Security, Screen & System Audio Recording, switch on the terminal app this runs in, then start that app again.`);
 	console.log(`Captured ${window.app} -> ${file}`);
 }
+var init_mac$1 = __esmMin((() => {
+	init_fail();
+	init_proc();
+}));
 //#endregion
 //#region cli/src/capture/blank.mjs
 /**
@@ -801,46 +820,9 @@ function blankScreen(png) {
 	}
 	return true;
 }
+var init_blank = __esmMin((() => {}));
 //#endregion
 //#region cli/src/capture/sim.mjs
-/** @typedef {{ name: string, udid: string }} Booted */
-/** How long after a launch a screen that is still blank is taken as it is. */
-const BLANK_WAIT = 15e3;
-const CLEAN = [
-	"--dataNetwork",
-	"wifi",
-	"--wifiMode",
-	"active",
-	"--wifiBars",
-	"3",
-	"--cellularMode",
-	"active",
-	"--cellularBars",
-	"4",
-	"--operatorName",
-	"",
-	"--batteryState",
-	"charged",
-	"--batteryLevel",
-	"100"
-];
-const PLAIN = [
-	"--time",
-	"9:41",
-	"--batteryState",
-	"charged",
-	"--batteryLevel",
-	"100",
-	"--wifiBars",
-	"3",
-	"--cellularBars",
-	"4"
-];
-/**
-* The overrides `status_bar list` reports, without its heading: empty when there are none.
-* @param {string} text
-*/
-const overrides = (text) => text.split("\n").map((line) => line.trim()).filter((line) => line && !/^Current Status Bar Overrides:?$/.test(line) && !/^=+$/.test(line)).join("\n");
 /**
 * Shows 9:41 on 9 January 2007, a full battery and full signal on a simulator for as long as `work` runs, then
 * takes the override away again. One that was there before is left in place, unless it is the same as this one,
@@ -947,6 +929,45 @@ async function captureSettled(simulator, file, wait) {
 	console.log(`Captured ${simulator.name} -> ${file}`);
 	return blank;
 }
+var BLANK_WAIT, CLEAN, PLAIN, overrides;
+var init_sim$2 = __esmMin((() => {
+	init_fail();
+	init_util();
+	init_xcode();
+	init_blank();
+	BLANK_WAIT = 15e3;
+	CLEAN = [
+		"--dataNetwork",
+		"wifi",
+		"--wifiMode",
+		"active",
+		"--wifiBars",
+		"3",
+		"--cellularMode",
+		"active",
+		"--cellularBars",
+		"4",
+		"--operatorName",
+		"",
+		"--batteryState",
+		"charged",
+		"--batteryLevel",
+		"100"
+	];
+	PLAIN = [
+		"--time",
+		"9:41",
+		"--batteryState",
+		"charged",
+		"--batteryLevel",
+		"100",
+		"--wifiBars",
+		"3",
+		"--cellularBars",
+		"4"
+	];
+	overrides = (text) => text.split("\n").map((line) => line.trim()).filter((line) => line && !/^Current Status Bar Overrides:?$/.test(line) && !/^=+$/.test(line)).join("\n");
+}));
 //#endregion
 //#region cli/src/shot.mjs
 /**
@@ -988,6 +1009,10 @@ function shotLanguage(flags) {
 	if (flags.lang !== void 0 && (typeof flags.lang !== "string" || !/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(flags.lang))) fail("--lang needs a language code, such as de or pt-BR.");
 	return flags.lang;
 }
+var init_shot = __esmMin((() => {
+	init_fail();
+	init_util();
+}));
 //#endregion
 //#region cli/src/plist.mjs
 /**
@@ -1043,6 +1068,7 @@ function readBinaryPlist(buffer) {
 	};
 	return read(top, 0);
 }
+var init_plist = __esmMin((() => {}));
 //#endregion
 //#region cli/src/prompt.mjs
 /**
@@ -1079,16 +1105,6 @@ function ask(question, { hidden = false, missing }) {
 		});
 	});
 }
-/** @param {string} question */
-const promptHidden = (question) => ask(question, {
-	hidden: true,
-	missing: "No token: run it with APPSHOTS_TOKEN=<token> or --token <token>. Connect in the Studio shows the command."
-});
-/**
-* @param {string} question
-* @param {string} missing What to do instead, for a command run without a terminal.
-*/
-const promptLine = (question, missing) => ask(question, { missing });
 /**
 * A yes or no from the person at the Terminal, yes when they only press Return. False without a terminal.
 * @param {string} question
@@ -1097,117 +1113,118 @@ async function confirm(question) {
 	if (!process.stdin.isTTY) return false;
 	return /^(y|yes|)$/i.test(await ask(`${question} [Y/n] `, { missing: "" }));
 }
+var promptHidden, promptLine;
+var init_prompt = __esmMin((() => {
+	init_fail();
+	promptHidden = (question) => ask(question, {
+		hidden: true,
+		missing: "No token: run it with APPSHOTS_TOKEN=<token> or --token <token>. Connect in the Studio shows the command."
+	});
+	promptLine = (question, missing) => ask(question, { missing });
+}));
 //#endregion
 //#region cli/src/store/displays.mjs
-/**
-* The display of App Store Connect each folder of an export goes onto, as the API names it, and the size the
-* pictures of that folder have. The names are a generation behind: APP_IPHONE_67 is the 6.9-inch display,
-* APP_IPHONE_61 the 6.3-inch one and APP_IPHONE_58 the 6.1-inch one. The Mac has one display for its four
-* sizes, so the largest folder there is goes onto it.
-* @type {Record<string, [display: string, width: number, height: number]>}
-*/
-const STORE_DISPLAYS = {
-	"iphone-6.9": [
-		"APP_IPHONE_67",
-		1320,
-		2868
-	],
-	"iphone-6.3": [
-		"APP_IPHONE_61",
-		1206,
-		2622
-	],
-	"iphone-6.5": [
-		"APP_IPHONE_65",
-		1284,
-		2778
-	],
-	"iphone-6.1": [
-		"APP_IPHONE_58",
-		1170,
-		2532
-	],
-	"iphone-5.5": [
-		"APP_IPHONE_55",
-		1242,
-		2208
-	],
-	"iphone-4.7": [
-		"APP_IPHONE_47",
-		750,
-		1334
-	],
-	"iphone-4": [
-		"APP_IPHONE_40",
-		640,
-		1136
-	],
-	"iphone-3.5": [
-		"APP_IPHONE_35",
-		640,
-		960
-	],
-	"ipad-13": [
-		"APP_IPAD_PRO_3GEN_129",
-		2064,
-		2752
-	],
-	"ipad-11": [
-		"APP_IPAD_PRO_3GEN_11",
-		1668,
-		2420
-	],
-	"ipad-12.9": [
-		"APP_IPAD_PRO_129",
-		2048,
-		2732
-	],
-	"ipad-10.5": [
-		"APP_IPAD_105",
-		1668,
-		2224
-	],
-	"ipad-9.7": [
-		"APP_IPAD_97",
-		1536,
-		2048
-	],
-	"mac-2880": [
-		"APP_DESKTOP",
-		2880,
-		1800
-	],
-	"mac-2560": [
-		"APP_DESKTOP",
-		2560,
-		1600
-	],
-	"mac-1440": [
-		"APP_DESKTOP",
-		1440,
-		900
-	],
-	"mac-1280": [
-		"APP_DESKTOP",
-		1280,
-		800
-	]
-};
-/** Folders whose display the API does not have yet. Their files go into App Store Connect by hand. */
-const STORE_BY_HAND = {
-	"iphone-duo": "iPhone Duo",
-	"iphone-duo-cover": "iPhone Duo"
-};
-const STORE_PLATFORMS = {
-	IOS: "iOS",
-	MAC_OS: "macOS"
-};
-/** @param {string} display */
-const platformOf = (display) => display === "APP_DESKTOP" ? "MAC_OS" : "IOS";
+var STORE_DISPLAYS, STORE_BY_HAND, STORE_PLATFORMS, platformOf$1;
+var init_displays = __esmMin((() => {
+	STORE_DISPLAYS = {
+		"iphone-6.9": [
+			"APP_IPHONE_67",
+			1320,
+			2868
+		],
+		"iphone-6.3": [
+			"APP_IPHONE_61",
+			1206,
+			2622
+		],
+		"iphone-6.5": [
+			"APP_IPHONE_65",
+			1284,
+			2778
+		],
+		"iphone-6.1": [
+			"APP_IPHONE_58",
+			1170,
+			2532
+		],
+		"iphone-5.5": [
+			"APP_IPHONE_55",
+			1242,
+			2208
+		],
+		"iphone-4.7": [
+			"APP_IPHONE_47",
+			750,
+			1334
+		],
+		"iphone-4": [
+			"APP_IPHONE_40",
+			640,
+			1136
+		],
+		"iphone-3.5": [
+			"APP_IPHONE_35",
+			640,
+			960
+		],
+		"ipad-13": [
+			"APP_IPAD_PRO_3GEN_129",
+			2064,
+			2752
+		],
+		"ipad-11": [
+			"APP_IPAD_PRO_3GEN_11",
+			1668,
+			2420
+		],
+		"ipad-12.9": [
+			"APP_IPAD_PRO_129",
+			2048,
+			2732
+		],
+		"ipad-10.5": [
+			"APP_IPAD_105",
+			1668,
+			2224
+		],
+		"ipad-9.7": [
+			"APP_IPAD_97",
+			1536,
+			2048
+		],
+		"mac-2880": [
+			"APP_DESKTOP",
+			2880,
+			1800
+		],
+		"mac-2560": [
+			"APP_DESKTOP",
+			2560,
+			1600
+		],
+		"mac-1440": [
+			"APP_DESKTOP",
+			1440,
+			900
+		],
+		"mac-1280": [
+			"APP_DESKTOP",
+			1280,
+			800
+		]
+	};
+	STORE_BY_HAND = {
+		"iphone-duo": "iPhone Duo",
+		"iphone-duo-cover": "iPhone Duo"
+	};
+	STORE_PLATFORMS = {
+		IOS: "iOS",
+		MAC_OS: "macOS"
+	};
+	platformOf$1 = (display) => display === "APP_DESKTOP" ? "MAC_OS" : "IOS";
+}));
 //#endregion
 //#region cli/src/sim.mjs
-/** @type {Promise<any> | undefined} */
-let listing;
 /**
 * Everything simctl knows: the devices of each runtime, the device types and the runtimes. Asked once per
 * command, as each asking takes a moment, and again after something here has changed it.
@@ -1239,8 +1256,6 @@ async function bootedSimulators() {
 		udid: device.udid
 	}));
 }
-/** @type {Map<string, { width: number, height: number } | null>} */
-const screens = new Map();
 /**
 * The size of the screenshots a device type takes, in pixels, as its bundle says. Null when it does not say.
 * @param {{ identifier: string, bundlePath?: string } | undefined} type
@@ -1303,48 +1318,6 @@ async function availableSimulators() {
 	}));
 }
 /**
-* The kinds of simulator 'appshots run' starts, with the size of screenshot the store asks for first. Models are
-* told apart by that size, and by their names where a device type does not say its size.
-*/
-const SIM_KINDS = {
-	iphone: {
-		label: "iPhone",
-		flag: "",
-		family: "iPhone",
-		store: "iPhone Pro Max",
-		size: [1320, 2868],
-		wanted: [/Pro Max/, /Plus/]
-	},
-	duo: {
-		label: "iPhone Duo",
-		flag: " --duo",
-		family: "iPhone",
-		store: "iPhone Duo",
-		size: [2007, 2853],
-		wanted: [/Duo/]
-	},
-	ipad: {
-		label: "iPad",
-		flag: " --ipad",
-		family: "iPad",
-		store: "13-inch iPad Pro",
-		size: [2064, 2752],
-		wanted: [
-			/^iPad Pro 13-inch/,
-			/13-inch|12\.9-inch/,
-			/^iPad Pro/
-		]
-	}
-};
-/** @param {Record<string, unknown>} flags */
-const simKind = (flags) => flags.duo ? "duo" : flags.ipad ? "ipad" : "iphone";
-/**
-* Whether a screen is the size the store asks for, upright or on its side.
-* @param {{ width: number, height: number } | null} screen
-* @param {number[]} size
-*/
-const storeSized = (screen, [width, height]) => Boolean(screen) && (screen.width === width && screen.height === height || screen.width === height && screen.height === width);
-/**
 * The simulator 'appshots run' uses when none is named: one whose screenshots have the size the store asks for
 * (the iPhone Pro Max, the iPhone Duo, the 13-inch iPad Pro), on the newest iOS and of the newest model. Null when
 * there is no simulator of that kind at all; `fallback` says that another model had to do.
@@ -1365,8 +1338,6 @@ function recommendedSimulator(simulators, kind) {
 		fallback: rank(best) > 0
 	} : null;
 }
-/** @param {Simulator} sim */
-const simulatorLabel = (sim) => `${sim.name}${sim.name === sim.model ? "" : `, an ${sim.model}`}, iOS ${sim.os}`;
 /**
 * The App Store display whose size a screen's screenshots have as they are, as in "the 6.9-inch iPhone display".
 * Null for any other size, which the Studio scales to the displays of an export all the same.
@@ -1380,12 +1351,6 @@ function displayOf$1(screen) {
 	if (storeSized(screen, SIM_KINDS.duo.size)) return `the ${STORE_BY_HAND["iphone-duo"]} display`;
 	return null;
 }
-/** @param {{ screen: { width: number, height: number } | null }} sim */
-const screenLabel = (sim) => {
-	if (!sim.screen) return "";
-	const display = displayOf$1(sim.screen);
-	return `, screenshots ${sim.screen.width}x${sim.screen.height} ${display ? `for ${display}` : "(no store display has this size)"}`;
-};
 /**
 * A simulator of the size the store asks for that could be made: the newest such device type on the newest iOS
 * that runs it. Null when Xcode has no such device type, or no iOS for it.
@@ -1464,12 +1429,6 @@ async function runSimulator(flags) {
 	};
 }
 /**
-* How long booting and installing may take before the simulator service is taken to be stuck. A first boot, or
-* a large app on a busy Mac, takes minutes where the questions xcrun is otherwise asked take seconds.
-*/
-const BOOT_TIMEOUT = 6e5;
-const INSTALL_TIMEOUT = 3e5;
-/**
 * Boots a simulator and waits until it is ready, also when someone else has only just started it.
 * @param {{ name: string, udid: string, booted: boolean }} simulator
 */
@@ -1494,7 +1453,7 @@ async function boot(simulator) {
 * @param {{ name: string, udid: string }} simulator
 * @param {string} file The .app folder.
 */
-async function install(simulator, file) {
+async function install$1(simulator, file) {
 	const result = await xcrun([
 		"simctl",
 		"install",
@@ -1529,8 +1488,64 @@ async function installedApps(udid) {
 		bundleId: app.CFBundleIdentifier
 	})).sort((a, b) => a.name.localeCompare(b.name));
 }
+var listing, screens, SIM_KINDS, simKind, storeSized, simulatorLabel, screenLabel, BOOT_TIMEOUT, INSTALL_TIMEOUT;
+var init_sim$1 = __esmMin((() => {
+	init_fail();
+	init_plist();
+	init_proc();
+	init_prompt();
+	init_displays();
+	init_util();
+	init_xcode();
+	screens = new Map();
+	SIM_KINDS = {
+		iphone: {
+			label: "iPhone",
+			flag: "",
+			family: "iPhone",
+			store: "iPhone Pro Max",
+			size: [1320, 2868],
+			wanted: [/Pro Max/, /Plus/]
+		},
+		duo: {
+			label: "iPhone Duo",
+			flag: " --duo",
+			family: "iPhone",
+			store: "iPhone Duo",
+			size: [2007, 2853],
+			wanted: [/Duo/]
+		},
+		ipad: {
+			label: "iPad",
+			flag: " --ipad",
+			family: "iPad",
+			store: "13-inch iPad Pro",
+			size: [2064, 2752],
+			wanted: [
+				/^iPad Pro 13-inch/,
+				/13-inch|12\.9-inch/,
+				/^iPad Pro/
+			]
+		}
+	};
+	simKind = (flags) => flags.duo ? "duo" : flags.ipad ? "ipad" : "iphone";
+	storeSized = (screen, [width, height]) => Boolean(screen) && (screen.width === width && screen.height === height || screen.width === height && screen.height === width);
+	simulatorLabel = (sim) => `${sim.name}${sim.name === sim.model ? "" : `, an ${sim.model}`}, iOS ${sim.os}`;
+	screenLabel = (sim) => {
+		if (!sim.screen) return "";
+		const display = displayOf$1(sim.screen);
+		return `, screenshots ${sim.screen.width}x${sim.screen.height} ${display ? `for ${display}` : "(no store display has this size)"}`;
+	};
+	BOOT_TIMEOUT = 6e5;
+	INSTALL_TIMEOUT = 3e5;
+}));
 //#endregion
 //#region cli/src/capture.mjs
+init_mac$1();
+init_sim$2();
+init_shot();
+init_sim$1();
+init_util();
 /**
 * Takes a screenshot from where --mac, --device or --sim says, a booted simulator when none of them does.
 * @param {Record<string, string | true | undefined>} flags
@@ -1565,67 +1580,6 @@ async function capture(flags, { statusBar = true } = {}) {
 }
 //#endregion
 //#region cli/src/capture/web.mjs
-const IPHONE_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1";
-/**
-* The screens a web page is drawn at: the points and the scale of the device whose store size comes out of it.
-* `bar` is what the status bar takes at the top, `home` what the home indicator takes at the bottom, and
-* `pill` how wide that indicator is. `agent` is the browser the page is told it is in, with its platform.
-*/
-const WEB_SCREENS = {
-	iphone: {
-		label: "an iPhone",
-		width: 440,
-		height: 956,
-		scale: 3,
-		bar: 62,
-		home: 34,
-		pill: 152,
-		touch: true,
-		agent: {
-			userAgent: IPHONE_AGENT,
-			platform: "iPhone"
-		}
-	},
-	duo: {
-		label: "an iPhone Duo",
-		width: 669,
-		height: 951,
-		scale: 3,
-		bar: 39,
-		home: 0,
-		pill: 0,
-		touch: true,
-		agent: {
-			userAgent: IPHONE_AGENT,
-			platform: "iPhone"
-		}
-	},
-	ipad: {
-		label: "an iPad",
-		width: 1032,
-		height: 1376,
-		scale: 2,
-		bar: 24,
-		home: 20,
-		pill: 320,
-		touch: true,
-		agent: {
-			userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
-			platform: "MacIntel"
-		}
-	},
-	mac: {
-		label: "a Mac",
-		width: 1440,
-		height: 900,
-		scale: 2,
-		bar: 0,
-		home: 0,
-		pill: 0,
-		touch: false,
-		agent: null
-	}
-};
 /**
 * A Chromium browser that can draw a page without a window: Chrome, Chromium, Edge or Brave as installed, or
 * the Chromium that Playwright keeps for a project. Null when there is none.
@@ -2073,6 +2027,70 @@ async function captureWeb(flags) {
 		device: kind
 	};
 }
+var IPHONE_AGENT, IPAD_AGENT, WEB_SCREENS;
+var init_web$1 = __esmMin((() => {
+	init_fail();
+	init_proc();
+	init_shot();
+	init_util();
+	IPHONE_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1";
+	IPAD_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
+	WEB_SCREENS = {
+		iphone: {
+			label: "an iPhone",
+			width: 440,
+			height: 956,
+			scale: 3,
+			bar: 62,
+			home: 34,
+			pill: 152,
+			touch: true,
+			agent: {
+				userAgent: IPHONE_AGENT,
+				platform: "iPhone"
+			}
+		},
+		duo: {
+			label: "an iPhone Duo",
+			width: 669,
+			height: 951,
+			scale: 3,
+			bar: 39,
+			home: 0,
+			pill: 0,
+			touch: true,
+			agent: {
+				userAgent: IPHONE_AGENT,
+				platform: "iPhone"
+			}
+		},
+		ipad: {
+			label: "an iPad",
+			width: 1032,
+			height: 1376,
+			scale: 2,
+			bar: 24,
+			home: 20,
+			pill: 320,
+			touch: true,
+			agent: {
+				userAgent: IPAD_AGENT,
+				platform: "MacIntel"
+			}
+		},
+		mac: {
+			label: "a Mac",
+			width: 1440,
+			height: 900,
+			scale: 2,
+			bar: 0,
+			home: 0,
+			pill: 0,
+			touch: false,
+			agent: null
+		}
+	};
+}));
 //#endregion
 //#region cli/src/projects.mjs
 /**
@@ -2093,79 +2111,18 @@ function xcodeProjects(dirs) {
 	}
 	return [];
 }
-const projectDirs = () => [
-	".",
-	"ios",
-	"ios/App",
-	"iosApp"
-].map((dir) => path.join(process.cwd(), dir));
-/** @param {string} file */
-const fromHere = (file) => path.relative(process.cwd(), file) || ".";
+var projectDirs, fromHere;
+var init_projects = __esmMin((() => {
+	projectDirs = () => [
+		".",
+		"ios",
+		"ios/App",
+		"iosApp"
+	].map((dir) => path.join(process.cwd(), dir));
+	fromHere = (file) => path.relative(process.cwd(), file) || ".";
+}));
 //#endregion
 //#region cli/src/toolkits.mjs
-/** Dev servers by the package that brings them, each with the port it takes when the project names none. */
-const WEB_KITS = [
-	[
-		"next",
-		"Next.js",
-		3e3
-	],
-	[
-		"nuxt",
-		"Nuxt",
-		3e3
-	],
-	[
-		"@sveltejs/kit",
-		"SvelteKit",
-		5173
-	],
-	[
-		"astro",
-		"Astro",
-		4321
-	],
-	[
-		"@remix-run/dev",
-		"Remix",
-		5173
-	],
-	[
-		"@angular/core",
-		"Angular",
-		4200
-	],
-	[
-		"gatsby",
-		"Gatsby",
-		8e3
-	],
-	[
-		"react-scripts",
-		"Create React App",
-		3e3
-	],
-	[
-		"@vue/cli-service",
-		"Vue CLI",
-		8080
-	],
-	[
-		"vite",
-		"Vite",
-		5173
-	],
-	[
-		"parcel",
-		"Parcel",
-		1234
-	],
-	[
-		"webpack-dev-server",
-		"webpack",
-		8080
-	]
-];
 /**
 * @typedef {object} Toolkit
 * @property {string} name
@@ -2378,10 +2335,75 @@ function toolkitLines(kit, simulator, xcode) {
 	} else if (kit.web) lines.push(`  In a browser: 'appshots capture --web ${kit.web.address} --name <name>' opens the file as it is`);
 	return lines;
 }
+var WEB_KITS;
+var init_toolkits = __esmMin((() => {
+	init_projects();
+	init_util();
+	WEB_KITS = [
+		[
+			"next",
+			"Next.js",
+			3e3
+		],
+		[
+			"nuxt",
+			"Nuxt",
+			3e3
+		],
+		[
+			"@sveltejs/kit",
+			"SvelteKit",
+			5173
+		],
+		[
+			"astro",
+			"Astro",
+			4321
+		],
+		[
+			"@remix-run/dev",
+			"Remix",
+			5173
+		],
+		[
+			"@angular/core",
+			"Angular",
+			4200
+		],
+		[
+			"gatsby",
+			"Gatsby",
+			8e3
+		],
+		[
+			"react-scripts",
+			"Create React App",
+			3e3
+		],
+		[
+			"@vue/cli-service",
+			"Vue CLI",
+			8080
+		],
+		[
+			"vite",
+			"Vite",
+			5173
+		],
+		[
+			"parcel",
+			"Parcel",
+			1234
+		],
+		[
+			"webpack-dev-server",
+			"webpack",
+			8080
+		]
+	];
+}));
 //#endregion
 //#region cli/src/build.mjs
-/** @param {string} project */
-const container$1 = (project) => [project.endsWith(".xcworkspace") ? "-workspace" : "-project", project];
 /** @param {string | true | undefined} given */
 function findXcodeProject(given) {
 	if (typeof given === "string" && /\.(xcworkspace|xcodeproj)\/?$/.test(given)) {
@@ -2395,11 +2417,6 @@ function findXcodeProject(given) {
 	const kits = toolkits(process.cwd()).filter((kit) => !kit.unsure);
 	fail(kits.length > 0 ? `No Xcode workspace or project here: this app is made with ${kits.map((kit) => kit.name).join(" and ")}, and 'appshots run' builds Xcode projects only. Start it with its own command and capture it where it runs. 'appshots check' gives the commands.` : "No Xcode workspace or project in this folder or in ./ios. Run this in your app's folder, or point at it with --project <path>. An app made with something else is started by its own command; 'appshots check' says how.");
 }
-/**
-* What xcodebuild wrote about a failure, without the timestamped log lines it mixes in.
-* @param {{ stderr: string }} result
-*/
-const complaint = (result) => result.stderr.split("\n").filter((line) => line.trim() && !/^\d{4}-\d\d-\d\d /.test(line)).join("\n");
 /** @param {string} project */
 async function schemesOf(project) {
 	const result = await xcodebuild([
@@ -2537,24 +2554,19 @@ async function build(project, scheme, simulator, fresh) {
 		bundleId: app.PRODUCT_BUNDLE_IDENTIFIER
 	};
 }
+var container$1, complaint;
+var init_build = __esmMin((() => {
+	init_config();
+	init_fail();
+	init_projects();
+	init_toolkits();
+	init_util();
+	init_xcode();
+	container$1 = (project) => [project.endsWith(".xcworkspace") ? "-workspace" : "-project", project];
+	complaint = (result) => result.stderr.split("\n").filter((line) => line.trim() && !/^\d{4}-\d\d-\d\d /.test(line)).join("\n");
+}));
 //#endregion
 //#region cli/src/store/asc.mjs
-/** The issuer ID, the key ID and the path of the key file, as `store login` saves them. Never the key. */
-const STORE_FILE = path.join(path.dirname(CONFIG_FILE), "app-store-connect.json");
-const STORE_API = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(process.env.APPSHOTS_STORE_API ?? "") ? process.env.APPSHOTS_STORE_API : "https://api.appstoreconnect.apple.com";
-/** The states in which the page of a version can still be changed. */
-const STORE_OPEN = new Set([
-	"PREPARE_FOR_SUBMISSION",
-	"DEVELOPER_REJECTED",
-	"REJECTED",
-	"METADATA_REJECTED",
-	"INVALID_BINARY",
-	"READY_FOR_REVIEW"
-]);
-const STORE_HOWTO = `All three come from App Store Connect, under Users and Access > Integrations > App Store Connect API > Team Keys:
-the issuer ID is above the list of keys, the key ID is beside the key, and the .p8 file is the download offered
-once when the key is made. Give the key the role Marketing: it can then make a version and change screenshots
-and texts, and it cannot submit or release anything.`;
 /**
 * @typedef {{ issuerId: string, keyId: string, file: string, key: import("node:crypto").KeyObject }} Account
 * @typedef {{ id: string, name: string, bundleId: string, primaryLocale: string }} App
@@ -2624,10 +2636,6 @@ async function storeStatus() {
 	const { value, problem } = await attempt(() => storeKey(settings));
 	return problem ?? `key ${value.keyId} (${tilde(value.file)}). 'appshots store push <project> --app <bundle id>' puts a finished set there`;
 }
-const storeToken = {
-	value: "",
-	until: 0
-};
 /**
 * A token Apple takes for ten minutes, signed with the key. A long upload gets a new one in time.
 * @param {Account} account
@@ -2767,8 +2775,6 @@ async function storeApps(account) {
 		primaryLocale: app.attributes?.primaryLocale ?? ""
 	})).sort((a, b) => a.name.localeCompare(b.name));
 }
-/** @param {App[]} apps */
-const appLines = (apps) => apps.map((app) => `  ${app.bundleId.padEnd(Math.max(...apps.map((each) => each.bundleId.length)))}  ${app.name}`).join("\n");
 /**
 * The app --app names by its bundle id, its name or its Apple ID. Left out, it is the only one the key reaches.
 * @param {Account} account
@@ -2828,14 +2834,6 @@ async function storeLogin(flags) {
 	console.log(apps.length > 0 ? `It reaches ${apps.length === 1 ? "one app" : `${apps.length} apps`}:\n${appLines(apps)}` : "It reaches no app yet.");
 	console.log("Next: appshots store push <project> --app <bundle id> --dry-run");
 }
-/** @param {any} version */
-const versionState = (version) => version.attributes?.appVersionState ?? version.attributes?.appStoreState ?? "UNKNOWN";
-/** @param {string} state */
-const plainState = (state) => ({
-	PREPARE_FOR_SUBMISSION: "being prepared",
-	READY_FOR_DISTRIBUTION: "on the App Store",
-	READY_FOR_SALE: "on the App Store"
-})[state] ?? state.toLowerCase().replaceAll("_", " ");
 /**
 * The versions of an app on one platform, the newest first.
 * @param {Account} account
@@ -2900,38 +2898,54 @@ async function createVersion(account, app, version) {
 	version.id = (await apple(account, "POST", "/v1/appStoreVersions", `create version ${version.number}`, body)).data.id;
 	console.log(`Created version ${version.number} of ${app.name} for ${STORE_PLATFORMS[version.platform]}.`);
 }
-/**
-* The languages a version's store page has. For a version a dry run would create, the ones it would start with.
-* @param {Account} account
-* @param {Version} version
-*/
-const versionLanguages = (account, version) => appleList(account, `/v1/appStoreVersions/${version.id ?? version.before}/appStoreVersionLocalizations?limit=200`, `list the languages of version ${version.number}`);
-/**
-* @param {Account} account
-* @param {Version} version
-* @param {string} locale A code App Store Connect has.
-* @param {Record<string, string>} [texts]
-*/
-const addLanguage = async (account, version, locale, texts = {}) => (await apple(account, "POST", "/v1/appStoreVersionLocalizations", `add the language ${locale}`, { data: {
-	type: "appStoreVersionLocalizations",
-	attributes: {
-		locale,
-		...texts
-	},
-	relationships: { appStoreVersion: { data: {
-		type: "appStoreVersions",
-		id: version.id
-	} } }
-} })).data;
+var STORE_FILE, STORE_API, STORE_OPEN, STORE_HOWTO, storeToken, appLines, versionState, plainState, versionLanguages, addLanguage;
+var init_asc = __esmMin((() => {
+	init_config();
+	init_fail();
+	init_proc();
+	init_prompt();
+	init_util();
+	init_displays();
+	STORE_FILE = path.join(path.dirname(CONFIG_FILE), "app-store-connect.json");
+	STORE_API = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(process.env.APPSHOTS_STORE_API ?? "") ? process.env.APPSHOTS_STORE_API : "https://api.appstoreconnect.apple.com";
+	STORE_OPEN = new Set([
+		"PREPARE_FOR_SUBMISSION",
+		"DEVELOPER_REJECTED",
+		"REJECTED",
+		"METADATA_REJECTED",
+		"INVALID_BINARY",
+		"READY_FOR_REVIEW"
+	]);
+	STORE_HOWTO = `All three come from App Store Connect, under Users and Access > Integrations > App Store Connect API > Team Keys:
+the issuer ID is above the list of keys, the key ID is beside the key, and the .p8 file is the download offered
+once when the key is made. Give the key the role Marketing: it can then make a version and change screenshots
+and texts, and it cannot submit or release anything.`;
+	storeToken = {
+		value: "",
+		until: 0
+	};
+	appLines = (apps) => apps.map((app) => `  ${app.bundleId.padEnd(Math.max(...apps.map((each) => each.bundleId.length)))}  ${app.name}`).join("\n");
+	versionState = (version) => version.attributes?.appVersionState ?? version.attributes?.appStoreState ?? "UNKNOWN";
+	plainState = (state) => ({
+		PREPARE_FOR_SUBMISSION: "being prepared",
+		READY_FOR_DISTRIBUTION: "on the App Store",
+		READY_FOR_SALE: "on the App Store"
+	})[state] ?? state.toLowerCase().replaceAll("_", " ");
+	versionLanguages = (account, version) => appleList(account, `/v1/appStoreVersions/${version.id ?? version.before}/appStoreVersionLocalizations?limit=200`, `list the languages of version ${version.number}`);
+	addLanguage = async (account, version, locale, texts = {}) => (await apple(account, "POST", "/v1/appStoreVersionLocalizations", `add the language ${locale}`, { data: {
+		type: "appStoreVersionLocalizations",
+		attributes: {
+			locale,
+			...texts
+		},
+		relationships: { appStoreVersion: { data: {
+			type: "appStoreVersions",
+			id: version.id
+		} } }
+	} })).data;
+}));
 //#endregion
 //#region cli/src/update.mjs
-/** The folders on this Mac that hold an installed copy of the skill. */
-const installedSkills = () => [CLAUDE_SKILL, SHARED_SKILL].filter((dir) => existsSync(path.join(dir, "SKILL.md")));
-/**
-* What /skill.json gives for a file: the start of its SHA-256.
-* @param {string} text
-*/
-const stamp = (text) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 /**
 * The address of a server that is plain http and not on this Mac: what it hands out could be changed on the way.
 * @param {string} url
@@ -3098,228 +3112,2489 @@ async function update() {
 	const where = dirs.map(tilde).join(" and ");
 	console.log(changed ? `Updated the appshots skill and command in ${where}. Read SKILL.md again from the top: it has changed.` : `The appshots skill and command in ${where} are up to date.`);
 }
+var installedSkills, stamp;
+var init_update = __esmMin((() => {
+	init_fail();
+	init_config();
+	installedSkills = () => [CLAUDE_SKILL, SHARED_SKILL].filter((dir) => existsSync(path.join(dir, "SKILL.md")));
+	stamp = (text) => createHash("sha256").update(text).digest("hex").slice(0, 16);
+}));
 //#endregion
-//#region cli/src/check.mjs
+//#region cli/src/video/guide.mjs
+init_web$1();
+init_build();
+init_asc();
+init_update();
+const GUIDE = `# App preview videos
+
+An app preview is 15 to 30 seconds of real recordings of the app, cut together, with a caption on each moment in
+every language. appShots records the app on this Mac, the server draws the captions, cards and background in the
+project's style, and the CLI cuts the video, checks it against Apple's rules and can place it in App Store Connect.
+Footage never leaves the Mac. Make the screenshots first: a preview takes its captions, fonts and background from
+the project.
+
+## 1. Check the Mac
+
+Run \`appshots check\`. Besides Xcode and the server it reports:
+- **ffmpeg**, which cuts the video. If it is missing, ask the user before installing it (\`brew install ffmpeg\`,
+  about 100 MB). Never install it without a yes.
+- **Screen Recording**, which only a Mac app needs: the terminal app has to be allowed under System Settings >
+  Privacy & Security > Screen & System Audio Recording.
+- **devicectl screen recording**, which only a physical iPhone or iPad needs. Recording a device is experimental;
+  the simulator is the better source.
+
+## 2. Ask once, in one message
+
+Record nothing before the answers.
+- **What it is for**: the App Store. Marketing cuts come later; say so if asked.
+- **Which displays**: iPhone (one file covers every current iPhone), iPad, Mac. A Mac app needs a plan of its own.
+- **Which languages**: all of the project's, or only the primary one. Every language is recorded separately: give
+  the time \`appshots video plan\` estimates. Offer to record the primary language once and reuse it with captions
+  in each language (\`"footage": "primary"\`), and say that the app's own text then stays in that language.
+- **The story**: 3 to 5 moments, proposed from the project's slides (each slide's headline becomes a scene's
+  caption). The user confirms, reorders or cuts.
+- **How the app reaches each moment**: demo data behind a debug-only launch argument, an existing UI test, a
+  Maestro flow or another script, steps on a web page, or the user drives it by hand while the CLI records (see
+  Drivers below).
+- **Music**: the user's own file, licensed for use in the App Store, or silence. appShots ships no music and
+  suggests none.
+- **Animated text with Remotion**: optional. If they want it, explain its licence (step 9) before anything is
+  installed.
+
+## 3. Write the plan
+
+\`appshots video init\` writes \`appshots.video.json\` from the slides: the first slide's headline on the intro
+card, then one scene per slide with that slide's headline as its caption. Change it to the story the user chose
+and give each scene its \`drive\`. Then run \`appshots video plan\` and show the user the storyboard: the scenes,
+each caption in the primary language, the seconds, the total per display and the recording time. Fix what it
+warns about, and get an OK before recording.
+
+\`\`\`json
+{
+  "version": 1,
+  "project": "p_example",
+  "app": { "platform": "ios", "bundleId": "com.example.notes" },
+  "displays": ["iphone", "ipad"],
+  "locales": ["en", "de"],
+  "intro": { "headline": { "slide": 1 } },
+  "outro": { "lines": [{ "slide": 4, "field": "sub" }], "disclosure": ["subscription"] },
+  "scenes": [
+    { "id": "inbox", "caption": { "slide": 2 }, "launch": { "args": ["-AppshotsDemo", "inbox"] },
+      "drive": { "uitest": "NotesUITests/PreviewTests/testInbox" }, "trim": "auto" },
+    { "id": "search", "caption": { "slide": 3 }, "launch": { "args": ["-AppshotsDemo", "search"] }, "drive": { "wait": 6 } },
+    { "id": "share", "caption": "Share in one tap", "drive": "manual", "record": { "seconds": 8 } }
+  ],
+  "poster": { "scene": "inbox" }
+}
+\`\`\`
+
+- A caption is \`{ "slide": 2 }\` (that slide's headline; \`"field": "eyebrow"\` or \`"sub"\` for another line), one
+  text, or one text per language (\`{ "en": "…", "de": "…" }\`). Taking it from a slide keeps it translated.
+- Each scene runs \`(end - start) / speed + hold\` seconds, cut by \`trim\` (\`"auto"\` cuts a still head and tail).
+  Scenes overlap by the transition (fade, 0.4 s). Aim for 20 to 28 seconds in all.
+- \`intro\` and \`outro\` are short cards (1.5 and 2 s). Leave them out, or keep them short: the first 3 seconds
+  should show the app.
+- \`poster\` picks the still shown before the preview plays: by default 1 s after the first scene's caption is in.
+
+## 4. Make the app drivable, only with consent
+
+Propose any change to the user's app and make it only after they agree: a \`-AppshotsDemo\` launch argument that
+fills in demo data, gated by \`#if DEBUG\`; a UI test; an accessibility identifier. The data recorded must be
+fictional: no real names, emails, phone numbers, prices or dates.
+
+## 5. Record
+
+Run \`appshots video record\`. It records each scene in each language on each display that has no recording yet:
+iPhone on the 6.9-inch simulator and iPad on the 13-inch one, with a clean status bar, the app in that language.
+\`--sim <name>\`, \`--device <name>\` (experimental), \`--mac <app>\` (a window, \`--window 1440x900\`) and
+\`--web <url>\` choose the source. \`video plan\` says how long it takes; ask before recording more than 20
+minutes in all.
+
+Then run \`appshots video sheet --raw\` and look at the contact sheet. A wrong screen, the keyboard up, a spinner
+or real data: record that scene again with \`appshots video record --scene <id> --again\`. A recording made
+elsewhere (QuickTime with the iPhone as camera, Xcode) goes in with \`appshots video import <file> --scene <id>\`.
+
+## 6. Layers
+
+Run \`appshots video layers\`. The server draws the captions, cards, background and touch ring of each display in
+every language, in the project's style. A new set uses one render; asking again for the same text is free. It
+warns about a caption it had to shrink, or one drawn in another language because the project has no text for it:
+fix the slide or the plan, and ask again.
+
+## 7. Compose
+
+Run \`appshots video compose\`. It writes \`appshots-video/out/<locale>/<display>/preview.mp4\`, its poster and
+its check, and ends with the check's lines. \`--draft\` is faster for a first look and cannot be uploaded.
+
+## 8. Review
+
+Look at \`appshots video sheet\` and at the poster of one language, and read the check's lines
+(\`appshots video check <file>\` checks any video). \`appshots video poster --at <seconds>\` picks another poster.
+Make at most two rounds of changes before showing the user.
+
+## 9. Optional: Remotion
+
+Only if the user asked for animated text and agreed to Remotion's licence. \`appshots video remotion\` explains
+the licence: Remotion is not open source; it is free for individuals, companies of up to 3 people and non-profits,
+and a larger company needs a Remotion Company License. Pass \`--yes\` only after the user agreed in chat. It writes
+a Remotion project into \`appshots-video/remotion/\` and installs it there. Then \`appshots video compose --engine
+remotion\`.
+
+## 10. Hand over
+
+Tell the user where the files are. Upload only if they ask: first \`appshots video push --dry-run\` and show
+what it would do, then \`appshots video push\` after a yes. Say that Apple processes a preview for up to 24 hours,
+and that nothing has been submitted for review.
+
+## Drivers
+
+A scene's \`drive\` says how the app gets through that moment while it is recorded:
+- \`"manual"\`: the user drives the app; recording stops on Return or after \`record.seconds\`. Needs a person at
+  the terminal.
+- \`{ "wait": 6 }\`: the app plays a demo by itself, for that many seconds.
+- \`{ "uitest": "AppUITests/PreviewTests/testInbox" }\`: an XCUITest method, built once and run against the
+  simulator.
+- \`{ "command": ["maestro", "test", "flows/inbox.yaml"] }\`: any command, run from the plan's folder with
+  \`APPSHOTS_LOCALE\`, \`APPSHOTS_DISPLAY\`, \`APPSHOTS_SCENE\`, \`APPSHOTS_UDID\` and \`APPSHOTS_TOUCH_LOG\` set.
+- \`{ "web": [{ "goto": "/inbox" }, { "click": "#new" }, { "type": ["#title", "Groceries"] }, { "wait": 1 }] }\`:
+  steps on a web app's page, recorded frame by frame.
+
+\`launch\` sets the scene's start: \`args\` for the app, \`url\` as a deep link, \`appearance\` light or dark.
+
+## Touches
+
+The simulator records no touches. A driver can say where it taps by printing \`APPSHOTS_TOUCH <ms> <x> <y>\` (or
+adding that line to \`$APPSHOTS_TOUCH_LOG\`), in milliseconds since it started and in points, and the compose
+draws a ring there. In a UI test, tap with this instead of \`tap()\`:
+
+\`\`\`swift
+extension XCUIElement {
+  func appshotsTap(since start: Date) {
+    print("APPSHOTS_TOUCH \\(Int(Date().timeIntervalSince(start) * 1000)) \\(Int(frame.midX)) \\(Int(frame.midY))")
+    tap()
+  }
+}
+\`\`\`
+
+Set \`let start = Date()\` as the test's first line, then \`app.buttons["Share"].appshotsTap(since: start)\`.
+\`"touches": false\` on a scene leaves its rings out.
+
+## Content rules
+
+- Only real recordings of the app (App Review guideline 2.3.4). Captions over them are allowed; hands, device
+  frames and framing around the recording are not.
+- No prices, no dates, no "free" and no rankings in captions. When the app has in-app purchases, a subscription or
+  needs a login, say so in the outro: \`"disclosure": ["iap", "subscription", "login"]\`.
+- Fictional data only. Licensed music only.
+- Previews play muted and loop: the first 3 seconds show the app, the poster is the app's screen, and the captions
+  carry the message.
+- 15 to 30 seconds; aim for 20 to 28. Up to three previews per display and language.
+
+## Files
+
+\`\`\`
+appshots.video.json                 the plan: commit it
+appshots-video/
+  .gitignore                        keeps the large folders below out of git
+  raw/<display>/<locale>/<scene>.mov    the recordings, with a <scene>.json beside each
+  work/                             cut scenes and other intermediate files
+  layers/<set>/                     the layers the server drew
+  out/<locale>/<display>/preview.mp4    the previews, with preview.poster.png and preview.check.json
+  remotion/                         only after 'appshots video remotion'
+\`\`\`
+`;
+/** `appshots video guide`: prints the playbook. */
+function guide() {
+	process.stdout.write(GUIDE);
+}
+//#endregion
+//#region cli/src/pull.mjs
 /**
-* One report of what there is to work with, so an agent sees it in a single call. Nothing missing makes it
-* fail: each line says what is there, or what to do about it. Everything is asked at once and printed in order,
-* so the report takes as long as its slowest question.
+* The files below a folder, as paths relative to it.
+* @param {string} dir
+* @returns {string[]}
 */
-async function check() {
-	const projects = xcodeProjects(projectDirs());
-	const mac = host.platform === "darwin";
-	const server = serverStatus();
-	const skill = skillStatus();
-	const store = storeStatus();
-	const version = mac ? xcode().then(({ env }) => run$1("xcodebuild", ["-version"], { env })) : null;
-	const schemes = projects.length === 1 ? attempt(() => schemesOf(projects[0])) : null;
-	const simulators = mac ? attempt(availableSimulators) : null;
-	const devices = mac ? attempt(() => connectedDevices({ timeout: 15e3 })) : null;
-	const settled = Promise.allSettled([
-		server,
-		skill,
-		store,
-		version,
-		schemes,
-		simulators,
-		devices
-	]);
-	try {
-		await report({
-			projects,
-			server,
-			skill,
-			store,
-			version,
-			schemes,
-			simulators,
-			devices
+function filesBelow(dir) {
+	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? filesBelow(path.join(dir, entry.name)).map((file) => path.join(entry.name, file)) : [entry.name]);
+}
+/**
+* Whether a path from the list of an earlier download is a file inside the folder, whatever the list says.
+* @param {unknown} name
+* @returns {name is string}
+*/
+function insideFolder(name) {
+	if (typeof name !== "string" || name === "" || name === MANIFEST || path.isAbsolute(name)) return false;
+	const parts = path.normalize(name).split(/[/\\]/);
+	return !parts.includes("..") && !parts.includes(".");
+}
+/**
+* Takes out the folders above a file that are left empty, up to the folder the download went into. Finder's
+* own .DS_Store does not count as something left in one.
+* @param {string} outDir
+* @param {string} dir
+*/
+function pruneEmpty(outDir, dir) {
+	while (dir.startsWith(`${outDir}${path.sep}`)) {
+		if (readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.name !== ".DS_Store" || entry.isDirectory()).length > 0) return;
+		rmSync(dir, {
+			recursive: true,
+			force: true
 		});
+		dir = path.dirname(dir);
+	}
+}
+/**
+* Unpacks a download into a folder. Its files replace those of the same names, and the files an earlier
+* download put there that this one no longer has are taken out, so a slide or a language that is gone leaves no
+* picture behind for 'store push' to upload. Anything else in the folder stays, also inside the folders the
+* download writes, since --out may point at a folder that holds more than this.
+* @param {string} zip
+* @param {string} outDir
+* @returns {Promise<string[]>} The files unpacked, relative to the folder.
+*/
+async function extractZip(zip, outDir) {
+	mkdirSync(outDir, { recursive: true });
+	const staging = mkdtempSync(path.join(outDir, ".appshots-"));
+	try {
+		const result = await run$1("unzip", [
+			"-o",
+			"-q",
+			zip,
+			"-d",
+			staging
+		]);
+		if (result.status !== 0) fail(`Could not unpack the download: ${(result.stderr || result.error?.message || "").trim()}`);
+		const files = filesBelow(staging);
+		const earlier = readJson(path.join(outDir, MANIFEST))?.files;
+		const kept = new Set(files);
+		for (const name of Array.isArray(earlier) ? earlier.filter(insideFolder) : []) {
+			if (kept.has(path.normalize(name))) continue;
+			const file = path.join(outDir, name);
+			const found = lstatSync(file, { throwIfNoEntry: false });
+			if (!found || found.isDirectory()) continue;
+			rmSync(file, { force: true });
+			pruneEmpty(outDir, path.dirname(file));
+		}
+		for (const name of files) {
+			const file = path.join(outDir, name);
+			mkdirSync(path.dirname(file), { recursive: true });
+			renameSync(path.join(staging, name), file);
+		}
+		writeFileSync(path.join(outDir, MANIFEST), `${JSON.stringify({ files }, null, 2)}\n`);
+		return files;
 	} finally {
-		await settled;
-	}
-}
-/**
-* @param {object} probes
-* @param {string[]} probes.projects
-* @param {Promise<string>} probes.server
-* @param {Promise<string | null>} probes.skill
-* @param {Promise<string>} probes.store
-* @param {Promise<Result> | null} probes.version
-* @param {Promise<{ value?: string[], problem?: string }> | null} probes.schemes
-* @param {Promise<{ value?: Simulator[], problem?: string }> | null} probes.simulators
-* @param {Promise<{ value?: Array<{ name: string, udid: string, model: string, transport: string }>, problem?: string }> | null} probes.devices
-*/
-async function report(probes) {
-	const { projects } = probes;
-	console.log(`Server: ${await probes.server}`);
-	const skill = await probes.skill;
-	if (skill) console.log(`Skill: ${skill}`);
-	console.log(`App Store Connect: ${await probes.store}`);
-	const kits = toolkits(process.cwd());
-	const known = kits.filter((kit) => !kit.unsure);
-	const starter = kits.some((kit) => kit.simulator) ? "boot" : "run";
-	const apart = projects.length === 0 && known.length > 0 && starter === "run";
-	const version = await probes.version;
-	const isXcode = version?.status === 0;
-	if (version && isXcode) {
-		const { dir, picked } = await xcode();
-		const note = picked ? ". xcode-select points at the Command Line Tools, so appshots uses this Xcode" : "";
-		console.log(`Xcode: ${dir.replace(/\/Contents\/Developer\/?$/, "")}, version ${version.stdout.match(/Xcode (\S+)/)?.[1] ?? "unknown"}${note}`);
-	} else if (version) console.log(apart ? "Xcode: not found, and this project needs none." : "Xcode: not found. Install Xcode from the App Store; the Command Line Tools alone cannot build an app or run a simulator.");
-	else console.log("Xcode: this is not a Mac. Simulators, devices and Mac windows need one. 'appshots capture --web <address>' takes a web app's pages here, and 'appshots upload' takes screenshots you already have.");
-	if (projects.length === 0 && known.length > 0) console.log("Project: no Xcode workspace or project here, and 'appshots run' builds only those. This app is captured as its toolkit runs it:");
-	else if (projects.length === 0) {
-		console.log("Project: nothing recognised in this folder. Run this in your app's folder. 'appshots run' builds an Xcode workspace or project, and --project <path> points at one elsewhere. An app made with anything else is started by its own command and captured where it runs: 'appshots capture' in the simulator, 'appshots capture --mac <app>' in a window on this Mac, 'appshots capture --web <address>' in a browser.");
-		const below = appFolders(process.cwd());
-		const list = below.slice(0, 8).map((entry) => `${entry.folder} (${entry.made.join(", ")})`).join(", ");
-		if (below.length > 0) console.log(`  Apps below this folder: ${list}${below.length > 8 ? `, and ${below.length - 8} more` : ""}. Run 'appshots check' in the one whose screens you want.`);
-	} else if (projects.length > 1) console.log(`Project: several in this folder, so 'appshots run' needs --project <path>: ${projects.map(fromHere).join(", ")}`);
-	else {
-		const [project] = projects;
-		const schemes = isXcode && probes.schemes ? await probes.schemes : { problem: "Its schemes cannot be read without Xcode." };
-		const scheme = schemes.value && obviousScheme(project, schemes.value);
-		if (schemes.problem !== void 0) console.log(`Project: ${fromHere(project)}. ${schemes.problem.replace(/\s+/g, " ")}`);
-		else if (schemes.value.length === 0) console.log(`Project: ${fromHere(project)}, no scheme. Open it in Xcode and share one under Product > Scheme > Manage Schemes.`);
-		else if (schemes.value.length === 1) console.log(`Project: ${fromHere(project)}, scheme ${scheme}`);
-		else console.log(`Project: ${fromHere(project)}, schemes ${schemes.value.join(", ")}. ${scheme ? `'appshots run' builds ${scheme}` : "Name the app's with 'appshots run --scheme <name>'"}`);
-	}
-	const simulators = isXcode && probes.simulators ? await probes.simulators : { problem: "unknown without Xcode" };
-	for (const kit of kits) {
-		const head = projects.length > 0 && kit.simulator ? ", so its own command starts the app rather than 'appshots run'" : "";
-		console.log(`Made with ${kit.name} (${kit.sign})${head}:`);
-		for (const line of toolkitLines(kit, simulators.value ? recommendedSimulator(simulators.value, "iphone") : null, isXcode)) console.log(line);
-	}
-	if (kits.some((kit) => kit.web) || projects.length === 0 && kits.length === 0) {
-		const browser = findBrowser();
-		console.log(browser ? `Browser: ${browser.name}, which draws the pages for 'appshots capture --web'` : "Browser: none found. 'appshots capture --web' draws pages with Chrome, Chromium, Edge or Brave. Install one, or point APPSHOTS_BROWSER at a Chromium browser's program.");
-	}
-	if (apart) return;
-	if (simulators.problem !== void 0) console.log(`Simulators: ${simulators.problem.split("\n")[0]}`);
-	else {
-		const all = simulators.value;
-		const recommended = new Set();
-		const lines = ["Simulators:"];
-		for (const [kind, { label, flag, store }] of Object.entries(SIM_KINDS)) {
-			const simulator = recommendedSimulator(all, kind);
-			const command = `'appshots ${starter}${flag}'`;
-			if (!simulator) {
-				if (kind !== "duo") lines.push(`  ${label}: none. Add an iOS simulator in Xcode under Settings > Components.`);
-				continue;
-			}
-			recommended.add(simulator.udid);
-			const state = simulator.booted ? "booted" : `not booted, ${command} boots it`;
-			const model = simulator.fallback ? (await attempt(() => storeModel(kind))).value : null;
-			const create = model ? `; '${`appshots ${starter}${flag}`} --create' adds an ${model.type.name}` : "";
-			const note = simulator.fallback ? `. No ${store} is installed, which is the size the store asks for${create}` : "";
-			lines.push(`  ${label}: ${simulatorLabel(simulator)}${screenLabel(simulator)}, ${state}  (${simulator.udid})${note}`);
-		}
-		for (const simulator of all.filter((sim) => sim.booted && !recommended.has(sim.udid))) lines.push(`  Also booted: ${simulatorLabel(simulator)}${screenLabel(simulator)}  (${simulator.udid})`);
-		const booted = all.filter((sim) => sim.booted).sort((a, b) => Number(recommended.has(b.udid)) - Number(recommended.has(a.udid)));
-		const which = booted.length > 1 ? " --sim <simulator>" : "";
-		if (booted.length === 0) lines.push(starter === "run" ? "Apps: no simulator is booted. 'appshots run' boots one, then builds and installs the app in this folder." : "Apps: no simulator is booted. 'appshots boot' boots one, and the project's own command builds and installs the app there.");
-		else {
-			lines.push(`Apps: these are installed and start without a build, with 'appshots launch <bundle id>${which}'`);
-			const shown = booted.slice(0, 6);
-			const installed = await Promise.all(shown.map((simulator) => installedApps(simulator.udid).catch(() => null)));
-			for (const [at, simulator] of shown.entries()) {
-				const apps = installed[at];
-				const more = apps && apps.length > 8 ? `, and ${apps.length - 8} more` : "";
-				const list = apps?.slice(0, 8).map((app) => `${app.name} (${app.bundleId})`).join(", ");
-				if (!apps) lines.push(`  ${simulator.name}: it is busy and did not answer. 'appshots simctl listapps ${simulator.udid}' asks again`);
-				else lines.push(`  ${simulator.name}: ${list ? `${list}${more}` : starter === "run" ? "none of your own. 'appshots run' builds and installs the app in this folder" : "none of your own yet"}`);
-			}
-			if (booted.length > 6) lines.push(`  ${booted.length - 6} more booted simulators are not listed.`);
-		}
-		for (const line of lines) console.log(line);
-	}
-	const devices = isXcode && probes.devices ? await probes.devices : { problem: "unknown without Xcode" };
-	if (devices.problem !== void 0) console.log(`Devices: ${devices.problem.split("\n")[0]}`);
-	else if (devices.value.length === 0) console.log("Devices: none connected. To capture from an iPhone or iPad, plug it in, unlock it and trust this Mac.");
-	else {
-		console.log("Devices:");
-		for (const device of devices.value) console.log(`  ${device.name}  ${device.model}  ${device.transport}  (${device.udid})`);
-	}
-}
-//#endregion
-//#region cli/src/clean.mjs
-/**
-* How much a file or folder takes on disk, in bytes.
-* @param {string} file
-* @returns {number}
-*/
-function sizeOf(file) {
-	let stat;
-	try {
-		stat = lstatSync(file);
-	} catch {
-		return 0;
-	}
-	if (!stat.isDirectory()) return stat.size;
-	let names = [];
-	try {
-		names = readdirSync(file);
-	} catch {}
-	return names.reduce((sum, name) => sum + sizeOf(path.join(file, name)), 0);
-}
-/** @param {number} bytes */
-const amount = (bytes) => bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
-/**
-* Removes what 'appshots run' keeps between builds: the build logs and, for --fresh, the builds themselves. With
-* --older-than only those of projects not built for that many days.
-* @param {Record<string, string | true>} flags
-*/
-function clean(flags) {
-	if (flags["older-than"] === true) fail("--older-than needs a number of days, as in: --older-than 30");
-	const days = flags["older-than"] === void 0 ? 0 : Number(String(flags["older-than"]).replace(/d$/i, ""));
-	if (!(days >= 0)) fail("--older-than needs a number of days, as in: --older-than 30");
-	const dry = Boolean(flags["dry-run"]);
-	let names = [];
-	try {
-		names = readdirSync(BUILD_CACHE);
-	} catch {}
-	const projects = new Map();
-	for (const name of names) {
-		const project = name.replace(/\.log$/, "");
-		let stat;
-		try {
-			stat = lstatSync(path.join(BUILD_CACHE, name));
-		} catch {
-			continue;
-		}
-		const entry = projects.get(project) ?? {
-			files: [],
-			used: 0
-		};
-		entry.files.push(path.join(BUILD_CACHE, name));
-		entry.used = Math.max(entry.used, stat.mtimeMs);
-		projects.set(project, entry);
-	}
-	const before = Date.now() - days * 864e5;
-	const old = [...projects.entries()].filter(([, entry]) => entry.used <= before).sort(([a], [b]) => a.localeCompare(b));
-	if (old.length === 0) {
-		console.log(projects.size === 0 ? `There are no builds in ${tilde(BUILD_CACHE)}.` : `None of the ${projects.size} builds in ${tilde(BUILD_CACHE)} is older than ${days} days.`);
-		return;
-	}
-	let freed = 0;
-	for (const [project, entry] of old) {
-		const size = entry.files.reduce((sum, file) => sum + sizeOf(file), 0);
-		freed += size;
-		const age = Math.floor((Date.now() - entry.used) / 864e5);
-		console.log(`  ${project}  (last built ${age === 0 ? "today" : age === 1 ? "a day ago" : `${age} days ago`}, ${amount(size)})`);
-		if (!dry) for (const file of entry.files) rmSync(file, {
+		rmSync(staging, {
 			recursive: true,
 			force: true
 		});
 	}
-	const count = `${old.length} ${old.length === 1 ? "build" : "builds"}`;
-	console.log(dry ? `Would remove ${count} from ${tilde(BUILD_CACHE)}, ${amount(freed)}. Run it again without --dry-run to do it.` : `Removed ${count} from ${tilde(BUILD_CACHE)}, ${amount(freed)} freed. Xcode's own build folder is left as it is.`);
+}
+/**
+* Downloads a zip the server makes and unpacks it into a folder.
+* @param {Config} config
+* @param {string} route
+* @param {string} outDir
+*/
+async function download(config, route, outDir) {
+	const response = await request(config, "GET", route);
+	const dir = mkdtempSync(path.join(tmpdir(), "appshots-"));
+	const zip = path.join(dir, "download.zip");
+	try {
+		writeFileSync(zip, Buffer.from(await response.arrayBuffer()));
+		return await extractZip(zip, outDir);
+	} finally {
+		rmSync(dir, {
+			recursive: true,
+			force: true
+		});
+	}
+}
+/**
+* @param {Config} config
+* @param {string} project
+* @param {Record<string, string | true>} flags
+*/
+async function pull(config, project, flags) {
+	const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join("store-screenshots", project));
+	await fetchExport(config, project, outDir, flags.render);
+	console.log(`Screenshots are in ${outDir}`);
+}
+/**
+* @param {Config} config
+* @param {string} project
+* @param {Record<string, string | true>} flags
+*/
+async function mockups(config, project, flags) {
+	/** @type {Record<string, unknown>} */
+	const device = {};
+	for (const [flag, field] of Object.entries(MOCKUP_FLAGS)) {
+		if (flags[flag] === true) fail(`--${flag} needs a value.`);
+		if (flags[flag] !== void 0) device[field] = field === "rotate" ? Number(flags[flag]) : flags[flag];
+	}
+	if (flags.width === true) fail("--width needs a number of pixels, or auto.");
+	if (Object.keys(device).length || flags.width !== void 0) {
+		const { project: current } = await (await request(config, "GET", projectRoute(project))).json();
+		const next = {
+			...current.mockups,
+			device: {
+				...current.mockups?.device,
+				...device
+			}
+		};
+		if (flags.width === "auto") delete next.width;
+		else if (flags.width !== void 0) next.width = Number(flags.width);
+		await request(config, "PUT", projectRoute(project), {
+			body: JSON.stringify({ mockups: next }),
+			headers: { "content-type": "application/json" }
+		});
+	}
+	const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join("mockups", project));
+	const language = shotLanguage(flags);
+	const count = (await download(config, projectRoute(project, `/mockups.zip${language ? `?locale=${encodeURIComponent(language)}` : ""}`), outDir)).filter((name) => name.endsWith(".png")).length;
+	console.log(`${count ? `${count} mockup${count === 1 ? " is" : "s are"}` : "The mockups are"} in ${outDir}`);
+}
+var MANIFEST, fetchExport, MOCKUP_FLAGS;
+var init_pull = __esmMin((() => {
+	init_fail();
+	init_proc();
+	init_shot();
+	init_util();
+	MANIFEST = ".appshots-files.json";
+	fetchExport = (config, project, outDir, render) => download(config, projectRoute(project, `/export.zip${render ? "?render=1" : ""}`), outDir);
+	MOCKUP_FLAGS = {
+		frame: "frame",
+		style: "style",
+		color: "color",
+		shadow: "shadow",
+		rotate: "rotate",
+		perspective: "perspective",
+		"status-bar": "statusBar",
+		time: "statusBarTime"
+	};
+}));
+//#endregion
+//#region cli/src/store/locales.mjs
+/**
+* The code App Store Connect has for a language a project names, or null when it has none: de is de-DE, de-AT
+* is de-DE as well, zh-TW is zh-Hant, ja-JP is ja.
+* @param {string} code
+* @returns {string | null}
+*/
+function ascLocale(code) {
+	const lower = code.toLowerCase();
+	const exact = ASC_LOCALES.find((entry) => same(entry, lower));
+	if (exact) return exact;
+	if (lower in ALIASES) return ALIASES[lower];
+	const longer = ASC_LOCALES.filter((entry) => entry.includes("-") && lower.startsWith(`${entry.toLowerCase()}-`)).sort((a, b) => b.length - a.length)[0];
+	if (longer) return longer;
+	const bare = lower.split("-")[0];
+	return ALIASES[bare] ?? REGIONS[bare] ?? ASC_LOCALES.find((entry) => same(entry, bare)) ?? null;
+}
+/**
+* @typedef {object} StoreLocale
+* @property {string | null} code The language of the store page, or the one it would be added as; null when App
+*   Store Connect has no such language.
+* @property {boolean} listed Whether the store page has it already.
+* @property {string[]} [others] The other languages of the page it could have been, when there was a choice.
+*/
+/**
+* The language of the store page a folder or a text is for. `to` is the one the user named; otherwise the same
+* code, the only one of the same language, the app's primary language among several (en for an app made in
+* en-US with an en-GB page as well), or the code App Store Connect has for it.
+* @param {string} code
+* @param {string[]} listed The languages the store page has.
+* @param {{ primary?: string, to?: string }} [options]
+* @returns {StoreLocale}
+*/
+function storeLocale(code, listed, { primary, to } = {}) {
+	const find = (wanted) => listed.find((entry) => same(entry, wanted));
+	if (to) {
+		const there = find(to);
+		return there ? {
+			code: there,
+			listed: true
+		} : {
+			code: ascLocale(to),
+			listed: false
+		};
+	}
+	const exact = find(code);
+	if (exact) return {
+		code: exact,
+		listed: true
+	};
+	const close = listed.filter((entry) => sameLanguage(entry, code));
+	if (close.length === 1) return {
+		code: close[0],
+		listed: true
+	};
+	const canonical = ascLocale(code);
+	if (close.length > 1) {
+		const chosen = close.find((entry) => primary && same(entry, primary)) ?? close.find((entry) => canonical && same(entry, canonical));
+		if (chosen) return {
+			code: chosen,
+			listed: true,
+			others: close.filter((entry) => entry !== chosen)
+		};
+		return {
+			code: null,
+			listed: false,
+			others: close
+		};
+	}
+	const there = canonical ? find(canonical) : void 0;
+	if (there) return {
+		code: there,
+		listed: true
+	};
+	return {
+		code: canonical,
+		listed: false
+	};
+}
+var ASC_LOCALES, REGIONS, ALIASES, same, sameLanguage;
+var init_locales = __esmMin((() => {
+	ASC_LOCALES = [
+		"ar-SA",
+		"bn-BD",
+		"ca",
+		"zh-Hans",
+		"zh-Hant",
+		"hr",
+		"cs",
+		"da",
+		"nl-NL",
+		"en-AU",
+		"en-CA",
+		"en-GB",
+		"en-US",
+		"fi",
+		"fr-FR",
+		"fr-CA",
+		"de-DE",
+		"el",
+		"gu-IN",
+		"he",
+		"hi",
+		"hu",
+		"id",
+		"it",
+		"ja",
+		"kn-IN",
+		"ko",
+		"ms",
+		"ml-IN",
+		"mr-IN",
+		"no",
+		"or-IN",
+		"pl",
+		"pt-BR",
+		"pt-PT",
+		"pa-IN",
+		"ro",
+		"ru",
+		"sk",
+		"sl-SI",
+		"es-MX",
+		"es-ES",
+		"sv",
+		"ta-IN",
+		"te-IN",
+		"th",
+		"tr",
+		"uk",
+		"ur-PK",
+		"vi"
+	];
+	REGIONS = {
+		en: "en-US",
+		de: "de-DE",
+		fr: "fr-FR",
+		es: "es-ES",
+		pt: "pt-BR",
+		nl: "nl-NL",
+		zh: "zh-Hans",
+		ar: "ar-SA",
+		bn: "bn-BD",
+		gu: "gu-IN",
+		kn: "kn-IN",
+		ml: "ml-IN",
+		mr: "mr-IN",
+		or: "or-IN",
+		pa: "pa-IN",
+		ta: "ta-IN",
+		te: "te-IN",
+		sl: "sl-SI",
+		ur: "ur-PK"
+	};
+	ALIASES = {
+		"zh-cn": "zh-Hans",
+		"zh-sg": "zh-Hans",
+		"zh-tw": "zh-Hant",
+		"zh-hk": "zh-Hant",
+		"zh-mo": "zh-Hant",
+		"es-419": "es-MX",
+		"es-us": "es-MX",
+		nb: "no",
+		nn: "no",
+		iw: "he",
+		in: "id"
+	};
+	same = (a, b) => a.toLowerCase() === b.toLowerCase();
+	sameLanguage = (a, b) => same(a, b) || (!a.includes("-") || !b.includes("-")) && a.toLowerCase().split("-")[0] === b.toLowerCase().split("-")[0];
+}));
+//#endregion
+//#region cli/src/store/push.mjs
+/**
+* @param {Record<string, string | true>} flags
+* @param {string} name
+* @param {string} example
+*/
+function listFlag$1(flags, name, example) {
+	if (flags[name] === void 0) return null;
+	if (typeof flags[name] !== "string") fail(`--${name} needs a value, such as --${name} ${example}.`);
+	return flags[name].split(",").map((part) => part.trim()).filter(Boolean);
+}
+/**
+* The size a PNG says it has, from its first bytes. Null for a file that is no PNG.
+* @param {string} file
+*/
+function pngSize$1(file) {
+	const head = Buffer.alloc(24);
+	const fd = openSync(file, "r");
+	let read = 0;
+	try {
+		read = readSync(fd, head, 0, 24, 0);
+	} finally {
+		closeSync(fd);
+	}
+	if (read < 24 || head.readUInt32BE(0) !== 2303741511) return null;
+	return {
+		width: head.readUInt32BE(16),
+		height: head.readUInt32BE(20)
+	};
+}
+/**
+* The languages --lang picks out of the files, and the store languages it puts them onto. `en=en-GB` puts the
+* folder en onto en-GB; `en-US,en-GB` puts it onto both; a plain `de` only picks.
+* @param {Record<string, string | true>} flags
+*/
+function languageFlag(flags) {
+	const entries = listFlag$1(flags, "lang", "de-DE,fr-FR");
+	if (!entries) return null;
+	return entries.map((entry) => {
+		const [from, to, more] = entry.split("=").map((part) => part.trim());
+		if (more !== void 0 || !from || to === "") fail(`--lang takes codes, or a code of the files with the store language it goes onto, as in: --lang en=en-GB`);
+		if (to === void 0) return {
+			from,
+			to: null
+		};
+		const code = ascLocale(to);
+		if (!code) fail(`App Store Connect has no language "${to}". It has the codes the Studio offers under Languages, such as en-GB or de-DE.`);
+		return {
+			from,
+			to: code
+		};
+	});
+}
+/**
+* What a folder of 'appshots pull' holds for the store: per language, the files of each folder that has a display
+* in App Store Connect, in the order of their names. Banners and the header and search results images are not
+* screenshots, so they are not among them.
+* @param {string} root
+* @param {Record<string, string | true>} flags
+*/
+function exportSets(root, flags) {
+	const folders = (dir) => readdirSync(dir).filter((name) => !name.startsWith(".") && statSync(path.join(dir, name)).isDirectory());
+	const order = Object.keys(STORE_DISPLAYS);
+	const languages = languageFlag(flags);
+	const only = listFlag$1(flags, "only", "iphone,ipad");
+	for (const part of only ?? []) {
+		if (part in STORE_BY_HAND || part === "duo") fail(`App Store Connect's API has no display for the ${STORE_BY_HAND["iphone-duo"]} yet, so its screenshots go in by hand.`);
+		if (![
+			"iphone",
+			"ipad",
+			"mac"
+		].includes(part) && !(part in STORE_DISPLAYS)) fail(`--only takes iphone, ipad, mac, or folders of the export: ${order.join(", ")}.`);
+	}
+	const sets = [];
+	const byHand = new Set();
+	/** @type {Map<string, string[]>} The store languages a folder goes onto, where --lang names them. */
+	const targets = new Map();
+	let creatives = false;
+	const found = folders(root).sort();
+	for (const locale of found) {
+		const picked = languages?.filter((entry) => sameLanguage(entry.from, locale));
+		if (languages && picked?.length === 0) continue;
+		const onto = (picked ?? []).map((entry) => entry.to ?? (entry.from.includes("-") && !locale.includes("-") ? entry.from : null)).filter(Boolean);
+		if (onto.length > 0) targets.set(locale, [...new Set(onto)]);
+		const taken = new Set();
+		for (const target of folders(path.join(root, locale)).sort((a, b) => order.indexOf(a) - order.indexOf(b))) {
+			if (target === "creative-assets") creatives = true;
+			if (target in STORE_BY_HAND && !only) byHand.add(target);
+			const [display, width, height] = STORE_DISPLAYS[target] ?? [];
+			if (!display || taken.has(display) || only && !only.some((part) => target === part || target.startsWith(`${part}-`))) continue;
+			const dir = path.join(root, locale, target);
+			const files = readdirSync(dir).filter((name) => /\.(png|jpe?g)$/i.test(name) && !name.startsWith(".")).sort((a, b) => a.localeCompare(b, void 0, { numeric: true })).map((name) => path.join(dir, name));
+			if (files.length === 0) continue;
+			if (files.length > 10) fail(`${dir} holds ${files.length} screenshots, and App Store Connect takes ten per display.`);
+			for (const file of files) {
+				const size = pngSize$1(file);
+				if (size && (size.width !== width || size.height !== height)) fail(`${file} is ${size.width} x ${size.height}, and the pictures of ${target} are ${width} x ${height}. Nothing was changed.`);
+			}
+			taken.add(display);
+			sets.push({
+				locale,
+				target,
+				display,
+				files
+			});
+		}
+	}
+	const missing = (languages ?? []).map((entry) => entry.from).filter((code) => !found.some((locale) => sameLanguage(code, locale)));
+	if (missing.length > 0) fail(`There is no language ${missing.join(", ")} among the files. They hold: ${found.join(", ") || "none"}.`);
+	if (sets.length > 0) return {
+		sets,
+		byHand: [...byHand],
+		creatives,
+		targets
+	};
+	if (found.some((name) => name in STORE_DISPLAYS)) fail(`${root} holds the folders of one language. --from takes the folder above it, the one with a folder per language.`);
+	fail(only ? `Nothing among the files is for ${only.join(", ")}.` : byHand.size > 0 ? `The files hold screenshots for the ${STORE_BY_HAND["iphone-duo"]} only, and App Store Connect's API has no display for it yet. They go in by hand.` : `There are no store screenshots in ${root}. Render the project first: --render does it.`);
+}
+/**
+* Sends one file where Apple says and tells it the file is there. Returns the screenshot's id.
+* @param {Account} account
+* @param {string} set
+* @param {string} file
+* @param {Buffer} data What is in the file, read once for its checksum and for this.
+* @param {string} checksum
+*/
+async function uploadScreenshot(account, set, file, data, checksum) {
+	const name = path.basename(file);
+	const body = { data: {
+		type: "appScreenshots",
+		attributes: {
+			fileName: name,
+			fileSize: data.length
+		},
+		relationships: { appScreenshotSet: { data: {
+			type: "appScreenshotSets",
+			id: set
+		} } }
+	} };
+	const reserved = (await apple(account, "POST", "/v1/appScreenshots", `take ${name}`, body)).data;
+	await sendParts(reserved.attributes?.uploadOperations ?? [], (offset, length) => data.subarray(offset, offset + length), name, "Run the command again: it starts that display over.");
+	await apple(account, "PATCH", `/v1/appScreenshots/${reserved.id}`, `finish ${name}`, { data: {
+		type: "appScreenshots",
+		id: reserved.id,
+		attributes: {
+			uploaded: true,
+			sourceFileChecksum: checksum
+		}
+	} });
+	return reserved.id;
+}
+/**
+* Apple checks each file once it has arrived. Waits for that, three minutes at most, and returns what it refused.
+* @param {Account} account
+* @param {Array<{ label: string, set: string, names: Map<string, string> }>} uploads
+*/
+async function settle(account, uploads) {
+	const state = (shot) => shot.attributes?.assetDeliveryState?.state;
+	const refused = [];
+	const until = Date.now() + 18e4;
+	let waiting = uploads;
+	while (waiting.length > 0) {
+		const answers = await Promise.all(waiting.map((upload) => appleList(account, `/v1/appScreenshotSets/${upload.set}/appScreenshots?limit=200`, "check the uploads")));
+		const still = [];
+		for (const [at, upload] of waiting.entries()) {
+			const shots = answers[at].filter((shot) => upload.names.has(shot.id));
+			if (shots.some((shot) => state(shot) !== "COMPLETE" && state(shot) !== "FAILED")) {
+				still.push(upload);
+				continue;
+			}
+			for (const shot of shots.filter((entry) => state(entry) === "FAILED")) {
+				const why = (shot.attributes.assetDeliveryState.errors ?? []).map((error) => error.description || error.code).filter(Boolean).join(" ");
+				refused.push(`${upload.label}  ${upload.names.get(shot.id)}: ${why || "refused without a reason"}`);
+			}
+		}
+		waiting = still;
+		if (waiting.length === 0 || Date.now() > until) break;
+		await pause(3e3);
+	}
+	return {
+		refused,
+		late: waiting.reduce((sum, upload) => sum + upload.names.size, 0)
+	};
+}
+/**
+* @param {string | undefined} project
+* @param {Record<string, string | true>} flags
+*/
+async function storePush(project, flags) {
+	if (flags.from === true || !project && flags.from === void 0) fail("Usage: appshots store push <project> --app <bundle id> [--version <number>] [--render] [--from <folder>] [--lang <codes>] [--only <devices or folders>] [--add-languages] [--dry-run]");
+	const dry = Boolean(flags["dry-run"]);
+	const account = storeAccount(flags);
+	const app = await storeApp(account, flags.app);
+	let root;
+	if (typeof flags.from === "string") {
+		root = path.resolve(flags.from);
+		if (!existsSync(root) || !statSync(root).isDirectory()) fail(`No such folder: ${root}`);
+	} else {
+		const dir = mkdtempSync(path.join(tmpdir(), "appshots-store-"));
+		root = dir;
+		process.on("exit", () => rmSync(dir, {
+			recursive: true,
+			force: true
+		}));
+		await fetchExport(loadConfig(), project, root, flags.render);
+	}
+	const { sets, byHand, creatives, targets } = exportSets(root, flags);
+	const versions = [];
+	for (const platform of new Set(sets.map((set) => platformOf$1(set.display)))) versions.push(await storeVersion(account, app, platform, flags));
+	const notes = [];
+	const choices = [];
+	let skipped = 0;
+	const plans = [];
+	for (const version of versions) {
+		const listed = await versionLanguages(account, version);
+		const codes = listed.map((entry) => entry.attributes.locale);
+		const mine = sets.filter((set) => platformOf$1(set.display) === version.platform);
+		const onto = [];
+		const seen = new Map();
+		const system = STORE_PLATFORMS[version.platform];
+		for (const locale of new Set(mine.map((set) => set.locale))) for (const to of targets.get(locale) ?? [void 0]) {
+			const found = storeLocale(locale, codes, {
+				primary: app.primaryLocale,
+				to
+			});
+			if (!found.listed && found.others) {
+				notes.push(`${locale}: version ${version.number} for ${system} has ${found.others.join(" and ")}, and either could be meant. Say which with --lang ${locale}=${found.others[0]}.`);
+				skipped++;
+				continue;
+			}
+			if (!found.listed && !flags["add-languages"]) {
+				const as = found.code && found.code !== locale ? ` as ${found.code}` : "";
+				notes.push(`${locale}: version ${version.number} for ${system} has no such language on its store page. It has ${codes.join(", ")}. --add-languages adds it${as}.`);
+				skipped++;
+				continue;
+			}
+			if (!found.code) fail(`${locale} is not a language App Store Connect has, so it cannot be added there. Put its screenshots onto one it has with --lang ${locale}=<code>, such as --lang ${locale}=en-US. Nothing was changed.`);
+			const code = found.code;
+			if (seen.has(code)) fail(`${seen.get(code)} and ${locale} would both go onto ${code}. Leave one out with --lang. Nothing was changed.`);
+			seen.set(code, locale);
+			if (code !== locale) choices.push(`${locale} goes onto ${code}${found.others ? `; the store page has ${found.others.join(" and ")} as well, which --lang ${locale}=${found.others[0]} picks` : ""}`);
+			onto.push({
+				locale,
+				code
+			});
+		}
+		plans.push({
+			version,
+			listed,
+			mine,
+			onto
+		});
+	}
+	if (dry) console.log("Dry run: nothing is changed.");
+	for (const version of versions) if (!version.id && !dry) await createVersion(account, app, version);
+	else console.log(`${app.name} ${version.number} for ${STORE_PLATFORMS[version.platform]}${version.id ? "" : ": this version would be created, with the languages and screenshots of the one before it"}`);
+	for (const line of new Set(choices)) console.log(line);
+	const uploads = [];
+	let unchanged = 0;
+	for (const plan of plans) {
+		const { version, mine } = plan;
+		const listed = version.before && !dry ? await versionLanguages(account, version) : plan.listed;
+		for (const { locale, code } of plan.onto) {
+			let language = listed.find((entry) => entry.attributes.locale === code);
+			if (!language) {
+				if (!dry) language = await addLanguage(account, version, code);
+				console.log(`${code}  ${dry ? "would be added" : "added"} to the store page`);
+			}
+			const there = language ? await appleList(account, `/v1/appStoreVersionLocalizations/${language.id}/appScreenshotSets?limit=200`, `list the displays of ${code}`) : [];
+			for (const set of mine.filter((entry) => entry.locale === locale)) {
+				const label = `${code.padEnd(8)} ${set.target.padEnd(11)}`;
+				let display = there.find((entry) => entry.attributes.screenshotDisplayType === set.display);
+				const old = display ? await appleList(account, `/v1/appScreenshotSets/${display.id}/appScreenshots?limit=200`, `list the screenshots of ${code}`) : [];
+				const data = set.files.map((file) => readFileSync(file));
+				const sums = data.map((bytes) => createHash("md5").update(bytes).digest("hex"));
+				if (old.length === sums.length && old.every((shot, at) => shot.attributes.sourceFileChecksum === sums[at] && !["FAILED", "AWAITING_UPLOAD"].includes(shot.attributes.assetDeliveryState?.state))) {
+					console.log(`${label}  unchanged, the same ${screenshots(old.length)} are there`);
+					unchanged += old.length;
+					continue;
+				}
+				const instead = old.length > 0 ? `, in place of the ${old.length} there` : "";
+				if (dry) {
+					console.log(`${label}  would upload ${screenshots(sums.length)}${instead}`);
+					continue;
+				}
+				await pool(old, SENDS$1, (shot) => apple(account, "DELETE", `/v1/appScreenshots/${shot.id}`, "remove a screenshot"));
+				display ??= (await apple(account, "POST", "/v1/appScreenshotSets", `open the display ${set.target}`, { data: {
+					type: "appScreenshotSets",
+					attributes: { screenshotDisplayType: set.display },
+					relationships: { appStoreVersionLocalization: { data: {
+						type: "appStoreVersionLocalizations",
+						id: language.id
+					} } }
+				} })).data;
+				const ids = await pool(set.files, SENDS$1, (file, at) => uploadScreenshot(account, display.id, file, data[at], sums[at]));
+				const names = new Map(ids.map((id, at) => [id, path.basename(set.files[at])]));
+				if (sums.length > 1) await apple(account, "PATCH", `/v1/appScreenshotSets/${display.id}/relationships/appScreenshots`, "put the screenshots in order", { data: ids.map((id) => ({
+					type: "appScreenshots",
+					id
+				})) });
+				uploads.push({
+					label,
+					set: display.id,
+					names
+				});
+				console.log(`${label}  uploaded ${screenshots(sums.length)}${instead}`);
+			}
+		}
+	}
+	for (const target of byHand) notes.push(`${target}: App Store Connect's API has no display for the ${STORE_BY_HAND[target]} yet. Drag those files onto it by hand.`);
+	if (creatives) notes.push("The header and search results images are not uploaded. They go onto the Header and Search Results tab by hand.");
+	const sent = uploads.reduce((sum, upload) => sum + upload.names.size, 0);
+	if (sent > 0) {
+		console.log("Waiting for Apple to check them...");
+		const { refused, late } = await settle(account, uploads);
+		for (const line of refused) console.log(`  ! ${line}`);
+		if (late > 0) console.log(`  ! Apple is still checking ${screenshots(late)}. They show in App Store Connect when it is done.`);
+		if (refused.length > 0) process.exitCode = 1;
+		console.log(`${screenshots(sent)} uploaded${refused.length > 0 ? `, ${refused.length} of them refused by Apple` : ""}${unchanged > 0 ? `, ${unchanged} were there already` : ""}.`);
+	} else if (!dry) console.log(unchanged > 0 ? "Nothing to upload: App Store Connect has these screenshots already." : "Nothing was uploaded.");
+	for (const note of notes) console.log(`  ! ${note}`);
+	if (skipped > 0) process.exitCode = 1;
+	if (dry) return console.log("Run it again without --dry-run to do it.");
+	console.log(`Nothing was submitted for review. Look the version over and submit it yourself: https://appstoreconnect.apple.com/apps/${app.id}`);
+}
+var SENDS$1, screenshots;
+var init_push$1 = __esmMin((() => {
+	init_config();
+	init_fail();
+	init_pull();
+	init_util();
+	init_displays();
+	init_locales();
+	SENDS$1 = 3;
+	screenshots = (count) => `${count} ${count === 1 ? "screenshot" : "screenshots"}`;
+}));
+//#endregion
+//#region cli/src/video/plan.mjs
+/**
+* Checks a plan as it was read and fills in what it leaves out. Every problem names the place in the JSON it is
+* at, so that it can be found in a file someone wrote by hand.
+* @param {unknown} raw
+* @returns {{ plan: Omit<Plan, "file" | "root"> | null, problems: string[], warnings: string[] }}
+*/
+function validatePlan(raw) {
+	/** @type {string[]} */
+	const problems = [];
+	/** @type {string[]} */
+	const warnings = [];
+	const say = (at, message) => problems.push(`${at}: ${message}`);
+	/** The fields of an object, or null after saying what is wrong with it. Fields it has no place for are problems. */
+	const object = (value, at, what, known) => {
+		if (!isObject$1(value)) {
+			say(at, "should be an object");
+			return null;
+		}
+		for (const key of Object.keys(value)) if (!known.includes(key)) say(join(at, key), `is not a field of ${what}`);
+		return value;
+	};
+	const number = (value, at, min, max) => {
+		if (value === void 0) return void 0;
+		if (typeof value !== "number" || !Number.isFinite(value)) return void say(at, "should be a number");
+		if (value < min || value > max) return void say(at, `should be from ${min} to ${max}, not ${value}`);
+		return value;
+	};
+	const oneOf = (value, at, options) => {
+		if (value === void 0) return void 0;
+		if (!options.includes(value)) return void say(at, `should be ${list(options)}, not ${JSON.stringify(value)}`);
+		return value;
+	};
+	const string = (value, at, pattern, shape) => {
+		if (value === void 0) return void 0;
+		if (typeof value !== "string" || value.trim() === "") return void say(at, "should be a text");
+		if (pattern && !pattern.test(value)) return void say(at, `${JSON.stringify(value)} is not ${shape}`);
+		return value;
+	};
+	const boolean = (value, at) => {
+		if (value === void 0 || typeof value === "boolean") return value;
+		say(at, "should be true or false");
+	};
+	/** @returns {Text | SlideText | undefined} */
+	const text = (value, at) => {
+		if (typeof value === "string") return value.trim() === "" ? void say(at, "is empty") : value;
+		if (isObject$1(value) && "slide" in value) {
+			object(value, at, "a slide's text", ["slide", "field"]);
+			if (!Number.isInteger(value.slide) || value.slide < 1) say(join(at, "slide"), "should be a slide's number, counted from 1");
+			oneOf(value.field, join(at, "field"), FIELDS);
+			return value;
+		}
+		if (isObject$1(value)) {
+			const entries = Object.entries(value);
+			if (entries.length === 0) return void say(at, "has no text in any language");
+			for (const [code, each] of entries) if (!LOCALE$1.test(code)) say(join(at, code), "is not a language code, such as en or de-DE");
+			else if (typeof each !== "string" || each.trim() === "") say(join(at, code), "should be a text");
+			return value;
+		}
+		say(at, "should be a text, a text per language such as {\"en\": \"…\", \"de\": \"…\"}, or a slide's text such as {\"slide\": 2}");
+	};
+	const plan = object(raw, "plan", "a plan", [
+		"version",
+		"name",
+		"project",
+		"app",
+		"displays",
+		"orientation",
+		"locales",
+		"footage",
+		"style",
+		"captionStyle",
+		"fit",
+		"intro",
+		"outro",
+		"transition",
+		"music",
+		"narration",
+		"scenes",
+		"poster",
+		"target"
+	]);
+	if (!plan) return {
+		plan: null,
+		problems,
+		warnings
+	};
+	if (plan.version !== 1) {
+		if (typeof plan.version === "number" && plan.version > 1) say("version", `this plan is version ${plan.version}, and this appshots reads version 1. 'appshots update' brings the newest`);
+		else say("version", "should be 1");
+	}
+	const name = string(plan.name, "name", ID$1, "a name of lowercase letters, digits and - (32 at most)") ?? "preview";
+	const project = string(plan.project, "project", PROJECT, "a project id");
+	if (plan.project === void 0) say("project", "is missing: the id of the appShots project the captions come from");
+	/** @type {Plan["app"]} */
+	let app = { platform: "ios" };
+	let known = false;
+	const appFields = object(plan.app, "app", "app", [
+		"platform",
+		"bundleId",
+		"url"
+	]);
+	if (appFields) {
+		const platform = oneOf(appFields.platform, "app.platform", [
+			"ios",
+			"mac",
+			"web"
+		]);
+		if (appFields.platform === void 0) say("app.platform", "is missing: ios, mac or web");
+		app = { platform: platform ?? "ios" };
+		known = platform !== void 0;
+		const bundleId = string(appFields.bundleId, "app.bundleId", /^[A-Za-z0-9.-]+$/, "a bundle id, such as com.example.notes");
+		if (bundleId) app.bundleId = bundleId;
+		const url = string(appFields.url, "app.url", /^https?:\/\/\S+$/, "an address that starts with http:// or https://");
+		if (url) app.url = url;
+	}
+	/** @type {string[]} */
+	const displays = [];
+	if (!Array.isArray(plan.displays) || plan.displays.length === 0) say("displays", `should list one or more of ${list(Object.keys(PREVIEW_DISPLAYS))}`);
+	else for (const [at, key] of plan.displays.entries()) if (!Object.hasOwn(PREVIEW_DISPLAYS, key)) say(`displays[${at}]`, `should be ${list(Object.keys(PREVIEW_DISPLAYS))}, not ${JSON.stringify(key)}`);
+	else if (displays.includes(key)) say(`displays[${at}]`, `${key} is there twice`);
+	else if (known && app.platform !== "web" && PREVIEW_DISPLAYS[key] !== app.platform) say(`displays[${at}]`, `${key} is not a display of ${app.platform === "mac" ? "a Mac app" : "an iPhone or iPad app"}`);
+	else displays.push(key);
+	const orientation = oneOf(plan.orientation, "orientation", ["portrait", "landscape"]) ?? "portrait";
+	/** @type {string[] | undefined} */
+	let locales;
+	if (plan.locales !== void 0) {
+		if (!Array.isArray(plan.locales) || plan.locales.length === 0 || plan.locales.length > 40) say("locales", "should list one to 40 language codes, the primary one first");
+		else {
+			locales = [];
+			for (const [at, code] of plan.locales.entries()) if (typeof code !== "string" || !LOCALE$1.test(code)) say(`locales[${at}]`, `${JSON.stringify(code)} is not a language code, such as en or de-DE`);
+			else if (locales.some((other) => other.toLowerCase() === code.toLowerCase())) say(`locales[${at}]`, `${code} is there twice`);
+			else locales.push(code);
+		}
+	}
+	const footage = oneOf(plan.footage, "footage", ["per-locale", "primary"]) ?? "per-locale";
+	const style = oneOf(plan.style, "style", ["store"]) ?? "store";
+	const captionStyle = oneOf(plan.captionStyle, "captionStyle", [
+		"panel",
+		"shadow",
+		"band"
+	]) ?? "panel";
+	if (captionStyle === "band") warnings.push("captionStyle \"band\" draws a band the full width of the video, and Apple has turned previews down for framing around the screen recording. \"panel\" or \"shadow\" is safer.");
+	const fit = oneOf(plan.fit, "fit", ["plate", "fill"]) ?? "plate";
+	/** @type {Plan["intro"]} */
+	let intro = false;
+	if (plan.intro !== void 0 && plan.intro !== false) {
+		const fields = object(plan.intro, "intro", "the intro", [
+			"seconds",
+			"headline",
+			"logo"
+		]);
+		if (fields) {
+			intro = {
+				seconds: frames(number(fields.seconds, "intro.seconds", .5, 3) ?? DEFAULTS.intro),
+				logo: boolean(fields.logo, "intro.logo") ?? true
+			};
+			if (fields.headline !== void 0) intro.headline = text(fields.headline, "intro.headline");
+		}
+	}
+	/** @type {Plan["outro"]} */
+	let outro = false;
+	if (plan.outro !== void 0 && plan.outro !== false) {
+		const fields = object(plan.outro, "outro", "the outro", [
+			"seconds",
+			"lines",
+			"logo",
+			"disclosure"
+		]);
+		if (fields) {
+			outro = {
+				seconds: frames(number(fields.seconds, "outro.seconds", .5, 4) ?? DEFAULTS.outro),
+				lines: [],
+				logo: boolean(fields.logo, "outro.logo") ?? true,
+				disclosure: []
+			};
+			if (fields.lines !== void 0) {
+				if (!Array.isArray(fields.lines) || fields.lines.length > 3) say("outro.lines", "should list up to 3 texts");
+				else outro.lines = fields.lines.map((line, at) => text(line, `outro.lines[${at}]`));
+			}
+			if (fields.disclosure !== void 0) {
+				if (!Array.isArray(fields.disclosure)) say("outro.disclosure", `should list what the app has of ${list(DISCLOSURES)}`);
+				else for (const [at, kind] of fields.disclosure.entries()) if (oneOf(kind, `outro.disclosure[${at}]`, DISCLOSURES) && !outro.disclosure.includes(kind)) outro.disclosure.push(kind);
+			}
+		}
+	}
+	/** @type {Plan["transition"]} */
+	let transition = {
+		type: "fade",
+		seconds: DEFAULTS.transition
+	};
+	if (plan.transition !== void 0) {
+		const fields = object(plan.transition, "transition", "the transition", ["type", "seconds"]);
+		if (fields) {
+			const type = oneOf(fields.type, "transition.type", [
+				"fade",
+				"dissolve",
+				"none"
+			]) ?? "fade";
+			const seconds = number(fields.seconds, "transition.seconds", .1, 1) ?? DEFAULTS.transition;
+			transition = {
+				type,
+				seconds: type === "none" ? 0 : frames(seconds)
+			};
+		}
+	}
+	/** @type {Plan["music"]} */
+	let music;
+	if (plan.music !== void 0) {
+		const fields = object(plan.music, "music", "the music", [
+			"file",
+			"volume",
+			"start",
+			"fadeOut"
+		]);
+		if (fields) {
+			const file = string(fields.file, "music.file");
+			if (fields.file === void 0) say("music.file", "is missing: the audio file, licensed for the App Store, next to the plan or with its path");
+			music = {
+				file: file ?? "",
+				volume: number(fields.volume, "music.volume", 0, 1) ?? DEFAULTS.volume,
+				start: number(fields.start, "music.start", 0, 3600) ?? 0,
+				fadeOut: number(fields.fadeOut, "music.fadeOut", 0, 5) ?? DEFAULTS.fadeOut
+			};
+		}
+	}
+	/** @type {Record<string, string> | undefined} */
+	let narration;
+	if (plan.narration !== void 0) {
+		if (!isObject$1(plan.narration)) say("narration", "should be an audio file per language");
+		else {
+			narration = plan.narration;
+			warnings.push("narration is read, and left out of the previews until a later version of appshots.");
+		}
+	}
+	/** @type {Scene[]} */
+	const scenes = [];
+	if (!Array.isArray(plan.scenes) || plan.scenes.length === 0 || plan.scenes.length > 8) say("scenes", "should list one to 8 scenes, the moments of the app the preview shows");
+	else for (const [at, value] of plan.scenes.entries()) {
+		const scene = readScene(value, `scenes[${at}]`, known ? app.platform : null, {
+			object,
+			number,
+			oneOf,
+			string,
+			boolean,
+			text,
+			say
+		});
+		if (!scene) continue;
+		if (scenes.some((other) => other.id === scene.id)) say(`scenes[${at}].id`, `${scene.id} is there twice`);
+		scenes.push(scene);
+	}
+	/** @type {Plan["poster"]} */
+	let poster;
+	if (plan.poster !== void 0) {
+		if (isObject$1(plan.poster) && "time" in plan.poster) {
+			const fields = object(plan.poster, "poster", "the poster", ["time"]);
+			if (fields) poster = { time: number(fields.time, "poster.time", 0, LENGTH.max) ?? 0 };
+		} else {
+			const fields = object(plan.poster, "poster", "the poster", ["scene", "at"]);
+			if (fields) {
+				const scene = string(fields.scene, "poster.scene");
+				if (scene === void 0) say("poster.scene", "is missing: the id of the scene the poster frame is taken from, or {\"time\": <seconds>} instead");
+				else if (Array.isArray(plan.scenes) && !plan.scenes.some((each) => isObject$1(each) && each.id === scene)) say("poster.scene", `there is no scene ${scene}`);
+				poster = { scene: scene ?? "" };
+				const atSeconds = number(fields.at, "poster.at", 0, LENGTH.max);
+				if (atSeconds !== void 0) poster.at = atSeconds;
+			}
+		}
+	}
+	const target = number(plan.target, "target", LENGTH.min, LENGTH.max) ?? DEFAULTS.target;
+	if (problems.length > 0) return {
+		plan: null,
+		problems,
+		warnings
+	};
+	return {
+		plan: {
+			version: 1,
+			name,
+			project,
+			app,
+			displays,
+			orientation,
+			...locales ? { locales } : {},
+			footage,
+			style,
+			captionStyle,
+			fit,
+			intro,
+			outro,
+			transition,
+			...music ? { music } : {},
+			...narration ? { narration } : {},
+			scenes,
+			...poster ? { poster } : {},
+			target
+		},
+		problems,
+		warnings
+	};
+}
+/**
+* One scene of a plan, with its defaults, or null when it is no object at all.
+* @param {unknown} value
+* @param {string} at
+* @param {string | null} platform Null when the plan does not say it right.
+* @param {any} check The checks of validatePlan, which collect what is wrong.
+* @returns {Scene | null}
+*/
+function readScene(value, at, platform, { object, number, oneOf, string, boolean, text, say }) {
+	const fields = object(value, at, "a scene", [
+		"id",
+		"caption",
+		"captionPosition",
+		"launch",
+		"drive",
+		"record",
+		"trim",
+		"speed",
+		"hold",
+		"touches"
+	]);
+	if (!fields) return null;
+	const id = string(fields.id, `${at}.id`, ID$1, "an id of lowercase letters, digits and - (32 at most)");
+	if (fields.id === void 0) say(`${at}.id`, "is missing: a short name such as inbox, which the recordings are named by");
+	/** @type {Scene} */
+	const scene = {
+		id: id ?? "",
+		caption: fields.caption === void 0 || fields.caption === false ? false : text(fields.caption, `${at}.caption`) ?? false,
+		captionPosition: oneOf(fields.captionPosition, `${at}.captionPosition`, ["top", "bottom"]) ?? "top",
+		record: {
+			seconds: DEFAULTS.record,
+			settle: DEFAULTS.settle
+		},
+		trim: null,
+		speed: number(fields.speed, `${at}.speed`, 1, 2) ?? 1,
+		hold: number(fields.hold, `${at}.hold`, 0, 2) ?? 0,
+		touches: boolean(fields.touches, `${at}.touches`) ?? true,
+		estimate: DEFAULTS.estimate
+	};
+	if (fields.launch !== void 0) {
+		const launch = object(fields.launch, `${at}.launch`, "a scene's launch", [
+			"args",
+			"url",
+			"appearance"
+		]);
+		if (launch) {
+			scene.launch = {};
+			if (launch.args !== void 0) {
+				if (!Array.isArray(launch.args) || launch.args.some((arg) => typeof arg !== "string")) say(`${at}.launch.args`, "should list the launch arguments as texts, such as [\"-AppshotsDemo\", \"inbox\"]");
+				else scene.launch.args = launch.args;
+			}
+			const url = string(launch.url, `${at}.launch.url`, /^[a-zA-Z][a-zA-Z0-9+.-]*:\S*$/, "an address or a deep link, such as notes://inbox");
+			if (url) scene.launch.url = url;
+			const appearance = oneOf(launch.appearance, `${at}.launch.appearance`, ["light", "dark"]);
+			if (appearance) scene.launch.appearance = appearance;
+		}
+	}
+	let wait;
+	if (fields.drive === "manual") scene.drive = "manual";
+	else if (fields.drive !== void 0) {
+		const where = `${at}.drive`;
+		const kind = isObject$1(fields.drive) ? Object.keys(fields.drive).find((key) => [
+			"wait",
+			"uitest",
+			"command",
+			"web"
+		].includes(key)) : void 0;
+		if (!kind) say(where, "should be \"manual\", {\"wait\": <seconds>}, {\"uitest\": \"<target>/<class>/<test>\"}, {\"command\": [<program>, <arguments>…]} or {\"web\": [<steps>]}");
+		else if (kind === "wait") {
+			wait = number(object(fields.drive, where, "a wait", ["wait"])?.wait, `${where}.wait`, .5, 60);
+			if (wait !== void 0) scene.drive = { wait };
+		} else if (kind === "uitest") {
+			const drive = object(fields.drive, where, "a UI test", ["uitest", "scheme"]);
+			const test = string(drive?.uitest, `${where}.uitest`, /^[^/\s]+(\/[^/\s]+){1,2}$/, "a test, such as NotesUITests/PreviewTests/testInbox");
+			if (platform === "web") say(`${where}.uitest`, "a web app's scenes are driven with web steps, not an Xcode UI test");
+			const scheme = string(drive?.scheme, `${where}.scheme`);
+			if (test) scene.drive = scheme ? {
+				uitest: test,
+				scheme
+			} : { uitest: test };
+		} else if (kind === "command") {
+			const drive = object(fields.drive, where, "a command", ["command"]);
+			if (!Array.isArray(drive?.command) || drive.command.length === 0 || drive.command.some((arg) => typeof arg !== "string" || arg === "")) say(`${where}.command`, "should list the program and its arguments, such as [\"maestro\", \"test\", \"flows/inbox.yaml\"]");
+			else scene.drive = { command: drive.command };
+		} else {
+			const drive = object(fields.drive, where, "web steps", ["web"]);
+			if (platform && platform !== "web") say(`${where}.web`, `web steps drive a web app's pages, and this is ${platform === "mac" ? "a Mac app" : "an iPhone or iPad app"}`);
+			if (!Array.isArray(drive?.web) || drive.web.length === 0) say(`${where}.web`, "should list the steps, such as [{\"click\": \"#new\"}, {\"type\": [\"#title\", \"Groceries\"]}, {\"wait\": 1}]");
+			else {
+				const steps = drive.web.map((step, index) => webStep$1(step, `${where}.web[${index}]`, {
+					number,
+					string,
+					say
+				}));
+				if (steps.every(Boolean)) scene.drive = { web: steps };
+			}
+		}
+	}
+	let seconds;
+	if (fields.record !== void 0) {
+		const record = object(fields.record, `${at}.record`, "a scene's recording", ["seconds", "settle"]);
+		seconds = number(record?.seconds, `${at}.record.seconds`, 1, 60);
+		scene.record = {
+			seconds: seconds ?? DEFAULTS.record,
+			settle: number(record?.settle, `${at}.record.settle`, 0, 30) ?? DEFAULTS.settle
+		};
+	}
+	if (fields.trim === "auto") scene.trim = "auto";
+	else if (fields.trim !== void 0) {
+		const [start, end] = Array.isArray(fields.trim) ? fields.trim : [];
+		if (!Array.isArray(fields.trim) || fields.trim.length !== 2 || [start, end].some((value) => typeof value !== "number" || !Number.isFinite(value) || value < 0)) say(`${at}.trim`, "should be \"auto\", or [<start>, <end>] in seconds into the recording");
+		else if (end <= start) say(`${at}.trim`, "the end comes before the start");
+		else scene.trim = [start, end];
+	}
+	const length = Array.isArray(scene.trim) ? scene.trim[1] - scene.trim[0] : seconds ?? (wait !== void 0 ? Math.min(wait, scene.record.seconds) : DEFAULTS.estimate);
+	scene.estimate = frames(length);
+	return scene;
+}
+/**
+* @param {unknown} step
+* @param {string} at
+* @param {any} check
+* @returns {WebStep | undefined}
+*/
+function webStep$1(step, at, { number, string, say }) {
+	const keys = isObject$1(step) ? Object.keys(step) : [];
+	if (keys.length !== 1 || ![
+		"goto",
+		"click",
+		"type",
+		"scroll",
+		"hover",
+		"wait"
+	].includes(keys[0])) {
+		say(at, "should be one step: {\"goto\": <path>}, {\"click\": <selector>}, {\"type\": [<selector>, <text>]}, {\"scroll\": <pixels>}, {\"hover\": <selector>} or {\"wait\": <seconds>}");
+		return;
+	}
+	const [key] = keys;
+	const value = step[key];
+	if (key === "type") {
+		if (!Array.isArray(value) || value.length !== 2 || typeof value[0] !== "string" || typeof value[1] !== "string") return void say(`${at}.type`, "should be [<selector>, <text>]");
+		return { type: [value[0], value[1]] };
+	}
+	if (key === "scroll") return number(value, `${at}.scroll`, -1e5, 1e5) === void 0 ? void 0 : { scroll: value };
+	if (key === "wait") return number(value, `${at}.wait`, 0, 30) === void 0 ? void 0 : { wait: value };
+	return string(value, `${at}.${key}`) === void 0 ? void 0 : { [key]: value };
+}
+/**
+* Reads and checks a plan. It fails with every problem in it, each with its place in the file.
+* @param {string} file
+* @returns {Plan}
+*/
+function readPlan$1(file) {
+	const where = path.resolve(file);
+	let text;
+	try {
+		text = readFileSync(where, "utf8");
+	} catch (error) {
+		if (error.code !== "ENOENT") throw error;
+		fail(`There is no ${path.basename(where)} in ${path.dirname(where)}. 'appshots video init <project>' writes one from the project's slides, and --plan <file> names one elsewhere.`);
+	}
+	let raw;
+	try {
+		raw = JSON.parse(text);
+	} catch (error) {
+		fail(`${path.basename(where)} is not valid JSON: ${error.message}`);
+	}
+	const { plan, problems, warnings } = validatePlan(raw);
+	if (!plan) fail(`${path.basename(where)} needs ${problems.length === 1 ? "one change" : `${problems.length} changes`}:\n${problems.map((problem) => `  ${problem}`).join("\n")}`);
+	for (const warning of warnings) console.error(`appshots: ${warning}`);
+	return {
+		...plan,
+		file: where,
+		root: path.dirname(where)
+	};
+}
+/**
+* The plan's languages made the project's: left out, they are the project's; given, each must be one the project
+* has, and is written the way the project writes it.
+* @template {Pick<Plan, "locales">} P
+* @param {P} plan
+* @param {{ id: string, locales: string[] }} project
+* @returns {P & { locales: string[] }}
+*/
+function resolvePlan(plan, project) {
+	if (!plan.locales) return {
+		...plan,
+		locales: [...project.locales]
+	};
+	const locales = plan.locales.map((code, at) => {
+		const exact = project.locales.find((each) => each.toLowerCase() === code.toLowerCase());
+		if (exact) return exact;
+		const close = project.locales.filter((each) => each.toLowerCase().split("-")[0] === code.toLowerCase().split("-")[0]);
+		fail(`locales[${at}]: project ${project.id} has no language ${code}${close.length > 0 ? `; it has ${close.join(", ")}, so write that` : `. Its languages are ${project.locales.join(", ")}; add ${code} to it first, in the Studio under Languages`}.`);
+	});
+	return {
+		...plan,
+		locales
+	};
+}
+/**
+* A short hash of what the plan says, which a recording keeps to tell what it was made for. Where the plan is
+* does not count.
+* @param {Omit<Plan, "file" | "root"> & Partial<Pick<Plan, "file" | "root">>} plan
+*/
+function planHash(plan) {
+	const { file: _file, root: _root, ...rest } = plan;
+	return createHash("sha256").update(canonical(rest)).digest("hex").slice(0, 8);
+}
+/** JSON with every object's keys in order, so that the same plan always hashes the same. */
+function canonical(value) {
+	if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+	if (isObject$1(value)) return `{${Object.keys(value).sort().filter((key) => value[key] !== void 0).map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+	return JSON.stringify(value);
+}
+/**
+* @typedef {object} Sidecar What a recording says about itself, beside it in raw/.
+* @property {number} wall Seconds it ran by the clock.
+* @property {[number, number] | null} [trim] The cut "auto" came to.
+*/
+/**
+* How long a scene lasts in the preview: its cut of the recording, sped up, plus the last frame held. Before
+* there is a recording, its estimate stands in for the cut. A whole number of frames.
+* @param {Pick<Plan, "scenes">} _plan
+* @param {Scene} scene
+* @param {Sidecar | null} [sidecar]
+*/
+function sceneSeconds(_plan, scene, sidecar) {
+	let length = scene.estimate;
+	if (sidecar && Number.isFinite(sidecar.wall)) {
+		const [start, end] = Array.isArray(scene.trim) ? scene.trim : Array.isArray(sidecar.trim) ? sidecar.trim : [0, sidecar.wall];
+		const stop = Math.min(end, sidecar.wall);
+		length = Math.max(0, stop - Math.min(start, stop));
+	}
+	return frames(length / scene.speed + scene.hold);
+}
+/**
+* Where each join of the preview starts, and how long the whole runs: segments overlap by the transition, so the
+* k-th join starts at the first k segments' length less k transitions.
+* @param {number[]} durations Seconds of each segment, in order: intro, scenes, outro.
+* @param {Plan["transition"] | number} transition
+* @returns {{ offsets: number[], total: number }}
+*/
+function joinOffsets(durations, transition) {
+	const overlap = typeof transition === "number" ? transition : transition.type === "none" ? 0 : transition.seconds;
+	/** @type {number[]} */
+	const offsets = [];
+	let sum = 0;
+	for (const [k, seconds] of durations.entries()) {
+		sum += seconds;
+		if (k < durations.length - 1) offsets.push(frames(sum - (k + 1) * overlap));
+	}
+	return {
+		offsets,
+		total: frames(sum - Math.max(0, durations.length - 1) * overlap)
+	};
+}
+/**
+* @typedef {object} Segment
+* @property {"intro" | "scene" | "outro"} kind
+* @property {string} id
+* @property {number} seconds
+* @property {number} start Where it starts in the preview.
+* @property {boolean} [recorded] For a scene: whether its length is the recording's rather than an estimate.
+*/
+/**
+* The preview from start to end: intro, scenes and outro, with the time each starts.
+* @param {Plan} plan
+* @param {(scene: Scene) => Sidecar | null} [recording] The recording of a scene, when there is one.
+* @returns {{ segments: Segment[], total: number }}
+*/
+function timeline(plan, recording = () => null) {
+	/** @type {Omit<Segment, "start">[]} */
+	const parts = [];
+	if (plan.intro) parts.push({
+		kind: "intro",
+		id: "intro",
+		seconds: plan.intro.seconds
+	});
+	for (const scene of plan.scenes) {
+		const sidecar = recording(scene);
+		parts.push({
+			kind: "scene",
+			id: scene.id,
+			seconds: sceneSeconds(plan, scene, sidecar),
+			recorded: Boolean(sidecar)
+		});
+	}
+	if (plan.outro) parts.push({
+		kind: "outro",
+		id: "outro",
+		seconds: plan.outro.seconds
+	});
+	const { offsets, total } = joinOffsets(parts.map((part) => part.seconds), plan.transition);
+	return {
+		segments: parts.map((part, at) => ({
+			...part,
+			start: at === 0 ? 0 : offsets[at - 1]
+		})),
+		total
+	};
+}
+/**
+* The moment of the preview its poster frame is taken at: app UI with its caption, never the intro card. By
+* default the first scene, a second after its caption has faded in.
+* @param {Plan} plan
+* @param {{ segments: Segment[] }} line The plan's timeline.
+*/
+function posterTime$1(plan, { segments }) {
+	if (plan.poster && "time" in plan.poster) return frames(plan.poster.time);
+	const id = plan.poster && "scene" in plan.poster ? plan.poster.scene : plan.scenes[0].id;
+	const scene = segments.find((segment) => segment.kind === "scene" && segment.id === id) ?? segments.find((segment) => segment.kind === "scene");
+	if (!scene) return 0;
+	const after = plan.poster && "at" in plan.poster && plan.poster.at !== void 0 ? plan.poster.at : plan.transition.seconds + .45 + 1;
+	return frames(scene.start + Math.min(after, Math.max(0, scene.seconds - 1 / 30)));
+}
+/**
+* The work folders of a plan.
+* @param {Pick<Plan, "root">} plan
+*/
+function workFolders(plan) {
+	const work = path.join(plan.root, WORK_FOLDER);
+	return {
+		work,
+		raw: path.join(work, "raw"),
+		segments: path.join(work, "work"),
+		layers: path.join(work, "layers"),
+		out: path.join(work, "out"),
+		remotion: path.join(work, "remotion")
+	};
+}
+/**
+* The plan's languages --lang picks, in the plan's order; all of them without it.
+* @param {Plan & { locales: string[] }} plan
+* @param {Record<string, string | true>} flags
+*/
+function selectedLocales(plan, flags) {
+	const asked = listFlag$1(flags, "lang", plan.locales.slice(0, 2).join(","));
+	if (!asked) return plan.locales;
+	for (const code of asked) if (!plan.locales.some((each) => each.toLowerCase() === code.toLowerCase())) fail(`--lang ${code}: the plan's languages are ${plan.locales.join(", ")}.`);
+	return plan.locales.filter((code) => asked.some((each) => each.toLowerCase() === code.toLowerCase()));
+}
+/**
+* The plan's displays --display picks, in the plan's order; all of them without it.
+* @param {Plan} plan
+* @param {Record<string, string | true>} flags
+*/
+function selectedDisplays(plan, flags) {
+	const asked = listFlag$1(flags, "display", plan.displays.join(","));
+	if (!asked) return plan.displays;
+	for (const key of asked) if (!plan.displays.includes(key)) fail(`--display ${key}: the plan's displays are ${plan.displays.join(", ")}.`);
+	return plan.displays.filter((key) => asked.includes(key));
+}
+/**
+* The plan's scenes --scene picks, in the plan's order; all of them without it.
+* @param {Plan} plan
+* @param {Record<string, string | true>} flags
+*/
+function selectedScenes(plan, flags) {
+	const asked = listFlag$1(flags, "scene", plan.scenes[0].id);
+	if (!asked) return plan.scenes;
+	for (const id of asked) if (!plan.scenes.some((scene) => scene.id === id)) fail(`--scene ${id}: the plan's scenes are ${plan.scenes.map((scene) => scene.id).join(", ")}.`);
+	return plan.scenes.filter((scene) => asked.includes(scene.id));
+}
+var PLAN_FILE$1, WORK_FOLDER, PREVIEW_DISPLAYS, LENGTH, DEFAULTS, ID$1, PROJECT, LOCALE$1, FIELDS, DISCLOSURES, frames, isObject$1, join, list, captionLayerId, orientationOf;
+var init_plan$1 = __esmMin((() => {
+	init_fail();
+	init_push$1();
+	PLAN_FILE$1 = "appshots.video.json";
+	WORK_FOLDER = "appshots-video";
+	PREVIEW_DISPLAYS = {
+		iphone: "ios",
+		"iphone-5.5": "ios",
+		"iphone-4.7": "ios",
+		ipad: "ios",
+		"ipad-9.7": "ios",
+		mac: "mac"
+	};
+	LENGTH = {
+		min: 15,
+		max: 30,
+		low: 15.5,
+		high: 29.5
+	};
+	DEFAULTS = {
+		record: 12,
+		settle: 1.5,
+		estimate: 6,
+		intro: 1.5,
+		outro: 2,
+		transition: .4,
+		volume: .8,
+		fadeOut: 1.5,
+		target: 26
+	};
+	ID$1 = /^[a-z0-9-]{1,32}$/;
+	PROJECT = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+	LOCALE$1 = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/;
+	FIELDS = [
+		"headline",
+		"eyebrow",
+		"sub"
+	];
+	DISCLOSURES = [
+		"iap",
+		"subscription",
+		"login"
+	];
+	frames = (seconds) => Math.round(seconds * 30) / 30;
+	isObject$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	join = (at, key) => at === "plan" ? key : /^[A-Za-z_$][\w$]*$/.test(key) ? `${at}.${key}` : `${at}[${JSON.stringify(key)}]`;
+	list = (options) => {
+		const words = options.map((option) => JSON.stringify(option));
+		return words.length > 1 ? `${words.slice(0, -1).join(", ")} or ${words.at(-1)}` : words[0];
+	};
+	captionLayerId = (scene) => `caption-${typeof scene === "string" ? scene : scene.id}`;
+	orientationOf = (plan, display) => display === "mac" ? "landscape" : plan.orientation;
+}));
+//#endregion
+//#region cli/src/video/init.mjs
+init_api();
+init_config();
+init_fail();
+init_projects();
+init_push$1();
+init_toolkits();
+init_plan$1();
+/** What git leaves out of the work folder: everything large. The plan beside it is what is meant to be committed. */
+const GITIGNORE = `# Recordings, layers and previews are large and made again from appshots.video.json, which is what to commit.
+raw/
+work/
+layers/
+out/
+remotion/node_modules/
+remotion/out/
+remotion/public/
+`;
+/** A preview runs 15 to 30 seconds, which holds three or four moments of about six seconds with the cards. */
+const MOST_SCENES = 4;
+/**
+* @typedef {{ id: string, name: string, locales: string[], slides: Array<Record<string, any>> }} Project
+* @typedef {{ name: string, device?: string }} Shot
+*/
+/**
+* The plan `video init` writes for a project: the first slide's headline on the intro card, one scene for each
+* of the next slides that show a screen, up to four, each with its slide's headline as its caption. How the app
+* gets through each moment is left for the agent to fill in with the user.
+* @param {Project} project
+* @param {Shot[]} shots
+* @param {{ displays?: string[] | null, locales?: string[] | null, platform?: "ios" | "mac" | "web", url?: string | null }} [choice]
+*/
+function planFromProject(project, shots, { displays, locales, platform, url } = {}) {
+	const has = new Set(shots.map((shot) => shot.device ?? "iphone"));
+	const shown = displays ?? [
+		"iphone",
+		"ipad",
+		"mac"
+	].filter((key) => has.has(key) || key === "iphone" && has.has("duo"));
+	const keys = shown.length > 0 ? shown : ["iphone"];
+	const kind = platform ?? (keys.every((key) => key === "mac") ? "mac" : "ios");
+	const fitting = kind === "web" ? keys : keys.filter((key) => PREVIEW_DISPLAYS[key] === kind);
+	const slides = project.slides;
+	const first = slides[0];
+	const usable = (slide) => typeof slide.headline === "string" ? slide.headline.trim() !== "" : Boolean(slide.headline && Object.keys(slide.headline).length);
+	const moments = (slides.length > 1 ? slides.slice(1) : slides).map((slide) => ({
+		slide,
+		number: slides.indexOf(slide) + 1
+	})).filter(({ slide }) => usable(slide));
+	const withScreen = moments.filter(({ slide }) => typeof slide.screenshot === "string");
+	const chosen = (withScreen.length > 0 ? withScreen : moments).slice(0, MOST_SCENES);
+	const ids = new Set();
+	const idOf = (slide, number) => {
+		const base = String(slide.screenshot ?? `scene-${number}`).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28) || `scene-${number}`;
+		let id = base;
+		for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
+		ids.add(id);
+		return id;
+	};
+	const scenes = chosen.length > 0 ? chosen.map(({ slide, number }) => ({
+		id: idOf(slide, number),
+		caption: { slide: number }
+	})) : [{ id: "app" }];
+	return {
+		version: 1,
+		project: project.id,
+		app: kind === "web" && url ? {
+			platform: kind,
+			url
+		} : { platform: kind },
+		displays: fitting.length > 0 ? fitting : [kind === "mac" ? "mac" : "iphone"],
+		locales: locales ?? project.locales,
+		...slides.length > 1 && first && usable(first) ? { intro: { headline: { slide: 1 } } } : {},
+		outro: { logo: true },
+		scenes
+	};
+}
+/**
+* `appshots video init [project]`: writes appshots.video.json and appshots-video/.gitignore from the project's
+* slides. It writes over a plan only with --again, since a plan holds work.
+* @param {string | undefined} given
+* @param {Record<string, string | true>} flags
+*/
+async function initPlan(given, flags) {
+	if (flags.plan === true) fail("--plan needs a file name, such as --plan appshots.video.json.");
+	const file = path.resolve(typeof flags.plan === "string" ? flags.plan : PLAN_FILE$1);
+	if (existsSync(file) && !flags.again) fail(`${path.basename(file)} is there already. Change it by hand, or write it anew from the slides with 'appshots video init --again', which loses what was changed in it.`);
+	const config = loadConfig();
+	const id = given ?? await onlyProject(config);
+	const { project, shots } = await (await request(config, "GET", projectRoute(id))).json();
+	const displays = listFlag$1(flags, "display", "iphone,ipad");
+	for (const key of displays ?? []) if (!Object.hasOwn(PREVIEW_DISPLAYS, key)) fail(`--display ${key}: previews are made for ${Object.keys(PREVIEW_DISPLAYS).join(", ")}.`);
+	const asked = listFlag$1(flags, "lang", project.locales.slice(0, 2).join(","));
+	const locales = asked ? resolvePlan({ locales: asked }, project).locales : null;
+	const kits = toolkits(path.dirname(file));
+	const web = xcodeProjects(projectDirs()).length === 0 && kits.length > 0 && kits.every((kit) => kit.web && !kit.simulator && !kit.window) ? kits.find((kit) => kit.web)?.web : null;
+	const plan = planFromProject(project, shots ?? [], {
+		displays,
+		locales,
+		platform: web ? "web" : void 0,
+		url: web?.address ?? null
+	});
+	const dropped = (displays ?? []).filter((key) => !plan.displays.includes(key));
+	if (dropped.length > 0) console.error(`appshots: ${dropped.join(", ")} ${dropped.length === 1 ? "is" : "are"} not a display of this kind of app, so the plan leaves ${dropped.length === 1 ? "it" : "them"} out. A Mac app's previews need a plan of their own: --plan appshots.mac.video.json --display mac.`);
+	const { problems } = validatePlan(plan);
+	if (problems.length > 0) fail(`The plan made from project ${id} does not hold up:\n${problems.map((problem) => `  ${problem}`).join("\n")}`);
+	writeFileSync(file, `${JSON.stringify(plan, null, 2)}\n`);
+	const ignore = path.join(path.dirname(file), WORK_FOLDER, ".gitignore");
+	if (!existsSync(ignore)) {
+		mkdirSync(path.dirname(ignore), { recursive: true });
+		writeFileSync(ignore, GITIGNORE);
+	}
+	const scenes = plan.scenes.length;
+	console.log(`Wrote ${path.relative(process.cwd(), file) || file}: ${scenes} scene${scenes === 1 ? "" : "s"} from the slides of ${project.name ?? id}, for ${plan.displays.join(", ")} in ${plan.locales.join(", ")}.`);
+	console.log("Next: give each scene its drive (how the app gets through that moment), then run 'appshots video plan'.");
+}
+/**
+* The account's only project, for a command run without one.
+* @param {Config} config
+*/
+async function onlyProject(config) {
+	/** @type {Array<{ id: string, name: string }>} */
+	const projects = await (await request(config, "GET", "/api/projects")).json();
+	if (projects.length === 1) return projects[0].id;
+	if (projects.length === 0) fail("There is no project yet. Make the screenshots first: the previews take their captions, fonts and background from the project.");
+	fail(`Name the project: appshots video init <project>. The projects are:\n${projects.map((p) => `  ${p.id}  ${p.name}`).join("\n")}`);
 }
 //#endregion
+//#region cli/src/video/layers.mjs
+/**
+* The body of POST /api/projects/:id/video-layers for one display: the captions of the scenes, the cards, and
+* whether the plate and the touch ring are wanted. It always runs as a background job.
+* @param {Plan} plan
+* @param {string} display
+* @param {string[]} locales
+*/
+function layersRequest(plan, display, locales) {
+	return {
+		display,
+		orientation: orientationOf(plan, display),
+		locales,
+		captionStyle: plan.captionStyle,
+		captions: plan.scenes.filter((scene) => scene.caption !== false).map((scene) => ({
+			id: scene.id,
+			text: scene.caption,
+			position: scene.captionPosition
+		})),
+		...plan.intro ? { intro: {
+			...plan.intro.headline !== void 0 ? { headline: plan.intro.headline } : {},
+			logo: plan.intro.logo
+		} } : {},
+		...plan.outro ? { outro: {
+			lines: plan.outro.lines,
+			logo: plan.outro.logo,
+			disclosure: plan.outro.disclosure
+		} } : {},
+		plate: true,
+		touch: plan.scenes.some((scene) => scene.touches),
+		background: true
+	};
+}
+/**
+* Has the server draw the layers of one display in the given languages, and puts them into
+* appshots-video/layers/<set>/. A set the server has drawn before costs nothing and is answered at once; one that
+* is on this Mac already is not downloaded again.
+* @param {Plan} plan
+* @param {{ display: string, locales?: string[] }} choice
+* @returns {Promise<Manifest>}
+*/
+async function fetchLayers(plan, { display, locales = plan.locales }) {
+	const config = loadConfig();
+	const route = projectRoute(plan.project, "/video-layers");
+	const body = layersRequest(plan, display, locales);
+	const answer = await request(config, "POST", route, {
+		body: JSON.stringify(body),
+		headers: { "content-type": "application/json" }
+	});
+	let manifest = await answer.json();
+	if (answer.status === 202 || manifest.job && !manifest.layers) {
+		const job = await follow(config, manifest.job, display);
+		const set = job.result?.set ?? job.set ?? manifest.set;
+		if (job.result?.layers) manifest = job.result;
+		else if (set) manifest = await (await request(config, "GET", projectRoute(plan.project, `/video-layers/${encodeURIComponent(set)}`))).json();
+		else manifest = await (await request(config, "POST", route, {
+			body: JSON.stringify({
+				...body,
+				background: false
+			}),
+			headers: { "content-type": "application/json" }
+		})).json();
+		manifest = {
+			...manifest,
+			charged: true
+		};
+	}
+	if (typeof manifest.set !== "string" || !/^[0-9a-f]{8,64}$/.test(manifest.set) || !Array.isArray(manifest.layers)) fail(`The server answered the layers of ${display} with something that is not a set of layers. Is it an appShots server, and up to date?`);
+	const dir = path.join(workFolders(plan).layers, manifest.set);
+	if (!complete(dir, manifest)) await unpack(config, manifest, dir);
+	const index = path.join(workFolders(plan).layers, INDEX);
+	const current = readJson(index) ?? {};
+	current[display] ??= {};
+	for (const locale of locales) current[display][locale] = {
+		set: manifest.set,
+		request: requestHash({
+			...layersRequest(plan, display, [locale]),
+			locales: void 0
+		})
+	};
+	writeFileSync(index, `${JSON.stringify(current, null, 2)}\n`);
+	return located(manifest, dir);
+}
+/**
+* The layers of one display and language that are on this Mac and were drawn for the plan as it is now, or null.
+* @param {Plan} plan
+* @param {string} display
+* @param {string} locale
+* @returns {Manifest | null}
+*/
+function localLayers(plan, display, locale) {
+	const layers = workFolders(plan).layers;
+	const entry = readJson(path.join(layers, INDEX))?.[display]?.[locale];
+	if (!entry || entry.request !== requestHash({
+		...layersRequest(plan, display, [locale]),
+		locales: void 0
+	})) return null;
+	const dir = path.join(layers, entry.set);
+	const manifest = readJson(path.join(dir, "manifest.json"));
+	return manifest && complete(dir, manifest) ? located(manifest, dir) : null;
+}
+/**
+* Asks after a set being drawn until it is done, and says how far it has come. Ctrl+C cancels it on the server, so
+* that it uses no render.
+* @param {Config} config
+* @param {{ id: string }} job
+* @param {string} display
+*/
+async function follow(config, job, display) {
+	if (!job?.id) fail(`The server started drawing the layers of ${display} without saying where to follow it.`);
+	const route = `/api/renders/${encodeURIComponent(job.id)}`;
+	const cancel = () => {
+		process.stdout.write("\n");
+		request(config, "DELETE", route).finally(() => process.exit(130));
+	};
+	process.once("SIGINT", cancel);
+	try {
+		let said = "";
+		for (;;) {
+			const state = await (await request(config, "GET", route)).json();
+			if (state.state === "done") return state;
+			if (state.state === "failed") fail(`The server could not draw the layers of ${display}: ${state.error ?? "it did not say why"}.`);
+			if (state.state === "cancelled") fail(`Drawing the layers of ${display} was cancelled.`);
+			const now = state.total > 0 ? `${display}: drawing, ${state.done} of ${state.total}` : `${display}: waiting for the server`;
+			if (now !== said) console.log(said = now);
+			await pause(POLL_MS);
+		}
+	} finally {
+		process.removeListener("SIGINT", cancel);
+	}
+}
+/**
+* Downloads a set as the server zips it and puts it into its folder in one step, so that a download cut short
+* leaves no set that looks whole.
+* @param {Config} config
+* @param {Manifest} manifest
+* @param {string} dir
+*/
+async function unpack(config, manifest, dir) {
+	const parent = path.dirname(dir);
+	mkdirSync(parent, { recursive: true });
+	const staging = mkdtempSync(path.join(parent, `.${manifest.set}-`));
+	try {
+		const zip = path.join(staging, "layers.zip");
+		writeFileSync(zip, Buffer.from(await (await request(config, "GET", manifest.zip)).arrayBuffer()));
+		const files = path.join(staging, "files");
+		const result = await run$1("unzip", [
+			"-o",
+			"-q",
+			zip,
+			"-d",
+			files
+		]);
+		if (result.status !== 0) fail(`Could not unpack the layers: ${(result.stderr || result.error?.message || "").trim()}`);
+		if (!existsSync(path.join(files, "manifest.json"))) writeFileSync(path.join(files, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+		const missing = manifest.layers.filter((layer) => !existsSync(path.join(files, layerFile$1(layer))));
+		if (missing.length > 0) fail(`The layers of set ${manifest.set} came without ${missing.slice(0, 3).map(layerFile$1).join(", ")}${missing.length > 3 ? ` and ${missing.length - 3} more` : ""}.`);
+		rmSync(dir, {
+			recursive: true,
+			force: true
+		});
+		renameSync(files, dir);
+	} finally {
+		rmSync(staging, {
+			recursive: true,
+			force: true
+		});
+	}
+}
+/**
+* `appshots video layers`: the layer set of each display, in the plan's languages or those --lang picks.
+* @param {Plan} plan
+* @param {{ displays: string[], locales: string[] }} choice
+*/
+async function layersCommand(plan, { displays, locales }) {
+	for (const display of displays) {
+		console.log(`${display}: asking the server for the layers in ${locales.join(", ")}`);
+		const manifest = await fetchLayers(plan, {
+			display,
+			locales
+		});
+		const count = manifest.layers.length;
+		console.log(`${display}: set ${manifest.set}, ${count} layer${count === 1 ? "" : "s"} in ${path.relative(process.cwd(), manifest.dir ?? "") || manifest.dir}. ${manifest.charged ? "Drawing it used one render." : "Drawn before, so no render was used."}`);
+		for (const warning of manifest.warnings ?? []) console.log(`  ${warning.locale ? `${warning.locale} ` : ""}${warning.layer}: ${warning.detail}${warning.kind === "fit" ? " to fit" : ""}`);
+	}
+}
+var POLL_MS, INDEX, requestHash, layerFile$1, complete, located;
+var init_layers = __esmMin((() => {
+	init_api();
+	init_config();
+	init_fail();
+	init_proc();
+	init_util();
+	init_plan$1();
+	POLL_MS = 1e3;
+	INDEX = "current.json";
+	requestHash = (body) => createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 16);
+	layerFile$1 = (layer) => layer.locale ? path.join(layer.locale, `${layer.id}.png`) : `${layer.id}.png`;
+	complete = (dir, manifest) => existsSync(path.join(dir, "manifest.json")) && manifest.layers.every((layer) => existsSync(path.join(dir, layerFile$1(layer))));
+	located = (manifest, dir) => ({
+		...manifest,
+		dir,
+		layers: manifest.layers.map((layer) => ({
+			...layer,
+			path: path.join(dir, layerFile$1(layer))
+		}))
+	});
+}));
+//#endregion
+//#region cli/src/video/storyboard.mjs
+init_layers();
+init_plan$1();
+/** @typedef {Plan & { locales: string[] }} Plan */
+/** @typedef {Scene} Scene */
+/** @typedef {Sidecar} Sidecar */
+/** @typedef {Text} Text */
+/** @typedef {SlideText} SlideText */
+/**
+* The fields of a project the storyboard reads.
+* @typedef {{ id: string, name?: string, locales: string[], slides: Array<Record<string, unknown>> }} Project
+*/
+/**
+* @typedef {object} Caption
+* @property {string | null} text In the primary language; null when it comes from a slide and the project is not
+*   at hand, or the slide has none.
+* @property {string} from Where it comes from: "plan", or a slide's field such as "slide 2 headline".
+* @property {string[]} missing The languages that have no text of their own and show another's.
+*/
+/**
+* Seconds of recording one scene takes, launch and settling included. Apple's previews need every language
+* recorded on its own, so this adds up quickly.
+* @param {Scene} scene
+*/
+const recordingSeconds = (scene) => Math.max(15, scene.record.settle + scene.estimate + 6);
+/** The template's own fallback, so a text is told as missing exactly when the server would draw another's. */
+function pick(text, locale, primary) {
+	if (typeof text === "string") return {
+		text,
+		own: true
+	};
+	const own = text[locale] ?? text[locale.split("-")[0]];
+	if (own !== void 0) return {
+		text: own,
+		own: true
+	};
+	return {
+		text: text[primary] ?? Object.values(text)[0] ?? "",
+		own: false
+	};
+}
+const FIELD = {
+	headline: "headline",
+	eyebrow: "eyebrow",
+	sub: "subheadline"
+};
+const UNSAFE = /(?:^|[^\p{L}])(free|gratis|kostenlos|gratuit|sale|discount|cheapest|best|number one|top[- ]rated)(?=$|[^\p{L}])|#\s?1\b|[$€£¥]|\d\s?%|\b(?:19|20)\d\d\b/iu;
+/**
+* A caption of the plan in every language: the text the primary language shows, and the languages that show
+* another's.
+* @param {false | Text | SlideText | undefined} value
+* @param {Plan} plan
+* @param {Project | null} project
+* @param {(warning: string) => void} warn
+* @param {string} where Its place in the plan, for a warning.
+* @returns {Caption | null}
+*/
+function caption(value, plan, project, warn, where) {
+	if (value === void 0 || value === false) return null;
+	const [primary] = plan.locales;
+	let text = void 0;
+	let from = "plan";
+	if (typeof value === "object" && "slide" in value) {
+		const field = value.field ?? "headline";
+		from = `slide ${value.slide} ${field}`;
+		if (!project) return {
+			text: null,
+			from,
+			missing: []
+		};
+		const slide = project.slides[value.slide - 1];
+		if (!slide) {
+			warn(`${where}: project ${project.id} has ${project.slides.length === 0 ? "no slides" : `slides 1 to ${project.slides.length}`}, so slide ${value.slide} has no text for it.`);
+			return {
+				text: null,
+				from,
+				missing: []
+			};
+		}
+		text = slide[FIELD[field]];
+		if (text === void 0 || text === "") {
+			warn(`${where}: slide ${value.slide} has no ${FIELD[field]}.`);
+			return {
+				text: null,
+				from,
+				missing: []
+			};
+		}
+	} else text = value;
+	const missing = typeof text === "string" ? plan.locales.slice(1) : plan.locales.filter((locale) => !pick(text, locale, primary).own);
+	const shown = new Set(plan.locales.map((locale) => pick(text, locale, primary).text));
+	for (const each of shown) {
+		const match = UNSAFE.exec(each);
+		if (match) warn(`${where}: "${each}" has ${JSON.stringify(match[0].trim())}. Captions carry no prices, "free", rankings or dates: Apple turns previews down for them.`);
+	}
+	return {
+		text: pick(text, primary, primary).text,
+		from,
+		missing
+	};
+}
+/**
+* Everything the storyboard shows, as data: what `video plan` prints and what `video plan --json` gives an agent.
+* @param {Plan} plan
+* @param {object} [context]
+* @param {Project | null} [context.project] The project, for the slides' texts; null when it could not be had.
+* @param {(display: string, locale: string, scene: Scene) => Sidecar | null} [context.recording]
+*/
+function buildStoryboard(plan, { project = null, recording = () => null } = {}) {
+	/** @type {string[]} */
+	const warnings = [];
+	const warn = (warning) => warnings.push(warning);
+	const [primary] = plan.locales;
+	const intro = plan.intro ? {
+		seconds: plan.intro.seconds,
+		logo: plan.intro.logo,
+		headline: caption(plan.intro.headline, plan, project, warn, "intro.headline")
+	} : null;
+	const outro = plan.outro ? {
+		seconds: plan.outro.seconds,
+		logo: plan.outro.logo,
+		disclosure: plan.outro.disclosure,
+		lines: plan.outro.lines.map((line, at) => caption(line, plan, project, warn, `outro.lines[${at}]`))
+	} : null;
+	const captions = plan.scenes.map((scene, at) => caption(scene.caption, plan, project, warn, `scenes[${at}].caption (${scene.id})`));
+	const recorded = plan.footage === "primary" ? [primary] : plan.locales;
+	let toRecord = 0;
+	let recordSeconds = 0;
+	const displays = plan.displays.map((display) => {
+		for (const locale of recorded) for (const scene of plan.scenes) {
+			if (recording(display, locale, scene)) continue;
+			toRecord++;
+			recordSeconds += recordingSeconds(scene);
+		}
+		const line = timeline(plan, (scene) => recording(display, primary, scene));
+		const scenes = line.segments.filter((segment) => segment.kind === "scene");
+		return {
+			display,
+			total: line.total,
+			recorded: scenes.filter((segment) => segment.recorded).length,
+			segments: line.segments,
+			poster: posterTime$1(plan, line)
+		};
+	});
+	for (const { display, total } of displays) {
+		const which = displays.length > 1 ? `${display}: ` : "";
+		if (total > LENGTH.high) warn(`${which}the preview runs ${total.toFixed(1)} s, and the App Store takes 30 s at most: cut ${(total - LENGTH.high).toFixed(1)} s or more.`);
+		else if (total < LENGTH.low) warn(`${which}the preview runs ${total.toFixed(1)} s, and the App Store takes 15 s at least: add ${(LENGTH.low - total).toFixed(1)} s or more.`);
+		else if (Math.abs(total - plan.target) > 3) warn(`${which}the preview runs ${total.toFixed(1)} s, and the plan aims at ${plan.target} s.`);
+	}
+	const overlap = plan.transition.seconds;
+	const cards = (plan.intro ? plan.intro.seconds : 0) + (plan.outro ? plan.outro.seconds : 0);
+	if (cards > 4) warn(`The intro and outro run ${cards.toFixed(1)} s together. Previews autoplay and are judged by their first seconds: keep the cards under 4 s.`);
+	if (plan.intro && plan.intro.seconds - overlap > 2) warn(`The app shows only after ${(plan.intro.seconds - overlap).toFixed(1)} s. Show it within the first 2 s.`);
+	for (const segment of displays[0].segments) {
+		if (segment.kind !== "scene") continue;
+		if (segment.seconds <= 2 * overlap) warn(`${segment.id} runs ${segment.seconds.toFixed(1)} s, too short for the ${overlap.toFixed(1)} s transitions into and out of it.`);
+		else if (segment.seconds < 2) warn(`${segment.id} runs ${segment.seconds.toFixed(1)} s, too short to follow.`);
+	}
+	for (const [at, entry] of captions.entries()) if (entry && entry.missing.length > 0) warn(`${plan.scenes[at].id}: the caption has no text in ${entry.missing.join(", ")}, which ${entry.missing.length === 1 ? "shows" : "show"} the ${primary} one.`);
+	const undriven = plan.scenes.filter((scene) => scene.drive === void 0).map((scene) => scene.id);
+	if (undriven.length > 0) warn(`${undriven.join(", ")} ${undriven.length === 1 ? "has" : "have"} no drive. Say how the app gets through each moment before recording: "manual", {"wait": <seconds>}, {"uitest": …}, {"command": […]} or {"web": […]}.`);
+	if (plan.app.platform === "web" && !plan.app.url) warn("app.url is not set, so 'appshots video record' needs --web <address>.");
+	if (plan.music && plan.music.file && !existsSync(path.resolve(plan.root, plan.music.file))) warn(`music.file: ${plan.music.file} is not there.`);
+	if (plan.footage === "primary" && plan.locales.length > 1) warn(`The app is recorded in ${primary} only, and the other languages show it with their own captions.`);
+	if (recordSeconds > 1200) warn(`Recording takes about ${Math.round(recordSeconds / 60)} minutes. Ask the user before recording more than 20; "footage": "primary" records one language only.`);
+	return {
+		plan: plan.file,
+		project: plan.project,
+		platform: plan.app.platform,
+		displays,
+		locales: plan.locales,
+		transition: plan.transition,
+		target: plan.target,
+		intro,
+		outro,
+		scenes: plan.scenes.map((scene, at) => ({
+			id: scene.id,
+			caption: captions[at],
+			position: scene.captionPosition,
+			drive: driveLabel(scene.drive)
+		})),
+		recording: {
+			needed: toRecord,
+			seconds: Math.round(recordSeconds)
+		},
+		warnings
+	};
+}
+/** @typedef {ReturnType<typeof buildStoryboard>} Storyboard */
+/** @param {Scene["drive"]} drive */
+function driveLabel(drive) {
+	if (drive === void 0) return "no drive yet";
+	if (drive === "manual") return "by hand";
+	if ("wait" in drive) return `plays ${drive.wait} s`;
+	if ("uitest" in drive) return `UI test ${drive.uitest.split("/").at(-1)}`;
+	if ("command" in drive) return path.basename(drive.command[0]);
+	return `${drive.web.length} web step${drive.web.length === 1 ? "" : "s"}`;
+}
+/** @param {Caption | null} entry */
+const captionLabel = (entry) => !entry ? "" : entry.text === null ? `(${entry.from})` : entry.text.replace(/\*/g, "").replace(/\s*\n\s*/g, " / ");
+/**
+* The storyboard as the person at the Terminal and the agent read it.
+* @param {Storyboard} board
+*/
+function storyboardText(board) {
+	const [first] = board.displays;
+	const [primary] = board.locales;
+	const rows = first.segments.map((segment) => {
+		if (segment.kind === "intro") return [
+			segment,
+			"intro",
+			[captionLabel(board.intro?.headline ?? null), board.intro?.logo ? "+ logo" : ""].filter(Boolean).join("  ")
+		];
+		if (segment.kind === "outro") return [
+			segment,
+			"outro",
+			[
+				...(board.outro?.lines ?? []).map(captionLabel).filter(Boolean),
+				...(board.outro?.disclosure ?? []).map((kind) => `[${kind}]`),
+				board.outro?.logo ? "+ logo" : ""
+			].filter(Boolean).join("  ")
+		];
+		const scene = board.scenes.find((each) => each.id === segment.id);
+		const text = captionLabel(scene?.caption ?? null) || "(no caption)";
+		return [
+			segment,
+			segment.id,
+			`${text}${scene?.caption && scene.position === "bottom" ? "  (bottom)" : ""}  · ${scene?.drive}`
+		];
+	});
+	const width = Math.max(7, ...rows.map(([, label]) => label.length));
+	const lines = [
+		`Storyboard of ${path.basename(board.plan)}: project ${board.project}, a${board.platform === "ios" ? "n iPhone or iPad" : board.platform === "mac" ? " Mac" : " web"} app.`,
+		`Languages: ${board.locales.map((locale, at) => at === 0 ? `${locale} (primary)` : locale).join(", ")}. Displays: ${board.displays.map((each) => each.display).join(", ")}.`,
+		"",
+		`  Starts  Seconds  ${"Segment".padEnd(width)}  Caption (${primary})`,
+		...rows.map(([segment, label, text]) => `  ${segment.start.toFixed(1).padStart(6)}  ${segment.seconds.toFixed(1).padStart(7)}  ${label.padEnd(width)}  ${text}`),
+		""
+	];
+	const scenes = first.segments.filter((segment) => segment.kind === "scene").length;
+	const lengths = board.displays.map(({ display, total, recorded }) => `${board.displays.length > 1 ? `${display} ` : ""}${total.toFixed(1)} s${recorded === scenes ? "" : recorded === 0 ? " (estimated, nothing recorded yet)" : ` (estimated, ${recorded} of ${scenes} scenes recorded)`}`);
+	lines.push(`Length: ${lengths.join(", ")}. The aim is ${board.target} s; the App Store takes 15 to 30 s.`);
+	lines.push(`Transitions: ${board.transition.type === "none" ? "none, a cut" : `${board.transition.type}, ${board.transition.seconds.toFixed(1)} s`}. Poster frame at ${first.poster.toFixed(1)} s.`);
+	const { needed, seconds } = board.recording;
+	lines.push(needed === 0 ? "Recording: every recording is there." : `Recording: ${needed} recording${needed === 1 ? "" : "s"} to make, about ${Math.max(1, Math.round(seconds / 60))} minute${Math.round(seconds / 60) > 1 ? "s" : ""}.`);
+	if (board.warnings.length > 0) lines.push("", "Warnings:", ...board.warnings.map((warning) => `  - ${warning}`));
+	return lines.join("\n");
+}
+//#endregion
+//#region cli/src/video/ffmpeg.mjs
+var ffmpeg_exports = __exportAll({
+	NEEDS: () => NEEDS,
+	ffmpegStatus: () => ffmpegStatus,
+	findBrew: () => findBrew,
+	findFfmpeg: () => findFfmpeg,
+	homebrew: () => homebrew,
+	lacking: () => lacking,
+	toolEnv: () => toolEnv
+});
+/** @param {string} file */
+function runnable(file) {
+	try {
+		accessSync(file, constants.X_OK);
+		return statSync(file).isFile();
+	} catch {
+		return false;
+	}
+}
+/**
+* Remotion's ffmpeg and ffprobe, which come with its compositor package when the user installed Remotion into
+* the work folder (`appshots video remotion`). They are built to load the libraries beside them.
+* @param {string | undefined} root The work folder, appshots-video/, or the folder of the plan that has it.
+* @returns {{ ffmpeg: string, ffprobe: string, env: NodeJS.ProcessEnv } | null}
+*/
+function inRemotion(root) {
+	if (!root) return null;
+	const own = `compositor-${process.platform}-${process.arch}`;
+	for (const work of [root, path.join(root, "appshots-video")]) {
+		const scope = path.join(work, "remotion", "node_modules", "@remotion");
+		let packages = [];
+		try {
+			packages = readdirSync(scope).filter((name) => name.startsWith("compositor-"));
+		} catch {
+			continue;
+		}
+		packages.sort((a, b) => Number(b.startsWith(own)) - Number(a.startsWith(own)));
+		const found = remotionTools(scope, packages);
+		if (found) return found;
+	}
+	return null;
+}
+/**
+* @param {string} scope
+* @param {string[]} packages
+*/
+function remotionTools(scope, packages) {
+	for (const name of packages) {
+		const dir = path.join(scope, name);
+		const ffmpeg = path.join(dir, "ffmpeg");
+		const ffprobe = path.join(dir, "ffprobe");
+		if (!runnable(ffmpeg) || !runnable(ffprobe)) continue;
+		return {
+			ffmpeg,
+			ffprobe,
+			env: { [process.platform === "darwin" ? "DYLD_LIBRARY_PATH" : "LD_LIBRARY_PATH"]: dir }
+		};
+	}
+	return null;
+}
+/**
+* Where ffmpeg and ffprobe are, in this order: APPSHOTS_FFMPEG and APPSHOTS_FFPROBE, the PATH, Homebrew's folders,
+* then Remotion's in the work folder. An ffprobe is looked for beside the ffmpeg first, so the two match.
+*
+* Remotion's are passed over for a compose. Its build has none of the filters a compose needs (no xfade, overlay
+* or fps), so the user is better offered Homebrew's than refused; and the steps that record and cut run the
+* programs they are given as they are, while Remotion's only start with the environment toolEnv() gives them.
+* @param {string | undefined} root
+* @param {Need} need
+* @returns {{ ffmpeg: string, ffprobe: string, env?: NodeJS.ProcessEnv, from: Tools["from"] } | null}
+*/
+function locate(root, need) {
+	const given = process.env.APPSHOTS_FFMPEG;
+	const givenProbe = process.env.APPSHOTS_FFPROBE;
+	for (const [name, file] of [["APPSHOTS_FFMPEG", given], ["APPSHOTS_FFPROBE", givenProbe]]) if (file && !runnable(file)) fail(`${name} is ${file}, and there is no program there.`);
+	const beside = (ffmpeg) => {
+		const ffprobe = path.join(path.dirname(ffmpeg), "ffprobe");
+		return runnable(ffprobe) ? ffprobe : null;
+	};
+	if (given) {
+		const ffprobe = givenProbe ?? beside(given) ?? onPath("ffprobe") ?? inHomebrew("ffprobe");
+		if (!ffprobe) fail(`There is no ffprobe beside ${given}. Point APPSHOTS_FFPROBE at the ffprobe that goes with it.`);
+		return {
+			ffmpeg: given,
+			ffprobe,
+			from: "APPSHOTS_FFMPEG"
+		};
+	}
+	for (const [find, from] of [[onPath, "PATH"], [inHomebrew, "Homebrew"]]) {
+		const ffmpeg = find("ffmpeg");
+		const ffprobe = givenProbe ?? (ffmpeg && beside(ffmpeg)) ?? find("ffprobe");
+		if (ffmpeg && ffprobe) return {
+			ffmpeg,
+			ffprobe,
+			from
+		};
+	}
+	const remotion = need === "compose" ? null : inRemotion(root);
+	return remotion ? {
+		...remotion,
+		from: "Remotion"
+	} : null;
+}
+/**
+* The names in the first column of ffmpeg's -encoders or -filters list, under its legend.
+* @param {string} listing
+*/
+function listed(listing) {
+	const names = new Set();
+	for (const line of listing.split("\n")) {
+		const match = /^\s*[A-Z.|]{2,6}\s+(\w+)\s/.exec(line);
+		if (match && match[1] !== "=") names.add(match[1]);
+	}
+	return names;
+}
+/**
+* Asks ffmpeg once what it is and what it has.
+* @param {{ ffmpeg: string, ffprobe: string, env?: NodeJS.ProcessEnv, from: Tools["from"] }} found
+* @returns {Promise<Tools>}
+*/
+async function inspect(found) {
+	const env = toolEnv(found);
+	const [version, encoders, filters, probe] = await Promise.all([
+		run$1(found.ffmpeg, ["-hide_banner", "-version"], { env }),
+		run$1(found.ffmpeg, ["-hide_banner", "-encoders"], { env }),
+		run$1(found.ffmpeg, ["-hide_banner", "-filters"], { env }),
+		run$1(found.ffprobe, ["-hide_banner", "-version"], { env })
+	]);
+	for (const [file, result] of [[found.ffmpeg, version], [found.ffprobe, probe]]) if (result.status !== 0) {
+		const said = (result.stderr || result.error?.message || "").trim().split("\n").pop();
+		fail(`${file} does not start${said ? `: ${said}` : ""}. Install ffmpeg again (${INSTALL}), or point APPSHOTS_FFMPEG at one that works.`);
+	}
+	const named = /version n?(\d+)\.(\d+)(?:\.(\d+))?/.exec(version.stdout.split("\n")[0] ?? "");
+	const encoderSet = listed(encoders.stdout);
+	return {
+		ffmpeg: found.ffmpeg,
+		ffprobe: found.ffprobe,
+		version: named ? named.slice(1).filter(Boolean).join(".") : null,
+		encoders: encoderSet,
+		filters: listed(filters.stdout),
+		h264: encoderSet.has("libx264") ? "libx264" : encoderSet.has("h264_videotoolbox") ? "h264_videotoolbox" : null,
+		...found.env ? { env: found.env } : {},
+		from: found.from
+	};
+}
+/**
+* What a found ffmpeg lacks for a use, as the names to say: a version that is too old, encoders, filters.
+* @param {Tools} tools
+* @param {Need} need
+*/
+function lacking(tools, need) {
+	const missing = [];
+	const numbers = tools.version?.split(".").map(Number);
+	const old = numbers && (numbers[0] < OLDEST[0] || numbers[0] === OLDEST[0] && numbers[1] < OLDEST[1]);
+	if (need === "compose" && old) missing.push(`version ${OLDEST.join(".")} or newer`);
+	for (const encoder of NEEDS[need].encoders) if (encoder === "h264" ? !tools.h264 : !tools.encoders.has(encoder)) missing.push(encoder === "h264" ? "an H.264 encoder (libx264 or h264_videotoolbox)" : `the ${encoder} encoder`);
+	const filters = NEEDS[need].filters.filter((filter) => !tools.filters.has(filter));
+	if (filters.length > 0) missing.push(`the filter${filters.length > 1 ? "s" : ""} ${filters.join(", ")}`);
+	return missing;
+}
+/**
+* Installs ffmpeg with Homebrew, after a yes from the person at the Terminal; Return alone is a no. Nothing is
+* installed without one: without a terminal, or with `ask: false`, it fails with what to ask the user instead.
+* @param {unknown} ask
+* @param {Need} need
+*/
+async function install(ask, need) {
+	const brew = findBrew();
+	if (!brew) fail(NO_HOMEBREW);
+	if (ask === false || !process.stdin.isTTY) fail(NO_TERMINAL);
+	const question = `ffmpeg is needed to ${PURPOSE[need]} and is not on this Mac. Install it with Homebrew now (${INSTALL}, about 100 MB)?`;
+	const answer = await promptLine(`${question} [y/N] `, NO_TERMINAL);
+	if (!/^y(es)?$/i.test(answer)) fail(`ffmpeg is needed to ${PURPOSE[need]}. Install it with '${INSTALL}' when you want to, then run this again.`);
+	const result = await run$1(brew, ["install", "ffmpeg"], {
+		timeout: 0,
+		stdio: "inherit"
+	});
+	if (result.status !== 0) fail(`'${INSTALL}' did not finish${result.status === null ? "" : ` (exit ${result.status})`}. Run it in a Terminal to see why, then try again.`);
+}
+/**
+* Finds ffmpeg and ffprobe and checks that they can do what `need` asks, once per run. When there is none, it
+* offers to install Homebrew's after a yes; it never installs without one.
+* @param {object} [options]
+* @param {string} [options.root] The work folder, appshots-video/, where Remotion's ffmpeg may be.
+* @param {boolean | ((question: string) => Promise<boolean>)} [options.ask] Whether the person at the Terminal
+*   may be asked: true, the default, or a yes-or-no helper such as confirm, which counts as true; false when the
+*   command only reports. The question is always put here, so that Return alone is a no whoever passed it.
+* @param {Need} [options.need] What the programs are for; a compose asks the most of them.
+* @returns {Promise<Tools>}
+*/
+async function findFfmpeg({ root, ask = true, need = "compose" } = {}) {
+	let found = locate(root, need);
+	if (!found) {
+		await install(ask, need);
+		found = locate(root, need);
+		if (!found) fail(`Homebrew installed ffmpeg, but appshots does not find it in ${homebrew.bins.join(" or ")}. Open a new Terminal and run this again, or point APPSHOTS_FFMPEG at it.`);
+	}
+	const key = `${found.ffmpeg}\n${found.ffprobe}`;
+	if (!inspected.has(key)) inspected.set(key, inspect(found));
+	const tools = await inspected.get(key).catch((error) => {
+		inspected.delete(key);
+		throw error;
+	});
+	const missing = lacking(tools, need);
+	if (missing.length > 0) {
+		const upgrade = tools.from === "Homebrew" ? "'brew upgrade ffmpeg' brings Homebrew's up to date" : `Homebrew's ffmpeg has all of it (${INSTALL})`;
+		fail(`The ffmpeg at ${tools.ffmpeg}${tools.version ? ` (${tools.version})` : ""} cannot ${PURPOSE[need]}: that needs ${missing.join(", ")}. ${upgrade}; APPSHOTS_FFMPEG points appshots at another build.`);
+	}
+	return tools;
+}
+/**
+* One line for 'appshots check': what ffmpeg there is and whether it can cut a preview. It never asks and never
+* installs.
+* @param {string} [root]
+*/
+async function ffmpegStatus(root) {
+	const located = await attempt(() => locate(root, "probe"));
+	if (located.problem !== void 0) return located.problem;
+	if (!located.value) return findBrew() ? `not installed; only app preview videos need it. '${INSTALL}' installs it, and 'appshots video compose' asks before it does.` : "not installed; only app preview videos need it. There is no Homebrew to install it with: the troubleshooting page of the docs says how to get it.";
+	const found = await attempt(() => findFfmpeg({
+		root,
+		ask: false,
+		need: "probe"
+	}));
+	if (found.problem !== void 0) return found.problem;
+	const tools = found.value;
+	const missing = lacking(tools, "compose");
+	const what = `${tools.ffmpeg}${tools.version ? `, version ${tools.version}` : ""}${tools.from === "Remotion" ? ", Remotion's" : ""}`;
+	if (tools.from === "Remotion") return `${what}, which can read a preview and take its poster, but not cut one. '${INSTALL}' installs one that can, and 'appshots video compose' asks before it does.`;
+	if (missing.length > 0) return `${what}, which cannot cut a preview: that needs ${missing.join(", ")}. ${tools.from === "Homebrew" ? "'brew upgrade ffmpeg'" : `'${INSTALL}'`} brings one that can.`;
+	return `${what}, with ${tools.h264} and every filter 'appshots video compose' needs`;
+}
+var OLDEST, NEEDS, PURPOSE, homebrew, INSTALL, NO_HOMEBREW, NO_TERMINAL, inspected, onPath, inHomebrew, findBrew, toolEnv;
+var init_ffmpeg = __esmMin((() => {
+	init_fail();
+	init_proc();
+	init_prompt();
+	OLDEST = [4, 3];
+	NEEDS = {
+		compose: {
+			encoders: [
+				"h264",
+				"aac",
+				"png"
+			],
+			filters: [
+				"xfade",
+				"tpad",
+				"setparams",
+				"overlay",
+				"fade",
+				"scale",
+				"crop",
+				"fps",
+				"trim",
+				"setpts",
+				"freezedetect",
+				"anullsrc",
+				"afade",
+				"atrim",
+				"loudnorm",
+				"aformat",
+				"tile",
+				"transpose"
+			]
+		},
+		sheet: {
+			encoders: ["png"],
+			filters: [
+				"fps",
+				"scale",
+				"pad",
+				"tile",
+				"vstack"
+			]
+		},
+		poster: {
+			encoders: ["png"],
+			filters: []
+		},
+		probe: {
+			encoders: [],
+			filters: []
+		}
+	};
+	PURPOSE = {
+		compose: "cut the video",
+		sheet: "make the contact sheet",
+		poster: "take the poster frame",
+		probe: "read the video"
+	};
+	homebrew = { bins: ["/opt/homebrew/bin", "/usr/local/bin"] };
+	INSTALL = "brew install ffmpeg";
+	NO_HOMEBREW = "ffmpeg is not installed, and there is no Homebrew on this Mac to install it with. The troubleshooting page of the appShots docs (/docs/troubleshooting) says how to get it; APPSHOTS_FFMPEG and APPSHOTS_FFPROBE point appshots at programs anywhere.";
+	NO_TERMINAL = `ffmpeg is not installed. Ask the user whether to install it, then run: ${INSTALL}`;
+	inspected = new Map();
+	onPath = (name) => (process.env.PATH ?? "").split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, name)).find(runnable) ?? null;
+	inHomebrew = (name) => homebrew.bins.map((dir) => path.join(dir, name)).find(runnable) ?? null;
+	findBrew = () => onPath("brew") ?? inHomebrew("brew");
+	toolEnv = (tools) => tools.env ? {
+		...process.env,
+		...tools.env
+	} : void 0;
+}));
+//#endregion
 //#region cli/src/upload.mjs
-/** @typedef {Config} Config */
-/** How many files go to the server at once. A few keep the line busy without crowding a small server. */
-const UPLOADS = 4;
 /**
 * @param {Config} config
 * @param {string} project
@@ -3338,12 +5613,6 @@ async function sendShot(config, project, file, name, device, language) {
 		headers: { "content-type": "application/octet-stream" }
 	})).json();
 }
-/** @param {string} project */
-const uploaded = (project) => (shot) => `Uploaded ${shot.name} (${[
-	shot.device,
-	shot.locale,
-	`${shot.width}x${shot.height}`
-].filter(Boolean).join(", ")}) to ${project}`;
 /**
 * @param {Config} config
 * @param {string} project
@@ -3455,6 +5724,19 @@ async function uploadAll(config, project, sources, flags) {
 	}
 	console.log(`${sent.size} ${sent.size === 1 ? "screenshot" : "screenshots"} uploaded to ${project}`);
 }
+var UPLOADS, uploaded;
+var init_upload = __esmMin((() => {
+	init_api();
+	init_fail();
+	init_shot();
+	init_util();
+	UPLOADS = 4;
+	uploaded = (project) => (shot) => `Uploaded ${shot.name} (${[
+		shot.device,
+		shot.locale,
+		`${shot.width}x${shot.height}`
+	].filter(Boolean).join(", ")}) to ${project}`;
+}));
 //#endregion
 //#region cli/src/plan.mjs
 /**
@@ -3550,7 +5832,7 @@ async function run(flags, launchArguments) {
 	if (built.status === "rejected") throw built.reason;
 	if (booted.status === "rejected") throw booted.reason;
 	const app = built.value;
-	await install(simulator, app.file);
+	await install$1(simulator, app.file);
 	await startApp(simulator, app.bundleId, plan);
 }
 /**
@@ -3576,104 +5858,1015 @@ async function bootCommand(flags) {
 	const own = toolkits(process.cwd()).find((kit) => kit.simulator)?.simulator?.replaceAll("<udid>", simulator.udid).replaceAll("<simulator>", simulator.name);
 	console.log(`Next: ${own ? `'${own}' in the background` : "start the app there with the project's own command, which takes this udid"}, then: appshots capture --name <name> --project <project> --clean${which}`);
 }
+var init_plan = __esmMin((() => {
+	init_api();
+	init_sim$2();
+	init_config();
+	init_fail();
+	init_projects();
+	init_shot();
+	init_sim$1();
+	init_toolkits();
+	init_upload();
+	init_util();
+	init_xcode();
+}));
 //#endregion
-//#region cli/src/pull.mjs
-/** @typedef {Config} Config */
-/** What the last download put into a folder, so that what the next one no longer has can be taken out again. */
-const MANIFEST = ".appshots-files.json";
+//#region cli/src/video/record/spawn.mjs
 /**
-* The files below a folder, as paths relative to it.
-* @param {string} dir
-* @returns {string[]}
+* @typedef {object} Exit
+* @property {number | null} status
+* @property {string | null} signal
+* @property {number} at When it ended, as Date.now() has it.
+* @property {Error} [error] Set when the program could not be started at all.
+*
+* @typedef {object} Running
+* @property {(signal: "SIGINT" | "SIGTERM" | "SIGKILL") => void} kill
+* @property {Promise<Exit>} exited
+* @property {() => boolean} alive
+* @property {() => string} said The end of what it wrote to stdout and stderr, for a message.
+* @property {(listener: (line: string) => void) => void} onLine Each line it writes, on either stream.
+* @property {import("node:stream").Writable | null} stdin
 */
-function filesBelow(dir) {
-	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? filesBelow(path.join(dir, entry.name)).map((file) => path.join(entry.name, file)) : [entry.name]);
-}
 /**
-* Whether a path from the list of an earlier download is a file inside the folder, whatever the list says.
-* @param {unknown} name
-* @returns {name is string}
+* Starts a program and hands back a way to follow and stop it. It does not wait for it.
+* @param {string} command
+* @param {string[]} args
+* @param {{ env?: NodeJS.ProcessEnv, cwd?: string, stdin?: boolean }} [options] stdin: whether something is written to it.
+* @returns {Running}
 */
-function insideFolder(name) {
-	if (typeof name !== "string" || name === "" || name === MANIFEST || path.isAbsolute(name)) return false;
-	const parts = path.normalize(name).split(/[/\\]/);
-	return !parts.includes("..") && !parts.includes(".");
-}
-/**
-* Takes out the folders above a file that are left empty, up to the folder the download went into. Finder's
-* own .DS_Store does not count as something left in one.
-* @param {string} outDir
-* @param {string} dir
-*/
-function pruneEmpty(outDir, dir) {
-	while (dir.startsWith(`${outDir}${path.sep}`)) {
-		if (readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.name !== ".DS_Store" || entry.isDirectory()).length > 0) return;
-		rmSync(dir, {
-			recursive: true,
-			force: true
+function start(command, args, { env, cwd, stdin = false } = {}) {
+	/** @type {Set<(line: string) => void>} */
+	const listeners = new Set();
+	let tail = "";
+	/** @type {Exit | null} */
+	let ended = null;
+	/** @type {(exit: Exit) => void} */
+	let finish = () => {};
+	const exited = new Promise((resolve) => finish = (exit) => resolve(ended ??= exit));
+	let child;
+	try {
+		child = spawner(command, args, {
+			env,
+			cwd,
+			stdio: [
+				stdin ? "pipe" : "ignore",
+				"pipe",
+				"pipe"
+			]
 		});
-		dir = path.dirname(dir);
+	} catch (error) {
+		finish({
+			status: null,
+			signal: null,
+			at: Date.now(),
+			error
+		});
+		return {
+			kill: () => {},
+			exited,
+			alive: () => false,
+			said: () => "",
+			onLine: () => {},
+			stdin: null
+		};
+	}
+	for (const stream of [child.stdout, child.stderr]) {
+		let partial = "";
+		stream?.on("data", (chunk) => {
+			const text = `${partial}${chunk}`;
+			tail = `${tail}${chunk}`.slice(-4e3);
+			const lines = text.split(/\r?\n/);
+			partial = lines.pop() ?? "";
+			for (const line of lines) for (const listener of listeners) listener(line);
+		});
+		stream?.on("end", () => {
+			if (partial) for (const listener of listeners) listener(partial);
+			partial = "";
+		});
+	}
+	child.stdin?.on("error", () => {});
+	child.once("error", (error) => finish({
+		status: null,
+		signal: null,
+		at: Date.now(),
+		error
+	}));
+	child.once("close", (status, signal) => finish({
+		status,
+		signal,
+		at: Date.now()
+	}));
+	return {
+		kill: (signal) => {
+			if (!ended) child.kill(signal);
+		},
+		exited,
+		alive: () => !ended,
+		said: () => tail.trim(),
+		onLine: (listener) => listeners.add(listener),
+		stdin: child.stdin ?? null
+	};
+}
+/**
+* Waits for a running program to end, for `ms` at most, and says whether it did.
+* @param {Running} running
+* @param {number} ms
+*/
+async function ended(running, ms) {
+	let timer;
+	const done = await Promise.race([running.exited.then(() => true), new Promise((resolve) => timer = setTimeout(() => resolve(false), ms))]);
+	clearTimeout(timer);
+	return done;
+}
+/**
+* Starts a recorder and waits until it says it is recording. `ready` is what it writes then; one that says
+* nothing is taken to be recording once it has run for `quiet` milliseconds without stopping. One given a
+* `length` records that many seconds and stops by itself, and stopping it means waiting for that: screencapture
+* loses its movie on any signal.
+* @param {string} name What the messages call it, as in "simctl".
+* @param {string} command
+* @param {string[]} args
+* @param {{ env?: NodeJS.ProcessEnv, ready?: RegExp, quiet?: number, timeout?: number, length?: number }} options
+* @returns {Promise<Recorder>}
+*/
+async function startRecorder(name, command, args, { env, ready, quiet = 0, timeout = 1e4, length }) {
+	const running = start(command, args, { env });
+	/** @type {(value: number) => void} */
+	let heard = () => {};
+	const said = new Promise((resolve) => heard = resolve);
+	if (ready) running.onLine((line) => ready.test(line) && heard(Date.now()));
+	const timers = [];
+	const outcome = await Promise.race([
+		said.then((at) => ({ at })),
+		running.exited.then((exit) => ({ exit })),
+		new Promise((resolve) => timers.push(setTimeout(() => resolve({ late: true }), timeout))),
+		...quiet > 0 ? [new Promise((resolve) => timers.push(setTimeout(() => resolve({ at: Date.now() }), quiet)))] : []
+	]);
+	for (const timer of timers) clearTimeout(timer);
+	if ("exit" in outcome) {
+		const { exit } = outcome;
+		fail(exit.error ? `Could not start ${name}: ${exit.error.message}` : `${name} stopped before it started recording.${running.said() ? `\n${running.said()}` : ""}`);
+	}
+	if ("late" in outcome) {
+		running.kill("SIGINT");
+		if (!await ended(running, FINISHING)) running.kill("SIGKILL");
+		fail(`${name} did not start recording within ${Math.round(timeout / 1e3)} seconds.${running.said() ? `\n${running.said()}` : ""}`);
+	}
+	return {
+		started: outcome.at,
+		running,
+		length,
+		stop: async ({ grace = 0, abandon = false } = {}) => {
+			if (length !== void 0 && abandon) {
+				running.kill("SIGINT");
+				if (!await ended(running, 5e3)) running.kill("SIGKILL");
+				return {
+					...await running.exited,
+					stopped: Date.now()
+				};
+			}
+			if (length !== void 0) {
+				if (!await ended(running, Math.max(0, outcome.at + length * 1e3 - Date.now()) + FINISHING)) running.kill("SIGKILL");
+				return {
+					...await running.exited,
+					stopped: outcome.at + length * 1e3
+				};
+			}
+			const stopped = Date.now();
+			if (running.alive() && !(grace > 0 && await ended(running, grace))) {
+				running.kill("SIGINT");
+				if (!await ended(running, FINISHING)) {
+					running.kill("SIGINT");
+					if (!await ended(running, 5e3)) running.kill("SIGKILL");
+				}
+			}
+			return {
+				...await running.exited,
+				stopped
+			};
+		}
+	};
+}
+var spawner, FINISHING;
+var init_spawn = __esmMin((() => {
+	init_fail();
+	spawner = spawn;
+	FINISHING = 3e4;
+}));
+//#endregion
+//#region cli/src/video/record/touches.mjs
+/** @typedef {{ ms: number, x: number, y: number }} Touch */
+/**
+* The touch a line reports, or null for any other line.
+* @param {string} line
+* @returns {Touch | null}
+*/
+function touchOf(line) {
+	const match = TOUCH.exec(line);
+	return match ? {
+		ms: Number(match[1]),
+		x: Number(match[2]),
+		y: Number(match[3])
+	} : null;
+}
+/**
+* The touches a driver wrote to its log. None when it wrote none, or no log at all.
+* @param {string} file
+*/
+function touchLog(file) {
+	try {
+		return touchesIn(readFileSync(file, "utf8"));
+	} catch {
+		return [];
 	}
 }
 /**
-* Unpacks a download into a folder. Its files replace those of the same names, and the files an earlier
-* download put there that this one no longer has are taken out, so a slide or a language that is gone leaves no
-* picture behind for 'store push' to upload. Anything else in the folder stays, also inside the folders the
-* download writes, since --out may point at a folder that holds more than this.
-* @param {string} zip
-* @param {string} outDir
-* @returns {Promise<string[]>} The files unpacked, relative to the folder.
+* Touches as the sidecar keeps them: [seconds from the start of the recording, x, y] in pixels of the recording,
+* in order, each once, and only those within it. A driver may report a touch on stdout and in its log both.
+* @param {Touch[]} touches
+* @param {{ driverStart: number, offset: number, scale: number, wall: number }} timing driverStart: when the
+*   driver started, as Date.now() has it; offset: seconds from the start of the recording to the driver's.
+* @returns {Array<[number, number, number]>}
 */
-async function extractZip(zip, outDir) {
-	mkdirSync(outDir, { recursive: true });
-	const staging = mkdtempSync(path.join(outDir, ".appshots-"));
+function sidecarTouches(touches, { driverStart, offset, scale, wall }) {
+	const seen = new Set();
+	/** @type {Array<[number, number, number]>} */
+	const kept = [];
+	for (const { ms, x, y } of touches) {
+		const since = ms >= CLOCK ? ms - driverStart : ms;
+		const entry = [
+			round2$1(since / 1e3 + offset),
+			Math.round(x * scale),
+			Math.round(y * scale)
+		];
+		const key = entry.join(" ");
+		if (seen.has(key) || entry[0] < 0 || entry[0] > wall) continue;
+		seen.add(key);
+		kept.push(entry);
+	}
+	return kept.sort((a, b) => a[0] - b[0]);
+}
+var TOUCH, CLOCK, touchesIn, round2$1;
+var init_touches = __esmMin((() => {
+	TOUCH = /APPSHOTS_TOUCH\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/;
+	CLOCK = 1e11;
+	touchesIn = (text) => text.split(/\r?\n/).map(touchOf).filter((touch) => touch !== null);
+	round2$1 = (value) => Math.round(value * 100) / 100;
+}));
+//#endregion
+//#region cli/src/video/record/drive.mjs
+/**
+* What takes the app through a scene while it is recorded. "manual" is a person at the Terminal; { wait } is an
+* app that plays a demo by itself; { uitest } runs one UI test against the simulator; { command } runs any
+* program, such as a Maestro flow. Web steps are run by the web recorder itself.
+*
+* @typedef {"manual" | { wait: number } | { uitest: string, scheme?: string } | { command: string[] } | { web: object[] }} Drive
+*
+* @typedef {object} Outcome
+* @property {string} [failed] Why the driver failed, for a message; left out when it did its part.
+* @property {Touch[]} touches What it printed about touches. Its log is read by the caller.
+*
+* @typedef {object} Driving
+* @property {number} started When it started, as Date.now() has it.
+* @property {Promise<Outcome>} done Settles when the driver is done by itself, or once it has been stopped.
+* @property {() => Promise<void>} stop Stops it before it is done: the recording has reached its length, or the
+*   person pressed Ctrl+C.
+*
+* @typedef {object} DriveContext
+* @property {string} scene
+* @property {string} locale
+* @property {string} display
+* @property {string} cwd The plan's folder, where a command runs.
+* @property {string} touchLog The file a driver may write its touches to.
+* @property {number} seconds How long the recording may run at most.
+* @property {{ name: string, udid: string }} [simulator] On a simulator only.
+* @property {UiTests} [tests] For a UI test: what build-for-testing made.
+*/
+/**
+* What a driver finds in its environment: what it drives, where to log touches, and the moment it started, so
+* a UI test can count from it.
+* @param {DriveContext} context
+* @param {number} started
+*/
+function driverEnv(context, started) {
+	return {
+		APPSHOTS_LOCALE: context.locale,
+		APPSHOTS_DISPLAY: context.display,
+		APPSHOTS_SCENE: context.scene,
+		...context.simulator ? { APPSHOTS_UDID: context.simulator.udid } : {},
+		APPSHOTS_TOUCH_LOG: context.touchLog,
+		APPSHOTS_START: String(started)
+	};
+}
+/**
+* Stops a program that drives a scene: asked first, then told, then ended. Unlike a recorder it has nothing to
+* lose by it.
+* @param {Running} running
+*/
+async function halt(running) {
+	if (!running.alive()) return;
+	running.kill("SIGINT");
+	if (await ended(running, 3e3)) return;
+	running.kill("SIGTERM");
+	if (await ended(running, 2e3)) return;
+	running.kill("SIGKILL");
+	await running.exited;
+}
+/**
+* Runs a program as a driver: done when it ends, a failure when it ends with anything but 0, unless it was
+* stopped on purpose.
+* @param {string} label What a failure calls it.
+* @param {string} command
+* @param {string[]} args
+* @param {{ env: NodeJS.ProcessEnv, cwd: string }} options
+* @returns {Driving}
+*/
+function program(label, command, args, { env, cwd }) {
+	const started = Date.now();
+	const running = start(command, args, {
+		env,
+		cwd
+	});
+	/** @type {Touch[]} */
+	const touches = [];
+	running.onLine((line) => {
+		const touch = touchOf(line);
+		if (touch) touches.push(touch);
+	});
+	let stopping = false;
+	return {
+		started,
+		done: running.exited.then((exit) => {
+			if (exit.error) return {
+				failed: `Could not start ${label}: ${exit.error.message}`,
+				touches
+			};
+			if (stopping || exit.status === 0) return { touches };
+			return {
+				failed: `${label} failed${exit.status === null ? "" : ` with exit code ${exit.status}`}.${running.said() ? `\n${running.said().split("\n").slice(-20).join("\n")}` : ""}`,
+				touches
+			};
+		}),
+		stop: async () => {
+			stopping = true;
+			await halt(running);
+		}
+	};
+}
+/**
+* Waits for Return from the person at the Terminal. The terminal stays as it is, so Ctrl+C reaches the recorder
+* and this command as a signal, as it does everywhere else.
+* @returns {Driving}
+*/
+function manual() {
+	const started = Date.now();
+	/** @type {() => void} */
+	let release = () => {};
+	const done = new Promise((resolve) => release = () => resolve({ touches: [] }));
+	const listener = (data) => /[\r\n]/.test(data.toString()) && finish();
+	const finish = () => {
+		process.stdin.off("data", listener);
+		process.stdin.pause();
+		release();
+	};
+	process.stdin.on("data", listener);
+	process.stdin.resume();
+	console.log("Recording. Press Return to stop.");
+	return {
+		started,
+		done,
+		stop: async () => finish()
+	};
+}
+/**
+* Waits for a number of seconds while the app plays by itself.
+* @param {number} seconds
+* @returns {Driving}
+*/
+function waiting(seconds) {
+	const started = Date.now();
+	let timer;
+	/** @type {() => void} */
+	let release = () => {};
+	return {
+		started,
+		done: new Promise((resolve) => {
+			release = () => resolve({ touches: [] });
+			timer = setTimeout(release, seconds * 1e3);
+		}),
+		stop: async () => {
+			clearTimeout(timer);
+			release();
+		}
+	};
+}
+/**
+* Whether a scene's driver needs a person at the Terminal, and fails without one, before anything is recorded.
+* @param {Drive | undefined} drive
+* @param {string} scene
+*/
+function needsPerson(drive, scene) {
+	if (drive !== "manual") return;
+	if (!process.stdin.isTTY) fail(`The scene ${scene} is driven by hand ("drive": "manual"), which needs a person at the Terminal. Ask the user to run 'appshots video record --scene ${scene}' in their own Terminal and take the app through the scene, or give the scene a driver that runs by itself.`);
+}
+/**
+* Starts the driver of a scene. One without a driver is recorded for its length, as the app shows itself.
+* @param {Drive | undefined} drive
+* @param {DriveContext} context
+* @returns {Driving}
+*/
+function startDriver(drive, context) {
+	if (drive === void 0) return waiting(context.seconds);
+	if (drive === "manual") return manual();
+	if ("wait" in drive) return waiting(drive.wait);
+	const own = driverEnv(context, Date.now());
+	if ("command" in drive) {
+		const [command, ...args] = drive.command;
+		return program(`The driver ${command}`, command, args, {
+			env: {
+				...process.env,
+				...own
+			},
+			cwd: context.cwd
+		});
+	}
+	if ("uitest" in drive) {
+		if (!context.simulator || !context.tests) fail(`The scene ${context.scene} runs a UI test, which drives a simulator; record it on one.`);
+		const runner = Object.fromEntries(Object.entries(own).map(([key, value]) => [`TEST_RUNNER_${key}`, value]));
+		return program(`The UI test ${drive.uitest}`, "xcodebuild", [
+			"test-without-building",
+			...context.tests.args,
+			`-only-testing:${drive.uitest}`
+		], {
+			env: {
+				...context.tests.env,
+				...own,
+				...runner
+			},
+			cwd: context.cwd
+		});
+	}
+	return fail(`The scene ${context.scene} has web steps, which only a web app's recording runs.`);
+}
+/**
+* Builds the app and its UI tests for a simulator once per run, so each scene's test only runs.
+* @param {string} project The workspace or project.
+* @param {string} scheme
+* @param {{ udid: string }} simulator
+* @param {boolean} fresh Whether to build apart from Xcode's own build folder.
+* @returns {Promise<UiTests>}
+*/
+function buildUiTests(project, scheme, simulator, fresh) {
+	const key = `${project}\n${scheme}\n${fresh}`;
+	if (!builtTests.has(key)) {
+		const built = (async () => {
+			const name = `${slugify(path.parse(project).name)}-tests`;
+			const args = [
+				project.endsWith(".xcworkspace") ? "-workspace" : "-project",
+				project,
+				"-scheme",
+				scheme,
+				"-destination",
+				`platform=iOS Simulator,id=${simulator.udid}`,
+				...fresh ? ["-derivedDataPath", path.join(BUILD_CACHE, name)] : []
+			];
+			mkdirSync(BUILD_CACHE, { recursive: true });
+			const log = path.join(BUILD_CACHE, `${name}.log`);
+			const output = openSync(log, "w");
+			let result;
+			try {
+				console.log(`Building ${scheme} and its UI tests…`);
+				result = await xcodebuild([...args, "build-for-testing"], {
+					stdio: [
+						"ignore",
+						output,
+						output
+					],
+					timeout: 0
+				});
+			} finally {
+				closeSync(output);
+			}
+			if (result.status !== 0) {
+				const errors = readFileSync(log, "utf8").split("\n").filter((line) => line.includes("error:"));
+				fail(`The build of ${scheme}'s UI tests failed:\n${[...new Set(errors)].slice(0, 20).join("\n") || "(no error lines)"}\nFull log: ${log}`);
+			}
+			return {
+				args,
+				env: { ...await xcodeEnv() }
+			};
+		})();
+		built.catch(() => builtTests.delete(key));
+		builtTests.set(key, built);
+	}
+	return builtTests.get(key);
+}
+var builtTests;
+var init_drive = __esmMin((() => {
+	init_config();
+	init_fail();
+	init_util();
+	init_xcode();
+	init_spawn();
+	init_touches();
+	builtTests = new Map();
+}));
+//#endregion
+//#region cli/src/video/record/session.mjs
+/**
+* The folder the recordings of one display and language go to. `root` is the work folder, appshots-video/;
+* the plan's own folder is taken as well, as it holds that one.
+* @param {string} root
+* @param {string} display
+* @param {string} locale
+*/
+function rawDir(root, display, locale) {
+	const work = path.basename(root) !== "appshots-video" && existsSync(path.join(root, "appshots-video")) ? path.join(root, "appshots-video") : root;
+	return path.join(work, "raw", footageDisplay$1(display), locale);
+}
+/**
+* The movie of a scene in a folder, whichever kind it is, or null.
+* @param {string} dir
+* @param {string} scene
+*/
+function movieOf(dir, scene) {
+	for (const extension of MOVIES) {
+		const file = path.join(dir, `${scene}${extension}`);
+		if (existsSync(file)) return file;
+	}
+	return null;
+}
+/**
+* @typedef {object} Sidecar
+* @property {1} version
+* @property {string} scene
+* @property {string} locale
+* @property {string} display
+* @property {"sim" | "device" | "mac" | "web" | "import"} source
+* @property {string} model
+* @property {string} os
+* @property {[number, number]} size The movie's pixels as recorded.
+* @property {number} scale Pixels a point: what a touch's points were multiplied by.
+* @property {"portrait" | "landscape"} orientation What the plan asked for; the compose turns a buffer that is
+*   the other way round.
+* @property {number} wall Seconds the recording took by the clock, which a movie that drops still frames does not keep.
+* @property {number} driverOffset Seconds from the start of the recording to the start of the driver.
+* @property {Array<[number, number, number]>} touches [seconds into the recording, x, y], in pixels.
+* @property {[number, number] | null} trim The trim "auto" came to; null when the plan does not say "auto".
+* @property {string | null} reuse The language whose footage this one uses, or null for its own.
+* @property {string} planHash
+* @property {string} recordedAt
+*/
+/**
+* A sidecar with its keys in the order the files have them.
+* @param {Omit<Sidecar, "version" | "recordedAt" | "reuse"> & { reuse?: string | null }} fields
+* @returns {Sidecar}
+*/
+function sidecar(fields) {
+	return {
+		version: 1,
+		scene: fields.scene,
+		locale: fields.locale,
+		display: fields.display,
+		source: fields.source,
+		model: fields.model,
+		os: fields.os,
+		size: fields.size,
+		scale: fields.scale,
+		orientation: fields.orientation,
+		wall: round2(fields.wall),
+		driverOffset: round2(fields.driverOffset),
+		touches: fields.touches,
+		trim: fields.trim,
+		reuse: fields.reuse ?? null,
+		planHash: fields.planHash,
+		recordedAt: new Date().toISOString().replace(/\.\d+Z$/, "Z")
+	};
+}
+/**
+* Writes JSON in one step: a reader sees the old file or the new one, never half of one. Arrays of numbers stay
+* on one line, as a person reads them.
+* @param {string} file
+* @param {unknown} data
+*/
+function writeJson(file, data) {
+	const text = JSON.stringify(data, null, 2).replace(/\[\s+(-?[\d.]+(?:,\s+-?[\d.]+)*)\s+\]/g, (_, inner) => `[${inner.split(/,\s+/).join(", ")}]`);
+	mkdirSync(path.dirname(file), { recursive: true });
+	writeAtomic(file, `${text}\n`);
+}
+/**
+* Reads a sidecar as it is stored, or null when there is none or it is not one.
+* @param {string} file
+* @returns {Sidecar | null}
+*/
+function storedSidecar(file) {
+	const data = readJson(file);
+	return data && data.version === 1 && typeof data.scene === "string" ? data : null;
+}
+/**
+* @typedef {object} Tools What ffmpeg.mjs found: the two programs and what they can do.
+* @property {string} ffmpeg
+* @property {string} ffprobe
+*/
+/**
+* @typedef {object} Movie
+* @property {[number, number]} size Upright, as it plays: turned when the file says it is to be shown turned.
+* @property {number} duration Seconds, as the file says.
+* @property {number} rotation Degrees the file says it is to be shown turned by.
+* @property {number} streams Video streams in it.
+*/
+/**
+* What a movie is, quickly: its size, length and turn. A recording is looked at once it is written, before
+* anything is built on it.
+* @param {string} file
+* @param {Tools} tools
+* @returns {Promise<Movie | null>} Null for a file ffprobe cannot read.
+*/
+async function inspectMovie(file, tools) {
+	const result = await run$1(tools.ffprobe, [
+		"-v",
+		"error",
+		"-show_entries",
+		"format=duration:stream=codec_type,width,height:stream_side_data=rotation:stream_tags=rotate",
+		"-of",
+		"json",
+		file
+	], { timeout: 6e4 });
+	if (result.status !== 0) return null;
+	let data;
 	try {
-		const result = await run$1("unzip", [
-			"-o",
-			"-q",
-			zip,
-			"-d",
-			staging
+		data = JSON.parse(result.stdout);
+	} catch {
+		return null;
+	}
+	const videos = (data.streams ?? []).filter((stream) => stream.codec_type === "video");
+	const [video] = videos;
+	if (!video) return {
+		size: [0, 0],
+		duration: Number(data.format?.duration) || 0,
+		rotation: 0,
+		streams: 0
+	};
+	const turn = Number(video.side_data_list?.find((entry) => entry.rotation !== void 0)?.rotation ?? video.tags?.rotate ?? 0) || 0;
+	return {
+		size: Math.abs(turn) % 180 === 90 ? [video.height, video.width] : [video.width, video.height],
+		duration: Number(data.format?.duration) || 0,
+		rotation: turn,
+		streams: videos.length
+	};
+}
+/**
+* Where "trim": "auto" cuts a recording: after a still start and before a still end, keeping a moment of each so
+* the cut does not land in the middle of a movement. Null when there is nothing to cut, or too little would be left.
+* @param {string} file
+* @param {{ wall: number, padded: boolean }} timing padded: whether the movie drops still frames and is laid out
+*   on the clock first, as the compose does.
+* @param {Tools} tools
+* @returns {Promise<[number, number] | null>}
+*/
+async function autoTrim(file, { wall, padded }, tools) {
+	const clock = padded ? `fps=30,tpad=stop_mode=clone:stop_duration=${wall.toFixed(3)},trim=duration=${wall.toFixed(3)},` : "";
+	const result = await run$1(tools.ffmpeg, [
+		"-nostdin",
+		"-hide_banner",
+		"-i",
+		file,
+		"-vf",
+		`${clock}freezedetect=n=0.003:d=0.4`,
+		"-an",
+		"-f",
+		"null",
+		"-"
+	], { timeout: 3e5 });
+	if (result.status !== 0) fail(`ffmpeg could not look for the still parts of ${path.basename(file)}:\n${result.stderr.trim().split("\n").slice(-10).join("\n")}`);
+	/** @type {Array<{ start: number, end: number | null }>} */
+	const freezes = [];
+	for (const [, key, value] of result.stderr.matchAll(/lavfi\.freezedetect\.freeze_(start|end):\s*([\d.]+)/g)) if (key === "start") freezes.push({
+		start: Number(value),
+		end: null
+	});
+	else if (freezes.length > 0) freezes[freezes.length - 1].end = Number(value);
+	const head = freezes[0]?.start <= .05 ? freezes[0] : null;
+	const last = freezes.at(-1);
+	const tail = last && (last.end === null || last.end >= wall - .05) && last !== head ? last : null;
+	if (head && head.end === null) return null;
+	const from = head?.end ? Math.max(0, head.end - .2) : 0;
+	const to = tail ? Math.min(wall, tail.start + .6) : wall;
+	if (to - from < 1 || from === 0 && to === wall) return null;
+	return [round2(from), round2(to)];
+}
+/**
+* Runs `work` with Ctrl+C taken over: the first one aborts `signal`, so what is running is stopped in order,
+* its half-written files deleted and the status bar put back, and `work` then fails with Interrupted. The
+* recorder and the driver get the same Ctrl+C from the terminal, and are given a moment to stop by themselves.
+* A third Ctrl+C ends the command at once. A stop asked for by another program, such as an agent's time
+* limit, is treated the same way, as the recorder would otherwise go on recording on its own.
+* @template T
+* @param {(signal: AbortSignal) => Promise<T>} work
+* @returns {Promise<T>}
+*/
+async function withInterrupt(work) {
+	const controller = new AbortController();
+	let code = 0;
+	let presses = 0;
+	const stop = (exit) => {
+		presses++;
+		if (presses === 1) {
+			code = exit;
+			process.stderr.write("\nStopping: the recording in progress is finished and deleted, and the simulator put back as it was.\n");
+			controller.abort();
+		} else if (presses >= 3) interruption.exit(exit);
+	};
+	const onInt = () => stop(130);
+	const onTerm = () => stop(143);
+	process.on("SIGINT", onInt);
+	process.on("SIGTERM", onTerm);
+	try {
+		return await work(controller.signal);
+	} catch (error) {
+		if (controller.signal.aborted) throw new Interrupted(code);
+		throw error;
+	} finally {
+		process.off("SIGINT", onInt);
+		process.off("SIGTERM", onTerm);
+	}
+}
+/**
+* Fails with Interrupted when the stop has begun.
+* @param {AbortSignal} signal
+*/
+function checkStop(signal) {
+	if (signal.aborted) throw new Interrupted(130);
+}
+/**
+* A pause that ends early when the stop begins, then fails with Interrupted.
+* @param {number} ms
+* @param {AbortSignal} signal
+*/
+async function pauseUnlessStopped(ms, signal) {
+	checkStop(signal);
+	await new Promise((resolve) => {
+		const timer = setTimeout(done, ms);
+		function done() {
+			clearTimeout(timer);
+			signal.removeEventListener("abort", done);
+			resolve(void 0);
+		}
+		signal.addEventListener("abort", done, { once: true });
+	});
+	checkStop(signal);
+}
+/**
+* Something that ends after `ms`, and a way to call it off so that it keeps nothing running.
+* @param {number} ms
+*/
+function timer(ms) {
+	let handle;
+	return {
+		promise: new Promise((resolve) => handle = setTimeout(resolve, Math.max(0, ms))),
+		cancel: () => clearTimeout(handle)
+	};
+}
+/**
+* @param {AbortSignal} signal
+*/
+function stopped(signal) {
+	let listener = () => {};
+	return {
+		promise: new Promise((resolve) => {
+			if (signal.aborted) return resolve(void 0);
+			listener = () => resolve(void 0);
+			signal.addEventListener("abort", listener, { once: true });
+		}),
+		cancel: () => signal.removeEventListener("abort", listener)
+	};
+}
+/**
+* Records one scene with a recorder that runs as a program: waits for the app to settle, starts the recorder and
+* waits until it records, starts the driver, waits until the driver is done or the scene has run its length,
+* and stops the recorder. A driver that fails, or a recorder that stops by itself, fails the scene; a Ctrl+C
+* stops both and fails it with Interrupted. The movie is deleted on any of these.
+* @param {object} take
+* @param {string} take.file Where the recorder writes, under a working name.
+* @param {(file: string) => Promise<Recorder>} take.record
+* @param {string} take.name What the messages call the recorder, as in "simctl".
+* @param {Drive | undefined} take.drive
+* @param {DriveContext} take.context
+* @param {number} take.settle Seconds to wait before the recording starts.
+* @param {AbortSignal} take.signal
+* @param {string} [take.help] What to do when the recorder fails, said after why.
+* @returns {Promise<Take>}
+*/
+async function recordTake({ file, record, name, drive, context, settle, signal, help }) {
+	await pauseUnlessStopped(settle * 1e3, signal);
+	rmSync(file, { force: true });
+	let recorder;
+	try {
+		recorder = await record(file);
+	} catch (error) {
+		rmSync(file, { force: true });
+		if (signal.aborted) throw new Interrupted(130);
+		if (help && error instanceof Failure && !(error instanceof Interrupted)) fail(`${error.message}\n${help}`);
+		throw error;
+	}
+	/** @type {Driving | null} */
+	let driving = null;
+	let finished = false;
+	try {
+		checkStop(signal);
+		driving = startDriver(drive, context);
+		const length = timer(context.seconds * 1e3 - (Date.now() - recorder.started));
+		const stop = stopped(signal);
+		const outcome = await Promise.race([
+			driving.done.then((result) => ({ result })),
+			recorder.running.exited.then(() => recorder.length === void 0 ? { lost: true } : { full: true }),
+			length.promise.then(() => ({ full: true })),
+			stop.promise.then(() => ({ interrupted: true }))
 		]);
-		if (result.status !== 0) fail(`Could not unpack the download: ${(result.stderr || result.error?.message || "").trim()}`);
-		const files = filesBelow(staging);
-		const earlier = readJson(path.join(outDir, MANIFEST))?.files;
-		const kept = new Set(files);
-		for (const name of Array.isArray(earlier) ? earlier.filter(insideFolder) : []) {
-			if (kept.has(path.normalize(name))) continue;
-			const file = path.join(outDir, name);
-			const found = lstatSync(file, { throwIfNoEntry: false });
-			if (!found || found.isDirectory()) continue;
-			rmSync(file, { force: true });
-			pruneEmpty(outDir, path.dirname(file));
-		}
-		for (const name of files) {
-			const file = path.join(outDir, name);
-			mkdirSync(path.dirname(file), { recursive: true });
-			renameSync(path.join(staging, name), file);
-		}
-		writeFileSync(path.join(outDir, MANIFEST), `${JSON.stringify({ files }, null, 2)}\n`);
-		return files;
-	} finally {
-		rmSync(staging, {
-			recursive: true,
-			force: true
+		length.cancel();
+		stop.cancel();
+		if (!("result" in outcome)) await driving.stop();
+		const result = await driving.done;
+		if ("interrupted" in outcome) throw new Interrupted(130);
+		if ("lost" in outcome) fail(`${name} stopped recording by itself.${recorder.running.said() ? `\n${recorder.running.said()}` : ""}${help ? `\n${help}` : ""}`);
+		if (result.failed) fail(result.failed);
+		if (drive !== void 0 && drive !== "manual" && !("wait" in drive) && "result" in outcome) await pauseUnlessStopped(TAIL$1, signal);
+		const exit = await recorder.stop();
+		finished = true;
+		if (exit.status !== 0) fail(`${name} could not finish the recording${exit.signal ? ` (${exit.signal})` : ` (exit code ${exit.status})`}.${recorder.running.said() ? `\n${recorder.running.said()}` : ""}${help ? `\n${help}` : ""}`);
+		return {
+			file,
+			wall: (exit.stopped - recorder.started) / 1e3,
+			driverOffset: (driving.started - recorder.started) / 1e3,
+			driverStart: driving.started,
+			touches: [...result.touches, ...touchLog(context.touchLog)]
+		};
+	} catch (error) {
+		if (driving) await driving.stop();
+		if (!finished) await recorder.stop({
+			grace: signal.aborted ? 1500 : 0,
+			abandon: true
 		});
+		rmSync(file, { force: true });
+		if (signal.aborted && !(error instanceof Interrupted)) throw new Interrupted(130);
+		throw error;
 	}
 }
 /**
-* Downloads a zip the server makes and unpacks it into a folder.
-* @param {Config} config
-* @param {string} route
-* @param {string} outDir
+* A folder of its own for the touch logs of a run, removed with `remove`.
 */
-async function download(config, route, outDir) {
-	const response = await request(config, "GET", route);
-	const dir = mkdtempSync(path.join(tmpdir(), "appshots-"));
-	const zip = path.join(dir, "download.zip");
+function touchFolder() {
+	const dir = mkdtempSync(path.join(tmpdir(), "appshots-touches-"));
+	return {
+		dir,
+		remove: () => rmSync(dir, {
+			recursive: true,
+			force: true
+		})
+	};
+}
+/**
+* @typedef {object} Keep Where a take goes and what its sidecar says about where it came from.
+* @property {string} root The work folder.
+* @property {string} scene
+* @property {string} locale
+* @property {string} display
+* @property {Sidecar["source"]} source
+* @property {string} model
+* @property {string} os
+* @property {(size: [number, number]) => number} scale Pixels a point, given the recording's size.
+* @property {"portrait" | "landscape"} orientation
+* @property {boolean} padded Whether the movie drops still frames, so the clock has to restore its length.
+* @property {boolean} trim Whether the plan says "auto".
+* @property {string} planHash
+* @property {string} [help] What to do when the movie is empty, said after why.
+*/
+/**
+* Looks at a take, cuts it if the plan says "auto", and keeps it: the movie under the scene's name in place of
+* any earlier one, and the sidecar beside it. A movie without a picture is deleted and fails the scene.
+* @param {Take} take
+* @param {Keep} keep
+* @param {Tools} tools
+* @returns {Promise<Sidecar & { file: string }>}
+*/
+async function keepTake(take, keep, tools) {
 	try {
-		writeFileSync(zip, Buffer.from(await response.arrayBuffer()));
-		return await extractZip(zip, outDir);
+		const empty = !existsSync(take.file) || statSync(take.file).size === 0;
+		const movie = empty ? null : await inspectMovie(take.file, tools);
+		if (!movie || movie.streams === 0) fail(empty ? `The recording of ${keep.scene} came out empty. A recorder stopped any other way than with Ctrl+C or SIGINT leaves no movie; record the scene again.${keep.help ? `\n${keep.help}` : ""}` : `The recording of ${keep.scene} holds no video that ffprobe can read. Record the scene again.${keep.help ? `\n${keep.help}` : ""}`);
+		if (movie.streams > 1) fail(`The recording of ${keep.scene} holds ${movie.streams} videos, where one is expected.`);
+		if (!keep.padded && movie.duration < .5) fail(`The recording of ${keep.scene} is only ${round2(movie.duration)} seconds long. Record the scene again.`);
+		if (keep.padded && movie.duration < .5 && take.wall > 2) console.log(`  ! Little moved on screen while ${keep.scene} recorded. Look at it with 'appshots video sheet --raw'.`);
+		const wall = keep.padded ? take.wall : movie.duration;
+		const trim = keep.trim ? await autoTrim(take.file, {
+			wall,
+			padded: keep.padded
+		}, tools) : null;
+		const scale = keep.scale(movie.size);
+		const data = sidecar({
+			scene: keep.scene,
+			locale: keep.locale,
+			display: footageDisplay$1(keep.display),
+			source: keep.source,
+			model: keep.model,
+			os: keep.os,
+			size: movie.size,
+			scale,
+			orientation: keep.orientation,
+			wall,
+			driverOffset: take.driverOffset,
+			touches: sidecarTouches(take.touches, {
+				driverStart: take.driverStart,
+				offset: take.driverOffset,
+				scale,
+				wall
+			}),
+			trim,
+			planHash: keep.planHash
+		});
+		const dir = rawDir(keep.root, keep.display, keep.locale);
+		mkdirSync(dir, { recursive: true });
+		const extension = MOVIES.find((each) => take.file.endsWith(each)) ?? path.extname(take.file);
+		const file = path.join(dir, `${keep.scene}${extension}`);
+		for (const other of MOVIES) if (other !== extension) rmSync(path.join(dir, `${keep.scene}${other}`), { force: true });
+		renameSync(take.file, file);
+		writeJson(path.join(dir, `${keep.scene}.json`), data);
+		return {
+			...data,
+			file
+		};
+	} catch (error) {
+		rmSync(take.file, { force: true });
+		throw error;
+	}
+}
+/**
+* The working name a recording is made under until it has been looked at, beside where it goes, so that an
+* earlier recording of the scene stays until there is a better one.
+* @param {string} root
+* @param {string} display
+* @param {string} locale
+* @param {string} scene
+* @param {string} extension
+*/
+function workingFile(root, display, locale, scene, extension) {
+	const dir = rawDir(root, display, locale);
+	mkdirSync(dir, { recursive: true });
+	return path.join(dir, `${scene}.recording${extension}`);
+}
+var MOVIES, footageDisplay$1, round2, Interrupted, interruption, TAIL$1;
+var init_session = __esmMin((() => {
+	init_fail();
+	init_proc();
+	init_util();
+	init_drive();
+	init_touches();
+	MOVIES = [
+		".mov",
+		".mp4",
+		".m4v",
+		".mkv",
+		".webm"
+	];
+	footageDisplay$1 = (display) => display.startsWith("iphone") ? "iphone" : display.startsWith("ipad") ? "ipad" : display;
+	round2 = (value) => Math.round(value * 100) / 100;
+	Interrupted = class extends Failure {
+		/** @param {number} code The exit code: 130 for Ctrl+C, 143 for a stop asked for by another program. */
+		constructor(code) {
+			super("Stopped. The recordings made before are kept; the one in progress was deleted.");
+			this.code = code;
+		}
+	};
+	interruption = { exit: (code) => process.exit(code) };
+	TAIL$1 = 500;
+}));
+//#endregion
+//#region cli/src/video/record/device.mjs
+/**
+* The devices devicectl can reach, with what a sidecar says about them: the model and the system, never the
+* device's own identifier.
+* @returns {Promise<Array<{ name: string, udid: string, model: string, os: string, family: string }>>}
+*/
+async function devices() {
+	const dir = mkdtempSync(path.join(tmpdir(), "appshots-"));
+	const file = path.join(dir, "devices.json");
+	try {
+		const result = await xcrun([
+			"devicectl",
+			"list",
+			"devices",
+			"--json-output",
+			file
+		], { timeout: 3e4 });
+		if (result.status !== 0) fail(`devicectl failed. Recording a device needs Xcode 27 or newer.\n${result.stderr.trim()}`);
+		return JSON.parse(readFileSync(file, "utf8")).result.devices.filter((device) => device.hardwareProperties?.reality !== "simulated").filter((device) => device.connectionProperties?.tunnelState !== "unavailable").map((device) => ({
+			name: device.deviceProperties?.name ?? "Unnamed device",
+			udid: device.hardwareProperties?.udid ?? device.identifier,
+			model: device.hardwareProperties?.marketingName ?? device.hardwareProperties?.productType ?? "",
+			os: device.deviceProperties?.osVersionNumber ?? "",
+			family: /ipad/i.test(device.hardwareProperties?.deviceType ?? "") ? "iPad" : /iphone/i.test(device.hardwareProperties?.deviceType ?? "") ? "iPhone" : ""
+		}));
 	} finally {
 		rmSync(dir, {
 			recursive: true,
@@ -3682,70 +6875,5860 @@ async function download(config, route, outDir) {
 	}
 }
 /**
-* Downloads the rendered set as the server zips it and unpacks it into a folder.
-* @param {Config} config
-* @param {string} project
-* @param {string} outDir
-* @param {unknown} render
+* Records a display's footage on a connected device. The app has to be on the device already: it is launched in
+* each scene's language, and its status bar stays what the device shows, which only a simulator can set.
+* @param {string} display
+* @param {any} plan
+* @param {Record<string, string | true | undefined>} flags
+* @returns {Promise<Source>}
 */
-const fetchExport = (config, project, outDir, render) => download(config, projectRoute(project, `/export.zip${render ? "?render=1" : ""}`), outDir);
-/**
-* @param {Config} config
-* @param {string} project
-* @param {Record<string, string | true>} flags
-*/
-async function pull(config, project, flags) {
-	const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join("store-screenshots", project));
-	await fetchExport(config, project, outDir, flags.render);
-	console.log(`Screenshots are in ${outDir}`);
+async function deviceSource(display, plan, flags) {
+	const family = footageDisplay$1(display) === "ipad" ? "iPad" : "iPhone";
+	const device = choose(await devices(), flags.device, "device", "--device");
+	if (device.family && device.family !== family) fail(`${device.name} is an ${device.family}, and the ${display} footage is recorded on an ${family}. Name an ${family} with --device, or record one display at a time with --display.`);
+	const bundleId = plan.app?.bundleId;
+	if (!bundleId) fail(`A device records the app as it is installed there, which the plan names by its bundle id: put "bundleId" into the plan's "app".`);
+	console.log(`Recording ${display} on ${device.name}. Recording from a device is experimental.`);
+	console.log(`  ! ${device.name} shows its own time and battery. Only a simulator's status bar is set to 9:41 and full; leave out --device to record on one.`);
+	const env = await xcodeEnv();
+	return {
+		kind: "device",
+		label: device.name,
+		model: device.model,
+		os: device.os,
+		extension: ".mp4",
+		padded: false,
+		scale: (size) => deviceScale(device.family || family, size),
+		around: (work) => work(),
+		open: async (scene, locale) => {
+			if (scene.launch?.appearance) console.log(`  ! ${device.name} keeps the appearance it has; ${scene.id} asks for ${scene.launch.appearance}, which is set on a simulator only.`);
+			const { launchArguments } = launchPlan({ lang: locale }, scene.launch?.args ?? []);
+			const url = scene.launch?.url ? ["--payload-url", scene.launch.url] : [];
+			const result = await xcrun([
+				"devicectl",
+				"device",
+				"process",
+				"launch",
+				"--device",
+				device.udid,
+				"--terminate-existing",
+				...url,
+				bundleId,
+				...launchArguments
+			], { timeout: 6e4 });
+			if (result.status !== 0) fail(`Could not launch ${bundleId} on ${device.name}. It has to be installed there already, and the device unlocked.\n${`${result.stderr}${result.stdout}`.trim()}`);
+		},
+		record: (file) => startRecorder("devicectl", "xcrun", [
+			"devicectl",
+			"device",
+			"capture",
+			"screen-record",
+			"--device",
+			device.udid,
+			"--destination",
+			file,
+			"--codec",
+			"h264"
+		], {
+			env,
+			quiet: 2e3,
+			timeout: 2e4
+		}),
+		help: QUICKTIME
+	};
 }
-/** The flags of `mockups` that say how the device is drawn, and the setting each one is on the server. */
-const MOCKUP_FLAGS = {
-	frame: "frame",
-	style: "style",
-	color: "color",
-	shadow: "shadow",
-	rotate: "rotate",
-	perspective: "perspective",
-	"status-bar": "statusBar",
-	time: "statusBarTime"
-};
+var QUICKTIME, deviceScale;
+var init_device = __esmMin((() => {
+	init_fail();
+	init_plan();
+	init_util();
+	init_xcode();
+	init_session();
+	init_spawn();
+	QUICKTIME = "Record the scene with QuickTime Player instead: File, New Movie Recording, pick the iPhone or iPad as the camera, record, save, then give the movie to 'appshots video import <file> --scene <id>'.";
+	deviceScale = (family, size) => family === "iPad" ? 2 : Math.min(...size) <= 828 ? 2 : 3;
+}));
+//#endregion
+//#region cli/src/video/record/mac.mjs
 /**
-* @param {Config} config
-* @param {string} project
-* @param {Record<string, string | true>} flags
+* An AppleScript's answer, or null when it failed.
+* @param {string} script
 */
-async function mockups(config, project, flags) {
-	/** @type {Record<string, unknown>} */
-	const device = {};
-	for (const [flag, field] of Object.entries(MOCKUP_FLAGS)) {
-		if (flags[flag] === true) fail(`--${flag} needs a value.`);
-		if (flags[flag] !== void 0) device[field] = field === "rotate" ? Number(flags[flag]) : flags[flag];
+async function osascript(script) {
+	const result = await run$1("osascript", ["-e", script], { timeout: 3e4 });
+	return result.status === 0 ? result.stdout.trim() : null;
+}
+/**
+* The size --window asks for, or null.
+* @param {string | true | undefined} value
+* @returns {[number, number] | null}
+*/
+function windowSize(value) {
+	if (value === void 0) return null;
+	const match = typeof value === "string" ? /^(\d{3,4})x(\d{3,4})$/.exec(value) : null;
+	if (!match) fail("--window needs the window's size in points, as in: --window 1440x900");
+	return [Number(match[1]), Number(match[2])];
+}
+/**
+* Quits the app when it runs, and waits until it has, so that it starts again with the scene's arguments.
+* @param {string} bundleId
+* @param {string} name
+*/
+async function quit(bundleId, name) {
+	const running = () => osascript(`application id ${quoted(bundleId)} is running`);
+	if (await running() !== "true") return;
+	await osascript(`tell application id ${quoted(bundleId)} to quit`);
+	for (const deadline = Date.now() + 15e3; Date.now() < deadline; await pause(250)) if (await running() !== "true") return;
+	fail(`${name} did not quit within 15 seconds. Close what it asks about, such as unsaved changes, and record again.`);
+}
+/**
+* The window of the app once it shows one.
+* @param {string} name
+* @returns {Promise<{ id: number, width: number, height: number }>}
+*/
+async function windowOf(name) {
+	for (const deadline = Date.now() + 2e4;; await pause(500)) try {
+		const window = await macWindow(name);
+		if (window) return window;
+	} catch (error) {
+		if (!(error instanceof Failure) || Date.now() > deadline) throw error;
 	}
-	if (flags.width === true) fail("--width needs a number of pixels, or auto.");
-	if (Object.keys(device).length || flags.width !== void 0) {
-		const { project: current } = await (await request(config, "GET", projectRoute(project))).json();
-		const next = {
-			...current.mockups,
-			device: {
-				...current.mockups?.device,
-				...device
+}
+/**
+* Records the Mac display's footage from the app's window. Each scene starts the app again in the scene's
+* language with its arguments, as a scene on the simulator does.
+* @param {any} plan
+* @param {Record<string, string | true | undefined>} flags
+* @returns {Promise<Source>}
+*/
+async function macSource(plan, flags) {
+	if (host.platform !== "darwin") fail("A Mac app's window is recorded on a Mac.");
+	const size = windowSize(flags.window);
+	let bundleId = plan.app?.bundleId;
+	let name = typeof flags.mac === "string" ? flags.mac : null;
+	if (!bundleId && !name) fail(`Name the Mac app with --mac <name>, or put its bundle id into the plan's "app".`);
+	bundleId ??= await osascript(`id of application ${quoted(name)}`) ?? fail(`There is no app called "${name}" on this Mac. Name it as the Finder does, or put its bundle id into the plan's "app".`);
+	if (!name) {
+		const app = (await run$1("mdfind", [`kMDItemCFBundleIdentifier == ${quoted(bundleId)}`], { timeout: 3e4 })).stdout.split("\n").find((line) => line.endsWith(".app"));
+		name = app ? path.basename(app, ".app") : fail(`Could not find the app ${bundleId} on this Mac. Name it with --mac <name>.`);
+	}
+	const os = (await run$1("sw_vers", ["-productVersion"])).stdout.trim();
+	const label = name;
+	/** @type {{ id: number, width: number, height: number } | null} */
+	let window = null;
+	return {
+		kind: "mac",
+		label,
+		model: "Mac",
+		os,
+		extension: ".mov",
+		padded: true,
+		scale: (recorded) => window ? Math.max(1, Math.round(recorded[0] / window.width)) : 2,
+		around: (work) => work(),
+		open: async (scene, locale) => {
+			await quit(bundleId, label);
+			const { launchArguments } = launchPlan({ lang: locale }, scene.launch?.args ?? []);
+			const opened = await run$1("open", [
+				"-b",
+				bundleId,
+				"--args",
+				...launchArguments,
+				...appearanceArguments(scene.launch?.appearance)
+			], { timeout: 6e4 });
+			if (opened.status !== 0) fail(`Could not start ${label}:\n${opened.stderr.trim()}`);
+			let shown = await windowOf(label);
+			if (size && (shown.width !== size[0] || shown.height !== size[1])) {
+				if (await osascript(`tell application "System Events" to tell (first process whose bundle identifier is ${quoted(bundleId)}) to set size of front window to {${size[0]}, ${size[1]}}`) === null) console.log(`  ! Could not make ${label}'s window ${size[0]}×${size[1]}. Resizing another app's window needs the Accessibility permission for the terminal app: System Settings, Privacy & Security, Accessibility.`);
+				else shown = await windowOf(label);
+			}
+			window = shown;
+			if (scene.launch?.url) {
+				const link = await run$1("open", [scene.launch.url], { timeout: 3e4 });
+				if (link.status !== 0) fail(`Could not open ${scene.launch.url}. Does ${label} handle that address?\n${link.stderr.trim()}`);
+			}
+		},
+		record: (file, { seconds }) => startRecorder("screencapture", "screencapture", [
+			"-x",
+			"-o",
+			"-v",
+			`-V${Math.ceil(seconds)}`,
+			`-l${/** @type {{ id: number }} */ window.id}`,
+			file
+		], {
+			quiet: 1e3,
+			length: Math.ceil(seconds)
+		}),
+		help: SCREEN_RECORDING
+	};
+}
+var SCREEN_RECORDING, quoted, appearanceArguments;
+var init_mac = __esmMin((() => {
+	init_mac$1();
+	init_fail();
+	init_plan();
+	init_proc();
+	init_util();
+	init_spawn();
+	SCREEN_RECORDING = "macOS lets a program record windows only with the Screen Recording permission: System Settings, Privacy & Security, Screen & System Audio Recording, switch on the terminal app this runs in, then start that app again.";
+	quoted = (text) => `"${text.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")}"`;
+	appearanceArguments = (appearance) => appearance === "dark" ? ["-AppleInterfaceStyle", "Dark"] : appearance === "light" ? ["-NSRequiresAquaSystemAppearance", "YES"] : [];
+}));
+//#endregion
+//#region cli/src/video/record/sim.mjs
+/**
+* The simulator a display's footage is recorded on: the one --sim names, the booted one for a bare --sim, or
+* else the one 'appshots run' would pick, the 6.9-inch iPhone or the 13-inch iPad, which may be created when
+* there is none.
+* @param {string} display
+* @param {Record<string, string | true | undefined>} flags
+*/
+async function pickSimulator$1(display, flags) {
+	const family = footageDisplay$1(display) === "ipad" ? "iPad" : "iPhone";
+	const simulator = flags.sim === true ? {
+		...choose((await availableSimulators()).filter((sim) => sim.booted), void 0, "simulator", "--sim"),
+		note: ""
+	} : await runSimulator({
+		...typeof flags.sim === "string" ? { sim: flags.sim } : {},
+		...family === "iPad" ? { ipad: true } : {},
+		...flags.create ? { create: true } : {}
+	});
+	if (simulator.family && simulator.family !== family) fail(`${simulator.name} is an ${simulator.family}, and the ${display} footage is recorded on an ${family}. Name an ${family} with --sim, or record one display at a time with --display.`);
+	return simulator;
+}
+/**
+* Points to pixels on a simulator's screen, as its device type says: 3 on most iPhones, 2 on an iPad.
+* @param {{ udid: string, family: string }} simulator
+*/
+async function screenScale(simulator) {
+	const list = await simctlList();
+	const device = Object.values(list.devices).flat().find((each) => each.udid === simulator.udid);
+	const type = list.devicetypes.find((each) => each.identifier === device?.deviceTypeIdentifier);
+	let scale = 0;
+	try {
+		const data = readFileSync(path.join(type.bundlePath, "Contents", "Resources", "capabilities.plist"));
+		scale = data.toString("latin1", 0, 8) === "bplist00" ? Number(
+			/** @type {any} */
+			readBinaryPlist(data)?.capabilities?.ScreenDimensionsCapability?.["main-screen-scale"]
+		) : Number(data.toString("utf8").match(/<key>main-screen-scale<\/key>\s*<(?:integer|real)>([\d.]+)</)?.[1]);
+	} catch {}
+	return scale > 0 ? scale : simulator.family === "iPad" ? 2 : 3;
+}
+/**
+* Builds the app once per run, as 'appshots run' does. Where there is no Xcode project to build, as for an app
+* a toolkit of its own builds, there is nothing to build and the app has to be on the simulator already.
+* @param {{ name: string, udid: string }} simulator What to build for.
+* @param {any} plan
+* @param {Record<string, string | true | undefined>} flags
+* @param {AppState} state
+*/
+function buildApp(simulator, plan, flags, state) {
+	state.app ??= (async () => {
+		const found = typeof flags.project === "string" ? [findXcodeProject(flags.project)] : xcodeProjects(projectDirs());
+		if (found.length === 0) {
+			if (!plan.app?.bundleId) fail(`There is no Xcode project here to build, and the plan does not say the app's bundle id. Run this in the app's folder, or put "bundleId" into the plan's "app".`);
+			return {
+				file: null,
+				bundleId: plan.app.bundleId,
+				project: null,
+				scheme: null
+			};
+		}
+		const project = found.length === 1 ? found[0] : findXcodeProject(void 0);
+		const scheme = await pickScheme(project, flags.scheme);
+		return {
+			...await build(project, scheme, simulator, Boolean(flags.fresh)),
+			project,
+			scheme
+		};
+	})();
+	return state.app;
+}
+/**
+* Puts the app on a booted simulator once per run, or makes sure it is there when it was not built here.
+* @param {{ name: string, udid: string }} simulator
+* @param {{ file: string | null, bundleId: string }} app
+* @param {AppState} state
+*/
+async function installApp(simulator, app, state) {
+	if (state.installed.has(simulator.udid)) return;
+	if (app.file) await install$1(simulator, app.file);
+	else {
+		const apps = await installedApps(simulator.udid);
+		if (apps && !apps.some((each) => each.bundleId === app.bundleId)) fail(`${app.bundleId} is not installed on ${simulator.name}. Start it there once with the project's own command, then record again.`);
+	}
+	state.installed.add(simulator.udid);
+}
+/**
+* Records a display's footage on a simulator: picks and boots it, builds and installs the app, sets a clean
+* status bar for the whole run and starts the app on each scene in the scene's language.
+* @param {string} display
+* @param {any} plan
+* @param {Record<string, string | true | undefined>} flags
+* @param {AppState} state
+* @returns {Promise<Source>}
+*/
+async function simSource(display, plan, flags, state) {
+	const simulator = await pickSimulator$1(display, flags);
+	console.log(`Recording ${display} on ${simulatorLabel(simulator)}${simulator.note ?? ""}`);
+	const [booted, built] = await Promise.allSettled([boot(simulator), buildApp(simulator, plan, flags, state)]);
+	if (built.status === "rejected") throw built.reason;
+	if (booted.status === "rejected") throw booted.reason;
+	const app = {
+		...built.value,
+		bundleId: plan.app?.bundleId ?? built.value.bundleId
+	};
+	await installApp(simulator, app, state);
+	const scale = await screenScale(simulator);
+	const env = await xcodeEnv();
+	/** @type {string | null} */
+	let before = null;
+	/** @type {string | null} */
+	let shown = null;
+	const setAppearance = async (value) => {
+		const result = await xcrun([
+			"simctl",
+			"ui",
+			simulator.udid,
+			"appearance",
+			value
+		]);
+		if (result.status !== 0) fail(`Could not set ${simulator.name} to ${value}:\n${result.stderr.trim()}`);
+		shown = value;
+	};
+	return {
+		kind: "sim",
+		label: simulator.name,
+		model: simulator.model,
+		os: simulator.os,
+		extension: ".mov",
+		padded: true,
+		scale: () => scale,
+		simulator,
+		around: (work) => withCleanStatusBar(simulator, async () => {
+			const asked = await xcrun([
+				"simctl",
+				"ui",
+				simulator.udid,
+				"appearance"
+			]);
+			before = shown = asked.status === 0 && /^(light|dark)$/.test(asked.stdout.trim()) ? asked.stdout.trim() : null;
+			try {
+				return await work();
+			} finally {
+				if (before && shown !== before) await setAppearance(before);
+			}
+		}),
+		open: async (scene, locale) => {
+			const wanted = scene.launch?.appearance ?? before;
+			if (wanted && wanted !== shown) await setAppearance(wanted);
+			const { launchArguments } = launchPlan({ lang: locale }, scene.launch?.args ?? []);
+			const result = await xcrun([
+				"simctl",
+				"launch",
+				"--terminate-running-process",
+				simulator.udid,
+				app.bundleId,
+				...launchArguments
+			]);
+			if (result.status !== 0) fail(`Could not launch ${app.bundleId} on ${simulator.name}:\n${result.stderr.trim()}`);
+			if (scene.launch?.url) {
+				const opened = await xcrun([
+					"simctl",
+					"openurl",
+					simulator.udid,
+					scene.launch.url
+				]);
+				if (opened.status !== 0) fail(`Could not open ${scene.launch.url} on ${simulator.name}. Does the app handle that address?\n${opened.stderr.trim()}`);
+			}
+		},
+		record: (file) => startRecorder("simctl", "xcrun", [
+			"simctl",
+			"io",
+			simulator.udid,
+			"recordVideo",
+			"--codec=h264",
+			"--force",
+			file
+		], {
+			env,
+			ready: /Recording started/
+		}),
+		tests: async (scene) => {
+			const project = app.project ?? findXcodeProject(flags.project);
+			return buildUiTests(project, scene.drive.scheme ?? app.scheme ?? await pickScheme(project, flags.scheme), simulator, Boolean(flags.fresh));
+		}
+	};
+}
+var appState;
+var init_sim = __esmMin((() => {
+	init_build();
+	init_sim$2();
+	init_fail();
+	init_plan();
+	init_plist();
+	init_projects();
+	init_sim$1();
+	init_util();
+	init_xcode();
+	init_drive();
+	init_session();
+	init_spawn();
+	appState = () => ({
+		app: null,
+		installed: new Set()
+	});
+}));
+//#endregion
+//#region cli/src/video/record/web.mjs
+/**
+* The clock a page runs on while it is recorded, as the source of a script that runs before the page's own.
+* `window.__appshotsStep(ms)` moves it on: it runs the timers that come due in order, sets every animation to
+* where it is by then, runs the animation frames, and settles once Chromium has drawn the result.
+* @param {number} epoch What Date says when the page starts.
+*/
+function clockScript(epoch) {
+	return `(() => {
+  if (window.__appshotsStep) return;
+  const epoch = ${Math.round(epoch)};
+  let now = 0;
+  const RealDate = Date;
+  const realFrame = window.requestAnimationFrame.bind(window);
+  const realTimeout = window.setTimeout.bind(window);
+  // A function rather than a class: Date() without new is still called for the time as a string.
+  function VirtualDate(...args) {
+    if (!new.target) return new RealDate(epoch + now).toString();
+    return Reflect.construct(RealDate, args.length === 0 ? [epoch + now] : args, new.target);
+  }
+  Object.setPrototypeOf(VirtualDate, RealDate);
+  VirtualDate.prototype = RealDate.prototype;
+  RealDate.prototype.constructor = VirtualDate;
+  VirtualDate.now = () => epoch + now;
+  window.Date = VirtualDate;
+  performance.now = () => now;
+  let next = 1;
+  const timers = new Map();
+  let frames = new Map();
+  const later = (fn, ms, args, repeat) => {
+    const id = next++;
+    const delay = Math.max(repeat ? 1 : 0, Number(ms) || 0);
+    timers.set(id, { at: now + delay, fn, args, delay, repeat });
+    return id;
+  };
+  window.setTimeout = (fn, ms, ...args) => later(fn, ms, args, false);
+  window.setInterval = (fn, ms, ...args) => later(fn, ms, args, true);
+  window.clearTimeout = window.clearInterval = (id) => void timers.delete(id);
+  window.requestAnimationFrame = (fn) => {
+    const id = next++;
+    frames.set(id, fn);
+    return id;
+  };
+  window.cancelAnimationFrame = (id) => void frames.delete(id);
+  const report = (error) => realTimeout(() => { throw error; });
+  const born = new WeakMap();
+  window.__appshotsStep = (ms) => {
+    const until = now + ms;
+    for (let guard = 0; guard < 100000; guard++) {
+      let due = null;
+      for (const [id, timer] of timers) if (timer.at <= until && (!due || timer.at < due[1].at)) due = [id, timer];
+      if (!due) break;
+      const [id, timer] = due;
+      now = Math.max(now, timer.at);
+      if (timer.repeat) timer.at += timer.delay;
+      else timers.delete(id);
+      try {
+        if (typeof timer.fn === "function") timer.fn(...timer.args);
+      } catch (error) {
+        report(error);
+      }
+    }
+    now = until;
+    for (const animation of document.getAnimations()) {
+      if (!born.has(animation)) born.set(animation, now - (Number(animation.currentTime) || 0) / (animation.playbackRate || 1));
+      animation.pause();
+      animation.currentTime = (now - born.get(animation)) * (animation.playbackRate || 1);
+    }
+    const due = frames;
+    frames = new Map();
+    for (const fn of due.values()) {
+      try {
+        fn(now);
+      } catch (error) {
+        report(error);
+      }
+    }
+    return new Promise((resolve) => {
+      const done = () => resolve(now);
+      realTimeout(done, 250);
+      realFrame(() => realFrame(done));
+    });
+  };
+})();`;
+}
+/**
+* ffmpeg turning the PNGs of a recording into a movie as they come: even sides, as H.264 needs them, BT.709
+* as the compose expects, and 4:4:4 so that text keeps its edges until the compose scales it.
+* @param {string} file
+* @param {{ ffmpeg: string }} tools
+*/
+function startEncoder(file, tools) {
+	rmSync(file, { force: true });
+	const running = start(tools.ffmpeg, [
+		"-hide_banner",
+		"-loglevel",
+		"error",
+		"-f",
+		"image2pipe",
+		"-framerate",
+		String(FPS$3),
+		"-c:v",
+		"png",
+		"-i",
+		"-",
+		"-vf",
+		"crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0,scale=out_color_matrix=bt709:out_range=tv,format=yuv444p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
+		"-c:v",
+		"libx264",
+		"-preset",
+		"veryfast",
+		"-crf",
+		"12",
+		"-movflags",
+		"+faststart",
+		"-y",
+		file
+	], { stdin: true });
+	let frames = 0;
+	const said = () => running.said() ? `\n${running.said().split("\n").slice(-10).join("\n")}` : "";
+	return {
+		frames: () => frames,
+		/** @param {Buffer} png */
+		write: async (png) => {
+			const input = running.stdin;
+			if (!running.alive()) fail(`ffmpeg stopped while the page was recorded.${said()}`);
+			frames++;
+			if (!input.write(png)) await Promise.race([new Promise((resolve) => input.once("drain", resolve)), running.exited]);
+		},
+		finish: async () => {
+			running.stdin?.end();
+			const exit = await running.exited;
+			if (exit.status !== 0) fail(`ffmpeg could not make a movie of the page${exit.error ? `: ${exit.error.message}` : "."}${said()}`);
+		},
+		abandon: async () => {
+			running.kill("SIGKILL");
+			await running.exited;
+			rmSync(file, { force: true });
+		}
+	};
+}
+/**
+* Where a scene's page is: the scene's address, or a step's, against the app's. {locale} in it becomes the
+* language, for an app that keeps its languages apart by address.
+* @param {string} address
+* @param {string} base
+* @param {string} locale
+*/
+function pageAddress(address, base, locale) {
+	try {
+		return new URL(address.replaceAll("{locale}", locale), base.replaceAll("{locale}", locale)).href;
+	} catch {
+		return fail(`"${address}" is not an address a page can be opened at, against ${base}.`);
+	}
+}
+/**
+* A web app's footage, recorded from its pages in Chromium.
+* @param {string} display
+* @param {any} plan
+* @param {Record<string, string | true | undefined>} flags
+* @param {{ ffmpeg: string, encoders?: Set<string> }} tools
+* @returns {Promise<Source>}
+*/
+async function webSource(display, plan, flags, tools) {
+	const viewport = WEB_VIEWPORTS[footageDisplay$1(display)];
+	if (!viewport) fail(`A web app is recorded for the iphone, ipad and mac displays, and the plan asks for ${display}.`);
+	const base = typeof flags.web === "string" ? /^[a-z]+:\/\//i.test(flags.web) ? flags.web : `http://${flags.web}` : plan.app?.url;
+	if (!base) fail(`A web app is recorded from its address: put "url" into the plan's "app", or give it with --web <address>.`);
+	const browser = findBrowser();
+	if (!browser) fail("A web app is recorded with Chrome, Chromium, Edge or Brave, and none of them is installed. Install Google Chrome, or point APPSHOTS_BROWSER at a Chromium browser's program.");
+	if (tools.encoders && !tools.encoders.has("libx264")) fail("Recording a web page needs ffmpeg with libx264, which this ffmpeg lacks. Homebrew's ffmpeg has it: brew install ffmpeg");
+	const realtime = Boolean(flags.realtime);
+	/** @type {Talk | null} */
+	let talk = null;
+	let version = "";
+	return {
+		kind: "web",
+		label: `${browser.name} at ${viewport.width}×${viewport.height}`,
+		model: browser.name,
+		get os() {
+			return version;
+		},
+		extension: ".mp4",
+		padded: false,
+		scale: () => viewport.scale,
+		around: (work) => withBrowser(browser, void 0, async ({ send, listen }) => {
+			/** @type {Map<string, (message: any) => void>} */
+			const pages = new Map();
+			listen((message) => message.sessionId && pages.get(message.sessionId)?.(message));
+			version = (await send("Browser.getVersion")).product?.split("/")[1] ?? "";
+			talk = {
+				send,
+				pages
+			};
+			try {
+				return await work();
+			} finally {
+				talk = null;
+			}
+		}),
+		open: async () => {},
+		take: (job) => recordPage(talk, {
+			...job,
+			viewport,
+			base,
+			realtime,
+			tools
+		})
+	};
+}
+/**
+* @typedef {object} Talk
+* @property {(method: string, params?: object, sessionId?: string) => Promise<any>} send
+* @property {Map<string, (message: any) => void>} pages What each page's session reports goes to its listener.
+*/
+/**
+* Opens a scene's page in a tab of its own, runs its steps and records it.
+* @param {Talk} talk
+* @param {WebJob & { viewport: Viewport, base: string, realtime: boolean, tools: { ffmpeg: string } }} job
+* @returns {Promise<Take>}
+*/
+async function recordPage(talk, { scene, locale, file, seconds, settle, signal, viewport, base, realtime, tools }) {
+	const { targetId } = await talk.send("Target.createTarget", { url: "about:blank" });
+	const { sessionId } = await talk.send("Target.attachToTarget", {
+		targetId,
+		flatten: true
+	});
+	const page = (method, params = {}) => talk.send(method, params, sessionId);
+	/** @type {Set<(message: any) => void>} */
+	const listeners = new Set();
+	talk.pages.set(sessionId, (message) => {
+		for (const listener of listeners) listener(message);
+	});
+	/** @type {ReturnType<typeof startEncoder> | null} */
+	let encoder = null;
+	try {
+		await page("Page.enable");
+		await page("Emulation.setDeviceMetricsOverride", {
+			width: viewport.width,
+			height: viewport.height,
+			deviceScaleFactor: viewport.scale,
+			mobile: viewport.mobile,
+			screenWidth: viewport.width,
+			screenHeight: viewport.height
+		});
+		if (viewport.mobile) await page("Emulation.setTouchEmulationEnabled", {
+			enabled: true,
+			maxTouchPoints: 5
+		});
+		const { userAgent } = await talk.send("Browser.getVersion");
+		await page("Emulation.setUserAgentOverride", {
+			...viewport.agent ?? { userAgent: userAgent.replace("HeadlessChrome", "Chrome") },
+			acceptLanguage: locale
+		});
+		await page("Emulation.setLocaleOverride", { locale: locale.replaceAll("-", "_") }).catch(() => {});
+		await page("Emulation.setEmulatedMedia", { features: [{
+			name: "prefers-color-scheme",
+			value: scene.launch?.appearance ?? "light"
+		}] });
+		await page("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
+		if (!realtime) await page("Page.addScriptToEvaluateOnNewDocument", { source: clockScript(Date.now()) });
+		listeners.add(({ method }) => method === "Page.javascriptDialogOpening" && page("Page.handleJavaScriptDialog", { accept: true }).catch(() => {}));
+		/**
+		* Opens an address and waits until the page has loaded with its fonts.
+		* @param {string} url
+		*/
+		const navigate = async (url) => {
+			/** @type {(value?: unknown) => void} */
+			let loaded = () => {};
+			const load = new Promise((resolve) => loaded = resolve);
+			const listener = (message) => message.method === "Page.loadEventFired" && loaded();
+			listeners.add(listener);
+			try {
+				let answer;
+				for (const deadline = Date.now() + 1e4;; await pause(500)) {
+					answer = await page("Page.navigate", { url });
+					if (answer.errorText !== "net::ERR_CONNECTION_REFUSED" || Date.now() > deadline) break;
+				}
+				if (answer.errorText === "net::ERR_CONNECTION_REFUSED") fail(`Nothing answers at ${url}. Is the app's dev server running, and is that its address?`);
+				if (answer.errorText) fail(`Could not open ${url}: ${answer.errorText}`);
+				if (answer.loaderId) {
+					let timer;
+					const late = await Promise.race([load.then(() => false), new Promise((resolve) => timer = setTimeout(() => resolve(true), 3e4))]);
+					clearTimeout(timer);
+					if (late) fail(`${url} did not finish loading within 30 seconds.`);
+				}
+				await evaluate("document.fonts.ready.then(() => 0)");
+			} finally {
+				listeners.delete(listener);
 			}
 		};
-		if (flags.width === "auto") delete next.width;
-		else if (flags.width !== void 0) next.width = Number(flags.width);
-		await request(config, "PUT", projectRoute(project), {
-			body: JSON.stringify({ mockups: next }),
-			headers: { "content-type": "application/json" }
+		/**
+		* Runs JavaScript in the page and returns its value. A page that is between two documents is waited for.
+		* @param {string} expression
+		*/
+		const evaluate = async (expression) => {
+			for (const deadline = Date.now() + 15e3;; await pause(100)) try {
+				const { result, exceptionDetails } = await page("Runtime.evaluate", {
+					expression,
+					awaitPromise: true,
+					returnByValue: true,
+					userGesture: true
+				});
+				if (exceptionDetails) fail(`The page of ${scene.id} failed: ${(exceptionDetails.exception?.description ?? exceptionDetails.text).split("\n")[0]}`);
+				return result.value;
+			} catch (error) {
+				if (!/context was destroyed|Cannot find context|navigat|Inspected target/i.test(String(
+					/** @type {Error} */
+					error.message
+				)) || Date.now() > deadline) throw error;
+			}
+		};
+		const limit = Math.round(seconds * FPS$3);
+		/** @type {Touch[]} */
+		const touches = [];
+		/** @type {{ frames: () => number, time: () => number, tick: (count: number) => Promise<void>, finish: () => Promise<void> }} */
+		let clock;
+		await navigate(pageAddress(scene.launch?.url ?? "", base, locale));
+		encoder = startEncoder(file, tools);
+		const into = encoder;
+		if (realtime) {
+			await pause(settle * 1e3);
+			clock = await screencast(page, listeners, into, viewport, limit, signal);
+		} else {
+			const step = () => evaluate(`window.__appshotsStep ? window.__appshotsStep(${FRAME}) : 0`);
+			for (let frame = 0; frame < Math.round(settle * FPS$3); frame++) {
+				checkStop(signal);
+				await step();
+			}
+			clock = {
+				frames: () => into.frames(),
+				time: () => into.frames() * FRAME,
+				tick: async (count) => {
+					for (let frame = 0; frame < count && into.frames() < limit; frame++) {
+						checkStop(signal);
+						await step();
+						const { data } = await page("Page.captureScreenshot", {
+							format: "png",
+							optimizeForSpeed: true
+						});
+						await into.write(Buffer.from(data, "base64"));
+					}
+				},
+				finish: async () => {}
+			};
+		}
+		const full = () => clock.frames() >= limit;
+		const drive = scene.drive;
+		if (drive && typeof drive === "object" && "web" in drive) {
+			await clock.tick(LEAD);
+			for (const [index, step] of drive.web.entries()) {
+				if (full()) break;
+				await webStep(step, index, {
+					scene,
+					locale,
+					base,
+					page,
+					evaluate,
+					navigate,
+					clock,
+					touches
+				});
+			}
+			await clock.tick(LEAD);
+		} else {
+			const wait = drive && typeof drive === "object" && "wait" in drive ? drive.wait : seconds;
+			await clock.tick(Math.round(wait * FPS$3));
+		}
+		await clock.finish();
+		checkStop(signal);
+		await into.finish();
+		encoder = null;
+		return {
+			file,
+			wall: into.frames() / FPS$3,
+			driverOffset: 0,
+			driverStart: 0,
+			touches
+		};
+	} catch (error) {
+		await encoder?.abandon();
+		rmSync(file, { force: true });
+		throw error;
+	} finally {
+		talk.pages.delete(sessionId);
+		await talk.send("Target.closeTarget", { targetId }).catch(() => {});
+	}
+}
+/**
+* @typedef {object} StepContext
+* @property {any} scene
+* @property {string} locale
+* @property {string} base
+* @property {(method: string, params?: object) => Promise<any>} page
+* @property {(expression: string) => Promise<any>} evaluate
+* @property {(url: string) => Promise<void>} navigate
+* @property {{ frames: () => number, time: () => number, tick: (count: number) => Promise<void> }} clock
+* @property {Touch[]} touches
+*/
+/**
+* The middle of the first element a selector matches, brought into view, in CSS pixels; waited for while the
+* page goes on, for five seconds of its time at most.
+* @param {string} selector
+* @param {string} where What a failure names.
+* @param {StepContext} context
+*/
+async function pointOf(selector, where, { evaluate, clock }) {
+	const find = `(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!element) return null;
+    element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+    const box = element.getBoundingClientRect();
+    return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+  })()`;
+	for (let tries = 0; tries < 150; tries += 3) {
+		const point = await evaluate(find);
+		if (point) return point;
+		await clock.tick(3);
+	}
+	return fail(`${where}: nothing on the page matches "${selector}".`);
+}
+/**
+* Runs one of a scene's web steps. Clicks are kept as touches, as a person's finger would be.
+* @param {any} step
+* @param {number} index
+* @param {StepContext} context
+*/
+async function webStep(step, index, context) {
+	const { scene, locale, base, page, evaluate, navigate, clock, touches } = context;
+	const where = `Web step ${index + 1} of ${scene.id}`;
+	if ("wait" in step) return clock.tick(Math.round(Number(step.wait) * FPS$3));
+	if ("goto" in step) {
+		await navigate(pageAddress(String(step.goto), base, locale));
+		return clock.tick(PACE);
+	}
+	if ("click" in step || "hover" in step) {
+		const { x, y } = await pointOf(String(step.click ?? step.hover), where, context);
+		await page("Input.dispatchMouseEvent", {
+			type: "mouseMoved",
+			x,
+			y
+		});
+		if ("click" in step) {
+			touches.push({
+				ms: clock.time(),
+				x,
+				y
+			});
+			await page("Input.dispatchMouseEvent", {
+				type: "mousePressed",
+				x,
+				y,
+				button: "left",
+				buttons: 1,
+				clickCount: 1
+			});
+			await page("Input.dispatchMouseEvent", {
+				type: "mouseReleased",
+				x,
+				y,
+				button: "left",
+				buttons: 0,
+				clickCount: 1
+			});
+		}
+		return clock.tick(PACE);
+	}
+	if ("type" in step) {
+		const [selector, text] = step.type;
+		const { x, y } = await pointOf(selector, where, context);
+		touches.push({
+			ms: clock.time(),
+			x,
+			y
+		});
+		await evaluate(`document.querySelector(${JSON.stringify(selector)})?.focus()`);
+		for (const letter of String(text)) {
+			await page("Input.insertText", { text: letter });
+			await clock.tick(2);
+		}
+		return clock.tick(PACE);
+	}
+	if ("scroll" in step) {
+		const distance = Number(step.scroll);
+		const frames = Math.min(45, Math.max(9, Math.round(Math.abs(distance) / 1200 * FPS$3)));
+		let done = 0;
+		for (let frame = 1; frame <= frames; frame++) {
+			const along = .5 - Math.cos(Math.PI * frame / frames) / 2;
+			const by = Math.round(distance * along) - done;
+			done += by;
+			await evaluate(`(() => {
+        let element = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+        while (element && element !== document.body && !(element.scrollHeight > element.clientHeight && /(auto|scroll)/.test(getComputedStyle(element).overflowY))) element = element.parentElement;
+        (element && element !== document.body ? element : document.scrollingElement).scrollBy({ top: ${by}, behavior: "instant" });
+      })()`);
+			await clock.tick(1);
+		}
+		return clock.tick(PACE);
+	}
+	return fail(`${where} is none of goto, click, type, scroll, hover and wait.`);
+}
+/**
+* Records a page as Chromium draws it, for --realtime: its screencast, each frame repeated until the next one
+* comes, as it sends a frame only when something changed. Time is the clock's.
+* @param {(method: string, params?: object) => Promise<any>} page
+* @param {Set<(message: any) => void>} listeners
+* @param {ReturnType<typeof startEncoder>} encoder
+* @param {Viewport} viewport
+* @param {number} limit Frames at most.
+* @param {AbortSignal} signal
+*/
+async function screencast(page, listeners, encoder, viewport, limit, signal) {
+	/** @type {Buffer | null} */
+	let last = null;
+	let began = 0;
+	let writing = Promise.resolve();
+	/** Writes the last frame for every slot up to now. */
+	const fill = () => {
+		if (!last || !began) return;
+		const frame = last;
+		const due = Math.min(limit, Math.floor((Date.now() - began) / 1e3 * FPS$3));
+		writing = writing.then(async () => {
+			while (encoder.frames() < due) await encoder.write(frame);
+		});
+	};
+	listeners.add(({ method, params }) => {
+		if (method !== "Page.screencastFrame") return;
+		page("Page.screencastFrameAck", { sessionId: params.sessionId }).catch(() => {});
+		fill();
+		last = Buffer.from(params.data, "base64");
+		began ||= Date.now();
+	});
+	await page("Page.startScreencast", {
+		format: "png",
+		maxWidth: viewport.width * viewport.scale,
+		maxHeight: viewport.height * viewport.scale,
+		everyNthFrame: 1
+	});
+	for (const deadline = Date.now() + 5e3; !began; await pause(20)) if (Date.now() > deadline) fail("Chromium sent no picture of the page within 5 seconds.");
+	return {
+		frames: () => encoder.frames(),
+		time: () => Date.now() - began,
+		tick: async (count) => {
+			for (const end = Date.now() + count * FRAME; Date.now() < end && encoder.frames() < limit; await pause(FRAME)) {
+				checkStop(signal);
+				fill();
+			}
+			await writing;
+		},
+		finish: async () => {
+			fill();
+			await writing;
+			await page("Page.stopScreencast").catch(() => {});
+		}
+	};
+}
+var FPS$3, FRAME, PACE, LEAD, WEB_VIEWPORTS;
+var init_web = __esmMin((() => {
+	init_fail();
+	init_util();
+	init_session();
+	init_spawn();
+	FPS$3 = 30;
+	FRAME = 1e3 / FPS$3;
+	PACE = 12;
+	LEAD = 15;
+	WEB_VIEWPORTS = {
+		iphone: {
+			width: 393,
+			height: 852,
+			scale: 3,
+			mobile: true,
+			agent: WEB_SCREENS.iphone.agent
+		},
+		ipad: {
+			width: 1032,
+			height: 1376,
+			scale: 2,
+			mobile: true,
+			agent: WEB_SCREENS.ipad.agent
+		},
+		mac: {
+			width: 1920,
+			height: 1080,
+			scale: 1,
+			mobile: false,
+			agent: null
+		}
+	};
+}));
+//#endregion
+//#region cli/src/video/record/index.mjs
+var record_exports = __exportAll({
+	pointAtPrimary: () => pointAtPrimary,
+	readSidecar: () => readSidecar,
+	recordScenes: () => recordScenes,
+	selection: () => selection,
+	sourceKind: () => sourceKind,
+	workFolder: () => workFolder
+});
+/**
+* Recording, for 'appshots video record': every scene of the plan in every language and on every display that
+* has no recording yet, each as a movie and a sidecar under appshots-video/raw/<display>/<language>/. The
+* sources each have a module: the simulator, a physical device, a Mac window and a web page in Chromium.
+*
+* @typedef {object} Source Where a display's footage comes from, opened once for all of its scenes.
+* @property {"sim" | "device" | "mac" | "web"} kind
+* @property {string} label What the messages call it.
+* @property {string} model
+* @property {string} os
+* @property {string} extension The kind of movie it makes.
+* @property {boolean} padded Whether its movies drop still frames, so the clock has to restore their length.
+* @property {(size: [number, number]) => number} scale Pixels a point, given the size of a recording.
+* @property {{ name: string, udid: string }} [simulator]
+* @property {<T>(work: () => Promise<T>) => Promise<T>} around Runs all of the display's scenes: a clean status
+*   bar, a browser, and put back as it was afterwards.
+* @property {(scene: any, locale: string) => Promise<void>} open Starts the app on the scene in the language.
+* @property {(file: string, options: { seconds: number }) => Promise<Recorder>} [record]
+* @property {(scene: any) => Promise<UiTests>} [tests] Builds what a UI test needs.
+* @property {(job: WebJob) => Promise<Take>} [take] Records and drives in one, for a
+*   page whose time it runs itself.
+* @property {string} [help] What to do when its recorder fails, said after why.
+*
+* @typedef {object} WebJob
+* @property {any} scene
+* @property {string} locale
+* @property {string} file
+* @property {number} seconds
+* @property {number} settle
+* @property {AbortSignal} signal
+*/
+/**
+* The work folder: appshots-video/ next to the plan.
+* @param {Record<string, string | true | undefined>} flags
+*/
+function workFolder(flags) {
+	return path.join(planFolder(flags), "appshots-video");
+}
+/**
+* The recording of a scene in a language on a display, as its sidecar says, with `file`, the movie it is
+* about. A language that uses another one's footage gets that one's recording under its own language. Null when
+* there is no recording, or no movie to go with its sidecar.
+* @param {string} root The work folder, or the plan's folder that holds it.
+* @param {string} display
+* @param {string} locale
+* @param {string} scene
+* @returns {(Sidecar & { file: string }) | null}
+*/
+function readSidecar(root, display, locale, scene) {
+	const own = ownSidecar(root, display, locale, scene, true);
+	if (!own || !own.reuse) return own;
+	const used = ownSidecar(root, display, own.reuse, scene, false);
+	return used && {
+		...used,
+		locale,
+		reuse: own.reuse
+	};
+}
+/**
+* @param {string} root
+* @param {string} display
+* @param {string} locale
+* @param {string} scene
+* @param {boolean} reuse Whether a sidecar that points elsewhere counts.
+* @returns {any}
+*/
+function ownSidecar(root, display, locale, scene, reuse) {
+	const dir = rawDir(root, display, locale);
+	const data = storedSidecar(path.join(dir, `${scene}.json`));
+	if (!data) return null;
+	if (data.reuse) return reuse ? data : null;
+	const file = movieOf(dir, scene);
+	return file ? {
+		...data,
+		file
+	} : null;
+}
+/**
+* The values of a list flag, as in --lang en,de; null when it is not given.
+* @param {Record<string, string | true | undefined>} flags
+* @param {string} name
+* @param {string} example
+*/
+function listFlag(flags, name, example) {
+	const value = flags[name];
+	if (value === void 0) return null;
+	if (typeof value !== "string") fail(`--${name} needs a value, such as --${name} ${example}.`);
+	return value.split(",").map((part) => part.trim()).filter(Boolean);
+}
+/**
+* What a run records, settled before anything starts: the displays and their source, the languages, the
+* scenes, and which language's footage the others use.
+* @param {any} plan
+* @param {Record<string, string | true | undefined>} flags
+*/
+function selection(plan, flags) {
+	const scenes = plan.scenes ?? [];
+	const sceneIds = listFlag(flags, "scene", "inbox,search");
+	for (const id of sceneIds ?? []) if (!scenes.some((scene) => scene.id === id)) fail(`The plan has no scene "${id}". Its scenes: ${scenes.map((scene) => scene.id).join(", ")}`);
+	const displays = listFlag(flags, "display", "iphone,ipad") ?? plan.displays ?? [];
+	for (const display of displays) if (!(plan.displays ?? []).includes(display)) fail(`The plan has no display "${display}". Its displays: ${(plan.displays ?? []).join(", ")}`);
+	const languages = plan.locales;
+	const locales = listFlag(flags, "lang", "en,de") ?? languages;
+	if (!locales || locales.length === 0) fail(`The plan lists no languages. Put them into its "locales", the first being the primary one, or name them with --lang.`);
+	if (languages) {
+		for (const locale of locales) if (!languages.includes(locale)) fail(`The plan has no language "${locale}". Its languages: ${languages.join(", ")}`);
+	}
+	const primary = languages?.[0] ?? locales[0];
+	const reuse = plan.footage === "primary" || Boolean(flags["reuse-footage"]);
+	const seconds = flags.seconds === void 0 ? null : typeof flags.seconds === "string" ? Number(flags.seconds) : NaN;
+	if (seconds !== null && !(seconds >= 1 && seconds <= 120)) fail("--seconds needs a number of seconds from 1 to 120, as in: --seconds 8");
+	return {
+		footage: [...new Set(displays.map(footageDisplay$1))],
+		locales,
+		primary,
+		reuse,
+		recorded: reuse ? [primary] : locales,
+		scenes: sceneIds ? scenes.filter((scene) => sceneIds.includes(scene.id)) : scenes,
+		seconds
+	};
+}
+/**
+* Where a display's footage comes from: a web page for a web app, a window for a Mac app, a connected device
+* with --device, a simulator otherwise.
+* @param {any} plan
+* @param {string} display
+* @param {Record<string, string | true | undefined>} flags
+*/
+function sourceKind(plan, display, flags) {
+	const platform = plan.app?.platform ?? "ios";
+	if (flags.web || platform === "web") return "web";
+	if (display === "mac") {
+		if (platform !== "mac" && !flags.mac) fail(`The mac display is recorded from a Mac app's window or a web app's page, and this plan's app is for ${platform}.`);
+		return "mac";
+	}
+	if (platform === "mac" || flags.mac) fail(`A Mac app is recorded for the mac display only, and the plan asks for ${display}.`);
+	return flags.device ? "device" : "sim";
+}
+/**
+* Records every scene × language × display the flags pick that has no recording yet, or all of them with
+* --again, and returns the sidecars it wrote. Ctrl+C stops it at any moment: the recording in progress is
+* finished and deleted, the simulator put back as it was, and the command ends with 130.
+* @param {any} plan The plan as readPlan gives it, its defaults filled in.
+* @param {Record<string, string | true | undefined>} flags
+* @returns {Promise<Array<Sidecar & { file?: string }>>}
+*/
+async function recordScenes(plan, flags) {
+	const root = workFolder(flags);
+	const cwd = planFolder(flags);
+	const picked = selection(plan, flags);
+	const again = Boolean(flags.again);
+	/** @type {Array<{ display: string, kind: string, jobs: Array<{ scene: any, locale: string }> }>} */
+	const work = picked.footage.map((display) => ({
+		display,
+		kind: sourceKind(plan, display, flags),
+		jobs: picked.recorded.flatMap((locale) => picked.scenes.filter((scene) => again || !readSidecar(root, display, locale, scene.id)).map((scene) => ({
+			scene,
+			locale
+		})))
+	}));
+	for (const { kind, jobs } of work) for (const { scene } of jobs) {
+		const drive = flags.manual ? "manual" : scene.drive;
+		needsPerson(drive, scene.id);
+		if (drive && typeof drive === "object" && "web" in drive && kind !== "web") fail(`The scene ${scene.id} has web steps, and this display records ${kind === "sim" ? "a simulator" : kind === "device" ? "a device" : "a Mac window"}.`);
+		if (drive && typeof drive === "object" && "uitest" in drive && kind !== "sim") fail(`The scene ${scene.id} runs a UI test, which drives a simulator, and this display records ${kind === "web" ? "a web page" : kind === "device" ? "a device" : "a Mac window"}.`);
+		if (kind === "web" && (drive === "manual" || drive && typeof drive === "object" && ("command" in drive || "uitest" in drive))) fail(`The scene ${scene.id} of a web app is driven by web steps or a wait; its page is drawn without a window, which nothing else can reach.`);
+	}
+	const tools = work.reduce((sum, each) => sum + each.jobs.length, 0) > 0 ? await findFfmpeg({
+		root,
+		ask: confirm
+	}) : null;
+	const hash = planHash(plan);
+	/** @type {Array<Sidecar & { file?: string }>} */
+	const written = [];
+	try {
+		await withInterrupt(async (signal) => {
+			const logs = touchFolder();
+			const state = appState();
+			try {
+				for (const { display, kind, jobs } of work) {
+					if (jobs.length === 0) continue;
+					checkStop(signal);
+					const source = kind === "web" ? await webSource(display, plan, flags, tools) : kind === "mac" ? await macSource(plan, flags) : kind === "device" ? await deviceSource(display, plan, flags) : await simSource(display, plan, flags, state);
+					await source.around(async () => {
+						for (const { scene, locale } of jobs) {
+							checkStop(signal);
+							const { seconds, settle } = timing(scene, picked.seconds);
+							const drive = flags.manual ? "manual" : scene.drive;
+							const length = drive && typeof drive === "object" && "wait" in drive ? Math.min(seconds, drive.wait + .5) : seconds;
+							const file = workingFile(root, display, locale, scene.id, source.extension);
+							const tests = drive && typeof drive === "object" && "uitest" in drive && source.tests ? await source.tests(scene) : void 0;
+							console.log(`Recording ${scene.id} (${locale}, ${display}) on ${source.label}…`);
+							await source.open(scene, locale);
+							const touchLog = path.join(logs.dir, `${display}-${locale}-${scene.id}.log`);
+							const kept = await keepTake(source.take ? await source.take({
+								scene,
+								locale,
+								file,
+								seconds,
+								settle,
+								signal
+							}) : await recordTake({
+								file,
+								record: (into) => source.record(into, { seconds: length }),
+								name: source.kind === "sim" ? "simctl" : source.kind === "device" ? "devicectl" : "screencapture",
+								drive,
+								context: {
+									scene: scene.id,
+									locale,
+									display,
+									cwd,
+									touchLog,
+									seconds,
+									simulator: source.simulator,
+									tests
+								},
+								settle,
+								signal,
+								help: source.help
+							}), {
+								root,
+								scene: scene.id,
+								locale,
+								display,
+								source: source.kind,
+								model: source.model,
+								os: source.os,
+								scale: source.scale,
+								orientation: display === "mac" ? "landscape" : plan.orientation ?? "portrait",
+								padded: source.padded,
+								trim: scene.trim === "auto",
+								planHash: hash,
+								help: source.help
+							}, tools);
+							written.push(kept);
+							const touches = kept.touches.length > 0 ? `, ${kept.touches.length} touch${kept.touches.length === 1 ? "" : "es"}` : "";
+							const trim = kept.trim ? `, trimmed to ${kept.trim[0]}–${kept.trim[1]} s` : "";
+							console.log(`Recorded ${scene.id} (${locale}, ${display}): ${kept.wall} s${trim}${touches} -> ${path.relative(process.cwd(), kept.file) || kept.file}`);
+						}
+					});
+				}
+			} finally {
+				logs.remove();
+			}
+		});
+	} catch (error) {
+		if (!(error instanceof Interrupted)) throw error;
+		console.error(error.message);
+		interruption.exit(error.code);
+		throw error;
+	}
+	if (picked.reuse) written.push(...pointAtPrimary(root, {
+		displays: picked.footage,
+		scenes: picked.scenes.map((scene) => scene.id),
+		locales: picked.locales,
+		primary: picked.primary
+	}, again));
+	const reused = written.filter((each) => each.reuse).length;
+	console.log(written.length - reused > 0 || reused > 0 ? `Recorded ${written.length - reused} scene${written.length - reused === 1 ? "" : "s"}${reused > 0 ? `, ${reused} reusing the ${picked.primary} footage` : ""}. Next: appshots video sheet --raw` : "Every scene has a recording already. --again records them once more.");
+	return written;
+}
+/**
+* Writes the sidecars of the languages that use the primary language's footage: each points at it, and is
+* otherwise a copy of what that footage's sidecar said when it was written.
+* @param {string} root
+* @param {{ displays: string[], scenes: string[], locales: string[], primary: string }} which
+* @param {boolean} again Whether a language that has footage of its own is pointed at the primary one too.
+*/
+function pointAtPrimary(root, { displays, scenes, locales, primary }, again) {
+	const written = [];
+	for (const display of displays) for (const scene of scenes) {
+		const used = readSidecar(root, display, primary, scene);
+		if (!used || used.reuse) continue;
+		for (const locale of locales) {
+			if (locale === primary) continue;
+			const dir = rawDir(root, display, locale);
+			if (!again && existsSync(path.join(dir, `${scene}.json`))) continue;
+			const { file, ...fields } = used;
+			const data = sidecar({
+				...fields,
+				locale,
+				reuse: primary
+			});
+			writeJson(path.join(dir, `${scene}.json`), data);
+			written.push(data);
+		}
+	}
+	return written;
+}
+var planFolder, timing;
+var init_record = __esmMin((() => {
+	init_fail();
+	init_prompt();
+	init_ffmpeg();
+	init_plan$1();
+	init_device();
+	init_drive();
+	init_mac();
+	init_session();
+	init_sim();
+	init_web();
+	planFolder = (flags) => path.dirname(path.resolve(typeof flags.plan === "string" ? flags.plan : "appshots.video.json"));
+	timing = (scene, seconds) => ({
+		seconds: seconds ?? scene.record?.seconds ?? (scene.drive === void 0 ? 6 : 12),
+		settle: scene.record?.settle ?? 1.5
+	});
+}));
+//#endregion
+//#region cli/src/video/import.mjs
+var import_exports = __exportAll({ importFootage: () => importFootage });
+/**
+* 'appshots video import <file>': a recording made elsewhere, such as QuickTime's of a plugged-in iPhone, as a
+* scene's footage. The movie is copied as it is, with its own kind; its sidecar says it was imported and takes
+* its length for the scene's.
+* @param {any} plan
+* @param {string | undefined} file
+* @param {Record<string, string | true | undefined>} flags
+* @returns {Promise<Sidecar & { file: string }>}
+*/
+async function importFootage(plan, file, flags) {
+	const scenes = plan.scenes ?? [];
+	const ids = scenes.map((scene) => scene.id).join(", ");
+	if (typeof file !== "string" || !file) fail(`Name the movie to import, as in: appshots video import ~/Movies/${scenes[0]?.id ?? "inbox"}.mov --scene ${scenes[0]?.id ?? "inbox"}`);
+	const source = path.resolve(file);
+	if (!existsSync(source) || !statSync(source).isFile()) fail(`No such file: ${file}`);
+	const name = path.basename(source);
+	const extension = path.extname(source).toLowerCase();
+	if (!MOVIES.includes(extension)) fail(`${name} is not a kind of movie appShots takes: ${MOVIES.join(", ")}. QuickTime Player saves a .mov.`);
+	if (typeof flags.scene !== "string") fail(`--scene says which scene ${name} is, as in: --scene ${scenes[0]?.id ?? "inbox"}. The plan's scenes: ${ids}`);
+	const scene = scenes.find((each) => each.id === flags.scene) ?? fail(`The plan has no scene "${flags.scene}". Its scenes: ${ids}`);
+	const locales = plan.locales ?? [];
+	const locale = typeof flags.lang === "string" ? flags.lang : locales[0] ?? fail(`--lang says which language ${name} shows, as in: --lang en.`);
+	if (locales.length > 0 && !locales.includes(locale)) fail(`The plan has no language "${locale}". Its languages: ${locales.join(", ")}`);
+	const displays = [...new Set((plan.displays ?? []).map(footageDisplay$1))];
+	const display = typeof flags.display === "string" ? footageDisplay$1(flags.display) : displays.length === 1 ? displays[0] : fail(`The plan has the displays ${displays.join(", ")}; say which one ${name} is for with --display, as in: --display ${displays[0] ?? "iphone"}.`);
+	if (!displays.includes(display)) fail(`The plan has no display "${flags.display}". Its displays: ${displays.join(", ")}`);
+	const root = workFolder(flags);
+	const tools = await findFfmpeg({
+		root,
+		ask: confirm
+	});
+	const movie = await inspectMovie(source, tools);
+	if (!movie || movie.streams === 0) fail(`${name} holds no video that ffprobe can read.`);
+	if (movie.duration < 1) fail(`${name} is ${round2(movie.duration)} seconds long; a scene's footage takes a second at least.`);
+	const dir = rawDir(root, display, locale);
+	mkdirSync(dir, { recursive: true });
+	const target = path.join(dir, `${scene.id}${extension}`);
+	const part = path.join(dir, `${scene.id}.import${extension}`);
+	try {
+		copyFileSync(source, part);
+		for (const other of MOVIES) rmSync(path.join(dir, `${scene.id}${other}`), { force: true });
+		renameSync(part, target);
+	} finally {
+		rmSync(part, { force: true });
+	}
+	const trim = scene.trim === "auto" ? await autoTrim(target, {
+		wall: movie.duration,
+		padded: false
+	}, tools) : null;
+	const data = sidecar({
+		scene: scene.id,
+		locale,
+		display,
+		source: "import",
+		model: "",
+		os: "",
+		size: movie.size,
+		scale: likelyScale(display, movie.size),
+		orientation: display === "mac" ? "landscape" : plan.orientation ?? "portrait",
+		wall: movie.duration,
+		driverOffset: 0,
+		touches: [],
+		trim,
+		planHash: planHash(plan)
+	});
+	writeJson(path.join(dir, `${scene.id}.json`), data);
+	console.log(`Imported ${name} as ${scene.id} (${locale}, ${display}): ${movie.size[0]}×${movie.size[1]}, ${data.wall} s${trim ? `, trimmed to ${trim[0]}–${trim[1]} s` : ""} -> ${path.relative(process.cwd(), target) || target}`);
+	if (plan.footage === "primary" && locale === locales[0]) {
+		const pointed = pointAtPrimary(root, {
+			displays: [display],
+			scenes: [scene.id],
+			locales,
+			primary: locale
+		}, false);
+		if (pointed.length > 0) console.log(`  ${pointed.map((each) => each.locale).join(", ")} use${pointed.length === 1 ? "s" : ""} it too, as the plan records one language's footage for all.`);
+	}
+	return {
+		...data,
+		file: target
+	};
+}
+var likelyScale;
+var init_import = __esmMin((() => {
+	init_fail();
+	init_prompt();
+	init_ffmpeg();
+	init_plan$1();
+	init_record();
+	init_session();
+	likelyScale = (display, size) => display === "ipad" ? 2 : display === "mac" ? Math.max(...size) >= 2e3 ? 2 : 1 : Math.min(...size) <= 828 ? 2 : 3;
+}));
+//#endregion
+//#region cli/src/video/normalise.mjs
+/**
+* @typedef {object} Sidecar What the recorder wrote beside a recording (see `record/`); only what is used here.
+* @property {string} [scene]
+* @property {string} [locale]
+* @property {string | null} [reuse] The locale whose recording this one stands for.
+* @property {string} [file] The movie it is about, as readSidecar finds it.
+* @property {string} [source] "sim", "device", "mac", "web" or "import".
+* @property {[number, number]} [size] The recording's pixels.
+* @property {"portrait" | "landscape"} [orientation] The orientation the plan asked for.
+* @property {number} [wall] Seconds the recording really took.
+* @property {boolean} [realtime] A web page recorded in real time instead of frame by frame.
+* @property {Array<[number, number, number]>} [touches] Seconds into the recording and pixels of it.
+* @property {[number, number]} [trim] The trim that "auto" resolved to.
+*
+* @typedef {object} Scene The part of a plan's scene that the picture depends on.
+* @property {string} id
+* @property {[number, number] | "auto" | null} [trim] Null, as a plan without a trim has it, for all of it.
+* @property {number} [speed]
+* @property {number} [hold]
+* @property {boolean} [touches]
+*
+* @typedef {{ start: number, end: number, speed: number }} Window The part of the recording a scene shows.
+* @typedef {{ x: number, y: number, width: number, height: number }} Box
+* @typedef {{ kind: "cover", scale: number, x: number, y: number } | { kind: "plate", width: number, height: number, x: number, y: number }} Placement
+* @typedef {{ t: number, x: number, y: number }} Touch Seconds into the segment and pixels of the canvas.
+*/
+/**
+* The part of the recording a scene shows, in seconds of the recording: the plan's trim, the one "auto" resolved
+* to, or all of it.
+* @param {Scene} scene
+* @param {Sidecar} sidecar
+* @returns {Window}
+*/
+function sceneWindow(scene, sidecar) {
+	const wall = sidecar.wall;
+	if (!(typeof wall === "number" && wall > 0)) fail(`The recording of scene "${scene.id}" says nothing of how long it is. Record it again: appshots video record --scene ${scene.id} --again`);
+	const trim = Array.isArray(scene.trim) ? scene.trim : scene.trim === "auto" && Array.isArray(sidecar.trim) ? sidecar.trim : [0, wall];
+	const start = Math.max(0, Math.min(trim[0], wall));
+	const end = Math.min(trim[1], wall);
+	if (!(end > start)) fail(`Scene "${scene.id}" is trimmed to nothing: ${trim[0]} to ${trim[1]} s of a recording ${num(wall)} s long.`);
+	return {
+		start,
+		end,
+		speed: scene.speed ?? 1
+	};
+}
+/**
+* Which way the buffer has to be turned to stand as the plan wants: the simulator records an app in landscape
+* into a portrait buffer. Never for a Mac window.
+* @param {Sidecar} sidecar
+* @param {"portrait" | "landscape"} orientation
+* @param {boolean} mac
+* @returns {"clock" | "cclock" | null}
+*/
+function turnOf(sidecar, orientation, mac) {
+	if (mac || !sidecar.size) return null;
+	const [width, height] = sidecar.size;
+	if (orientation === "landscape" && height > width) return "clock";
+	if (orientation === "portrait" && width > height) return "cclock";
+	return null;
+}
+/**
+* How far the captions of one locale reach into the canvas: down from the top, and up from the bottom. A caption
+* the server drew without its box is taken to fill a fifth of the height.
+* @param {Array<{ kind: string, locale: string | null, box?: number[] }>} layers The manifest's layers.
+* @param {string} locale
+* @param {[number, number]} size
+*/
+function captionBands(layers, locale, [, height]) {
+	let top = 0;
+	let bottom = 0;
+	for (const layer of layers) {
+		if (layer.kind !== "caption" || layer.locale !== locale && layer.locale !== null) continue;
+		const [, y, , h] = Array.isArray(layer.box) && layer.box.length === 4 ? layer.box : [
+			0,
+			0,
+			0,
+			height / 5
+		];
+		if (y + h / 2 < height / 2) top = Math.max(top, y + h);
+		else bottom = Math.max(bottom, height - y);
+	}
+	return {
+		top,
+		bottom
+	};
+}
+/**
+* The box a Mac window is fitted into on the background plate: the canvas less a margin, and less the bands the
+* captions take at the top and the bottom. One box for every scene of a preview, so the window keeps its place.
+* @param {[number, number]} size
+* @param {{ top: number, bottom: number }} bands Pixels the captions reach down from the top and up from the bottom.
+* @returns {Box}
+*/
+function plateBox([width, height], { top, bottom }) {
+	const margin = Math.round(height * .04);
+	const y = Math.min(Math.max(margin, top + margin), Math.round(height / 2));
+	const end = Math.max(height - Math.max(margin, bottom + margin), Math.round(height / 2));
+	return {
+		x: margin,
+		y,
+		width: width - 2 * margin,
+		height: end - y
+	};
+}
+/**
+* How the footage lands on the canvas. An iPhone or iPad recording, and a Mac window with fit "fill", is scaled
+* until it covers the canvas and cut to it from the middle. A Mac window with fit "plate" is scaled into `box`,
+* kept to its shape, at even sizes, and laid on the plate in the middle of the box.
+* @param {[number, number]} size The canvas.
+* @param {[number, number]} footage The footage's size, after any turn.
+* @param {Box | null} box
+* @returns {Placement}
+*/
+function placement([width, height], [fw, fh], box) {
+	if (!box) {
+		const scale = Math.max(width / fw, height / fh);
+		return {
+			kind: "cover",
+			scale,
+			x: Math.floor((fw * scale - width) / 2),
+			y: Math.floor((fh * scale - height) / 2)
+		};
+	}
+	const scale = Math.min(box.width / fw, box.height / fh);
+	const w = even(fw * scale);
+	const h = even(fh * scale);
+	return {
+		kind: "plate",
+		width: w,
+		height: h,
+		x: box.x + Math.floor((box.width - w) / 2),
+		y: box.y + Math.floor((box.height - h) / 2)
+	};
+}
+/**
+* The filter chain that turns a recording into the scene's picture, from the recording's frames to frames at
+* the canvas size (or, on a plate, at the window's size), 30 a second, from the scene's first frame on. The last
+* frame is held for `seconds` more, which covers the scene's hold; -t cuts the segment to its length.
+* @param {object} options
+* @param {Sidecar} options.sidecar
+* @param {Window} options.window
+* @param {"clock" | "cclock" | null} options.turn
+* @param {[number, number]} options.size The canvas.
+* @param {Placement} options.place
+* @param {number} options.seconds The segment's length.
+*/
+function footageChain({ sidecar, window, turn, size, place, seconds }) {
+	const wall = sidecar.wall;
+	const chain = [RETAG, "setpts=PTS-STARTPTS"];
+	if (keepsWallClock(sidecar)) chain.push(`fps=30`, `tpad=stop_mode=clone:stop_duration=${num(wall)}`, `trim=duration=${num(wall)}`);
+	if (turn) chain.push(`transpose=${turn}`);
+	if (window.start > 0 || window.end < wall) chain.push(`trim=start=${num(window.start)}:end=${num(window.end)}`, "setpts=PTS-STARTPTS");
+	if (window.speed !== 1) chain.push(`setpts=PTS/${num(window.speed)}`);
+	chain.push(`fps=30`, `tpad=stop_mode=clone:stop_duration=${num(seconds)}`);
+	if (place.kind === "cover") chain.push(`scale=${size[0]}:${size[1]}:force_original_aspect_ratio=increase:flags=lanczos`, `crop=${size[0]}:${size[1]}`);
+	else chain.push(`scale=${place.width}:${place.height}:flags=lanczos`);
+	chain.push("setsar=1");
+	return chain.join(",");
+}
+/**
+* Where the touches of a recording fall in the scene: seconds into the segment and pixels of the canvas, for
+* those inside the scene's window, at most 12.
+* @param {Sidecar} sidecar
+* @param {Window} window
+* @param {"clock" | "cclock" | null} turn
+* @param {Placement} place
+* @param {number} seconds The segment's length.
+* @returns {Touch[]}
+*/
+function touchPoints(sidecar, window, turn, place, seconds) {
+	const [width, height] = sidecar.size ?? [0, 0];
+	/** @type {Touch[]} */
+	const points = [];
+	for (const [at, x0, y0] of [...sidecar.touches ?? []].sort((a, b) => a[0] - b[0])) {
+		if (at < window.start || at > window.end) continue;
+		const t = (at - window.start) / window.speed;
+		if (t >= seconds) continue;
+		const [x, y] = turn === "clock" ? [height - y0, x0] : turn === "cclock" ? [y0, width - x0] : [x0, y0];
+		if (place.kind === "cover") points.push({
+			t,
+			x: x * place.scale - place.x,
+			y: y * place.scale - place.y
+		});
+		else {
+			const [fw, fh] = turn ? [height, width] : [width, height];
+			points.push({
+				t,
+				x: place.x + x * place.width / fw,
+				y: place.y + y * place.height / fh
+			});
+		}
+		if (points.length === 12) break;
+	}
+	return points;
+}
+var toFrames$1, limit, frameTime, num, even, escapeExpr, RETAG, sceneFrames, keepsWallClock;
+var init_normalise = __esmMin((() => {
+	init_fail();
+	toFrames$1 = (seconds) => Math.round(seconds * 30);
+	limit = (frames) => (Math.floor(frames / 30 * 1e6) / 1e6).toFixed(6);
+	frameTime = (frames) => (frames / 30).toFixed(6);
+	num = (value) => String(Math.round(value * 1e3) / 1e3);
+	even = (value) => 2 * Math.floor(value / 2);
+	escapeExpr = (expression) => expression.replace(/,/g, "\\,");
+	RETAG = "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709";
+	sceneFrames = (scene, window) => toFrames$1((window.end - window.start) / window.speed + (scene.hold ?? 0));
+	keepsWallClock = (sidecar) => sidecar.source !== "import" && !(sidecar.source === "web" && !sidecar.realtime);
+}));
+//#endregion
+//#region cli/src/video/audio.mjs
+/**
+* @typedef {object} Music The plan's music, resolved.
+* @property {string} file An absolute path.
+* @property {number} volume 0 to 1.
+* @property {number} start Seconds into the file the preview's music starts.
+* @property {number} fadeOut Seconds it fades out over at the end.
+*
+* @typedef {object} Audio How a command line gets its sound: the input it adds, and the filter that turns input
+* number `input` into the stream [a].
+* @property {string[]} input
+* @property {(input: number) => string} chain
+*/
+/**
+* The plan's music with its defaults, the file found next to the plan. Null for a silent preview.
+* @param {{ music?: { file: string, volume?: number, start?: number, fadeOut?: number } }} plan
+* @param {string} base The plan's folder.
+* @returns {Music | null}
+*/
+function musicOf(plan, base) {
+	const music = plan.music;
+	if (!music) return null;
+	if (typeof music.file !== "string" || music.file === "") fail("music.file in the plan needs the path of an audio file, such as music/theme.m4a.");
+	const file = path.resolve(base, music.file);
+	if (!existsSync(file) || !statSync(file).isFile()) fail(`The music file ${music.file} is not there (looked at ${file}). Put the file there, or take "music" out of the plan for a silent preview.`);
+	const volume = music.volume ?? .8;
+	const start = music.start ?? 0;
+	const fadeOut = music.fadeOut ?? 1.5;
+	if (!(volume >= 0 && volume <= 1)) fail(`music.volume is ${volume}; it goes from 0 to 1.`);
+	if (!(start >= 0)) fail(`music.start is ${start}; it is seconds into the file, 0 or more.`);
+	if (!(fadeOut >= 0 && fadeOut <= 10)) fail(`music.fadeOut is ${fadeOut}; it is seconds, from 0 to 10.`);
+	return {
+		file,
+		volume,
+		start,
+		fadeOut
+	};
+}
+/**
+* The audio of a preview `frames` frames long: silence, or the music looped or cut to that length.
+*
+* The music is brought to -16 LUFS first and faded last: loudness normalisation follows the level as it goes, and
+* after the fades it would bring a fading end back up.
+* @param {Music | null} music
+* @param {number} frames
+* @returns {Audio}
+*/
+function previewAudio(music, frames) {
+	const seconds = limit(frames);
+	if (!music) return {
+		input: [
+			"-f",
+			"lavfi",
+			"-t",
+			seconds,
+			"-i",
+			"anullsrc=r=48000:cl=stereo"
+		],
+		chain: (input) => `[${input}:a]${STEREO}[a]`
+	};
+	const length = frames / 30;
+	const fadeOut = Math.min(music.fadeOut, length / 2);
+	const chain = [
+		`atrim=start=${num(music.start)}:duration=${seconds}`,
+		"asetpts=PTS-STARTPTS",
+		"loudnorm=I=-16:TP=-1.5:LRA=11",
+		"aresample=48000",
+		`volume=${num(music.volume)}`,
+		`afade=t=in:st=0:d=${FADE_IN}`,
+		...fadeOut > 0 ? [`afade=t=out:st=${num(length - fadeOut)}:d=${num(fadeOut)}`] : [],
+		STEREO
+	];
+	return {
+		input: [
+			"-stream_loop",
+			"-1",
+			"-t",
+			(Math.floor((music.start + length) * 1e6) / 1e6 + 1).toFixed(6),
+			"-i",
+			music.file
+		],
+		chain: (input) => `[${input}:a:0]${chain.join(",")}[a]`
+	};
+}
+/**
+* The audio a file already has, padded with silence and cut to `frames` frames: for the last pass over a preview
+* made by Remotion, which mixed the music itself.
+* @param {number} frames
+* @returns {Audio}
+*/
+function keptAudio(frames) {
+	const seconds = limit(frames);
+	return {
+		input: [],
+		chain: () => `[0:a:0]aresample=48000,${STEREO},apad=whole_dur=${seconds},atrim=duration=${seconds}[a]`
+	};
+}
+var STEREO, FADE_IN;
+var init_audio = __esmMin((() => {
+	init_fail();
+	init_normalise();
+	STEREO = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
+	FADE_IN = .3;
+}));
+//#endregion
+//#region cli/src/video/probe.mjs
+/**
+* The top-level boxes of an MP4 or QuickTime file, by reading each box's header and stepping over its body. A
+* preview made for streaming has its index ("moov") before the media ("mdat"), so it starts playing before it
+* has loaded. An empty list for a file that is not made of boxes.
+* @param {string} file
+*/
+function topBoxes(file) {
+	const size = statSync(file).size;
+	const head = Buffer.alloc(16);
+	const boxes = [];
+	const fd = openSync(file, "r");
+	try {
+		for (let at = 0; at + 8 <= size && boxes.length < 64;) {
+			const read = readSync(fd, head, 0, 16, at);
+			if (read < 8) break;
+			const type = head.toString("latin1", 4, 8);
+			if (!/^[\x20-\x7e]{4}$/.test(type)) return [];
+			let length = head.readUInt32BE(0);
+			if (length === 1) {
+				if (read < 16) break;
+				length = Number(head.readBigUInt64BE(8));
+			} else if (length === 0) length = size - at;
+			if (length < 8) return [];
+			boxes.push(type);
+			at += length;
+		}
+	} finally {
+		closeSync(fd);
+	}
+	return [
+		"ftyp",
+		"moov",
+		"mdat",
+		"wide",
+		"free"
+	].includes(boxes[0] ?? "") ? boxes : [];
+}
+/**
+* Asks ffprobe about a video file: its streams, their codecs, sizes, frame rates and counted frames, and the
+* file's length and size. Fails, naming the file, when it is not there or ffprobe cannot read it.
+* @param {string} file
+* @param {Tools} tools
+* @param {{ count?: boolean }} [options] count: false skips counting frames, for a quick look at a recording.
+* @returns {Promise<Probe>}
+*/
+async function probe(file, tools, { count = true } = {}) {
+	if (!existsSync(file) || !statSync(file).isFile()) fail(`There is no video at ${file}.`);
+	const args = [
+		"-v",
+		"error",
+		...count ? ["-count_frames"] : [],
+		"-show_entries",
+		PROBE_ENTRIES,
+		"-of",
+		"json",
+		file
+	];
+	const result = await run$1(tools.ffprobe, args, {
+		env: toolEnv(tools),
+		timeout: 3e5
+	});
+	const said = (result.stderr || result.error?.message || "").trim().split("\n").pop();
+	if (result.status !== 0) fail(`ffprobe cannot read ${file}${said ? `: ${said}` : ""}. Is it a video?`);
+	/** @type {Probe} */
+	let parsed;
+	try {
+		parsed = JSON.parse(result.stdout);
+	} catch {
+		fail(`ffprobe's answer about ${file} is not JSON. Run 'ffprobe ${file}' to see what it says.`);
+	}
+	const streams = Array.isArray(parsed.streams) ? parsed.streams : [];
+	const boxes = topBoxes(file);
+	return {
+		...parsed,
+		streams,
+		format: parsed.format ?? {},
+		...boxes.length > 0 ? { boxes } : {}
+	};
+}
+/**
+* A rate ffprobe gives as a fraction, such as "30000/1001", as a number. Null for "0/0" or nothing.
+* @param {string | undefined} rate
+*/
+function rateOf(rate) {
+	const [top, bottom] = (rate ?? "").split("/").map(Number);
+	if (!Number.isFinite(top) || !bottom) return null;
+	return top / bottom;
+}
+/**
+* A number ffprobe gives as a string, or null for "N/A" and nothing.
+* @param {string | number | undefined} value
+*/
+function numberOf(value) {
+	if (value === void 0 || value === "" || value === "N/A") return null;
+	const number = Number(value);
+	return Number.isFinite(number) ? number : null;
+}
+/**
+* How far a video is turned when it plays, in degrees: 0, 90, 180 or 270. A phone often stores a landscape
+* recording as portrait pixels with this beside them.
+* @param {Stream} stream
+*/
+function rotationOf(stream) {
+	const turned = stream.side_data_list?.find((data) => typeof data.rotation === "number")?.rotation ?? Number(stream.tags?.rotate ?? 0);
+	return (Math.round(turned / 90) * 90 % 360 + 360) % 360;
+}
+/**
+* The size a video plays at: its pixels, turned as its rotation says.
+* @param {Stream} stream
+* @returns {[number, number]}
+*/
+function playedSize(stream) {
+	const size = [stream.width ?? 0, stream.height ?? 0];
+	return rotationOf(stream) % 180 === 90 ? [size[1], size[0]] : size;
+}
+/**
+* The length of a file in seconds: the container's, else the longest stream's. Null when nothing says.
+* @param {Probe} probe
+*/
+function durationOf(probe) {
+	const own = numberOf(probe.format.duration);
+	if (own !== null) return own;
+	const streams = probe.streams.map((stream) => numberOf(stream.duration)).filter((value) => value !== null);
+	return streams.length > 0 ? Math.max(...streams) : null;
+}
+var PROBE_ENTRIES, videoStreams, audioStreams;
+var init_probe = __esmMin((() => {
+	init_fail();
+	init_proc();
+	init_ffmpeg();
+	PROBE_ENTRIES = [
+		"format=duration,size,bit_rate,format_name",
+		"stream=codec_type,codec_name,profile,level,pix_fmt,width,height,sample_aspect_ratio,r_frame_rate,avg_frame_rate,field_order,nb_read_frames,channels,sample_rate,color_primaries,color_transfer,color_space,duration,bit_rate",
+		"stream_disposition=default,attached_pic",
+		"stream_tags=rotate",
+		"stream_side_data=rotation"
+	].join(":");
+	videoStreams = (probe) => probe.streams.filter((stream) => stream.codec_type === "video" && !stream.disposition?.attached_pic);
+	audioStreams = (probe) => probe.streams.filter((stream) => stream.codec_type === "audio");
+}));
+//#endregion
+//#region cli/src/video/specs.mjs
+/**
+* The display a picture of this size is a preview for, or null when no display takes that size.
+* @param {number} width
+* @param {number} height
+* @returns {string | null}
+*/
+function displayForSize(width, height) {
+	for (const [key, spec] of Object.entries(PREVIEW_SPECS)) if ([spec.portrait, spec.landscape].some((size) => size && size[0] === width && size[1] === height)) return key;
+	return null;
+}
+var PREVIEW_SPECS, PREVIEW_FORMAT;
+var init_specs = __esmMin((() => {
+	PREVIEW_SPECS = {
+		iphone: {
+			portrait: [886, 1920],
+			landscape: [1920, 886],
+			record: "iphone-6.9",
+			group: "the large Dynamic Island group"
+		},
+		ipad: {
+			portrait: [1200, 1600],
+			landscape: [1600, 1200],
+			record: "ipad-13",
+			group: "the 13-inch iPad group"
+		},
+		mac: {
+			portrait: null,
+			landscape: [1920, 1080],
+			record: "mac",
+			group: "the Mac group"
+		},
+		"iphone-5.5": {
+			portrait: [1080, 1920],
+			landscape: [1920, 1080],
+			record: "iphone-6.9",
+			group: "the 5.5-inch group"
+		},
+		"iphone-4.7": {
+			portrait: [750, 1334],
+			landscape: [1334, 750],
+			record: "iphone-6.9",
+			group: "the 4.7-inch group"
+		},
+		"ipad-9.7": {
+			portrait: [900, 1200],
+			landscape: [1200, 900],
+			record: "ipad-13",
+			group: "the 9.7-inch group"
+		}
+	};
+	PREVIEW_FORMAT = {
+		fps: 30,
+		seconds: [15, 30],
+		maxBytes: 524288e3,
+		level: 40,
+		profiles: [
+			"High",
+			"Main",
+			"Baseline",
+			"Constrained Baseline"
+		],
+		bitrate: [8e6, 14e6],
+		audio: {
+			channels: 2,
+			rates: [44100, 48e3],
+			bitrate: 256e3
+		}
+	};
+}));
+//#endregion
+//#region cli/src/video/timecode.mjs
+/**
+* A time in a preview as App Store Connect's previewFrameTimeCode takes it: hours, minutes, seconds and the frame
+* within that second. The frame is the one nearest the time, so at 30 frames a second 5.5 s is 00:00:05:15.
+* @param {number} seconds
+* @param {number} [fps]
+*/
+function timecode(seconds, fps = 30) {
+	const frames = frameAt(seconds, fps);
+	const whole = Math.floor(frames / fps);
+	const two = (value) => String(value).padStart(2, "0");
+	return `${two(Math.floor(whole / 3600))}:${two(Math.floor(whole / 60) % 60)}:${two(whole % 60)}:${two(frames % fps)}`;
+}
+var frameAt;
+var init_timecode = __esmMin((() => {
+	frameAt = (seconds, fps = 30) => Math.max(0, Math.round(seconds * fps));
+}));
+//#endregion
+//#region cli/src/video/check.mjs
+var check_exports = __exportAll({
+	RULE_LABELS: () => RULE_LABELS,
+	checkCut: () => checkCut,
+	checkFileOf: () => checkFileOf,
+	checkFiles: () => checkFiles,
+	checkProbe: () => checkProbe,
+	formatCheck: () => formatCheck,
+	previewsIn: () => previewsIn,
+	readCheckRecord: () => readCheckRecord,
+	writeCheckRecord: () => writeCheckRecord
+});
+/**
+* Checks what ffprobe says of a file against Apple's specification for app previews. Pure, so the tests run it
+* on stored probes. Errors are what App Store Connect refuses or plays wrongly; warnings are what passes but is
+* worth a look.
+*
+* A draft (compose --draft) is fast and small, so it is always an error, and its bitrate is not judged.
+* @param {Probe} probe
+* @param {string | null | undefined} display The display the file is for, or nothing to go by its size.
+* @param {{ draft?: boolean, file?: string }} [options] file: the file's name, as ProRes is only taken in a .mov.
+* @returns {Verdict}
+*/
+function checkProbe(probe, display, { draft = false, file } = {}) {
+	if (display && !Object.hasOwn(PREVIEW_SPECS, display)) fail(`No app preview display "${display}". The displays are ${Object.keys(PREVIEW_SPECS).join(", ")}.`);
+	/** @type {Verdict} */
+	const verdict = {
+		display: display ?? null,
+		errors: [],
+		warnings: [],
+		passed: []
+	};
+	/**
+	* @param {string} rule
+	* @param {boolean} ok
+	* @param {string | number} value
+	* @param {string} expected
+	* @param {"error" | "warning"} [severity]
+	*/
+	const judge = (rule, ok, value, expected, severity = "error") => {
+		(ok ? verdict.passed : severity === "error" ? verdict.errors : verdict.warnings).push({
+			rule,
+			value,
+			expected
+		});
+	};
+	const videos = videoStreams(probe);
+	judge("video-streams", videos.length === 1, videos.length, "1");
+	const [video] = videos;
+	const prores = video?.codec_name === "prores";
+	if (video) {
+		const movie = !file || /\.mov$/i.test(file);
+		const codec = [video.codec_name ?? "none", prores ? video.profile : null].filter(Boolean).join(" ");
+		judge("codec", video.codec_name === "h264" || prores && video.profile === "HQ" && movie, codec, "h264, or ProRes 422 HQ in a .mov");
+		if (video.codec_name === "h264") {
+			judge("profile", PREVIEW_FORMAT.profiles.includes(video.profile ?? ""), video.profile ?? "none", "High, Main or Baseline");
+			const level = video.level ?? -99;
+			judge("level", level <= PREVIEW_FORMAT.level, level > 0 ? (level / 10).toFixed(1) : "unknown", "4.0 or lower");
+		}
+		const format = prores ? "yuv422p10le" : "yuv420p";
+		judge("pix-fmt", video.pix_fmt === format, video.pix_fmt ?? "none", format);
+		const played = playedSize(video);
+		const sized = display ?? displayForSize(...played);
+		verdict.display = sized;
+		const fits = sized !== null && [PREVIEW_SPECS[sized].portrait, PREVIEW_SPECS[sized].landscape].some((size) => size && size[0] === played[0] && size[1] === played[1]);
+		const every = Object.keys(PREVIEW_SPECS).map((key) => `${sizesOf(key)} (${key})`).join(", ");
+		judge("size", fits, sizeText(played), sized ? `${sizesOf(sized)} for ${sized}` : `a preview size: ${every}`);
+		const sar = video.sample_aspect_ratio;
+		judge("sar", !sar || sar === "1:1" || sar === "0:1" || sar === "N/A", sar ?? "1:1", "1:1");
+		const order = video.field_order;
+		judge("field-order", !order || order === "progressive" || order === "unknown", order ?? "progressive", "progressive");
+		const real = rateOf(video.r_frame_rate);
+		const average = rateOf(video.avg_frame_rate);
+		judge("frame-rate", real !== null && Math.abs(real - PREVIEW_FORMAT.fps) < .001 && (average === null || Math.abs(average - PREVIEW_FORMAT.fps) < .005), average !== null && video.avg_frame_rate !== video.r_frame_rate ? `${video.r_frame_rate}, average ${average.toFixed(3)}` : video.r_frame_rate ?? "unknown", `${PREVIEW_FORMAT.fps}/1, constant`);
+		const counted = numberOf(video.nb_read_frames);
+		const length = numberOf(video.duration) ?? durationOf(probe);
+		if (counted !== null && length !== null) {
+			const due = Math.round(length * PREVIEW_FORMAT.fps);
+			judge("frames", Math.abs(counted - due) <= 1, counted, `${due} ± 1 for ${secondsText(length)} at ${PREVIEW_FORMAT.fps} fps`);
+		}
+	}
+	const seconds = durationOf(probe);
+	const [shortest, longest] = PREVIEW_FORMAT.seconds;
+	if (seconds === null) judge("duration", false, "unknown", `${shortest} to ${longest} s`);
+	else judge("duration", seconds >= shortest && seconds <= longest, secondsText(seconds), `${shortest} to ${longest} s`);
+	const bytes = numberOf(probe.format.size);
+	if (bytes !== null) judge("file-size", bytes <= PREVIEW_FORMAT.maxBytes, megabytes$2(bytes), `at most ${megabytes$2(PREVIEW_FORMAT.maxBytes)}`);
+	const [audio] = audioStreams(probe);
+	const { audio: sound } = PREVIEW_FORMAT;
+	judge("audio", audio !== void 0, audio ? "1 track" : "none", "a stereo AAC track, silent if need be");
+	if (audio) {
+		judge("audio-codec", audio.codec_name === "aac", audio.codec_name ?? "none", "aac");
+		judge("audio-channels", audio.channels === sound.channels, audio.channels ?? "unknown", String(sound.channels));
+		const rate = numberOf(audio.sample_rate);
+		judge("audio-rate", rate !== null && sound.rates.includes(rate), rate ?? "unknown", sound.rates.join(" or "));
+		judge("audio-default", audio.disposition?.default === 1, audio.disposition?.default === 1 ? "default" : "not default", "default");
+	}
+	if (draft) judge("draft", false, "draft", "a final encode: compose without --draft");
+	if (seconds !== null && seconds <= longest) judge("duration-margin", seconds <= 29.9, secondsText(seconds), "29.9 s or less, as Apple rounds", "warning");
+	if (video && !prores && !draft) {
+		const own = numberOf(video.bit_rate);
+		const whole = numberOf(probe.format.bit_rate);
+		const rate = own ?? (whole !== null ? whole - (numberOf(audio?.bit_rate) ?? 0) : null);
+		const [low, high] = PREVIEW_FORMAT.bitrate;
+		if (rate !== null) judge("bitrate", rate >= low && rate <= high, `${(rate / 1e6).toFixed(1)} Mbps`, `${low / 1e6} to ${high / 1e6} Mbps`, "warning");
+	}
+	if (audio) {
+		const rate = numberOf(audio.bit_rate);
+		if (rate !== null && rate >= SILENT_AUDIO) judge("audio-bitrate", rate >= THIN_AUDIO, `${Math.round(rate / 1e3)} kbps`, `about ${sound.bitrate / 1e3} kbps`, "warning");
+	}
+	if (video) {
+		const tags = [
+			video.color_primaries,
+			video.color_transfer,
+			video.color_space
+		];
+		const named = tags.map((tag) => tag ?? "unknown").join(", ");
+		judge("color", tags.every((tag) => tag === "bt709"), named, "bt709 primaries, transfer and matrix", "warning");
+	}
+	if (probe.boxes) {
+		const index = probe.boxes.indexOf("moov");
+		const media = probe.boxes.indexOf("mdat");
+		if (index >= 0 && media >= 0) judge("faststart", index < media, index < media ? "before the media" : "after the media", "before the media (-movflags +faststart)", "warning");
+	}
+	const pictureEnds = numberOf(video?.duration);
+	const soundEnds = numberOf(audio?.duration);
+	if (pictureEnds !== null && soundEnds !== null) {
+		const apart = Math.abs(pictureEnds - soundEnds);
+		judge("audio-length", apart <= TRACKS_APART, `${apart.toFixed(3)} s apart`, "the two tracks end together", "warning");
+	}
+	return verdict;
+}
+/**
+* The warnings that come from how a preview is cut rather than from the file: long cards, a late first app
+* frame, the band caption style, captions the server had to squeeze or take from another language, and more
+* previews than a display holds. The compose knows these; the file does not.
+* @param {object} cut
+* @param {number} [cut.intro] Seconds of the intro card; 0 or nothing without one.
+* @param {number} [cut.outro]
+* @param {number} [cut.firstApp] Seconds into the preview of the first frame of the app.
+* @param {string} [cut.captionStyle]
+* @param {Manifest} [cut.layers] The layer set the captions came from.
+* @param {string} [cut.locale] The language of this preview, to pick its layers.
+* @param {number} [cut.previews] How many previews the folder of this display and language holds.
+* @returns {Rule[]}
+*/
+function checkCut({ intro = 0, outro = 0, firstApp, captionStyle, layers, locale, previews } = {}) {
+	/** @type {Rule[]} */
+	const warnings = [];
+	if (intro + outro > 4) warnings.push({
+		rule: "cards",
+		value: secondsText(intro + outro),
+		expected: "4 s or less for the intro and outro together"
+	});
+	if (firstApp !== void 0 && firstApp > 2) warnings.push({
+		rule: "first-app-frame",
+		value: secondsText(firstApp),
+		expected: "the app within the first 2 s"
+	});
+	if (captionStyle === "band") warnings.push({
+		rule: "caption-style",
+		value: "band",
+		expected: "panel or shadow: Apple has refused framing around the screen recording"
+	});
+	if (layers) {
+		const mine = layers.layers.filter((layer) => layer.kind === "caption" && (locale === void 0 || layer.locale === locale));
+		/** @type {Map<string, string>} */
+		const squeezed = new Map();
+		for (const layer of mine) if (typeof layer.fit === "number" && layer.fit < .7) squeezed.set(layer.id, `shrunk to ${Math.round(layer.fit * 100)} %`);
+		for (const note of layers.warnings ?? []) if ((locale === void 0 || note.locale === locale) && note.layer.startsWith("caption-") && note.kind !== "fallback") squeezed.set(note.layer, note.detail);
+		for (const [layer, detail] of squeezed) warnings.push({
+			rule: "caption-fit",
+			value: `${layer}: ${detail}`,
+			expected: "70 % of the size or more, on at most two lines"
+		});
+		const borrowed = new Set(mine.filter((layer) => layer.fallback).map((layer) => layer.id));
+		for (const note of layers.warnings ?? []) if ((locale === void 0 || note.locale === locale) && note.kind === "fallback") borrowed.add(note.layer);
+		for (const layer of borrowed) warnings.push({
+			rule: "caption-fallback",
+			value: `${layer}: another language's text`,
+			expected: `a caption in ${locale ?? "each language"}`
 		});
 	}
-	const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join("mockups", project));
-	const language = shotLanguage(flags);
-	const count = (await download(config, projectRoute(project, `/mockups.zip${language ? `?locale=${encodeURIComponent(language)}` : ""}`), outDir)).filter((name) => name.endsWith(".png")).length;
-	console.log(`${count ? `${count} mockup${count === 1 ? " is" : "s are"}` : "The mockups are"} in ${outDir}`);
+	if (previews !== void 0 && previews > 3) warnings.push({
+		rule: "previews",
+		value: previews,
+		expected: "at most 3 previews for one display and language"
+	});
+	return warnings;
+}
+/**
+* How many previews a folder of out/<locale>/<display>/ holds.
+* @param {string} folder
+*/
+function previewsIn(folder) {
+	try {
+		return readdirSync(folder).filter((name) => /\.(mp4|mov|m4v)$/i.test(name)).length;
+	} catch {
+		return 0;
+	}
+}
+/**
+* @typedef {object} CheckRecord What the compose leaves beside a preview, for 'video check', 'video poster' and
+*   'video push'. What else it holds, such as the key the compose knows its inputs by, is kept when 'video poster'
+*   writes it again.
+* @property {1} version
+* @property {string} file The preview's name in its folder.
+* @property {number} bytes Its size when it was checked: a record of another file of the same name is not its.
+* @property {string | null} display
+* @property {boolean} draft
+* @property {{ seconds: number, timecode: string, chosen?: boolean }} [poster] chosen: set with 'video poster --at'.
+* @property {Rule[]} errors
+* @property {Rule[]} warnings
+* @property {Rule[]} [cut] The warnings of checkCut, which a later check of the file alone cannot see.
+* @property {Probe} probe
+* @property {string} checkedAt
+*/
+/**
+* The check record beside a preview, or null when there is none or it belongs to an earlier file of that name.
+* A record that does not say its bytes is told by its probe's, which are the same; one that keeps the poster's
+* time as `at` and its findings under `result` is read as though it said them the way this module writes them.
+* @param {string} file
+* @returns {CheckRecord | null}
+*/
+function readCheckRecord(file) {
+	let record;
+	try {
+		record = JSON.parse(readFileSync(checkFileOf(file), "utf8"));
+		const bytes = typeof record?.bytes === "number" ? record.bytes : numberOf(record?.probe?.format?.size);
+		if (record?.version !== 1 || bytes !== statSync(file).size) return null;
+	} catch {
+		return null;
+	}
+	const { poster, ...rest } = record;
+	const seconds = typeof poster?.seconds === "number" ? poster.seconds : poster?.at;
+	return {
+		...rest,
+		errors: record.errors ?? record.result?.errors ?? [],
+		warnings: record.warnings ?? record.result?.warnings ?? [],
+		...typeof seconds === "number" && Number.isFinite(seconds) ? { poster: {
+			seconds,
+			timecode: poster.timecode ?? timecode(seconds),
+			...poster.chosen ? { chosen: true } : {}
+		} } : {}
+	};
+}
+/**
+* Writes the check record beside a preview, whole or not at all.
+* @param {string} file
+* @param {Omit<CheckRecord, "version" | "file" | "bytes" | "checkedAt">} record
+*/
+function writeCheckRecord(file, record) {
+	const whole = {
+		version: 1,
+		file: path.basename(file),
+		bytes: statSync(file).size,
+		...record,
+		checkedAt: new Date().toISOString()
+	};
+	writeAtomic(checkFileOf(file), `${JSON.stringify(whole, null, 2)}\n`);
+	return whole;
+}
+/**
+* The report of one file: a line that says what it is, a line per rule, and the outcome.
+* @param {string} file
+* @param {Verdict} verdict
+* @param {Probe} [probed]
+*/
+function formatCheck(file, verdict, probed) {
+	const order = Object.keys(RULE_LABELS);
+	const all = [
+		...verdict.errors.map((rule) => ({
+			...rule,
+			mark: "error"
+		})),
+		...verdict.warnings.map((rule) => ({
+			...rule,
+			mark: "warning"
+		})),
+		...verdict.passed.map((rule) => ({
+			...rule,
+			mark: "OK"
+		}))
+	].sort((a, b) => order.indexOf(a.rule) - order.indexOf(b.rule));
+	const video = probed ? videoStreams(probed)[0] : void 0;
+	const seconds = probed ? durationOf(probed) : null;
+	const about = [
+		verdict.display ?? "no display",
+		video ? sizeText(playedSize(video)) : "no video",
+		seconds !== null ? secondsText(seconds) : null
+	].filter(Boolean).join(", ");
+	const width = Math.max(...all.map((rule) => (RULE_LABELS[rule.rule] ?? rule.rule).length));
+	const lines = [`${file}: ${about}`];
+	for (const rule of all) {
+		const label = (RULE_LABELS[rule.rule] ?? rule.rule).padEnd(width);
+		lines.push(`  ${rule.mark.padEnd(7)}  ${label}  ${rule.value}${rule.mark === "OK" ? "" : `; expected ${rule.expected}`}`);
+	}
+	const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+	const { errors, warnings } = verdict;
+	if (errors.length > 0) lines.push(`${count(errors.length, "error")}, ${count(warnings.length, "warning")}: App Store Connect does not take this file as it is.`);
+	else if (warnings.length > 0) lines.push(`${count(warnings.length, "warning")}, no errors: App Store Connect takes it; the warnings are worth a look.`);
+	else lines.push("Every rule passes.");
+	return lines;
+}
+/**
+* 'appshots video check <file…>': checks each file, prints a block for each (or JSON with --json), and ends
+* with 1 when any file has an error. A preview the compose made is checked with what its record says: its
+* display, unless --display names another, whether it is a draft, and the warnings of its cut.
+* @param {string[]} files
+* @param {{ display?: string, json?: boolean, root?: string }} [options]
+*/
+async function checkFiles(files, { display, json = false, root } = {}) {
+	if (files.length === 0) fail("Name the video to check: appshots video check <file…>");
+	if (display && !Object.hasOwn(PREVIEW_SPECS, display)) fail(`--display takes one of ${Object.keys(PREVIEW_SPECS).join(", ")}.`);
+	for (const file of files) if (!existsSync(file)) fail(`There is no video at ${file}.`);
+	const tools = await findFfmpeg({
+		root,
+		need: "probe"
+	});
+	const results = [];
+	for (const file of files) {
+		const probed = await probe(file, tools);
+		const record = readCheckRecord(file);
+		const recorded = record?.display && Object.hasOwn(PREVIEW_SPECS, record.display) ? record.display : null;
+		const verdict = checkProbe(probed, display ?? recorded, {
+			draft: record?.draft === true,
+			file
+		});
+		verdict.warnings.push(...record?.cut ?? []);
+		results.push({
+			file,
+			...verdict,
+			...record?.poster ? { poster: record.poster } : {}
+		});
+		if (!json) {
+			if (results.length > 1) console.log("");
+			for (const line of formatCheck(file, verdict, probed)) console.log(line);
+		}
+	}
+	if (json) console.log(JSON.stringify({ files: results }, null, 2));
+	if (results.some((result) => result.errors.length > 0)) process.exitCode = 1;
+	return results;
+}
+var RULE_LABELS, SILENT_AUDIO, THIN_AUDIO, TRACKS_APART, secondsText, megabytes$2, sizeText, sizesOf, checkFileOf;
+var init_check = __esmMin((() => {
+	init_fail();
+	init_update();
+	init_ffmpeg();
+	init_probe();
+	init_specs();
+	init_timecode();
+	RULE_LABELS = {
+		"video-streams": "video stream",
+		codec: "codec",
+		profile: "profile",
+		level: "level",
+		"pix-fmt": "pixel format",
+		size: "size",
+		sar: "pixel shape",
+		"field-order": "scan",
+		"frame-rate": "frame rate",
+		frames: "frames",
+		duration: "length",
+		"file-size": "file size",
+		audio: "audio track",
+		"audio-codec": "audio codec",
+		"audio-channels": "audio channels",
+		"audio-rate": "sample rate",
+		"audio-default": "default track",
+		draft: "draft",
+		"duration-margin": "length margin",
+		bitrate: "video bitrate",
+		"audio-bitrate": "audio bitrate",
+		color: "colour tags",
+		faststart: "index first",
+		"audio-length": "audio length",
+		cards: "intro and outro",
+		"first-app-frame": "first app frame",
+		"caption-style": "caption style",
+		"caption-fit": "caption fit",
+		"caption-fallback": "caption language",
+		previews: "previews"
+	};
+	SILENT_AUDIO = 16e3;
+	THIN_AUDIO = 128e3;
+	TRACKS_APART = 1 / 30 + 1024 / 48e3;
+	secondsText = (seconds) => `${seconds.toFixed(2)} s`;
+	megabytes$2 = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
+	sizeText = (size) => size ? `${size[0]}x${size[1]}` : "";
+	sizesOf = (display) => {
+		const spec = PREVIEW_SPECS[display];
+		return [spec.portrait, spec.landscape].filter((size) => size !== null).map((size) => sizeText(size)).join(" or ");
+	};
+	checkFileOf = (file) => `${file.replace(/\.(mp4|mov|m4v)$/i, "")}.check.json`;
+}));
+//#endregion
+//#region cli/src/video/encode.mjs
+/**
+* Milliseconds without progress before ffmpeg is taken to have stalled: 30 seconds, or APPSHOTS_FFMPEG_STALL
+* seconds.
+* @param {NodeJS.ProcessEnv} [env]
+*/
+function stallLimit(env = process.env) {
+	const seconds = Number(env.APPSHOTS_FFMPEG_STALL);
+	return Number.isFinite(seconds) && seconds > 0 ? seconds * 1e3 : 3e4;
+}
+/**
+* Runs ffmpeg with `args` (inputs, filters, codec and the output file last) and resolves when it has finished.
+* @param {{ ffmpeg: string }} tools
+* @param {string[]} args
+* @param {object} options
+* @param {string} options.label What it makes, for the messages: "stage 1, scene \"inbox\" (iphone, de)".
+* @param {string} [options.out] The file it writes, removed when it fails or stalls.
+* @param {number} [options.stall] Milliseconds without progress before it is stopped.
+* @param {(seconds: number) => void} [options.onProgress] Seconds of output written so far.
+* @param {() => number} [options.now] The clock the stall is measured by, in milliseconds; a test's own or Date.now.
+* @returns {Promise<{ seconds: number }>}
+*/
+function runFfmpeg(tools, args, { label, out, stall = stallLimit(), onProgress, now = Date.now }) {
+	const argv = [...QUIET, ...args];
+	return new Promise((resolve, reject) => {
+		/** @type {string[]} */
+		const lines = [];
+		let partial = "";
+		let pending = "";
+		let written = -1;
+		let moved = now();
+		let stalled = false;
+		let settled = false;
+		const child = spawn(tools.ffmpeg, argv, { stdio: [
+			"ignore",
+			"pipe",
+			"pipe"
+		] });
+		const keep = (text) => {
+			const parts = (partial + text).split(/\r?\n|\r/);
+			partial = parts.pop() ?? "";
+			for (const line of parts) if (line.trim()) lines.push(line);
+			if (lines.length > TAIL) lines.splice(0, lines.length - TAIL);
+		};
+		const tail = () => [...lines, ...partial.trim() ? [partial] : []].slice(-20).join("\n");
+		child.stderr.setEncoding("utf8");
+		child.stderr.on("data", keep);
+		child.stdout.setEncoding("utf8");
+		child.stdout.on("data", (text) => {
+			const parts = (pending + text).split("\n");
+			pending = parts.pop() ?? "";
+			for (const line of parts) {
+				const match = /^out_time_us=(\d+)/.exec(line.trim());
+				if (!match) continue;
+				const time = Number(match[1]);
+				if (time === written) continue;
+				written = time;
+				moved = now();
+				onProgress?.(time / 1e6);
+			}
+		});
+		const settle = (done) => {
+			if (settled) return;
+			settled = true;
+			clearInterval(watch);
+			done();
+		};
+		const remove = () => {
+			if (out) rmSync(out, { force: true });
+		};
+		const watch = setInterval(() => {
+			if (stalled || now() - moved < stall) return;
+			stalled = true;
+			child.kill("SIGTERM");
+			setTimeout(() => child.exitCode === null && child.signalCode === null && child.kill("SIGKILL"), 2e3).unref();
+		}, Math.max(50, Math.min(1e3, stall / 4)));
+		child.once("error", (error) => settle(() => {
+			remove();
+			const missing = error.code === "ENOENT";
+			reject(new Failure(missing ? `ffmpeg is not at ${tools.ffmpeg}. Run 'appshots check' to see which ffmpeg appShots finds.` : `ffmpeg could not be started for ${label}: ${error.message}`));
+		}));
+		child.once("close", (status, signal) => settle(() => {
+			if (stalled) {
+				remove();
+				return reject(new Failure(`ffmpeg stopped making progress on ${label} for ${Math.round(stall / 100) / 10} s and was stopped. Run the compose again with --jobs 1; if it stalls again, this is the command that stalled:\n${commandLine(tools.ffmpeg, argv)}\nffmpeg's last lines:\n${tail() || "(none)"}`));
+			}
+			if (status !== 0) {
+				remove();
+				return reject(new Failure(`ffmpeg failed on ${label} (${signal ? `stopped by ${signal}` : `exit status ${status}`}):\n${tail() || "(it printed nothing)"}\nThe command was:\n${commandLine(tools.ffmpeg, argv)}`));
+			}
+			resolve({ seconds: Math.max(0, written) / 1e6 });
+		}));
+	});
+}
+var QUIET, TAIL, commandLine;
+var init_encode = __esmMin((() => {
+	init_fail();
+	QUIET = [
+		"-nostdin",
+		"-hide_banner",
+		"-nostats",
+		"-y",
+		"-progress",
+		"pipe:1"
+	];
+	TAIL = 20;
+	commandLine = (command, args) => [command, ...args].map((arg) => /^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, "'\\''")}'`).join(" ");
+}));
+//#endregion
+//#region cli/src/video/graph.mjs
+/**
+* The overlay that shows the touch ring at each touch for a moment. One ring input serves every touch: its place
+* follows the clock through nested ifs, and `enable` shows it only around the touches, which needs no split.
+* @param {Array<{ t: number, x: number, y: number }>} touches Seconds into the segment and pixels of the canvas.
+*/
+function touchOverlay(touches) {
+	const points = [...touches].sort((a, b) => a.t - b.t).slice(0, 12);
+	const follow = (axis) => points.reduceRight((rest, point, at) => at === points.length - 1 ? num(point[axis]) : `if(lt(t,${num(points[at + 1].t)}),${num(point[axis])},${rest})`, "");
+	const enable = points.map((point) => `between(t,${num(point.t)},${num(point.t + RING)})`).join("+");
+	return `overlay=x=${escapeExpr(`${follow("x")}-w/2`)}:y=${escapeExpr(`${follow("y")}-h/2`)}:enable=${escapeExpr(enable)}:eval=frame`;
+}
+/**
+* The encode of a segment: near lossless, since stage 2 encodes it once more.
+* @param {{ encoder: string, draft?: boolean }} options
+*/
+function segmentCodec({ encoder, draft = false }) {
+	return [
+		...encoder === "libx264" ? [
+			"-c:v",
+			"libx264",
+			"-preset",
+			draft ? "ultrafast" : "medium",
+			"-crf",
+			draft ? "18" : "12"
+		] : [
+			"-c:v",
+			"h264_videotoolbox",
+			"-b:v",
+			draft ? "20M" : "40M"
+		],
+		"-pix_fmt",
+		"yuv420p",
+		"-r",
+		String(30),
+		"-color_primaries",
+		"bt709",
+		"-color_trc",
+		"bt709",
+		"-colorspace",
+		"bt709",
+		"-an"
+	];
+}
+/**
+* The encode of the preview, to Apple's specification: H.264 High at level 4.0, constant 30 frames a second and
+* about 11 Mbps, BT.709, AAC stereo at 48 kHz, the index at the front. A draft is quick and small instead, and
+* says so in its metadata.
+* @param {{ encoder: string, draft?: boolean }} options
+*/
+function finalCodec({ encoder, draft = false }) {
+	const common = [
+		"-profile:v",
+		"high",
+		"-level:v",
+		"4.0",
+		"-pix_fmt",
+		"yuv420p",
+		"-r",
+		String(30),
+		"-g",
+		String(30)
+	];
+	return [
+		...draft ? encoder === "libx264" ? [
+			"-c:v",
+			"libx264",
+			"-preset",
+			"ultrafast",
+			"-crf",
+			"28",
+			...common
+		] : [
+			"-c:v",
+			"h264_videotoolbox",
+			"-b:v",
+			"4M",
+			...common
+		] : encoder === "libx264" ? [
+			"-c:v",
+			"libx264",
+			"-preset",
+			"slow",
+			...common,
+			"-b:v",
+			"11M",
+			"-minrate",
+			"11M",
+			"-maxrate",
+			"11M",
+			"-bufsize",
+			"22M",
+			"-x264-params",
+			"nal-hrd=cbr:force-cfr=1"
+		] : [
+			"-c:v",
+			"h264_videotoolbox",
+			...common,
+			"-b:v",
+			"11M",
+			"-maxrate",
+			"11M",
+			"-bufsize",
+			"22M"
+		],
+		...[
+			"-color_primaries",
+			"bt709",
+			"-color_trc",
+			"bt709",
+			"-colorspace",
+			"bt709"
+		],
+		...[
+			"-c:a",
+			"aac",
+			"-b:a",
+			"256k",
+			"-ar",
+			"48000",
+			"-ac",
+			"2",
+			"-disposition:a:0",
+			"default"
+		],
+		...[
+			"-movflags",
+			"+faststart",
+			"-map_metadata",
+			"-1"
+		],
+		...draft ? ["-metadata", "comment=appshots draft"] : []
+	];
+}
+/**
+* Stage 1 for a scene: the recording normalised and placed on the canvas, the caption fading in over it, the
+* touch rings, cut to `frames` frames. The output file goes after these arguments.
+* @param {object} job
+* @param {string} job.footage The recording.
+* @param {Sidecar} job.sidecar
+* @param {Window} job.window
+* @param {"clock" | "cclock" | null} job.turn
+* @param {[number, number]} job.size The canvas.
+* @param {Placement} job.place
+* @param {number} job.frames The segment's length.
+* @param {string | null} [job.plate] The background a window on a plate lies on; black without one.
+* @param {string | null} [job.caption] The caption layer.
+* @param {number} [job.captionAt] Seconds into the segment the caption starts to fade in.
+* @param {string | null} [job.ring] The touch ring layer.
+* @param {Array<{ t: number, x: number, y: number }>} [job.touches]
+* @param {string[]} job.codec
+*/
+function sceneArgs({ footage, sidecar, window, turn, size, place, frames, plate = null, caption = null, captionAt = 0, ring = null, touches = [], codec }) {
+	const inputs = ["-i", footage];
+	const graph = [];
+	let count = 1;
+	const add = (args) => {
+		inputs.push(...args);
+		return count++;
+	};
+	graph.push(`[0:v]${footageChain({
+		sidecar,
+		window,
+		turn,
+		size,
+		place,
+		seconds: frames / 30
+	})}[footage]`);
+	let base = "footage";
+	if (place.kind === "plate") {
+		const at = add(plate ? stillInput(plate, frames) : blankInput(size, frames));
+		graph.push(`[${at}:v]${TO_YUV}[plate]`, `[plate][footage]overlay=x=${place.x}:y=${place.y}[placed]`);
+		base = "placed";
+	}
+	if (caption) {
+		const at = add(stillInput(caption, frames));
+		graph.push(fadingLayer(`${at}:v`, captionAt, "caption"), `[${base}][caption]overlay=0:0[captioned]`);
+		base = "captioned";
+	}
+	if (ring && touches.length > 0) {
+		const at = add(stillInput(ring, frames));
+		graph.push(`[${at}:v]format=rgba,${TO_YUVA}[ring]`, `[${base}][ring]${touchOverlay(touches)}[touched]`);
+		base = "touched";
+	}
+	graph.push(`[${base}]${FINISH}[v]`);
+	return [
+		...inputs,
+		"-filter_complex",
+		graph.join(";"),
+		"-map",
+		"[v]",
+		...codec,
+		"-t",
+		limit(frames)
+	];
+}
+/**
+* Stage 1 for the intro or the outro card: the plate, the logo fading in, then the text.
+* @param {object} job
+* @param {[number, number]} job.size
+* @param {number} job.frames
+* @param {string | null} job.plate
+* @param {string | null} job.logo
+* @param {string | null} job.text
+* @param {number} [job.at] Seconds into the card the logo starts to fade in; the text follows a fade later.
+* @param {string[]} job.codec
+*/
+function cardArgs({ size, frames, plate, logo, text, at = 0, codec }) {
+	const inputs = plate ? stillInput(plate, frames) : blankInput(size, frames);
+	const graph = [`[0:v]${TO_YUV}[card]`];
+	let base = "card";
+	let count = 1;
+	for (const [file, label, start] of [[
+		logo,
+		"logo",
+		at
+	], [
+		text,
+		"text",
+		at + FADE
+	]]) {
+		if (!file) continue;
+		inputs.push(...stillInput(file, frames));
+		graph.push(fadingLayer(`${count++}:v`, start, label), `[${base}][${label}]overlay=0:0[with${label}]`);
+		base = `with${label}`;
+	}
+	graph.push(`[${base}]${FINISH}[v]`);
+	return [
+		...inputs,
+		"-filter_complex",
+		graph.join(";"),
+		"-map",
+		"[v]",
+		...codec,
+		"-t",
+		limit(frames)
+	];
+}
+/**
+* Where each join starts, in frames of the preview, and how long the preview is. The k-th join starts where the
+* segments before it end, less the k transitions that overlap them.
+* @param {number[]} lengths The segments' lengths in frames.
+* @param {number} overlap The transition's length in frames.
+*/
+function joinPoints(lengths, overlap) {
+	/** @type {number[]} */
+	const offsets = [];
+	let end = 0;
+	lengths.forEach((frames, at) => {
+		end += frames;
+		if (at < lengths.length - 1) offsets.push(end - (at + 1) * overlap);
+	});
+	return {
+		offsets,
+		total: end - (lengths.length - 1) * overlap
+	};
+}
+/**
+* Stage 2: the segments joined with their transitions, the audio, and the encode of the preview, cut to its
+* exact length.
+* @param {object} job
+* @param {string[]} job.segments The segments' files, in order.
+* @param {number[]} job.lengths Their lengths in frames.
+* @param {{ type: string, frames: number }} job.transition "fade", "dissolve" or "none", and its length.
+* @param {{ input: string[], chain: (input: number) => string }} job.audio
+* @param {string[]} job.codec
+*/
+function joinArgs({ segments, lengths, transition, audio, codec }) {
+	const overlap = transition.type === "none" ? 0 : transition.frames;
+	const { offsets, total } = joinPoints(lengths, overlap);
+	const inputs = segments.flatMap((file) => ["-i", file]);
+	const graph = segments.map((_, at) => `[${at}:v]settb=AVTB,fps=30,format=yuv420p,setsar=1[s${at}]`);
+	let joined = "s0";
+	if (segments.length > 1 && overlap === 0) {
+		graph.push(`${segments.map((_, at) => `[s${at}]`).join("")}concat=n=${segments.length}:v=1:a=0[joined]`);
+		joined = "joined";
+	} else offsets.forEach((offset, at) => {
+		graph.push(`[${joined}][s${at + 1}]xfade=transition=${transition.type}:duration=${frameTime(overlap)}:offset=${frameTime(offset)}[x${at + 1}]`);
+		joined = `x${at + 1}`;
+	});
+	graph.push(`[${joined}]${FINISH}[v]`, audio.chain(segments.length));
+	return [
+		...inputs,
+		...audio.input,
+		"-filter_complex",
+		graph.join(";"),
+		"-map",
+		"[v]",
+		"-map",
+		"[a]",
+		...codec,
+		"-t",
+		limit(total)
+	];
+}
+/**
+* The last pass over a preview made elsewhere, by Remotion: the same encode as stage 2, cut to the same length.
+* A file a frame short is filled with its last frame, so the length is never less than the plan's.
+* @param {object} job
+* @param {string} job.file
+* @param {number} job.frames
+* @param {{ input: string[], chain: (input: number) => string }} job.audio
+* @param {string[]} job.codec
+*/
+function passArgs({ file, frames, audio, codec }) {
+	const graph = [`[0:v]settb=AVTB,fps=30,tpad=stop_mode=clone:stop_duration=1,setsar=1,${FINISH}[v]`, audio.chain(1)];
+	return [
+		"-i",
+		file,
+		...audio.input,
+		"-filter_complex",
+		graph.join(";"),
+		"-map",
+		"[v]",
+		"-map",
+		"[a]",
+		...codec,
+		"-t",
+		limit(frames)
+	];
+}
+var TO_YUV, TO_YUVA, FADE, RING, FINISH, stillInput, blankInput, fadingLayer;
+var init_graph = __esmMin((() => {
+	init_normalise();
+	TO_YUV = "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p";
+	TO_YUVA = "scale=out_color_matrix=bt709:out_range=tv,format=yuva420p";
+	FADE = .35;
+	RING = .35;
+	FINISH = `${RETAG},format=yuv420p`;
+	stillInput = (file, frames) => [
+		"-loop",
+		"1",
+		"-framerate",
+		String(30),
+		"-t",
+		limit(frames),
+		"-i",
+		file
+	];
+	blankInput = ([width, height], frames) => [
+		"-f",
+		"lavfi",
+		"-t",
+		limit(frames),
+		"-i",
+		`color=c=black:s=${width}x${height}:r=30`
+	];
+	fadingLayer = (input, at, label) => `[${input}]format=rgba,fade=t=in:st=${num(at)}:d=${FADE}:alpha=1,${TO_YUVA}[${label}]`;
+}));
+//#endregion
+//#region cli/src/video/poster.mjs
+var poster_exports = __exportAll({
+	choosePoster: () => choosePoster,
+	posterFileOf: () => posterFileOf,
+	posterFrame: () => posterFrame,
+	posterTime: () => posterTime
+});
+/**
+* @typedef {object} PlacedScene An app scene as it sits in the cut preview.
+* @property {string} id
+* @property {number} start Seconds into the preview where the scene begins, its incoming transition included.
+* @property {number} seconds How long it is.
+* @property {boolean} [caption] Whether it has a caption, which the default poster waits for.
+*/
+/**
+* The time of a preview's poster frame, on a frame. By default it is the first scene, a second after its caption
+* has come in: app UI with its caption, never the intro card. The plan can name a scene and a time into it, or a
+* time into the preview; a time chosen with 'video poster --at' wins over both.
+* @param {object} cut
+* @param {PlacedScene[]} cut.scenes The app scenes in order, without the intro and outro.
+* @param {number} cut.total The preview's length.
+* @param {number} [cut.transition] Seconds of the transition into a scene, 0 for a cut.
+* @param {{ scene: string, at?: number } | { time: number }} [cut.poster] The plan's choice.
+* @param {number} [cut.chosen] A time chosen with 'video poster --at'.
+* @returns {number}
+*/
+function posterTime({ scenes, total, transition = 0, poster, chosen }) {
+	const last = Math.max(0, (frameAt(total, FPS$1) - 1) / FPS$1);
+	/** @param {number} seconds */
+	const onFrame = (seconds) => Math.min(last, frameAt(Math.max(0, seconds), FPS$1) / FPS$1);
+	if (chosen !== void 0) return onFrame(chosen);
+	if (poster && "time" in poster) return onFrame(poster.time);
+	const scene = poster && "scene" in poster ? scenes.find((each) => each.id === poster.scene) : scenes[0];
+	if (!scene) {
+		if (poster && "scene" in poster) fail(`poster.scene is "${poster.scene}", and the plan has no scene of that id. Its scenes are ${scenes.map((each) => each.id).join(", ")}.`);
+		return 0;
+	}
+	const settled = (scene.caption ? transition + CAPTION_IN : transition) + AFTER_CAPTION;
+	const into = poster && "scene" in poster && poster.at !== void 0 ? poster.at : settled;
+	const end = scene.start + scene.seconds - 1 / FPS$1;
+	return onFrame(Math.min(scene.start + Math.max(0, into), end));
+}
+/**
+* Writes the frame at a time of a video as a PNG. The frame is the one nearest the time, as App Store Connect
+* counts it from the timecode: ffmpeg is asked for the first frame at or after the middle of the frame before it.
+* @param {string} file
+* @param {number} seconds
+* @param {string} out
+* @param {Tools} tools
+*/
+async function posterFrame(file, seconds, out, tools) {
+	const frame = frameAt(seconds, FPS$1);
+	const from = frame === 0 ? 0 : (frame - .5) / FPS$1;
+	const temporary = `${out}.${process.pid}.png`;
+	const args = [
+		"-nostdin",
+		"-hide_banner",
+		"-v",
+		"error",
+		"-y",
+		"-i",
+		file,
+		"-ss",
+		from.toFixed(6),
+		"-map",
+		"0:v:0",
+		"-frames:v",
+		"1",
+		"-update",
+		"1",
+		temporary
+	];
+	const result = await run$1(tools.ffmpeg, args, {
+		env: toolEnv(tools),
+		timeout: 12e4
+	});
+	if (result.status !== 0) {
+		rmSync(temporary, { force: true });
+		const said = (result.stderr || result.error?.message || "").trim().split("\n").pop();
+		fail(`ffmpeg did not take the frame at ${seconds.toFixed(2)} s of ${file}${said ? `: ${said}` : ""}.`);
+	}
+	try {
+		renameSync(temporary, out);
+	} catch {
+		fail(`${file} has no frame at ${seconds.toFixed(2)} s.`);
+	}
+	return {
+		file: out,
+		seconds: frame / FPS$1,
+		timecode: timecode(frame / FPS$1, FPS$1)
+	};
+}
+/**
+* 'appshots video poster --at <s>': exports a preview's poster at another time and keeps that time in its check
+* record, where 'video push' reads it. A preview without a record is checked first, so the record has one.
+* @param {string} file
+* @param {number} seconds
+* @param {Tools} tools
+*/
+async function choosePoster(file, seconds, tools) {
+	if (!Number.isFinite(seconds) || seconds < 0) fail(`--at takes the seconds into the preview, such as --at 4.5.`);
+	const length = durationOf(await probe(file, tools, { count: false })) ?? 0;
+	if (seconds >= length) fail(`${file} is ${length.toFixed(2)} s long, so it has no frame at ${seconds} s.`);
+	const poster = await posterFrame(file, seconds, posterFileOf(file), tools);
+	const record = readCheckRecord(file);
+	let kept;
+	if (record) {
+		const { version, file: name, bytes, checkedAt, ...rest } = record;
+		kept = rest;
+	} else {
+		const counted = await probe(file, tools);
+		const { display, errors, warnings } = checkProbe(counted, null, { file });
+		kept = {
+			display,
+			draft: false,
+			errors,
+			warnings,
+			probe: counted
+		};
+	}
+	writeCheckRecord(file, {
+		...kept,
+		poster: {
+			seconds: poster.seconds,
+			timecode: poster.timecode,
+			chosen: true
+		}
+	});
+	return poster;
+}
+var FPS$1, CAPTION_IN, AFTER_CAPTION, posterFileOf;
+var init_poster = __esmMin((() => {
+	init_fail();
+	init_proc();
+	init_check();
+	init_ffmpeg();
+	init_probe();
+	init_timecode();
+	FPS$1 = 30;
+	CAPTION_IN = .1 + .35;
+	AFTER_CAPTION = 1;
+	posterFileOf = (file) => `${file.replace(/\.(mp4|mov|m4v)$/i, "")}.poster.png`;
+}));
+//#endregion
+//#region cli/src/assets.mjs
+/**
+* The text of a file in cli/assets, by its path there, such as "remotion/src/Root.tsx".
+* @param {string} name
+* @returns {string}
+*/
+function asset(name) {
+	if (INLINED) {
+		if (!Object.hasOwn(INLINED, name)) throw new Error(`The CLI was built without the file ${name}.`);
+		return INLINED[name];
+	}
+	return readFileSync(fileURLToPath(new URL(`../assets/${name}`, import.meta.url)), "utf8");
+}
+var INLINED;
+var init_assets = __esmMin((() => {
+	INLINED = {
+		"remotion/README.md": "# App preview, animated with Remotion\n\nThis folder draws the captions, the intro and the outro of this app's App Store previews with animation. appShots\nwrote it with `appshots video remotion`, and leaves the changes you make to it alone.\n\nBuilt with [Remotion](https://www.remotion.dev). Remotion is not open source and is not part of appShots: it is\ninstalled here from npm under its own licence. It is free for individuals, for companies of up to 3 people and for\nnon-profits; a larger company needs a Remotion Company License. See [remotion.pro/license](https://remotion.pro/license).\n\n## How a preview is made\n\n```sh\nappshots video compose --engine remotion\n```\n\nFor each language and display of `appshots.video.json`, appShots\n\n1. cuts each scene's recording to its length and size, without captions;\n2. copies those clips, the pictures the appShots server drew in the project's style, its font and the music into\n   `public/`;\n3. writes `props/<language>-<display>.json`, the props of the `AppPreview` composition;\n4. renders it: `npx remotion render src/index.ts AppPreview out/<language>-<display>.mp4 --props=props/<language>-<display>.json`;\n5. encodes the result once more to Apple's specification, takes the poster frame and checks the file.\n\nThe previews end up in `appshots-video/out/`, as they do without Remotion.\n\n## Changing it\n\n| File | What it draws |\n| --- | --- |\n| `src/AppPreview.tsx` | The order of the parts, the transitions between them and the music |\n| `src/Intro.tsx` | The intro card: background, logo and headline |\n| `src/Scene.tsx` | One scene: its footage and its caption |\n| `src/Caption.tsx` | How a caption comes in; `LIVE_TEXT` switches from the server's pictures to live text in the project's font |\n| `src/Outro.tsx` | The outro card |\n| `src/props.ts` | What the props hold |\n\nTo look at a change frame by frame, compose once so that `props/` and `public/` are there, then open the studio:\n\n```sh\nnpx remotion studio --props=props/en-iphone.json\n```\n\nappShots rewrites only `props/` and `public/` when the plan changes; it leaves the files above as they are.\n`appshots video remotion --again` brings them back to appShots' template, after showing which of them you changed\nand asking.\n\nApple's rules still apply to what you draw: the video has to show the app as it is, text over it is fine, and\ndevices, hands and frames around the footage are not. `appshots video check` tells you whether a file meets\nApple's specification.\n\n## Remotion's skills for coding agents\n\nRemotion has its own skills for coding agents, which help an agent change these files:\n\n```sh\nnpx remotion skills add\n```\n\n## The first render\n\nThe first render downloads Chrome Headless Shell (about 170 MB) into `node_modules/`. Rendering a 30-second preview\ntakes a minute or two on a recent Mac.\n",
+		"remotion/gitignore": "node_modules/\nout/\npublic/\nprops/\n",
+		"remotion/package.json": "{\n  \"name\": \"appshots-video-remotion\",\n  \"private\": true,\n  \"description\": \"The animated captions and cards of this app's App Store previews, written by appShots and rendered with Remotion.\",\n  \"scripts\": {\n    \"studio\": \"remotion studio\",\n    \"render\": \"remotion render\",\n    \"typecheck\": \"tsc\"\n  },\n  \"dependencies\": {\n    \"@remotion/cli\": \"4.0.535\",\n    \"@remotion/fonts\": \"4.0.535\",\n    \"@remotion/media\": \"4.0.535\",\n    \"@remotion/transitions\": \"4.0.535\",\n    \"react\": \"19.2.3\",\n    \"react-dom\": \"19.2.3\",\n    \"remotion\": \"4.0.535\"\n  },\n  \"devDependencies\": {\n    \"@types/react\": \"19.2.7\",\n    \"@types/web\": \"0.0.166\",\n    \"typescript\": \"5.9.3\"\n  }\n}\n",
+		"remotion/remotion.config.ts": "// Settings for what `npx remotion studio` and `npx remotion render` make in this folder. `appshots video compose\n// --engine remotion` passes the codec, colours and audio on its own command line as well, and then encodes the\n// result once more to Apple's specification, so a change here shows in the studio before it shows in a preview.\nimport { Config } from \"@remotion/cli/config\";\n\nConfig.setRspack(true);\nConfig.setOverwriteOutput(true);\nConfig.setCodec(\"h264\");\nConfig.setCrf(18);\nConfig.setPixelFormat(\"yuv420p\");\nConfig.setColorSpace(\"bt709\");\n// Each frame passes through a JPEG on its way to the encoder; above Remotion's 80, small caption text stays crisp.\nConfig.setVideoImageFormat(\"jpeg\");\nConfig.setJpegQuality(92);\n",
+		"remotion/src/AppPreview.tsx": "import { Audio } from \"@remotion/media\";\nimport { linearTiming, TransitionSeries } from \"@remotion/transitions\";\nimport { fade } from \"@remotion/transitions/fade\";\nimport type { ReactNode } from \"react\";\nimport { AbsoluteFill, interpolate, staticFile, useVideoConfig } from \"remotion\";\nimport { loadFonts } from \"./Caption\";\nimport { Intro } from \"./Intro\";\nimport { Outro } from \"./Outro\";\nimport { durationOf, type Music as MusicProps, type Props } from \"./props\";\nimport { Scene } from \"./Scene\";\n\n/** Seconds the music takes to come up at the start, as in the previews appShots cuts itself. */\nconst FADE_IN = 0.3;\n\n// The music under the whole preview, looped when it is shorter, faded in at the start and out at the end. The\n// fades follow the preview's frames, not each round of the loop.\nconst Music = ({ music, frames }: { music: MusicProps; frames: number }) => {\n  const { fps } = useVideoConfig();\n  const fadeIn = Math.max(1, Math.round(FADE_IN * fps));\n  const fadeOut = Math.min(Math.round(music.fadeOut * fps), Math.floor(frames / 2));\n  const clamp = { extrapolateLeft: \"clamp\", extrapolateRight: \"clamp\" } as const;\n  const volume = (frame: number) =>\n    music.volume * Math.min(interpolate(frame, [0, fadeIn], [0, 1], clamp), fadeOut > 0 ? interpolate(frame, [frames - fadeOut, frames], [1, 0], clamp) : 1);\n  return <Audio src={staticFile(music.file)} loop loopVolumeCurveBehavior=\"extend\" trimBefore={Math.round(music.start * fps)} volume={volume} />;\n};\n\n// The preview: the intro card, the scenes and the outro card, one after another, joined by the plan's transition.\n// Remotion has no dissolve of its own, so a dissolve fades here as well.\nexport const AppPreview = (props: Props) => {\n  loadFonts(props.fonts);\n  const { fonts, dir, transition } = props;\n  const overlap = transition.type === \"none\" ? 0 : transition.frames;\n  const parts: Array<{ key: string; frames: number; draw: (enter: number) => ReactNode }> = [\n    ...(props.intro ? [{ key: \"intro\", frames: props.intro.frames, draw: () => <Intro card={props.intro!} fonts={fonts} dir={dir} /> }] : []),\n    ...props.scenes.map((scene) => ({ key: `scene-${scene.id}`, frames: scene.frames, draw: (enter: number) => <Scene scene={scene} enter={enter} fonts={fonts} dir={dir} /> })),\n    ...(props.outro ? [{ key: \"outro\", frames: props.outro.frames, draw: (enter: number) => <Outro card={props.outro!} enter={enter} fonts={fonts} dir={dir} /> }] : []),\n  ];\n  return (\n    <AbsoluteFill style={{ backgroundColor: \"black\" }}>\n      <TransitionSeries>\n        {parts.flatMap((part, at) => [\n          ...(at > 0 && overlap > 0 ? [<TransitionSeries.Transition key={`${part.key}-in`} presentation={fade()} timing={linearTiming({ durationInFrames: overlap })} />] : []),\n          <TransitionSeries.Sequence key={part.key} durationInFrames={part.frames}>\n            {part.draw(at > 0 ? overlap : 0)}\n          </TransitionSeries.Sequence>,\n        ])}\n      </TransitionSeries>\n      {props.music ? <Music music={props.music} frames={durationOf(props)} /> : null}\n    </AbsoluteFill>\n  );\n};\n",
+		"remotion/src/Caption.tsx": "import { loadFont } from \"@remotion/fonts\";\nimport type { CSSProperties } from \"react\";\nimport { AbsoluteFill, Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from \"remotion\";\nimport type { Caption as CaptionProps, Font, Picture } from \"./props\";\n\n/**\n * How the captions and the cards' text are drawn.\n * - false: the pictures the appShots server drew, in the project's style, exactly as its screenshots set text.\n * - true: live text in the project's font, word by word, to restyle or animate it here. It takes its place from\n *   the server's pictures, but not their panel or colours: set those below.\n */\nexport const LIVE_TEXT = false;\n\n/** Live text's colour and the shadow that keeps it readable on any screen. */\nconst INK = \"#ffffff\";\nconst SHADOW = \"0 0.06em 0.4em rgba(0, 0, 0, 0.45)\";\n\n/** Frames after its scene has come in before a caption does. */\nconst DELAY = 3;\n\nconst loaded = new Set<string>();\n\n/** Loads the project's font for live text, once for each file. */\nexport function loadFonts(fonts: Font[]) {\n  if (!LIVE_TEXT) return;\n  for (const font of fonts) {\n    if (loaded.has(font.file)) continue;\n    loaded.add(font.file);\n    loadFont({ family: font.family, url: staticFile(font.file), weight: font.weight, style: font.style, unicodeRange: font.unicodeRange });\n  }\n}\n\n/** The CSS font stack of live text: the project's font, then the system's. */\nexport const fontStack = (fonts: Font[]) => [...new Set(fonts.map((font) => `\"${font.family}\"`)), \"system-ui\", \"sans-serif\"].join(\", \");\n\nconst full: CSSProperties = { position: \"absolute\", left: 0, top: 0, width: \"100%\", height: \"100%\" };\n\n/** One of the server's pictures, which are as large as the video and line up with it. */\nexport const Layer = ({ file, style }: { file: string; style?: CSSProperties }) => <Img src={staticFile(file)} style={{ ...full, ...style }} />;\n\n/** A picture's words as live text, in the box the server set them in, rising in one after another from `start`. */\nexport const Words = ({ picture, start, fonts, dir, size }: { picture: Picture; start: number; fonts: Font[]; dir: \"ltr\" | \"rtl\"; size: number }) => {\n  const frame = useCurrentFrame();\n  const { fps, width, height } = useVideoConfig();\n  const [x, y, w, h] = picture.box ?? [width * 0.07, height * 0.06, width * 0.86, height * 0.14];\n  let at = 0;\n  return (\n    <div\n      dir={dir}\n      style={{ position: \"absolute\", left: x, top: y, width: w, height: h, display: \"flex\", flexDirection: \"column\", alignItems: \"center\", justifyContent: \"center\", textAlign: \"center\", color: INK, textShadow: SHADOW, fontFamily: fontStack(fonts), fontWeight: 800, fontSize: size, lineHeight: 1.1 }}\n    >\n      {picture.text.split(\"\\n\").map((line, row) => (\n        <div key={row}>\n          {line.split(/\\s+/).filter(Boolean).map((word, index) => {\n            const shown = spring({ frame: frame - start - 2 * at++, fps, config: { damping: 200 }, durationInFrames: Math.round(0.4 * fps) });\n            return (\n              <span key={index} style={{ display: \"inline-block\", whiteSpace: \"pre\", opacity: shown, transform: `translateY(${interpolate(shown, [0, 1], [0.3, 0])}em)` }}>\n                {index > 0 ? ` ${word}` : word}\n              </span>\n            );\n          })}\n        </div>\n      ))}\n    </div>\n  );\n};\n\n/** A scene's caption: it springs in from its edge once the scene has come in through the transition. */\nexport const Caption = ({ caption, enter, fonts, dir }: { caption: CaptionProps; enter: number; fonts: Font[]; dir: \"ltr\" | \"rtl\" }) => {\n  const frame = useCurrentFrame();\n  const { fps, width } = useVideoConfig();\n  const start = enter + DELAY;\n  const shown = spring({ frame: frame - start, fps, config: { damping: 200 }, durationInFrames: Math.round(0.5 * fps) });\n  const rise = interpolate(shown, [0, 1], [caption.position === \"bottom\" ? 0.03 : -0.03, 0]) * width;\n  return (\n    <AbsoluteFill style={{ opacity: shown, transform: `translateY(${rise}px)` }}>\n      {LIVE_TEXT ? <Words picture={caption} start={start} fonts={fonts} dir={dir} size={Math.round(width * 0.07)} /> : <Layer file={caption.file} />}\n    </AbsoluteFill>\n  );\n};\n",
+		"remotion/src/Intro.tsx": "import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from \"remotion\";\nimport { Layer, LIVE_TEXT, Words } from \"./Caption\";\nimport type { Card, Font, Picture } from \"./props\";\n\n/** The point a picture grows from: the middle of what it shows, or of the video. */\nexport const originOf = (picture: Picture) => (picture.box ? `${picture.box[0] + picture.box[2] / 2}px ${picture.box[1] + picture.box[3] / 2}px` : \"50% 50%\");\n\n// The intro card: the project's background, the logo springing up from nothing, then the headline, either wiped in\n// along its reading direction as the server drew it, or word by word as live text.\nexport const Intro = ({ card, fonts, dir }: { card: Card; fonts: Font[]; dir: \"ltr\" | \"rtl\" }) => {\n  const frame = useCurrentFrame();\n  const { fps, width } = useVideoConfig();\n  const pop = spring({ frame, fps, config: { damping: 12, stiffness: 120 } });\n  const start = Math.round(0.35 * fps);\n  const shown = spring({ frame: frame - start, fps, config: { damping: 200 }, durationInFrames: Math.round(0.6 * fps) });\n  // The wipe runs over the text's own box, so it starts with the first letter rather than the edge of the video.\n  const [x, , w] = card.text?.box ?? [0, 0, width];\n  const edge = x + w * shown;\n  const wipe = dir === \"rtl\" ? `inset(0 0 0 ${x + w - w * shown}px)` : `inset(0 ${width - edge}px 0 0)`;\n  return (\n    <AbsoluteFill>\n      {card.plate ? <Layer file={card.plate} /> : null}\n      {card.logo ? (\n        <AbsoluteFill style={{ opacity: interpolate(pop, [0, 0.4], [0, 1], { extrapolateRight: \"clamp\" }), transform: `scale(${pop})`, transformOrigin: originOf(card.logo) }}>\n          <Layer file={card.logo.file} />\n        </AbsoluteFill>\n      ) : null}\n      {card.text ? (\n        LIVE_TEXT ? (\n          <Words picture={card.text} start={start} fonts={fonts} dir={dir} size={Math.round(width * 0.08)} />\n        ) : (\n          <AbsoluteFill style={{ opacity: shown, clipPath: wipe }}>\n            <Layer file={card.text.file} />\n          </AbsoluteFill>\n        )\n      ) : null}\n    </AbsoluteFill>\n  );\n};\n",
+		"remotion/src/Outro.tsx": "import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from \"remotion\";\nimport { Layer, LIVE_TEXT, Words } from \"./Caption\";\nimport { originOf } from \"./Intro\";\nimport type { Card, Font } from \"./props\";\n\n// The outro card: the project's background, the logo settling in, and the closing lines with what the app asks of\n// its users (purchases, a subscription, a sign-in), which have to stay readable to the last frame.\nexport const Outro = ({ card, enter, fonts, dir }: { card: Card; enter: number; fonts: Font[]; dir: \"ltr\" | \"rtl\" }) => {\n  const frame = useCurrentFrame();\n  const { fps, width } = useVideoConfig();\n  const settle = spring({ frame: frame - enter, fps, config: { damping: 200 }, durationInFrames: Math.round(0.6 * fps) });\n  const start = enter + Math.round(0.25 * fps);\n  const shown = spring({ frame: frame - start, fps, config: { damping: 200 }, durationInFrames: Math.round(0.5 * fps) });\n  return (\n    <AbsoluteFill>\n      {card.plate ? <Layer file={card.plate} /> : null}\n      {card.logo ? (\n        <AbsoluteFill style={{ opacity: settle, transform: `scale(${interpolate(settle, [0, 1], [0.85, 1])})`, transformOrigin: originOf(card.logo) }}>\n          <Layer file={card.logo.file} />\n        </AbsoluteFill>\n      ) : null}\n      {card.text ? (\n        LIVE_TEXT ? (\n          <Words picture={card.text} start={start} fonts={fonts} dir={dir} size={Math.round(width * 0.06)} />\n        ) : (\n          <AbsoluteFill style={{ opacity: shown, transform: `translateY(${interpolate(shown, [0, 1], [0.02, 0]) * width}px)` }}>\n            <Layer file={card.text.file} />\n          </AbsoluteFill>\n        )\n      ) : null}\n    </AbsoluteFill>\n  );\n};\n",
+		"remotion/src/Root.tsx": "import { Composition } from \"remotion\";\nimport { AppPreview } from \"./AppPreview\";\nimport { durationOf, EMPTY, type Props } from \"./props\";\n\n// One composition for every display and language: its size, length and frame rate come from the props it is\n// rendered with, such as `npx remotion render src/index.ts AppPreview out/en-iphone.mp4 --props=props/en-iphone.json`.\nexport const RemotionRoot = () => (\n  <Composition\n    id=\"AppPreview\"\n    component={AppPreview}\n    defaultProps={EMPTY}\n    calculateMetadata={({ props }: { props: Props }) => ({ durationInFrames: durationOf(props), width: props.width, height: props.height, fps: props.fps })}\n  />\n);\n",
+		"remotion/src/Scene.tsx": "import { Video } from \"@remotion/media\";\nimport { AbsoluteFill, staticFile } from \"remotion\";\nimport { Caption } from \"./Caption\";\nimport type { Font, Scene as SceneProps } from \"./props\";\n\n// One scene: its footage, which appShots has already cut, placed and brought to 30 frames a second, with the\n// caption on top. `enter` is how many frames the transition into the scene takes.\nexport const Scene = ({ scene, enter, fonts, dir }: { scene: SceneProps; enter: number; fonts: Font[]; dir: \"ltr\" | \"rtl\" }) => (\n  <AbsoluteFill>\n    <Video src={staticFile(scene.video)} muted style={{ width: \"100%\", height: \"100%\" }} />\n    {scene.caption ? <Caption caption={scene.caption} enter={enter} fonts={fonts} dir={dir} /> : null}\n  </AbsoluteFill>\n);\n",
+		"remotion/src/index.ts": "import { registerRoot } from \"remotion\";\nimport { RemotionRoot } from \"./Root\";\n\nregisterRoot(RemotionRoot);\n",
+		"remotion/src/props.ts": "// What the AppPreview composition is made from. `appshots video compose --engine remotion` writes one props file\n// per language and display into props/, and copies every file they name into public/: the scenes' footage, the\n// pictures the appShots server drew in the project's style, its font and the music.\n\n/** A picture the appShots server drew, transparent and as large as the video, with what it shows. */\nexport type Picture = {\n  /** Its file in public/. */\n  file: string;\n  /** Where its text or logo sits in the video: x, y, width and height in pixels. */\n  box: [number, number, number, number] | null;\n  /** Its words as plain text, for drawing them live instead. */\n  text: string;\n};\n\nexport type Caption = Picture & { position: \"top\" | \"bottom\" };\n\n/** The intro or outro card. */\nexport type Card = {\n  frames: number;\n  /** The project's background, opaque, in public/. */\n  plate: string | null;\n  logo: Picture | null;\n  text: Picture | null;\n};\n\nexport type Scene = {\n  id: string;\n  /** The scene's footage in public/: already cut, placed and as large as the video, 30 frames a second, silent. */\n  video: string;\n  frames: number;\n  caption: Caption | null;\n};\n\n/** One file of the project's font, as its stylesheet on the appShots server names it. */\nexport type Font = { family: string; file: string; weight?: string; style?: string; unicodeRange?: string };\n\nexport type Music = {\n  /** In public/, brought to the loudness of the previews appShots cuts itself. */\n  file: string;\n  /** 0 to 1. */\n  volume: number;\n  /** Seconds into the file the preview's music starts. */\n  start: number;\n  /** Seconds it fades out over at the end. */\n  fadeOut: number;\n};\n\nexport type Props = {\n  width: number;\n  height: number;\n  fps: number;\n  locale: string;\n  dir: \"ltr\" | \"rtl\";\n  captionStyle: \"panel\" | \"shadow\" | \"band\";\n  intro: Card | null;\n  scenes: Scene[];\n  outro: Card | null;\n  /** How one part goes over into the next; parts overlap by its frames. */\n  transition: { type: \"fade\" | \"dissolve\" | \"none\"; frames: number };\n  music: Music | null;\n  fonts: Font[];\n};\n\n/** The frames of every part, in the order they play: the intro card, the scenes, the outro card. */\nexport const lengths = (props: Props) => [...(props.intro ? [props.intro.frames] : []), ...props.scenes.map((scene) => scene.frames), ...(props.outro ? [props.outro.frames] : [])];\n\n/** How long the preview runs: its parts, less the frames where two of them overlap in a transition. */\nexport function durationOf(props: Props) {\n  const parts = lengths(props);\n  const overlap = props.transition.type === \"none\" ? 0 : props.transition.frames;\n  return Math.max(1, parts.reduce((sum, frames) => sum + frames, 0) - Math.max(0, parts.length - 1) * overlap);\n}\n\n/** What the studio shows before appShots has written any props: an empty iPhone preview. */\nexport const EMPTY: Props = {\n  width: 886,\n  height: 1920,\n  fps: 30,\n  locale: \"en\",\n  dir: \"ltr\",\n  captionStyle: \"panel\",\n  intro: null,\n  scenes: [],\n  outro: null,\n  transition: { type: \"fade\", frames: 12 },\n  music: null,\n  fonts: [],\n};\n",
+		"remotion/tsconfig.json": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2018\",\n    \"module\": \"Preserve\",\n    \"moduleResolution\": \"Bundler\",\n    \"jsx\": \"react-jsx\",\n    \"strict\": true,\n    \"noEmit\": true,\n    \"lib\": [\"es2022\"],\n    \"esModuleInterop\": true,\n    \"skipLibCheck\": true,\n    \"forceConsistentCasingInFileNames\": true,\n    \"noUnusedLocals\": true\n  },\n  \"exclude\": [\"remotion.config.ts\", \"node_modules\", \"out\", \"public\"]\n}\n"
+	};
+}));
+//#endregion
+//#region cli/src/video/remotion.mjs
+var remotion_exports = __exportAll({
+	REMOTION_LICENCE: () => REMOTION_LICENCE,
+	REMOTION_VERSION: () => REMOTION_VERSION,
+	TEMPLATE_FILES: () => TEMPLATE_FILES,
+	composeRemotion: () => composeRemotion,
+	facesOf: () => facesOf,
+	framesOf: () => framesOf,
+	remotionProps: () => remotionProps,
+	renderArgs: () => renderArgs,
+	scaffoldRemotion: () => scaffoldRemotion
+});
+/**
+* A path as the user reads it: from the folder the command runs in when it is inside it, else in full.
+* @param {string} file
+*/
+function shown$2(file) {
+	const relative = path.relative(process.cwd(), file);
+	return relative.startsWith("..") || path.isAbsolute(relative) ? file : relative || ".";
+}
+/**
+* A yes or no from the person at the Terminal; no when they only press Return, as nothing here should happen
+* by accident.
+* @param {string} question
+*/
+async function agrees(question) {
+	return /^y(es)?$/i.test(await promptLine(`${question} [y/N] `, "There is nobody at a terminal to answer."));
+}
+/**
+* Runs npm or npx in the Remotion project. At a terminal what it prints is shown as it goes, as one progress line
+* that redraws itself; for an agent it is kept back, as a render would print a line for each frame. A missing
+* program fails with how to get it; one that fails, with its last lines and how to see the rest.
+* @param {string} command
+* @param {string[]} args
+* @param {string} folder
+* @param {number} timeout
+*/
+async function inProject(command, args, folder, timeout) {
+	const result = await run$1(command, args, {
+		cwd: folder,
+		timeout,
+		stdio: [
+			"ignore",
+			process.stdout.isTTY ? "inherit" : "pipe",
+			"pipe"
+		]
+	});
+	if (result.error) fail(`${command} is not on this Mac. It comes with Node.js (nodejs.org), which Remotion needs as well. Install it, then run this again.`);
+	const line = `cd ${shown$2(folder)} && ${command} ${args.join(" ")}`;
+	if (result.timedOut) fail(`${command} ${args[0]} took longer than ${Math.round(timeout / 6e4)} minutes and was stopped. Run it yourself to see where it stops: ${line}`);
+	if (result.status !== 0) {
+		const tail = (result.stderr.trim() || result.stdout.trim()).split("\n").slice(-20).join("\n");
+		fail(`${command} ${args[0]} failed${result.status === null ? "" : ` (exit ${result.status})`}${tail ? `:\n${tail}\n` : ". "}Run it yourself to see more: ${line}`);
+	}
+	return result;
+}
+/**
+* Writes the Remotion project into appshots-video/remotion/ and installs it, once the user has agreed to
+* Remotion's licence: at the Terminal, or in a chat with their agent, which then passes `yes`. Files that are
+* there already stay as they are, the user's changes with them; `again` puts appShots' template back over the
+* ones that differ, after saying which they are and asking. That is a question of its own, as the yes to the
+* licence does not give away the user's changes: `replace` passes the user's answer to it from a chat.
+* 'appshots video remotion' passes its flags --yes, --no-install, --again and --replace as these options, and
+* what this prints for an agent to run next names all four, so the command has to take each of them.
+* @param {string} root The work folder, appshots-video/ next to the plan.
+* @param {{ yes?: boolean, install?: boolean, again?: boolean, replace?: boolean }} [options] `install: false` writes the files only.
+* @returns {Promise<{ folder: string, written: string[], installed: boolean }>}
+*/
+async function scaffoldRemotion(root, { yes = false, install = true, again = false, replace = false } = {}) {
+	const folder = path.join(root, "remotion");
+	const rerun = (replacing) => `appshots video remotion --yes${again ? " --again" : ""}${again && replacing ? " --replace" : ""}${install ? "" : " --no-install"}`;
+	if (!yes && !process.stdin.isTTY) fail(`${REMOTION_LICENCE}\n\nThis needs the user's yes. Show them the text above and ask whether to go on; after a yes, run: ${rerun(replace)}`);
+	console.log(REMOTION_LICENCE);
+	if (!yes && !await agrees("Continue?")) {
+		console.log("Nothing was written.");
+		return {
+			folder,
+			written: [],
+			installed: false
+		};
+	}
+	const files = TEMPLATE_FILES.map((file) => {
+		const target = path.join(folder, file);
+		const text = templateOf(file);
+		const current = existsSync(target) ? readFileSync(target, "utf8") : null;
+		return {
+			file,
+			target,
+			text,
+			state: current === null ? "new" : current === text ? "same" : "changed"
+		};
+	});
+	const changed = files.filter((entry) => entry.state === "changed");
+	let replacing = false;
+	if (changed.length > 0) {
+		const list = changed.map((entry) => `  ${entry.file}`).join("\n");
+		const losing = `These differ from appShots' template, and putting it back loses the changes in them:\n${list}`;
+		if (!again) console.log(`${shown$2(folder)} is there already. These differ from appShots' template and stay as they are:\n${list}\nTo put the template back over them: appshots video remotion --again`);
+		else if (!replace && !process.stdin.isTTY) fail(`${losing}\n\nThis needs the user's yes, apart from the one to Remotion's licence. Show them the list and ask whether to replace these files; after a yes, run: ${rerun(true)}`);
+		else {
+			console.log(losing);
+			replacing = replace || await agrees(`Replace ${changed.length === 1 ? "it" : `these ${changed.length}`} with the template?`);
+			if (!replacing) console.log("They stay as they are.");
+		}
+	}
+	const written = [];
+	for (const entry of files) {
+		if (entry.state === "same" || entry.state === "changed" && !replacing) continue;
+		mkdirSync(path.dirname(entry.target), { recursive: true });
+		writeFileSync(entry.target, entry.text);
+		written.push(entry.file);
+	}
+	if (written.length > 0) console.log(`Wrote ${written.length} file${written.length === 1 ? "" : "s"} into ${shown$2(folder)}: ${written.join(", ")}`);
+	else if (changed.length === 0) console.log(`${shown$2(folder)} has appShots' template already.`);
+	let installed = existsSync(path.join(folder, "node_modules", "remotion", "package.json")) && !written.includes("package.json");
+	if (!install) console.log(installed ? "Remotion is installed there." : "Remotion is not installed there yet.");
+	else if (installed) console.log("Remotion is installed there already.");
+	else {
+		console.log(`Installing Remotion ${REMOTION_VERSION} in ${shown$2(folder)} with npm. This takes a few minutes.`);
+		await inProject("npm", [
+			"install",
+			"--no-audit",
+			"--no-fund"
+		], folder, 12e5);
+		installed = true;
+	}
+	if (installed) {
+		const skills = `cd ${shown$2(folder)} && npx remotion skills add`;
+		if (!process.stdin.isTTY) console.log(`Remotion has skills of its own for coding agents. To add them, ask the user, then run: ${skills}`);
+		else if (await agrees("Remotion has skills of its own for coding agents. Add them now (npx remotion skills add)?")) await inProject("npx", [
+			"remotion",
+			"skills",
+			"add"
+		], folder, 3e5);
+	}
+	console.log(`Next: ${installed ? "" : `cd ${shown$2(folder)} && npm install, then `}appshots video compose --engine remotion`);
+	return {
+		folder,
+		written,
+		installed
+	};
+}
+/**
+* What `work` makes for `key`, made once however many previews ask for it at the same time, as compose makes
+* several side by side. A failure is not kept, so that the next to ask tries again.
+* @template T
+* @param {Map<string, Promise<T>>} made
+* @param {string} key
+* @param {() => Promise<T>} work
+* @returns {Promise<T>}
+*/
+function once(made, key, work) {
+	let promise = made.get(key);
+	if (!promise) {
+		promise = work().catch((error) => {
+			made.delete(key);
+			throw error;
+		});
+		made.set(key, promise);
+	}
+	return promise;
+}
+/**
+* Puts a file into the project's public/ folder, where the render reads it, and returns its path there. A copy
+* that is there already and not older than the file is kept; on the Mac's own disks a copy is a clone and takes
+* no room.
+* @param {string} file
+* @param {string} publicDir
+* @param {string} name Its path in public/, with "/" between folders.
+*/
+function place(file, publicDir, name) {
+	const target = path.join(publicDir, ...name.split("/"));
+	const source = statSync(file);
+	if (!existsSync(target) || statSync(target).size !== source.size || statSync(target).mtimeMs < source.mtimeMs) {
+		mkdirSync(path.dirname(target), { recursive: true });
+		const partial = partialOf(target);
+		copyFileSync(file, partial, constants.COPYFILE_FICLONE);
+		renameSync(partial, target);
+	}
+	return name;
+}
+/**
+* Writes a file under another name first and then puts it in place, so that a render never reads half of it.
+* @param {string} file
+* @param {string | Buffer} content
+*/
+function writeWhole(file, content) {
+	mkdirSync(path.dirname(file), { recursive: true });
+	const partial = partialOf(file);
+	writeFileSync(partial, content);
+	renameSync(partial, file);
+}
+/**
+* The faces of one font in the server's stylesheet of fonts: the first file of each @font-face whose files are
+* that font's, with what the browser needs to pick it.
+* @param {string} css The text of /fonts/fonts.css.
+* @param {string} id The font's id, such as "inter".
+*/
+function facesOf(css, id) {
+	const faces = [];
+	for (const [, block] of css.matchAll(/@font-face\s*\{([^}]*)\}/g)) {
+		const value = (property) => new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`).exec(block)?.[1].trim();
+		const url = /url\(\s*['"]?\/fonts\/([a-z0-9-]+)\/([a-z0-9-]+\.woff2?)['"]?\s*\)/.exec(block);
+		const family = value("font-family")?.replace(/^['"]|['"]$/g, "");
+		if (!url || url[1] !== id || !family) continue;
+		const weight = value("font-weight");
+		const style = value("font-style");
+		const unicodeRange = value("unicode-range");
+		faces.push({
+			family,
+			name: url[2],
+			...weight ? { weight } : {},
+			...style ? { style } : {},
+			...unicodeRange ? { unicodeRange } : {}
+		});
+	}
+	return faces;
+}
+/**
+* @param {any} plan
+* @param {string} publicDir
+* @returns {Promise<Font[]>}
+*/
+async function fetchFonts(plan, publicDir) {
+	const config = readConfig();
+	if (!config.url) fail("No server configured. Run the setup command from Connect in the Studio, or 'appshots login <url>'.");
+	const { project } = await (await request(config, "GET", projectRoute(plan.project))).json();
+	const id = typeof project?.theme?.font === "string" ? project.theme.font : "inter";
+	const folder = path.join(publicDir, "fonts", id);
+	const record = path.join(folder, "faces.json");
+	let faces = readJson(record);
+	if (!Array.isArray(faces) || faces.some((face) => !existsSync(path.join(folder, face.name)))) {
+		faces = facesOf(await (await request(config, "GET", "/fonts/fonts.css")).text(), id);
+		if (faces.length === 0) fail(`The server's fonts.css has no files of the font "${id}".`);
+		for (const face of faces) {
+			const file = path.join(folder, face.name);
+			if (!existsSync(file)) writeWhole(file, Buffer.from(await (await request(config, "GET", `/fonts/${id}/${face.name}`)).arrayBuffer()));
+		}
+		writeWhole(record, `${JSON.stringify(faces, null, 2)}\n`);
+	}
+	return faces.map(({ name, ...face }) => ({
+		...face,
+		file: `fonts/${id}/${name}`
+	}));
+}
+/**
+* The plan's music, brought to the loudness of the previews compose cuts with ffmpeg (-16 LUFS, -1.5 dBTP) and to
+* 48 kHz stereo, in public/music/. Volume, start and the fades are the template's to apply.
+* @param {Context} ctx
+* @param {string} publicDir
+*/
+async function prepareMusic(ctx, publicDir) {
+	const music = ctx.plan.music;
+	if (!music) return null;
+	if (typeof music.file !== "string" || music.file === "") fail("music.file in the plan needs the path of an audio file, such as music/theme.m4a.");
+	const file = path.resolve(ctx.plan.root ?? path.dirname(ctx.root), music.file);
+	if (!existsSync(file) || !statSync(file).isFile()) fail(`The music file ${music.file} is not there (looked at ${file}). Put the file there, or take "music" out of the plan for a silent preview.`);
+	const stat = statSync(file);
+	const key = createHash("sha256").update(JSON.stringify({
+		version: MUSIC_VERSION,
+		file,
+		size: stat.size,
+		mtime: Math.round(stat.mtimeMs)
+	})).digest("hex").slice(0, 16);
+	const name = `music/${key}.m4a`;
+	const target = path.join(publicDir, "music", `${key}.m4a`);
+	if (!existsSync(target)) await once(musicPrepared, target, () => normalise(ctx.tools.ffmpeg, file, music.file, target));
+	return {
+		file: name,
+		volume: music.volume ?? .8,
+		start: music.start ?? 0,
+		fadeOut: music.fadeOut ?? 1.5
+	};
+}
+/**
+* Makes the prepared music at `target` under another name first, so that a render never reads half of it, and
+* leaves nothing behind when ffmpeg fails.
+* @param {string} ffmpeg
+* @param {string} file The plan's music file.
+* @param {string} asWritten Its path as the plan writes it.
+* @param {string} target
+*/
+async function normalise(ffmpeg, file, asWritten, target) {
+	mkdirSync(path.dirname(target), { recursive: true });
+	const partial = `${partialOf(target)}.m4a`;
+	const result = await run$1(ffmpeg, [
+		"-nostdin",
+		"-hide_banner",
+		"-y",
+		"-i",
+		file,
+		"-vn",
+		"-af",
+		"loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo",
+		"-c:a",
+		"aac",
+		"-b:a",
+		"256k",
+		partial
+	], { timeout: 3e5 });
+	if (result.status !== 0) {
+		rmSync(partial, { force: true });
+		fail(`ffmpeg could not read the music file ${asWritten}:\n${result.stderr.trim().split("\n").slice(-10).join("\n")}`);
+	}
+	renameSync(partial, target);
+}
+/**
+* The props of one preview for the template's AppPreview composition (src/props.ts), with every file they name
+* put into public/. Parts and lengths are the ones compose cuts with ffmpeg: an intro or outro card when the plan
+* asked the server for one, the scenes as stage 1 cut them, and the plan's transition between them.
+* @param {Context} ctx
+* @param {Segment[]} segments One for each of the plan's scenes, in its order.
+* @param {string} publicDir
+*/
+async function remotionProps(ctx, segments, publicDir) {
+	const { plan, layers, locale, display, size } = ctx;
+	if (segments.length !== plan.scenes.length) fail(`Remotion got ${segments.length} scenes to render, and the plan has ${plan.scenes.length}.`);
+	const type = plan.transition?.type ?? "fade";
+	const transition = {
+		type,
+		frames: type === "none" ? 0 : toFrames(plan.transition?.seconds ?? .4)
+	};
+	const layerOf = (kind, id) => {
+		const fits = (layer) => layer.kind === kind && (id === void 0 || layer.id === id);
+		return layers.layers.find((layer) => fits(layer) && layer.locale === locale) ?? layers.layers.find((layer) => fits(layer) && layer.locale === null) ?? null;
+	};
+	const fileOf = (layer) => {
+		const folders = [layers.set, ...layer.locale ? [layer.locale] : []];
+		if (![...folders, layer.id].every((part) => typeof part === "string" && LAYER_NAME$1.test(part))) fail(`The layers' manifest names a layer ${JSON.stringify([...folders, layer.id].join("/"))}, which is not a layer's name. Fetch the layers again: appshots video layers --display ${display}`);
+		const parts = [...folders, `${layer.id}.png`];
+		const file = path.join(ctx.root, "layers", ...parts);
+		if (!existsSync(file)) fail(`The layer ${layer.id}${layer.locale ? ` for ${layer.locale}` : ""} is not in ${path.dirname(file)}. Fetch the layers again: appshots video layers --display ${display}`);
+		return place(file, publicDir, ["layers", ...parts].join("/"));
+	};
+	/** @returns {Picture | null} */
+	const pictureOf = (layer) => layer ? {
+		file: fileOf(layer),
+		box: Array.isArray(layer.box) ? layer.box : null,
+		text: layer.text ?? ""
+	} : null;
+	const card = (kind) => {
+		if (plan[kind] === false) return null;
+		const logo = layerOf(`${kind}-logo`);
+		const text = layerOf(`${kind}-text`);
+		if (!logo && !text) return null;
+		const plate = layerOf("plate");
+		return {
+			frames: toFrames(plan[kind]?.seconds ?? (kind === "intro" ? 1.5 : 2)),
+			plate: plate && fileOf(plate),
+			logo: pictureOf(logo),
+			text: pictureOf(text)
+		};
+	};
+	const scenes = plan.scenes.map((scene, at) => {
+		const segment = segments[at];
+		if (segment.scene !== scene.id) fail(`Remotion got scene "${segment.scene}" where the plan has "${scene.id}".`);
+		let caption = null;
+		if (hasCaption$1(scene)) {
+			const layer = layerOf("caption", `caption-${scene.id}`);
+			if (!layer) fail(`The layers have no caption for scene "${scene.id}" in ${locale}. Draw them again: appshots video layers --display ${display}`);
+			caption = {
+				...pictureOf(layer),
+				position: scene.captionPosition === "bottom" ? "bottom" : "top"
+			};
+		}
+		return {
+			id: scene.id,
+			video: place(segment.file, publicDir, `segments/${path.basename(segment.file)}`),
+			frames: segment.frames ?? toFrames(segment.seconds),
+			caption
+		};
+	});
+	/** @type {Font[]} */
+	let fonts = [];
+	try {
+		fonts = await projectFonts(plan, publicDir);
+	} catch (error) {
+		console.log(`  The project's font could not be fetched, so live text would be in the system's font: ${error.message}`);
+	}
+	return {
+		width: size[0],
+		height: size[1],
+		fps: FPS,
+		locale,
+		dir: RTL.has(locale.split("-")[0].toLowerCase()) ? "rtl" : "ltr",
+		captionStyle: plan.captionStyle ?? "panel",
+		intro: card("intro"),
+		scenes,
+		outro: card("outro"),
+		transition,
+		music: await prepareMusic(ctx, publicDir),
+		fonts
+	};
+}
+/**
+* The frames a preview with these props runs: its parts, less the frames two of them overlap in a transition.
+* The same sum as durationOf in the template's src/props.ts.
+* @param {{ intro: { frames: number } | null, scenes: Array<{ frames: number }>, outro: { frames: number } | null, transition: { type: string, frames: number } }} props
+*/
+function framesOf(props) {
+	const parts = [
+		...props.intro ? [props.intro.frames] : [],
+		...props.scenes.map((scene) => scene.frames),
+		...props.outro ? [props.outro.frames] : []
+	];
+	const overlap = props.transition.type === "none" ? 0 : props.transition.frames;
+	return Math.max(1, parts.reduce((sum, frames) => sum + frames, 0) - Math.max(0, parts.length - 1) * overlap);
+}
+/**
+* Renders one preview with Remotion: the scenes as stage 1 cut them, without captions or touches, and around and
+* over them what the template draws from the server's layers. Writes props/<locale>-<display>.json, which is all
+* that changes in the project when the plan does, and returns the file Remotion made, for compose's final pass.
+* @param {Context} ctx
+* @param {Segment[]} segments
+* @returns {Promise<string>}
+*/
+async function composeRemotion(ctx, segments) {
+	const folder = path.join(ctx.root, "remotion");
+	if (!existsSync(path.join(folder, "package.json"))) fail(`There is no Remotion project in ${shown$2(folder)}. It comes with Remotion's licence, which the user has to agree to: run 'appshots video remotion', which explains it, then compose again.`);
+	if (!existsSync(path.join(folder, "node_modules", ".bin", "remotion"))) fail(`Remotion is not installed in ${shown$2(folder)} yet. Install it: cd ${shown$2(folder)} && npm install`);
+	const name = `${ctx.locale}-${ctx.display}`;
+	const props = await remotionProps(ctx, segments, path.join(folder, "public"));
+	writeWhole(path.join(folder, "props", `${name}.json`), `${JSON.stringify(props, null, 2)}\n`);
+	const out = path.join(folder, "out", `${name}.mp4`);
+	mkdirSync(path.dirname(out), { recursive: true });
+	console.log(`  Remotion renders ${framesOf(props)} frames from props/${name}.json; a 30-second preview takes a minute or two.`);
+	if (!existsSync(path.join(folder, "node_modules", ".remotion"))) console.log("  The first render downloads Chrome Headless Shell (about 170 MB).");
+	await inProject("npx", renderArgs(name), folder, 18e5);
+	if (!existsSync(out) || statSync(out).size === 0) fail(`Remotion finished without writing ${shown$2(out)}. Render it yourself to see why: cd ${shown$2(folder)} && npx ${renderArgs(name).join(" ")}`);
+	return out;
+}
+var REMOTION_VERSION, REMOTION_LICENCE, TEMPLATE_FILES, templateOf, FPS, toFrames, MUSIC_VERSION, RTL, partials, partialOf, fontsFetched, projectFonts, musicPrepared, LAYER_NAME$1, hasCaption$1, renderArgs;
+var init_remotion = __esmMin((() => {
+	init_api();
+	init_assets();
+	init_config();
+	init_fail();
+	init_proc();
+	init_prompt();
+	init_util();
+	REMOTION_VERSION = "4.0.535";
+	REMOTION_LICENCE = `Remotion makes the animated captions and cards. It is not open source: it is free for individuals, for
+companies of up to 3 people and for non-profits; a larger company needs a Remotion Company License (see
+remotion.pro/license), paid per seat or per render. appShots does not include Remotion. This writes a small
+Remotion project into appshots-video/remotion/ in your repository and installs Remotion there from npm, under
+Remotion's licence. The first render also downloads Chrome Headless Shell (about 170 MB). appShots leaves the
+changes you make to the files it writes there alone.`;
+	TEMPLATE_FILES = [
+		"package.json",
+		"remotion.config.ts",
+		"tsconfig.json",
+		"README.md",
+		".gitignore",
+		"src/index.ts",
+		"src/Root.tsx",
+		"src/AppPreview.tsx",
+		"src/Scene.tsx",
+		"src/Caption.tsx",
+		"src/Intro.tsx",
+		"src/Outro.tsx",
+		"src/props.ts"
+	];
+	templateOf = (file) => asset(`remotion/${file === ".gitignore" ? "gitignore" : file}`);
+	FPS = 30;
+	toFrames = (seconds) => Math.round(seconds * FPS);
+	MUSIC_VERSION = 1;
+	RTL = new Set([
+		"ar",
+		"he",
+		"fa",
+		"ur"
+	]);
+	partials = 0;
+	partialOf = (file) => `${file}.${process.pid}-${++partials}.partial`;
+	fontsFetched = new Map();
+	projectFonts = (plan, publicDir) => once(fontsFetched, `${publicDir}\n${plan.project}`, () => fetchFonts(plan, publicDir));
+	musicPrepared = new Map();
+	LAYER_NAME$1 = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
+	hasCaption$1 = (scene) => scene.caption !== void 0 && scene.caption !== null && scene.caption !== false;
+	renderArgs = (name) => [
+		"remotion",
+		"render",
+		"src/index.ts",
+		"AppPreview",
+		`out/${name}.mp4`,
+		`--props=props/${name}.json`,
+		"--codec=h264",
+		"--crf=18",
+		"--pixel-format=yuv420p",
+		"--color-space=bt709",
+		"--audio-codec=aac",
+		"--audio-bitrate=256k",
+		"--enforce-audio-track"
+	];
+}));
+//#endregion
+//#region cli/src/video/compose.mjs
+var compose_exports = __exportAll({
+	buildSegments: () => buildSegments,
+	compose: () => compose,
+	folders: () => folders,
+	jobsOf: () => jobsOf,
+	planSegments: () => planSegments,
+	posterAt: () => posterAt,
+	setParts: () => setParts
+});
+/**
+* Puts other parts in place, such as a test's, and returns the ones they replace.
+* @param {Partial<typeof parts>} next
+*/
+function setParts(next) {
+	const before = { ...parts };
+	Object.assign(parts, next);
+	return before;
+}
+/**
+* @typedef {{ ffmpeg: string, ffprobe: string, version: string, encoders: Set<string>, filters: Set<string> }} Tools
+* @typedef {{ id: string, locale: string | null, kind: string, width?: number, height?: number, box?: number[] }} Layer
+* @typedef {{ set: string, size?: [number, number], charged?: boolean, layers: Layer[] }} Manifest
+*
+* @typedef {object} Context What one preview is made from: one display, one language.
+* @property {any} plan The plan as readPlan returns it.
+* @property {string} root The work folder, appshots-video/ next to the plan.
+* @property {string} display
+* @property {string} locale
+* @property {[number, number]} size
+* @property {Manifest} layers The manifest of the display's layer set, its files under layers/<set>/.
+* @property {Tools} tools
+* @property {number} jobs How many segments are built at once.
+* @property {boolean} [draft]
+*
+* @typedef {object} Job A segment to build.
+* @property {"intro" | "scene" | "outro"} kind
+* @property {string} scene The scene's id, or "intro" or "outro".
+* @property {number} frames
+* @property {string} label For the messages.
+* @property {string[]} args ffmpeg's arguments, all but the output file.
+*
+* @typedef {{ scene: string, file: string, seconds: number, frames: number, built: boolean }} Segment
+*/
+/**
+* The plan's folder, and the work folder next to it.
+* @param {Record<string, string | true>} flags
+*/
+function folders(flags) {
+	const plan = path.resolve(typeof flags.plan === "string" ? flags.plan : "appshots.video.json");
+	const base = path.dirname(plan);
+	return {
+		base,
+		root: path.join(base, "appshots-video")
+	};
+}
+/**
+* How many segments are built at once: --jobs, or half the cores and at most 4. Each ffmpeg uses several cores
+* itself, and a graph is less likely to stall on a Mac that is not out of memory.
+* @param {Record<string, string | true>} flags
+*/
+function jobsOf(flags) {
+	if (flags.jobs === void 0) return Math.max(1, Math.min(4, Math.floor(os.cpus().length / 2)));
+	const jobs = Number(flags.jobs);
+	if (!Number.isInteger(jobs) || jobs < 1 || jobs > 16) fail("--jobs takes how many segments to build at once, from 1 to 16, such as --jobs 2.");
+	return jobs;
+}
+/**
+* The part of `all` that --<name> picks, in the plan's order; all of it without the flag.
+* @param {Record<string, string | true>} flags
+* @param {"lang" | "display"} name
+* @param {string[]} all
+*/
+function narrow(flags, name, all) {
+	const value = flags[name];
+	if (value === void 0) return all;
+	if (typeof value !== "string") fail(`--${name} needs a value, such as --${name} ${all[0] ?? (name === "lang" ? "en" : "iphone")}.`);
+	const picked = value.split(",").map((part) => part.trim()).filter(Boolean);
+	const unknown = picked.filter((part) => !all.includes(part));
+	if (unknown.length > 0) fail(`The plan has no ${name === "lang" ? "language" : "display"} ${unknown.join(", ")}; it has ${all.join(", ") || "none"}.`);
+	return all.filter((item) => picked.includes(item));
+}
+/**
+* The H.264 encoder to use: x264 where ffmpeg has it, which keeps the bitrate Apple asks for more exactly than the
+* Mac's own encoder.
+* @param {Tools} tools
+*/
+function encoderOf(tools) {
+	if (tools.encoders?.has("libx264")) return "libx264";
+	if (tools.encoders?.has("h264_videotoolbox")) return "h264_videotoolbox";
+	return fail(`The ffmpeg at ${tools.ffmpeg} has no H.264 encoder (libx264 or h264_videotoolbox). Install Homebrew's ffmpeg, which has both: brew install ffmpeg`);
+}
+/**
+* The plan's transition: its kind, and its length in frames.
+* @param {any} plan
+*/
+function transitionOf(plan) {
+	const type = plan.transition?.type ?? "fade";
+	if (![
+		"fade",
+		"dissolve",
+		"none"
+	].includes(type)) fail(`transition.type in the plan is "${type}"; it is fade, dissolve or none.`);
+	return {
+		type,
+		frames: type === "none" ? 0 : toFrames$1(plan.transition?.seconds ?? .4)
+	};
+}
+/**
+* The size of a display's previews in the plan's orientation. A Mac's are always landscape.
+* @param {string} display
+* @param {any} plan
+* @returns {[number, number]}
+*/
+function sizeOf$1(display, plan) {
+	const spec = parts.specs[display];
+	if (!spec) fail(`appShots makes no app previews for the display "${display}". It makes them for ${Object.keys(parts.specs).join(", ")}.`);
+	const orientation = display === "mac" ? "landscape" : plan.orientation ?? "portrait";
+	const size = spec[orientation];
+	if (!Array.isArray(size)) fail(`An app preview for ${display} cannot be ${orientation}.`);
+	return size;
+}
+/**
+* A layer of the set for the context's language: its own, or the one every language shares.
+* @param {Context} ctx
+* @param {string} kind
+* @param {string} [id]
+*/
+function layerOf(ctx, kind, id) {
+	const fits = (layer) => layer.kind === kind && (id === void 0 || layer.id === id);
+	return ctx.layers.layers.find((layer) => fits(layer) && layer.locale === ctx.locale) ?? ctx.layers.layers.find((layer) => fits(layer) && layer.locale === null) ?? null;
+}
+/**
+* Where a layer's PNG is, as the set's layers.zip lays it out: <set>/<locale>/<id>.png, or <set>/<id>.png for
+* one that every language shares.
+* @param {Context} ctx
+* @param {Layer} layer
+*/
+function layerFile(ctx, layer) {
+	const folders = [ctx.layers.set, ...layer.locale ? [layer.locale] : []];
+	if (![...folders, layer.id].every((name) => typeof name === "string" && LAYER_NAME.test(name))) fail(`The layers' manifest names a layer ${JSON.stringify([...folders, layer.id].join("/"))}, which is not a layer's name. Fetch the layers again: appshots video layers --display ${ctx.display}`);
+	const file = path.join(ctx.root, "layers", ...folders, `${layer.id}.png`);
+	if (!existsSync(file)) fail(`The layer ${layer.id}${layer.locale ? ` for ${layer.locale}` : ""} is not in ${path.dirname(file)}. Fetch the layers again: appshots video layers --display ${ctx.display}`);
+	return file;
+}
+/**
+* The recording a sidecar belongs to: the movie readSidecar found with it, or else
+* raw/<display>/<locale>/<scene>.<ext>, in the language whose footage it reuses, if any. An imported file keeps
+* the extension it came with.
+* @param {Context} ctx
+* @param {string} scene
+* @param {Sidecar} sidecar
+*/
+function footageOf(ctx, scene, sidecar) {
+	if (typeof sidecar.file === "string" && existsSync(sidecar.file)) return sidecar.file;
+	const folder = path.join(ctx.root, "raw", footageDisplay(ctx.display), sidecar.reuse || sidecar.locale || ctx.locale);
+	const name = (existsSync(folder) ? readdirSync(folder) : []).find((entry) => entry.startsWith(`${scene}.`) && !entry.endsWith(".json") && !entry.slice(scene.length + 1).includes("."));
+	if (!name) fail(`The recording of scene "${scene}" is missing from ${folder}, though its sidecar is there. Record it again: appshots video record --scene ${scene} --lang ${ctx.locale} --display ${ctx.display} --again`);
+	return path.join(folder, name);
+}
+/**
+* The segments of one preview, as ffmpeg commands, in the order they are joined: the intro card, the scenes, the
+* outro card. Nothing runs; every missing recording or layer is found here, before the first encode.
+*
+* Without captions, for Remotion, which draws its own text: the scenes only, with no caption and no touches.
+* @param {Context} ctx
+* @param {{ captions: boolean }} options
+* @returns {Job[]}
+*/
+function planSegments(ctx, { captions }) {
+	const { plan, display, locale, size } = ctx;
+	const overlap = transitionOf(plan).frames;
+	const codec = segmentCodec({
+		encoder: encoderOf(ctx.tools),
+		draft: ctx.draft
+	});
+	const orientation = display === "mac" ? "landscape" : plan.orientation ?? "portrait";
+	const plateLayer = layerOf(ctx, "plate");
+	const plate = plateLayer && layerFile(ctx, plateLayer);
+	/** @type {Job[]} */
+	const jobs = [];
+	const lead = () => jobs.length === 0 ? 0 : overlap / 30;
+	const card = (kind) => {
+		if (!captions || plan[kind] === false) return;
+		const logo = layerOf(ctx, `${kind}-logo`);
+		const text = layerOf(ctx, `${kind}-text`);
+		if (!logo && !text) return;
+		const frames = toFrames$1(plan[kind]?.seconds ?? (kind === "intro" ? 1.5 : 2));
+		const args = cardArgs({
+			size,
+			frames,
+			plate,
+			logo: logo && layerFile(ctx, logo),
+			text: text && layerFile(ctx, text),
+			at: lead(),
+			codec
+		});
+		jobs.push({
+			kind,
+			scene: kind,
+			frames,
+			label: `the ${kind} card (${display}, ${locale})`,
+			args
+		});
+	};
+	card("intro");
+	const box = (display === "mac" ? plan.fit ?? "plate" : "fill") === "plate" ? plateBox(size, captionBands(ctx.layers.layers, locale, size)) : null;
+	const ringLayer = captions ? layerOf(ctx, "touch") : null;
+	for (const scene of plan.scenes) {
+		const sidecar = parts.readSidecar(ctx.root, display, locale, scene.id);
+		if (!sidecar) fail(`Scene "${scene.id}" has no recording for ${locale} on ${display}. Record it: appshots video record --scene ${scene.id} --lang ${locale} --display ${display}`);
+		if (!Array.isArray(sidecar.size)) fail(`The sidecar of scene "${scene.id}" (${locale}, ${display}) does not say the recording's size. Record it again: appshots video record --scene ${scene.id} --lang ${locale} --display ${display} --again`);
+		const window = sceneWindow(scene, sidecar);
+		const frames = sceneFrames(scene, window);
+		const turn = turnOf(sidecar, orientation, display === "mac");
+		const [width, height] = sidecar.size;
+		const place = placement(size, turn ? [height, width] : [width, height], box);
+		let caption = null;
+		if (captions && hasCaption(scene)) {
+			const layer = layerOf(ctx, "caption", parts.captionLayerId(scene));
+			if (!layer) fail(`The layers have no caption for scene "${scene.id}" in ${locale}. Draw them again: appshots video layers --display ${display}`);
+			caption = layerFile(ctx, layer);
+		}
+		const touches = ringLayer && scene.touches !== false ? touchPoints(sidecar, window, turn, place, frames / 30) : [];
+		const ring = ringLayer && touches.length > 0 ? layerFile(ctx, ringLayer) : null;
+		const args = sceneArgs({
+			footage: footageOf(ctx, scene.id, sidecar),
+			sidecar,
+			window,
+			turn,
+			size,
+			place,
+			frames,
+			plate,
+			caption,
+			captionAt: lead() + CAPTION_DELAY,
+			ring,
+			touches,
+			codec
+		});
+		jobs.push({
+			kind: "scene",
+			scene: scene.id,
+			frames,
+			label: `scene "${scene.id}" (${display}, ${locale})`,
+			args
+		});
+	}
+	card("outro");
+	if (jobs.length > 1) {
+		const short = jobs.find((job) => job.frames <= overlap);
+		if (short) fail(`${short.label[0].toUpperCase()}${short.label.slice(1)} is ${num(short.frames / 30)} s, no longer than the ${num(overlap / 30)} s transition into the next. Make it longer, or the transition shorter.`);
+	}
+	return jobs;
+}
+/**
+* What a file is, for the name of what is made from it: a layer by its content; a recording, which can be
+* large, by its place in the work folder, its size and when it was written; anything else by its text.
+* @param {string} arg
+* @param {string} root
+*/
+function identity(arg, root) {
+	if (!path.isAbsolute(arg) || !existsSync(arg)) return arg;
+	if (arg.endsWith(".png")) return `png:${createHash("sha256").update(readFileSync(arg)).digest("hex")}`;
+	const stat = statSync(arg);
+	return `file:${path.relative(root, arg)}:${stat.size}:${Math.round(stat.mtimeMs)}`;
+}
+/**
+* The name of what ffmpeg makes from `args`: the first 16 hex characters of a hash of the command, with each input
+* file by what it is rather than where, of ffmpeg's version, and of `version`.
+* @param {number} version
+* @param {Tools} tools
+* @param {string[]} args
+* @param {string} root
+*/
+function contentKey(version, tools, args, root) {
+	const named = args.map((arg, at) => args[at - 1] === "-i" ? identity(arg, root) : arg);
+	return createHash("sha256").update(JSON.stringify({
+		version,
+		ffmpeg: tools.version,
+		args: named
+	})).digest("hex").slice(0, 16);
+}
+/**
+* Builds the segments that are not in work/ yet, `ctx.jobs` at a time.
+* @param {Context} ctx
+* @param {Job[]} jobs
+* @returns {Promise<Segment[]>}
+*/
+async function runSegments(ctx, jobs) {
+	const work = path.join(ctx.root, "work");
+	mkdirSync(work, { recursive: true });
+	const keys = jobs.map((job) => contentKey(SEGMENT_VERSION, ctx.tools, job.args, ctx.root));
+	/** @type {Map<string, Job>} */
+	const unique = new Map();
+	keys.forEach((key, at) => unique.has(key) || unique.set(key, jobs[at]));
+	/** @type {Set<string>} */
+	const built = new Set();
+	await pool([...unique], ctx.jobs ?? jobsOf({}), async ([key, job]) => {
+		const file = path.join(work, `${key}.mp4`);
+		if (existsSync(file)) return;
+		const partial = path.join(work, `${key}.${process.pid}.partial.mp4`);
+		await runFfmpeg(ctx.tools, [
+			...job.args,
+			"-f",
+			"mp4",
+			partial
+		], {
+			label: `stage 1, ${job.label}`,
+			out: partial
+		});
+		renameSync(partial, file);
+		built.add(key);
+	});
+	return jobs.map((job, at) => ({
+		scene: job.scene,
+		file: path.join(work, `${keys[at]}.mp4`),
+		seconds: job.frames / 30,
+		frames: job.frames,
+		built: built.has(keys[at])
+	}));
+}
+/**
+* Stage 1 for one preview: its segments, built where they are not built yet.
+* @param {Context} ctx
+* @param {{ captions: boolean }} options Without captions, for Remotion: the scenes only, without text or touches.
+* @returns {Promise<Segment[]>}
+*/
+async function buildSegments(ctx, { captions }) {
+	return runSegments(ctx, planSegments(ctx, { captions }));
+}
+/**
+* When the poster frame is, in seconds of the preview, as poster.mjs picks it from where the scenes sit in the cut:
+* a time chosen with 'video poster --at'; the plan's time, or a moment into its scene that stays within that scene;
+* or a second after the first scene's caption is in, which shows the app and never a card.
+* @param {any} plan
+* @param {Job[]} jobs
+* @param {number} overlap The transition's frames.
+* @param {number} [chosen] The time chosen with 'video poster --at'.
+*/
+function posterAt(plan, jobs, overlap, chosen) {
+	const { starts, total } = startsOf(jobs, overlap);
+	const captioned = new Set((plan.scenes ?? []).filter(hasCaption).map((scene) => scene.id));
+	return posterTime({
+		scenes: jobs.flatMap((job, at) => job.kind === "scene" ? [{
+			id: job.scene,
+			start: starts[at] / 30,
+			seconds: job.frames / 30,
+			caption: captioned.has(job.scene)
+		}] : []),
+		total: total / 30,
+		transition: overlap / 30,
+		poster: plan.poster,
+		chosen
+	});
+}
+/**
+* The frame each segment starts on in the preview, and the preview's frames.
+* @param {Job[]} jobs
+* @param {number} overlap The transition's frames.
+*/
+function startsOf(jobs, overlap) {
+	const { offsets, total } = joinPoints(jobs.map((job) => job.frames), overlap);
+	return {
+		starts: [0, ...offsets],
+		total
+	};
+}
+/**
+* What the check cannot see in the file and the compose knows of its cut: the cards' lengths, when the app first
+* shows, the caption style, the captions the server had to squeeze or borrow, and how many previews the folder
+* holds.
+* @param {Context} ctx
+* @param {Job[]} jobs
+* @param {number} overlap The transition's frames.
+* @param {string} folder
+*/
+function cutOf(ctx, jobs, overlap, folder) {
+	const { starts } = startsOf(jobs, overlap);
+	const seconds = (kind) => (jobs.find((job) => job.kind === kind)?.frames ?? 0) / 30;
+	const first = jobs.findIndex((job) => job.kind === "scene");
+	return parts.checkCut({
+		intro: seconds("intro"),
+		outro: seconds("outro"),
+		...first >= 0 ? { firstApp: starts[first] / 30 } : {},
+		captionStyle: ctx.plan.captionStyle,
+		layers: ctx.layers,
+		locale: ctx.locale,
+		previews: previewsIn(folder)
+	});
+}
+/**
+* Prints what the check found, one line a rule that did not pass.
+* @param {{ errors: Array<{ rule: string, value?: unknown, expected?: unknown }>, warnings: Array<{ rule: string, value?: unknown, expected?: unknown }> }} result
+*/
+function printCheck(result) {
+	const line = (kind, rule) => console.log(`  ${kind}: ${rule.rule}${rule.value !== void 0 ? ` is ${String(rule.value)}` : ""}${rule.expected !== void 0 ? `, expected ${String(rule.expected)}` : ""}`);
+	if (result.errors.length === 0 && result.warnings.length === 0) console.log("  check: OK");
+	for (const rule of result.errors) line("error", rule);
+	for (const rule of result.warnings) line("warning", rule);
+}
+/**
+* Stage 2 for one preview, then its poster and its check.
+* @param {{ ctx: Context, jobs: Job[], frames: number }} output
+* @param {{ engine: string, music: Music | null, name: string, draft: boolean, encoder: string }} options
+*/
+async function composeOne({ ctx, jobs, frames }, { engine, music, name, draft, encoder }) {
+	const { root, display, locale, tools } = ctx;
+	const folder = path.join(root, "out", locale, display);
+	mkdirSync(folder, { recursive: true });
+	const file = path.join(folder, `${name}.mp4`);
+	const posterFile = path.join(folder, `${name}.poster.png`);
+	const transition = transitionOf(ctx.plan);
+	const codec = finalCodec({
+		encoder,
+		draft
+	});
+	const shown = path.relative(process.cwd(), file);
+	console.log(`${display}, ${locale}: ${jobs.length} segment${jobs.length === 1 ? "" : "s"}, ${num(frames / 30)} s${draft ? ", draft" : ""}`);
+	let segments;
+	let args;
+	if (engine === "remotion") {
+		segments = await runSegments(ctx, planSegments(ctx, { captions: false }));
+		const made = await parts.composeRemotion(ctx, segments);
+		args = passArgs({
+			file: made,
+			frames,
+			audio: ((await parts.probe(made, tools))?.streams ?? []).some((stream) => stream.codec_type === "audio") ? keptAudio(frames) : previewAudio(null, frames),
+			codec
+		});
+	} else {
+		segments = await runSegments(ctx, jobs);
+		args = joinArgs({
+			segments: segments.map((segment) => segment.file),
+			lengths: segments.map((segment) => segment.frames),
+			transition,
+			audio: previewAudio(music, frames),
+			codec
+		});
+	}
+	const built = segments.filter((segment) => segment.built).length;
+	if (segments.length > built) console.log(`  ${segments.length - built} of ${segments.length} segments unchanged`);
+	const key = contentKey(PREVIEW_VERSION, tools, args, root);
+	const before = readCheckRecord(file);
+	const reused = before?.key === key;
+	if (reused) console.log(`  ${shown} is unchanged`);
+	else {
+		const partial = path.join(root, "work", `${key}.${process.pid}.partial.mp4`);
+		await runFfmpeg(tools, [
+			...args,
+			"-f",
+			"mp4",
+			partial
+		], {
+			label: `stage 2, the preview (${display}, ${locale})`,
+			out: partial
+		});
+		renameSync(partial, file);
+		console.log(`  ${shown}`);
+	}
+	const chosen = before?.poster?.chosen === true && typeof before.poster.seconds === "number";
+	const at = posterAt(ctx.plan, jobs, transition.frames, chosen ? before.poster.seconds : void 0);
+	const posterMoved = !reused || typeof before.poster?.seconds !== "number" || Math.abs(before.poster.seconds - at) >= .5 / 30 || !existsSync(posterFile);
+	if (posterMoved) {
+		await parts.posterFrame(file, at, posterFile, tools);
+		console.log(`  poster at ${num(at)} s: ${path.relative(process.cwd(), posterFile)}`);
+	}
+	let probed;
+	let verdict;
+	if (reused) {
+		probed = before.probe;
+		verdict = {
+			errors: before.errors,
+			warnings: before.warnings
+		};
+	} else {
+		probed = await parts.probe(file, tools);
+		verdict = parts.checkProbe(probed, display, {
+			draft,
+			file
+		});
+	}
+	const cut = cutOf(ctx, jobs, transition.frames, folder);
+	const { errors, warnings } = verdict;
+	printCheck({
+		errors,
+		warnings: [...warnings, ...cut]
+	});
+	if (!reused || posterMoved || JSON.stringify(before.cut ?? []) !== JSON.stringify(cut)) {
+		const poster = {
+			seconds: at,
+			timecode: timecode(at),
+			...chosen ? { chosen: true } : {}
+		};
+		writeCheckRecord(file, {
+			key,
+			display,
+			locale,
+			draft,
+			seconds: frames / 30,
+			poster,
+			errors,
+			warnings,
+			cut,
+			probe: probed
+		});
+	}
+	return {
+		locale,
+		display,
+		file,
+		seconds: frames / 30,
+		check: {
+			errors,
+			warnings: [...warnings, ...cut]
+		}
+	};
+}
+/**
+* The layer set of each language of a display. A set that 'video layers' put on this Mac for the plan as it is now
+* is used as it is, so a compose needs no server; the server is asked only for the languages that have none, and
+* a set it has not drawn before costs a render.
+* @param {any} plan
+* @param {string} display
+* @param {string[] | undefined} locales Undefined for every language the server draws.
+* @returns {Promise<Map<string, Manifest>>}
+*/
+async function layerSets(plan, display, locales) {
+	/** @type {Map<string, Manifest>} */
+	const sets = new Map();
+	for (const locale of locales ?? []) {
+		const local = parts.localLayers(plan, display, locale);
+		if (local) sets.set(locale, local);
+	}
+	const missing = locales?.filter((locale) => !sets.has(locale));
+	if (missing?.length === 0) return sets;
+	console.log(missing ? `${display}: the layers in ${missing.join(", ")} are not on this Mac for the plan as it is now; asking the server for them` : `${display}: asking the server for the layers`);
+	const fetched = await parts.fetchLayers(plan, {
+		display,
+		locales: missing
+	});
+	if (fetched.charged) console.log(`${display}: drawing them used one render`);
+	for (const locale of missing ?? localesIn(fetched)) sets.set(locale, fetched);
+	return sets;
+}
+/**
+* Makes the previews of the plan: for each display and language, out/<locale>/<display>/<name>.mp4 with its
+* poster and check.json. Everything that can stop it (a recording or a layer that is missing, a preview Apple
+* would not take for its length) is found before the first encode.
+* @param {any} plan The plan as readPlan returns it.
+* @param {Record<string, string | true>} flags --plan, --lang, --display, --engine, --draft, --jobs.
+* @returns {Promise<Array<{ locale: string, display: string, file: string, seconds: number, check: { errors: any[], warnings: any[] } }>>}
+*/
+async function compose(plan, flags) {
+	const { base, root } = folders(flags);
+	const engine = flags.engine ?? "ffmpeg";
+	if (engine !== "ffmpeg" && engine !== "remotion") fail("--engine takes ffmpeg or remotion, such as --engine remotion.");
+	const draft = Boolean(flags.draft);
+	const jobs = jobsOf(flags);
+	const name = plan.name ?? "preview";
+	const displays = narrow(flags, "display", plan.displays ?? []);
+	if (displays.length === 0) fail("The plan names no displays. Add some to it, such as \"displays\": [\"iphone\"].");
+	if (!Array.isArray(plan.scenes) || plan.scenes.length === 0) fail("The plan has no scenes to compose.");
+	const music = engine === "ffmpeg" ? musicOf(plan, base) : null;
+	const tools = await parts.findFfmpeg({ root });
+	const encoder = encoderOf(tools);
+	if (music) {
+		if (!((await parts.probe(music.file, tools))?.streams ?? []).some((stream) => stream.codec_type === "audio")) fail(`The music file ${music.file} has no sound that ffmpeg can read.`);
+	}
+	/** @type {Array<{ ctx: Context, jobs: Job[], frames: number }>} */
+	const outputs = [];
+	for (const display of displays) {
+		const size = sizeOf$1(display, plan);
+		const asked = Array.isArray(plan.locales) ? narrow(flags, "lang", plan.locales) : void 0;
+		const sets = await layerSets(plan, display, asked);
+		for (const layers of new Set(sets.values())) if (Array.isArray(layers.size) && (layers.size[0] !== size[0] || layers.size[1] !== size[1])) fail(`The ${display} layers are ${layers.size.join("×")}, and its previews are ${size.join("×")}. Fetch them again: appshots video layers --display ${display}`);
+		for (const locale of asked ?? narrow(flags, "lang", [...sets.keys()])) {
+			const ctx = {
+				plan,
+				root,
+				display,
+				locale,
+				size,
+				layers: sets.get(locale),
+				tools,
+				jobs,
+				draft
+			};
+			const planned = planSegments(ctx, { captions: true });
+			const { total } = joinPoints(planned.map((job) => job.frames), transitionOf(plan).frames);
+			const seconds = total / 30;
+			if (seconds < SHORTEST || seconds > LONGEST) fail(`The ${display} preview in ${locale} would be ${num(seconds)} s long, and Apple takes ${SHORTEST} to ${LONGEST} s. ${seconds > LONGEST ? `Cut ${num(seconds - LONGEST)} s` : `Add ${num(SHORTEST - seconds)} s`}: with each scene's trim, speed or hold, or the intro and outro. 'appshots video plan' shows the scenes' lengths.`);
+			outputs.push({
+				ctx,
+				jobs: planned,
+				frames: total
+			});
+		}
+	}
+	const results = [];
+	for (const output of outputs) results.push(await composeOne(output, {
+		engine,
+		music,
+		name,
+		draft,
+		encoder
+	}));
+	if (draft) console.log("These are drafts: quick to make and good to look at, but 'appshots video push' does not take them. Compose without --draft for the App Store.");
+	const failing = results.filter((result) => result.check.errors.some((rule) => !(draft && isDraftRule(rule))));
+	if (failing.length > 0) fail(`${failing.length} of ${results.length} preview${results.length === 1 ? " does" : "s do"} not pass Apple's specification: ${failing.map((result) => path.relative(process.cwd(), result.file)).join(", ")}. The errors are above, and in each one's .check.json.`);
+	return results;
+}
+var SEGMENT_VERSION, PREVIEW_VERSION, CAPTION_DELAY, SHORTEST, LONGEST, parts, LAYER_NAME, footageDisplay, hasCaption, isDraftRule, localesIn;
+var init_compose = __esmMin((() => {
+	init_fail();
+	init_util();
+	init_audio();
+	init_check();
+	init_encode();
+	init_ffmpeg();
+	init_graph();
+	init_normalise();
+	init_plan$1();
+	init_poster();
+	init_probe();
+	init_record();
+	init_remotion();
+	init_specs();
+	init_timecode();
+	SEGMENT_VERSION = 1;
+	PREVIEW_VERSION = 1;
+	CAPTION_DELAY = .1;
+	SHORTEST = 15;
+	LONGEST = 30;
+	parts = {
+		findFfmpeg,
+		fetchLayers,
+		localLayers,
+		readSidecar,
+		captionLayerId,
+		probe,
+		checkProbe,
+		checkCut,
+		posterFrame,
+		composeRemotion,
+		specs: PREVIEW_SPECS
+	};
+	LAYER_NAME = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
+	footageDisplay = (display) => display.startsWith("iphone") ? "iphone" : display.startsWith("ipad") ? "ipad" : display;
+	hasCaption = (scene) => scene.caption !== void 0 && scene.caption !== null && scene.caption !== false;
+	isDraftRule = (rule) => /draft/i.test(rule.rule);
+	localesIn = (manifest) => [...new Set(manifest.layers.map((layer) => layer.locale).filter((locale) => typeof locale === "string"))];
+}));
+//#endregion
+//#region cli/src/video/sheet.mjs
+var sheet_exports = __exportAll({
+	contactSheet: () => contactSheet,
+	sheetLayout: () => sheetLayout
+});
+/**
+* @typedef {object} SheetLayout
+* @property {[number, number]} cell The size each picture is fitted into.
+* @property {number} columns
+* @property {Array<{ frames: number, rows: number, height: number }>} files For each file, in order: how many
+*   pictures it gives, on how many rows, and how tall its block is.
+* @property {number} width
+* @property {number} height
+*/
+/**
+* Where the pictures of a contact sheet go. Every file gets a block of rows of its own, one picture every
+* `every` seconds from its start, all in cells of one size so the blocks line up.
+* @param {Array<{ size: [number, number], seconds: number }>} videos
+* @param {number} every
+* @returns {SheetLayout}
+*/
+function sheetLayout(videos, every) {
+	const scaled = videos.map(({ size: [width, height] }) => {
+		const scale = CELL / Math.max(width, height);
+		return [Math.max(2, Math.round(width * scale / 2) * 2), Math.max(2, Math.round(height * scale / 2) * 2)];
+	});
+	const cell = [Math.max(...scaled.map((size) => size[0])), Math.max(...scaled.map((size) => size[1]))];
+	const columns = Math.max(1, Math.min(MOST_COLUMNS, Math.floor(1996 / (cell[0] + GAP))));
+	const files = videos.map(({ seconds }) => {
+		const frames = Math.max(1, Math.ceil(seconds / every - 1e-6));
+		const rows = Math.ceil(frames / columns);
+		return {
+			frames,
+			rows,
+			height: rows * cell[1] + (rows + 1) * GAP
+		};
+	});
+	return {
+		cell,
+		columns,
+		files,
+		width: columns * cell[0] + (columns + 1) * GAP,
+		height: files.reduce((sum, file) => sum + file.height, 0)
+	};
+}
+/**
+* A contact sheet: one PNG with a picture every `every` seconds of each video, a block of rows per video, in the
+* order given. For looking over recordings and previews before they are cut or sent: a wrong screen, a keyboard
+* that is up, a spinner, real data. There is no text on it (Homebrew's ffmpeg draws none), so the caller says
+* which block is which.
+* @param {string[]} files
+* @param {string} out
+* @param {{ every?: number }} options
+* @param {Tools} tools
+*/
+async function contactSheet(files, out, { every = 1 }, tools) {
+	if (files.length === 0) fail("There is no video to make a contact sheet of.");
+	if (!Number.isFinite(every) || every <= 0) fail("--every takes the seconds between pictures, such as --every 1 or --every 0.5.");
+	const videos = [];
+	for (const file of files) {
+		const probed = await probe(file, tools, { count: false });
+		const [video] = videoStreams(probed);
+		const seconds = durationOf(probed);
+		if (!video || !seconds) fail(`${file} has no video to take pictures of.`);
+		videos.push({
+			file,
+			size: playedSize(video),
+			seconds
+		});
+	}
+	const layout = sheetLayout(videos, every);
+	const [width, height] = layout.cell;
+	const chains = layout.files.map(({ rows }, at) => `[${at}:v]fps=1/${every},scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=${BACKGROUND},setsar=1,format=rgb24,tile=${layout.columns}x${rows}:padding=${GAP}:margin=${GAP}:color=${BACKGROUND}[block${at}]`);
+	const blocks = layout.files.map((_, at) => `[block${at}]`).join("");
+	const graph = files.length > 1 ? `${chains.join(";")};${blocks}vstack=inputs=${files.length}[sheet]` : chains[0].replace(/\[block0\]$/, "[sheet]");
+	const temporary = `${out}.${process.pid}.png`;
+	const args = [
+		"-nostdin",
+		"-hide_banner",
+		"-v",
+		"error",
+		"-y",
+		...files.flatMap((file) => ["-i", file]),
+		"-filter_complex",
+		graph,
+		"-map",
+		"[sheet]",
+		"-frames:v",
+		"1",
+		"-update",
+		"1",
+		temporary
+	];
+	const result = await run$1(tools.ffmpeg, args, {
+		env: toolEnv(tools),
+		timeout: 3e5
+	});
+	if (result.status !== 0) {
+		rmSync(temporary, { force: true });
+		const said = (result.stderr || result.error?.message || "").trim().split("\n").pop();
+		fail(`ffmpeg did not make the contact sheet${said ? `: ${said}` : ""}.`);
+	}
+	renameSync(temporary, out);
+	return {
+		file: out,
+		width: layout.width,
+		height: layout.height,
+		columns: layout.columns,
+		every,
+		blocks: videos.map(({ file }, at) => ({
+			file,
+			frames: layout.files[at].frames,
+			rows: layout.files[at].rows
+		}))
+	};
+}
+var CELL, GAP, MOST_COLUMNS, BACKGROUND;
+var init_sheet = __esmMin((() => {
+	init_fail();
+	init_proc();
+	init_ffmpeg();
+	init_probe();
+	CELL = 360;
+	GAP = 4;
+	MOST_COLUMNS = 10;
+	BACKGROUND = "0x2b2b2b";
+}));
+//#endregion
+//#region cli/src/store/library.mjs
+/**
+* Stops any write this client does not make. Asking is always allowed.
+* @param {string} method
+* @param {string} route
+* @param {any} [body]
+*/
+function guardWrite(method, route, body) {
+	if (method === "GET") return;
+	const write = WRITES.find((entry) => entry.method === method && entry.route.test(route.split("?")[0]));
+	const changed = Object.keys(body?.data?.attributes ?? {});
+	if (write && (!write.attributes || changed.every((name) => write.attributes?.includes(name)))) return;
+	fail(`appShots does not send ${method} ${route.split("?")[0]}${changed.length > 0 ? ` with ${changed.join(", ")}` : ""} to App Store Connect. It never submits, releases, archives or deletes anything there; it only adds previews and takes out its own.`);
+}
+/**
+* @param {Account} account
+* @param {string} method
+* @param {string} route
+* @param {string} what
+* @param {unknown} [body]
+*/
+function write(account, method, route, what, body) {
+	guardWrite(method, route, body);
+	return apple(account, method, route, what, body);
+}
+/**
+* The id of the app's asset library, which stays the same for the life of the app.
+* @param {Account} account
+* @param {App} app
+* @returns {Promise<string>}
+*/
+async function assetLibrary(account, app) {
+	const reply = await apple(account, "GET", `/v1/apps/${app.id}/assetLibrary`, `open the asset library of ${app.name}`);
+	if (!reply?.data?.id) fail(`App Store Connect has no asset library for ${app.name}. App previews go in through it.`);
+	return reply.data.id;
+}
+/**
+* @typedef {object} RefData What App Store Connect takes, as its reference data says.
+* @property {any[]} features
+* @property {any[]} placementProfileGroups
+* @property {any[]} videoSpecs
+* @property {any[]} placementTypes
+* @property {any[]} displayClasses
+*/
+/**
+* The reference data of the asset library: which groups of displays there are, which video sizes each takes, and
+* how many previews a version holds per group. Apple adds groups without a new API version, so this is read on
+* every push rather than written down here.
+* @param {Account} account
+* @returns {Promise<RefData>}
+*/
+async function referenceData(account) {
+	const keys = [
+		"features",
+		"placementProfileGroups",
+		"videoSpecs",
+		"placementTypes",
+		"displayClasses"
+	];
+	const items = await appleList(account, `/v1/appAssetLibraryRefData?fields[appAssetLibraryRefData]=${keys.join(",")}`, "read which videos the asset library takes");
+	/** @type {RefData} */
+	const ref = {
+		features: [],
+		placementProfileGroups: [],
+		videoSpecs: [],
+		placementTypes: [],
+		displayClasses: []
+	};
+	for (const item of items) for (const key of keys) ref[key].push(...item.attributes?.[key] ?? []);
+	return ref;
+}
+/**
+* @typedef {object} Group Where a preview goes on a version's page.
+* @property {string} group The placement group, such as IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE.
+* @property {string | null} displayClass
+* @property {any} spec The video specification of the group that the size fits.
+* @property {number} limit How many previews a version's page holds in the group.
+*/
+/**
+* The group an app preview of a display and size goes into, from the reference data, or null when no group an
+* App Store version has takes that size. Of several, the one of the display class the display is recorded for
+* wins; then a group that takes this size alone, upright or turned, over one that takes others as well; then the
+* largest screen.
+* @param {RefData} ref
+* @param {{ display: string, width: number, height: number }} preview
+* @returns {Group | null}
+*/
+function previewGroup(ref, { display, width, height }) {
+	const platform = placementPlatform(display);
+	/** @param {number} value @param {number | undefined} least @param {number | undefined} most */
+	const within = (value, least, most) => (least === void 0 || value >= least) && (most === void 0 || value <= most);
+	/** @param {any} spec @param {number} across @param {number} down */
+	const takes = (spec, across, down) => (spec.compatiblePlacementTypes ?? [PREVIEW]).includes(PREVIEW) && within(across, spec.dimensions?.minWidth, spec.dimensions?.maxWidth) && within(down, spec.dimensions?.minHeight, spec.dimensions?.maxHeight);
+	/** @param {any} spec */
+	const fits = (spec) => takes(spec, width, height);
+	/** @param {any} spec */
+	const ownSize = (spec) => fits(spec) || takes(spec, height, width);
+	const specs = new Map(ref.videoSpecs.map((spec) => [spec.specId, spec]));
+	const groups = new Map(ref.placementProfileGroups.map((group) => [group.placementProfileGroupId, group]));
+	const classes = new Map(ref.displayClasses.map((entry) => [entry.displayClassId, entry]));
+	const policy = ref.features.find((feature) => feature.featureId === "APP_STORE_VERSIONS")?.placementPolicies?.find((entry) => entry.placementType === PREVIEW);
+	/** @param {string} id @returns {number | undefined} */
+	const limitOf = (id) => policy?.groupLimits?.find((limit) => limit.groupIds?.includes(id))?.maxCount;
+	const preferred = PREVIEW_CLASSES[display];
+	const candidates = [];
+	for (const mapping of ref.placementTypes.find((type) => type.placementTypeId === PREVIEW)?.specMappings ?? []) {
+		const group = groups.get(mapping.placementGroupId);
+		if (group?.platform !== platform) continue;
+		if (policy && limitOf(mapping.placementGroupId) === void 0) continue;
+		const taken = (mapping.specs ?? []).map((id) => specs.get(id)).filter(Boolean);
+		const spec = taken.find(fits);
+		if (!spec) continue;
+		const screen = Math.max(0, ...(classes.get(group.displayClassId)?.screenDimensions ?? []).map(Number).filter(Number.isFinite));
+		candidates.push({
+			group: mapping.placementGroupId,
+			displayClass: group.displayClassId ?? null,
+			spec,
+			limit: limitOf(mapping.placementGroupId) ?? 3,
+			own: taken.every(ownSize),
+			screen
+		});
+	}
+	candidates.sort((a, b) => Number(b.displayClass === preferred) - Number(a.displayClass === preferred) || Number(b.own) - Number(a.own) || b.screen - a.screen);
+	if (candidates.length === 0) return null;
+	const { group, displayClass, spec, limit } = candidates[0];
+	return {
+		group,
+		displayClass,
+		spec,
+		limit
+	};
+}
+/**
+* A duration as the reference data writes it, such as PT15S or PT1M30S, in seconds. Null for anything else.
+* @param {string | undefined} text
+*/
+function isoSeconds(text) {
+	const parts = /^PT(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(text ?? "");
+	if (!parts || !parts[1] && !parts[2]) return null;
+	return Number(parts[1] ?? 0) * 60 + Number(parts[2] ?? 0);
+}
+/**
+* What App Store Connect's specification of the group says against a file: its size, its length, its kind.
+* @param {any} spec
+* @param {{ file: string, bytes: number, seconds: number | null }} preview
+* @returns {string[]}
+*/
+function specProblems(spec, { file, bytes, seconds }) {
+	const problems = [];
+	if (spec.maxFileSize && bytes > spec.maxFileSize) problems.push(`it is ${megabytes$1(bytes)}, and the group takes at most ${megabytes$1(spec.maxFileSize)}`);
+	const shortest = isoSeconds(spec.duration?.min);
+	const longest = isoSeconds(spec.duration?.max);
+	if (seconds !== null && (shortest !== null && seconds < shortest || longest !== null && seconds > longest)) problems.push(`it is ${seconds.toFixed(1)} s long, and the group takes ${shortest ?? 0} to ${longest ?? "any"} s`);
+	const extension = path.extname(file).toLowerCase();
+	if (Array.isArray(spec.fileExtensions) && spec.fileExtensions.length > 0 && !spec.fileExtensions.includes(extension)) problems.push(`the group takes ${spec.fileExtensions.join(", ")} files`);
+	return problems;
+}
+/**
+* The videos of the library that go by a reference name, the newest first.
+* @param {Account} account
+* @param {string} library
+* @param {string} referenceName
+* @returns {Promise<Video[]>}
+*/
+async function videosNamed(account, library, referenceName) {
+	return (await appleList(account, `/v1/appAssetLibraries/${library}/videos?filter[referenceName]=${encodeURIComponent(referenceName)}&fields[appAssetLibraryVideos]=referenceName,state,previewFrameTimeCode,createdDate&limit=200`, "look for previews uploaded before")).filter((entry) => entry.attributes?.referenceName === referenceName).sort((a, b) => String(b.attributes?.createdDate ?? "").localeCompare(String(a.attributes?.createdDate ?? ""))).map(videoOf);
+}
+/**
+* How far Apple is with a video, and why it refused it if it did.
+* @param {Account} account
+* @param {string} id
+* @returns {Promise<Video & { details: string[] }>}
+*/
+async function videoState(account, id) {
+	const reply = await apple(account, "GET", `/v1/appAssetLibraryVideos/${id}?fields[appAssetLibraryVideos]=referenceName,state,stateDetails,previewFrameTimeCode`, "check the uploaded previews");
+	return detailedOf(reply.data);
+}
+/**
+* How far Apple is with each of several videos, in the order of their ids. A push waits on every preview it
+* uploaded, for many minutes, so they are asked for together, through the library's list, rather than one request
+* each per round: a plan of many languages would otherwise run into the key's hourly limit.
+* @param {Account} account
+* @param {string} library
+* @param {string[]} ids
+* @returns {Promise<Array<Video & { details: string[] }>>}
+*/
+async function videoStates(account, library, ids) {
+	/** @type {Map<string, Video & { details: string[] }>} */
+	const found = new Map();
+	for (let start = 0; start < ids.length; start += ASKED) {
+		const asked = ids.slice(start, start + ASKED);
+		const route = `/v1/appAssetLibraries/${library}/videos?filter[id]=${asked.map(encodeURIComponent).join(",")}&fields[appAssetLibraryVideos]=referenceName,state,stateDetails,previewFrameTimeCode&limit=200`;
+		for (const entry of await appleList(account, route, "check the uploaded previews")) if (asked.includes(entry.id)) found.set(entry.id, detailedOf(entry));
+	}
+	return Promise.all(ids.map((id) => found.get(id) ?? videoState(account, id)));
+}
+/**
+* The bytes of a part of an open file.
+* @param {number} fd
+* @param {number} offset
+* @param {number} length
+*/
+function readPart(fd, offset, length) {
+	const bytes = Buffer.alloc(length);
+	let read = 0;
+	while (read < length) {
+		const got = readSync(fd, bytes, read, length - read, offset + read);
+		if (got === 0) break;
+		read += got;
+	}
+	return bytes.subarray(0, read);
+}
+/**
+* Uploads a video into the library: reserves it, sends its parts, three at a time, and commits it. Apple then
+* processes it, which videoState follows. Returns its id.
+* @param {Account} account
+* @param {string} library
+* @param {{ file: string, bytes: number, referenceName: string, timecode: string | null }} video
+*/
+async function uploadVideo(account, library, { file, bytes, referenceName, timecode }) {
+	const name = path.basename(file);
+	const body = { data: {
+		type: "appAssetLibraryVideos",
+		attributes: {
+			fileName: name,
+			fileSize: bytes,
+			category: "APP_SCREENSHOTS_AND_PREVIEWS",
+			referenceName,
+			...timecode ? { previewFrameTimeCode: timecode } : {}
+		},
+		relationships: { assetLibrary: { data: {
+			type: "appAssetLibraries",
+			id: library
+		} } }
+	} };
+	const reserved = (await write(account, "POST", "/v1/appAssetLibraryVideos", `take ${name}`, body)).data;
+	const fd = openSync(file, "r");
+	try {
+		await sendParts(reserved.attributes?.uploadOperations ?? [], (offset, length) => readPart(fd, offset, length), name, "Run the command again: it uploads that preview anew.", SENDS);
+	} finally {
+		closeSync(fd);
+	}
+	await write(account, "PATCH", `/v1/appAssetLibraryVideos/${reserved.id}`, `finish ${name}`, { data: {
+		type: "appAssetLibraryVideos",
+		id: reserved.id,
+		attributes: { uploaded: true }
+	} });
+	return reserved.id;
+}
+/**
+* @typedef {{ id: string, video: Video | null }} Placement
+*/
+/**
+* The previews on the page of a language in one group, in the order the store shows them, each with its video.
+* @param {Account} account
+* @param {string} localization
+* @param {string} group
+* @returns {Promise<Placement[]>}
+*/
+async function previewPlacements(account, localization, group) {
+	/** @type {any[]} */
+	const included = [];
+	const placements = await appleList(account, `/v1/appStoreVersionLocalizations/${localization}/placements?filter[placementType]=${PREVIEW}&filter[placementGroup]=${group}&sort=placementGroupPosition&include=video&fields[appAssetLibraryVideos]=referenceName,state,previewFrameTimeCode&limit=200`, "list the previews on the page", included);
+	const videos = new Map(included.filter((entry) => entry.type === "appAssetLibraryVideos").map((entry) => [entry.id, videoOf(entry)]));
+	return placements.map((placement) => ({
+		id: placement.id,
+		video: videos.get(placement.relationships?.video?.data?.id) ?? null
+	}));
+}
+/**
+* Puts a video onto the page of a language, in a group. It goes last; orderPlacements moves it.
+* @param {Account} account
+* @param {{ localization: string, group: string, video: string }} placement
+* @returns {Promise<string>}
+*/
+async function placePreview(account, { localization, group, video }) {
+	return (await write(account, "POST", "/v1/appAssetLibraryPlacements", "place the preview on the page", { data: {
+		type: "appAssetLibraryPlacements",
+		attributes: {
+			placementType: PREVIEW,
+			placementGroup: group
+		},
+		relationships: {
+			video: { data: {
+				type: "appAssetLibraryVideos",
+				id: video
+			} },
+			appStoreVersionLocalization: { data: {
+				type: "appStoreVersionLocalizations",
+				id: localization
+			} }
+		}
+	} })).data.id;
+}
+/**
+* Takes a preview appShots placed off the page. The video stays in the library, and any other placement of it
+* stays where it is. A placement of a video appShots did not upload is never taken off.
+* @param {Account} account
+* @param {Placement} placement
+*/
+async function removePlacement(account, placement) {
+	if (!placement.video?.referenceName.startsWith("appshots ")) fail("appShots only takes its own previews off a page, and this one is not.");
+	await write(account, "DELETE", `/v1/appAssetLibraryPlacements/${placement.id}`, "take the earlier preview off the page");
+}
+/**
+* Sets the order of the previews of a group on the page of a language.
+* @param {Account} account
+* @param {{ localization: string, group: string, ids: string[] }} order
+*/
+async function orderPlacements(account, { localization, group, ids }) {
+	await write(account, "POST", "/v1/appAssetLibraryPlacementOrderingRequests", "put the previews in order", { data: {
+		type: "appAssetLibraryPlacementOrderingRequests",
+		attributes: { placementGroup: group },
+		relationships: {
+			orderedPlacements: { data: ids.map((id) => ({
+				type: "appAssetLibraryPlacements",
+				id
+			})) },
+			appStoreVersionLocalization: { data: {
+				type: "appStoreVersionLocalizations",
+				id: localization
+			} }
+		}
+	} });
+}
+var SENDS, ASKED, PREVIEW, REFERENCE_PREFIX, PROCESSING, BROKEN, POSTER_MOVABLE, isReady, PREVIEW_CLASSES, placementPlatform, WRITES, megabytes$1, videoOf, detailedOf, setPosterTime;
+var init_library = __esmMin((() => {
+	init_fail();
+	init_asc();
+	SENDS = 3;
+	ASKED = 50;
+	PREVIEW = "APP_PREVIEW";
+	REFERENCE_PREFIX = "appshots ";
+	PROCESSING = new Set(["AWAITING_UPLOAD", "UPLOAD_COMPLETE"]);
+	BROKEN = new Set([
+		"FAILED",
+		"REJECTED",
+		"ARCHIVED"
+	]);
+	POSTER_MOVABLE = new Set([
+		...PROCESSING,
+		"COMPLETE",
+		"PREPARE_FOR_SUBMISSION"
+	]);
+	isReady = (state) => Boolean(state) && !PROCESSING.has(state) && !BROKEN.has(state);
+	PREVIEW_CLASSES = {
+		iphone: "IPHONE_DYNAMIC_ISLAND_LARGE_DISPLAY",
+		"iphone-5.5": "IPHONE_HOME_BUTTON_LARGE_DISPLAY",
+		"iphone-4.7": "IPHONE_HOME_BUTTON_MEDIUM_DISPLAY",
+		ipad: "IPAD_13_DISPLAY",
+		"ipad-9.7": "IPAD_97_DISPLAY"
+	};
+	placementPlatform = (display) => display === "mac" ? "MAC_APP_STORE" : display.startsWith("ipad") ? "IPAD_APP_STORE" : "IPHONE_APP_STORE";
+	WRITES = [
+		{
+			method: "POST",
+			route: /^\/v1\/appAssetLibraryVideos$/
+		},
+		{
+			method: "PATCH",
+			route: /^\/v1\/appAssetLibraryVideos\/[\w.-]+$/,
+			attributes: ["uploaded", "previewFrameTimeCode"]
+		},
+		{
+			method: "POST",
+			route: /^\/v1\/appAssetLibraryPlacements$/
+		},
+		{
+			method: "DELETE",
+			route: /^\/v1\/appAssetLibraryPlacements\/[\w.-]+$/
+		},
+		{
+			method: "POST",
+			route: /^\/v1\/appAssetLibraryPlacementOrderingRequests$/
+		}
+	];
+	megabytes$1 = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
+	videoOf = (entry) => ({
+		id: entry.id,
+		referenceName: entry.attributes?.referenceName ?? "",
+		state: entry.attributes?.state ?? "UNKNOWN",
+		timecode: entry.attributes?.previewFrameTimeCode ?? null
+	});
+	detailedOf = (entry) => ({
+		...videoOf(entry),
+		details: (entry.attributes?.stateDetails ?? []).map((detail) => detail.description || detail.code).filter(Boolean)
+	});
+	setPosterTime = (account, video, timecode) => write(account, "PATCH", `/v1/appAssetLibraryVideos/${video}`, "move the poster frame", { data: {
+		type: "appAssetLibraryVideos",
+		id: video,
+		attributes: { previewFrameTimeCode: timecode }
+	} });
+}));
+//#endregion
+//#region cli/src/video/push.mjs
+var push_exports = __exportAll({
+	PUSH_TIMING: () => PUSH_TIMING,
+	videoPush: () => videoPush
+});
+/**
+* Whether App Store Connect would take a preview, from the check record the compose left beside it, and what
+* the push needs of it. The record's probe is checked again here, against the rules as they are now, and it has
+* to be of this very file.
+* @param {string} file
+* @param {string} display
+* @returns {{ problem: string } | { width: number, height: number, seconds: number | null, timecode: string | null }}
+*/
+function checked(file, display) {
+	const record = readJson(file.replace(/\.mp4$/, ".check.json"));
+	const probe = record?.probe;
+	if (!Array.isArray(probe?.streams)) return { problem: "has no check record beside it, so nothing says App Store Connect takes it. Compose it again: appshots video compose" };
+	if ((typeof record.bytes === "number" ? record.bytes : Number(probe.format?.size)) !== statSync(file).size) return { problem: "changed after it was checked. Compose it again: appshots video compose" };
+	if (record.draft === true) return { problem: "is a draft, which App Store Connect does not take. Compose it without --draft." };
+	const { errors } = checkProbe(probe, display, { file });
+	if (errors.length > 0) return { problem: `does not pass Apple's specification: ${errors.map((rule) => `${rule.rule} ${rule.value}, expected ${rule.expected}`).join("; ")}.` };
+	const video = probe.streams.find((stream) => stream.codec_type === "video" && !stream.disposition?.attached_pic);
+	const seconds = Number(probe.format?.duration);
+	const poster = record.poster?.seconds ?? record.poster?.at;
+	return {
+		width: video.width,
+		height: video.height,
+		seconds: Number.isFinite(seconds) ? seconds : null,
+		timecode: typeof poster === "number" && Number.isFinite(poster) ? timecode(poster) : null
+	};
+}
+/**
+* The previews out/ holds for the plan, narrowed by --lang and --display. A file without a check, a draft, or a
+* file that does not pass Apple's specification stops the push here, before App Store Connect is asked anything.
+* @param {any} plan
+* @param {Record<string, string | true>} flags
+* @param {string} out
+* @returns {Promise<Preview[]>}
+*/
+async function previewsOf(plan, flags, out) {
+	const name = plan.name ?? "preview";
+	const planLocales = Array.isArray(plan.locales) ? plan.locales : null;
+	const planDisplays = Array.isArray(plan.displays) ? plan.displays : null;
+	const languages = languageFlag(flags);
+	for (const { from } of languages ?? []) if (planLocales && !planLocales.some((locale) => sameLanguage(from, locale))) fail(`--lang ${from}: the plan's languages are ${planLocales.join(", ")}.`);
+	const displays = listFlag$1(flags, "display", "iphone,ipad");
+	for (const display of displays ?? []) if (!Object.hasOwn(PREVIEW_SPECS, display)) fail(`--display takes ${Object.keys(PREVIEW_SPECS).join(", ")}.`);
+	if (!existsSync(out)) fail(`There are no previews in ${shown$1(out)}. Make them first: appshots video compose`);
+	/** @param {string} dir */
+	const folders = (dir) => readdirSync(dir).filter((entry) => !entry.startsWith(".") && statSync(path.join(dir, entry)).isDirectory()).sort();
+	const locales = folders(out).filter((locale) => !planLocales || planLocales.includes(locale));
+	/** @param {string} a @param {string} b */
+	const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+	/** @type {Preview[]} */
+	const previews = [];
+	const refused = [];
+	for (const locale of locales) {
+		const picked = languages?.filter((entry) => same(entry.from, locale) || sameLanguage(entry.from, locale) && !locales.some((other) => same(entry.from, other)));
+		if (languages && picked?.length === 0) continue;
+		const onto = (picked ?? []).map((entry) => entry.to ?? (entry.from.includes("-") && !locale.includes("-") ? entry.from : null)).filter(Boolean);
+		for (const display of folders(path.join(out, locale))) {
+			if (!Object.hasOwn(PREVIEW_SPECS, display) || planDisplays && !planDisplays.includes(display) || displays && !displays.includes(display)) continue;
+			const file = path.join(out, locale, display, `${name}.mp4`);
+			if (!existsSync(file)) continue;
+			const result = checked(file, display);
+			if ("problem" in result) {
+				refused.push(`${shown$1(file)} ${result.problem}`);
+				continue;
+			}
+			const hash = await hashOf(file);
+			const earlier = `${REFERENCE_PREFIX}${name} ${locale} ${display} `;
+			previews.push({
+				key: `${locale}/${display}/${name}`,
+				locale,
+				display,
+				file,
+				shown: shown$1(file),
+				bytes: statSync(file).size,
+				...result,
+				hash,
+				referenceName: `${earlier}${hash.slice(0, 8)}`,
+				earlier,
+				targets: onto.length > 0 ? [...new Set(onto)] : null
+			});
+		}
+	}
+	if (refused.length > 0) fail(`${refused.join("\n")}\nNothing was changed.`);
+	const missing = (languages ?? []).map((entry) => entry.from).filter((code) => !previews.some((preview) => sameLanguage(code, preview.locale)));
+	if (missing.length > 0) fail(`There is no ${name}.mp4 for ${missing.join(", ")} in ${shown$1(out)}. Compose it first: appshots video compose --lang ${missing.join(",")}`);
+	if (previews.length === 0) fail(`There is no ${name}.mp4 in ${shown$1(out)}${displays ? ` for ${displays.join(", ")}` : ""}. Compose the previews first: appshots video compose`);
+	return previews;
+}
+/**
+* @param {string} file
+* @returns {PushState | null}
+*/
+function readState(file) {
+	const state = readJson(file);
+	return state?.version === STATE_VERSION && typeof state.app === "string" && state.previews && typeof state.previews === "object" ? state : null;
+}
+/**
+* Whether the poster frame of a video in App Store Connect moves to the one the check record names. A video that
+* is in review, or on the App Store, keeps its own: that is for App Store Connect to change, and a note says so.
+* @param {Video | null | undefined} video
+* @param {Preview} preview
+* @param {Set<string>} notes
+*/
+function posterMoves(video, preview, notes) {
+	if (!video || !preview.timecode || video.timecode === preview.timecode) return false;
+	if (POSTER_MOVABLE.has(video.state)) return true;
+	notes.add(`${preview.shown}: Apple has the poster frame at ${video.timecode ?? "its own choice"}, and the video is ${plainState(video.state)}, so it stays there. Change it in App Store Connect.`);
+	return false;
+}
+/**
+* The version of a platform being prepared, which previews go into. This command makes no version.
+* @param {Account} account
+* @param {App} app
+* @param {string} platform
+* @param {Record<string, string | true>} flags
+* @param {string[]} others The displays of the previews that go onto the other platform.
+*/
+async function openVersion(account, app, platform, flags, others) {
+	if (flags.version === true) fail("--version needs a number, such as --version 1.3.");
+	const wanted = typeof flags.version === "string" ? flags.version.trim() : "";
+	const system = STORE_PLATFORMS[platform];
+	const versions = await storeVersions(account, app, platform);
+	if (versions.length === 0) {
+		const leave = others.length > 0 ? `, or leave them out with --display ${others.join(",")}` : "";
+		fail(`${app.name} has no ${system} version in App Store Connect. ${platform === "MAC_OS" ? "Mac previews go onto the macOS version of an app" : "iPhone and iPad previews go onto the iOS version of an app"}: add that platform there first${leave}. Nothing was changed.`);
+	}
+	const open = versions.find((version) => STORE_OPEN.has(versionState(version)));
+	/** @param {any} version */
+	const say = (version) => `${version.attributes.versionString} (${plainState(versionState(version))})`;
+	if (!open) fail(`No version of ${app.name} for ${system} is being prepared: the latest is ${say(versions[0])}. Previews go into a version being prepared, and this command makes none: create the next one in App Store Connect, or with 'appshots store push <project> --version <number>'. Nothing was changed.`);
+	if (wanted && open.attributes.versionString !== wanted) {
+		const named = versions.find((version) => version.attributes.versionString === wanted);
+		fail(`${named ? `Version ${say(named)}` : `There is no version ${wanted}`} of ${app.name} for ${system} ${named ? "can no longer be changed" : "in App Store Connect"}. The one being prepared is ${open.attributes.versionString}: leave out --version to use it. Nothing was changed.`);
+	}
+	return {
+		id: open.id,
+		number: open.attributes.versionString,
+		platform,
+		state: versionState(open)
+	};
+}
+/**
+* Asks Apple how far it is with each video until all are processed, or refused, or the wait is over.
+* @param {Account} account
+* @param {string} library
+* @param {Map<string, Preview>} pending By video id.
+*/
+async function processing(account, library, pending) {
+	/** @type {Array<{ preview: Preview, video: string, details: string[] }>} */
+	const refused = [];
+	/** @type {Set<string>} */
+	const ready = new Set();
+	let waiting = [...pending.keys()];
+	const until = Date.now() + PUSH_TIMING.wait;
+	for (let tries = 1; waiting.length > 0; tries++) {
+		const answers = await videoStates(account, library, waiting);
+		const still = [];
+		for (const answer of answers) {
+			const preview = pending.get(answer.id);
+			if (isReady(answer.state)) ready.add(answer.id);
+			else if (BROKEN.has(answer.state)) refused.push({
+				preview,
+				video: answer.id,
+				details: answer.details
+			});
+			else still.push(answer.id);
+		}
+		waiting = still;
+		if (waiting.length === 0 || Date.now() >= until) break;
+		await pause(Math.min(PUSH_TIMING.most, PUSH_TIMING.first * tries));
+	}
+	return {
+		ready,
+		refused,
+		late: waiting
+	};
+}
+/**
+* 'appshots video push': places the plan's previews into the version being prepared in App Store Connect.
+* @param {any} plan The plan as readPlan returns it.
+* @param {Record<string, string | true>} flags --plan, --app, --version, --lang, --display, --replace, --dry-run, --no-wait, --resume.
+*/
+async function videoPush(plan, flags) {
+	if (flags.plan === true) fail("--plan needs the plan file, such as --plan appshots.video.json.");
+	const dry = Boolean(flags["dry-run"]);
+	const root = typeof plan.root === "string" ? plan.root : path.dirname(path.resolve(typeof flags.plan === "string" ? flags.plan : "appshots.video.json"));
+	const out = path.join(root, "appshots-video", "out");
+	const stateFile = path.join(out, ".push-state.json");
+	const notes = new Set();
+	let previews = await previewsOf(plan, flags, out);
+	const saved = readState(stateFile);
+	if (flags.resume) {
+		if (!saved) fail(`Nothing to resume: there is no ${shown$1(stateFile)}. Run it without --resume.`);
+		for (const preview of previews) if (saved.previews[preview.key] && saved.previews[preview.key].hash !== preview.hash) notes.add(`${preview.shown} changed after the last push. Run it without --resume to upload it.`);
+		previews = previews.filter((preview) => saved.previews[preview.key]?.hash === preview.hash && saved.previews[preview.key].video);
+		if (previews.length === 0) fail("Nothing to resume: the last push uploaded none of these previews as they are now. Run it without --resume.");
+	}
+	const account = storeAccount(flags);
+	const app = await storeApp(account, flags.app ?? plan.app?.bundleId);
+	if (flags.resume && saved?.app !== app.id) fail(`The last push went to another app than ${app.name}. Run it without --resume.`);
+	/** @type {PushState} */
+	const state = saved?.app === app.id ? saved : {
+		version: STATE_VERSION,
+		app: app.id,
+		previews: {}
+	};
+	const versions = new Map();
+	for (const platform of new Set(previews.map((preview) => platformOf(preview.display)))) {
+		const others = [...new Set(previews.filter((preview) => platformOf(preview.display) !== platform).map((preview) => preview.display))];
+		versions.set(platform, await openVersion(account, app, platform, flags, others));
+	}
+	const library = await assetLibrary(account, app);
+	const ref = await referenceData(account);
+	const refused = [];
+	for (const preview of previews) {
+		const group = previewGroup(ref, preview);
+		if (!group) {
+			refused.push(`${preview.shown}: no group of displays in App Store Connect takes previews of ${preview.width} x ${preview.height} for ${STORE_PLATFORMS[platformOf(preview.display)]}.`);
+			continue;
+		}
+		const problems = specProblems(group.spec, preview);
+		if (problems.length > 0) refused.push(`${preview.shown}: ${problems.join("; ")}.`);
+		preview.group = group;
+	}
+	if (refused.length > 0) fail(`${refused.join("\n")}\nNothing was changed.`);
+	/** @type {Target[]} */
+	const targets = [];
+	const choices = new Set();
+	const seen = new Map();
+	let skipped = false;
+	for (const [platform, version] of versions) {
+		const listed = await versionLanguages(account, version);
+		const codes = listed.map((entry) => entry.attributes.locale);
+		const system = STORE_PLATFORMS[platform];
+		for (const preview of previews.filter((entry) => platformOf(entry.display) === platform)) for (const to of preview.targets ?? [void 0]) {
+			const found = storeLocale(preview.locale, codes, {
+				primary: app.primaryLocale,
+				to
+			});
+			if (!found.listed || !found.code) {
+				skipped = true;
+				if (found.others && !found.listed) notes.add(`${preview.locale}: version ${version.number} for ${system} has ${found.others.join(" and ")}, and either could be meant. Say which with --lang ${preview.locale}=${found.others[0]}.`);
+				else notes.add(`${preview.locale}: version ${version.number} for ${system} has no such language on its store page. It has ${codes.join(", ")}. 'appshots store push <project> --add-languages' adds it${found.code && found.code !== preview.locale ? ` as ${found.code}` : ""}.`);
+				continue;
+			}
+			const code = found.code;
+			const where = `${platform} ${code} ${preview.display}`;
+			if (seen.has(where)) fail(`${seen.get(where)} and ${preview.shown} would both go onto ${code}. Leave one out with --lang. Nothing was changed.`);
+			seen.set(where, preview.shown);
+			if (code !== preview.locale) choices.add(`${preview.locale} goes onto ${code}${found.others ? `; the store page has ${found.others.join(" and ")} as well, which --lang ${preview.locale}=${found.others[0]} picks` : ""}`);
+			const localization = listed.find((entry) => entry.attributes.locale === code).id;
+			targets.push({
+				preview,
+				version,
+				code,
+				localization,
+				label: `${code.padEnd(8)} ${preview.display.padEnd(10)}`,
+				action: "add",
+				placements: []
+			});
+		}
+	}
+	for (const target of targets) {
+		const { preview } = target;
+		const group = preview.group;
+		target.placements = await previewPlacements(account, target.localization, group.group);
+		const there = target.placements.some((placement) => placement.video?.referenceName === preview.referenceName);
+		const earlier = target.placements.some((placement) => placement.video?.referenceName.startsWith(preview.earlier));
+		target.action = there ? "there" : earlier ? "replace" : target.placements.length < group.limit ? "add" : "full";
+	}
+	const full = targets.filter((target) => target.action === "full");
+	const replacing = targets.filter((target) => target.action === "replace");
+	const fullLines = full.map((target) => `${target.label}  ${target.preview.group?.group} holds ${target.placements.length} previews already, the most a version takes, and none of them is appShots' earlier upload of this one. Take one off in App Store Connect first.`);
+	if (full.length > 0 && !dry) fail(`${fullLines.join("\n")}\nNothing was changed.`);
+	let replace = Boolean(flags.replace);
+	if (replacing.length > 0 && !replace && !dry) {
+		const pages = replacing.map((target) => target.label.trim().replace(/\s+/, " ")).join(", ");
+		replace = await confirm(`${pages}: ${replacing.length === 1 ? "this page holds" : "these pages hold"} an earlier upload of this preview by appShots. Take it off and put the new one in its place?`);
+		if (!replace) fail(`${pages}: ${replacing.length === 1 ? "this page holds" : "these pages hold"} an earlier upload of this preview by appShots. Ask the user whether appShots may take it off and put the new one in its place; then run it again with --replace. Nothing was changed.`);
+	}
+	const needed = previews.filter((preview) => targets.some((target) => target.preview === preview && target.action !== "there"));
+	/** @type {Map<string, Video | null>} */
+	const before = new Map();
+	for (const preview of needed) {
+		const usable = (await videosNamed(account, library, preview.referenceName)).filter((video) => !BROKEN.has(video.state) && video.state !== "AWAITING_UPLOAD");
+		before.set(preview.key, usable.find((video) => video.id === state.previews[preview.key]?.video) ?? usable[0] ?? null);
+	}
+	if (dry) console.log("Dry run: nothing is changed.");
+	for (const version of versions.values()) console.log(`${app.name} ${version.number} for ${STORE_PLATFORMS[version.platform]} (${plainState(version.state)})`);
+	for (const line of choices) console.log(line);
+	if (dry) {
+		const sending = new Set();
+		/** @type {Set<string>} */
+		const moving = new Set();
+		/** @param {Video | null | undefined} video @param {Preview} preview */
+		const moves = (video, preview) => {
+			if (!video || moving.has(video.id) || !posterMoves(video, preview, notes)) return "";
+			moving.add(video.id);
+			return `; its poster frame would move to ${preview.timecode}`;
+		};
+		for (const target of targets) {
+			const { preview } = target;
+			const group = preview.group;
+			if (target.action === "there") {
+				const placed = target.placements.find((placement) => placement.video?.referenceName === preview.referenceName);
+				console.log(`${target.label}  ${preview.shown} is there already, in ${group.group}${moves(placed?.video, preview)}`);
+				continue;
+			}
+			if (target.action === "full") continue;
+			const uploaded = before.get(preview.key);
+			const sends = uploaded ? `would place ${preview.shown}, uploaded before,` : sending.has(preview.key) ? `would place the same upload of ${preview.shown}` : `would upload ${preview.shown} (${megabytes(preview.bytes)}, ${preview.seconds?.toFixed(1) ?? "?"} s, poster at ${preview.timecode ?? "Apple's choice"}) and place it`;
+			sending.add(preview.key);
+			const how = target.action === "replace" ? `in place of appShots' earlier upload${replace ? "" : " (with --replace)"}` : `as preview ${target.placements.length + 1} of at most ${group.limit}`;
+			console.log(`${target.label}  ${sends} in ${group.group}, ${how}${moves(uploaded, preview)}`);
+		}
+		for (const line of fullLines) console.log(`  ! ${line}`);
+		if (replacing.length > 0 && !replace) notes.add("appShots takes its earlier uploads off a page only with --replace. Ask the user before adding it.");
+		for (const note of notes) console.log(`  ! ${note}`);
+		if (skipped || full.length > 0) process.exitCode = 1;
+		return console.log("Run it again without --dry-run to do it.");
+	}
+	/** @type {Map<string, string>} video id of each preview, by key */
+	const videos = new Map();
+	const labelOf = (preview) => targets.find((target) => target.preview === preview)?.label ?? `${preview.locale.padEnd(8)} ${preview.display.padEnd(10)}`;
+	const pending = new Map();
+	let sent = 0;
+	for (const preview of needed) {
+		let video = before.get(preview.key);
+		if (video) console.log(`${labelOf(preview)}  ${preview.shown} was uploaded before, and is not sent again`);
+		else {
+			video = {
+				id: await uploadVideo(account, library, preview),
+				referenceName: preview.referenceName,
+				state: "UPLOAD_COMPLETE",
+				timecode: preview.timecode
+			};
+			sent++;
+			console.log(`${labelOf(preview)}  uploaded ${preview.shown} (${megabytes(preview.bytes)})`);
+		}
+		const known = state.previews[preview.key];
+		state.previews[preview.key] = {
+			hash: preview.hash,
+			referenceName: preview.referenceName,
+			video: video.id,
+			placements: known?.hash === preview.hash && known.video === video.id ? known.placements : {}
+		};
+		saveState(stateFile, state);
+		videos.set(preview.key, video.id);
+		if (!isReady(video.state)) pending.set(video.id, preview);
+	}
+	/** @type {Set<string>} */
+	const moved = new Set();
+	for (const target of targets) {
+		const { preview } = target;
+		const placed = target.placements.find((placement) => placement.video?.referenceName === preview.referenceName)?.video;
+		const id = videos.get(preview.key);
+		const video = placed ?? (id ? before.get(preview.key) ?? {
+			id,
+			referenceName: preview.referenceName,
+			state: "UPLOAD_COMPLETE",
+			timecode: preview.timecode
+		} : null);
+		if (!video || moved.has(video.id) || !posterMoves(video, preview, notes)) continue;
+		moved.add(video.id);
+		await setPosterTime(account, video.id, preview.timecode);
+		console.log(`${target.label}  moved the poster frame of ${preview.shown} to ${preview.timecode}`);
+	}
+	let late = 0;
+	if (pending.size > 0 && flags["no-wait"]) late = pending.size;
+	else if (pending.size > 0) {
+		console.log(`Waiting for Apple to process ${counted(pending.size, "preview")}. That takes some minutes; --no-wait stops after the upload.`);
+		const result = await processing(account, library, pending);
+		for (const { preview, video, details } of result.refused) {
+			console.log(`  ! ${labelOf(preview)}  Apple did not take ${preview.shown}: ${details.join(" ") || "it gave no reason"}`);
+			if (state.previews[preview.key]?.video === video) state.previews[preview.key].video = null;
+			videos.delete(preview.key);
+		}
+		for (const id of result.late) videos.delete(
+			/** @type {Preview} */
+			pending.get(id).key
+		);
+		late = result.late.length;
+		if (result.refused.length > 0) process.exitCode = 1;
+		saveState(stateFile, state);
+	}
+	let placed = 0;
+	let there = 0;
+	for (const target of targets) {
+		const { preview } = target;
+		const group = preview.group;
+		if (target.action === "there") {
+			there++;
+			continue;
+		}
+		const video = videos.get(preview.key);
+		if (!video || pending.has(video) && flags["no-wait"]) continue;
+		const page = await previewPlacements(account, target.localization, group.group);
+		if (page.some((placement) => placement.video?.referenceName === preview.referenceName)) {
+			there++;
+			continue;
+		}
+		const earlier = replace ? page.filter((placement) => placement.video?.referenceName.startsWith(preview.earlier)) : [];
+		const first = earlier.length > 0 ? page.indexOf(earlier[0]) : page.length;
+		const at = page.slice(0, first).filter((placement) => !earlier.includes(placement)).length;
+		const room = page.length < group.limit;
+		if (!room) for (const old of earlier) await removePlacement(account, old);
+		const id = await placePreview(account, {
+			localization: target.localization,
+			group: group.group,
+			video
+		});
+		if (room) for (const old of earlier) await removePlacement(account, old);
+		const now = (await previewPlacements(account, target.localization, group.group)).map((placement) => placement.id);
+		const rest = now.filter((each) => each !== id);
+		const wanted = [
+			...rest.slice(0, at),
+			id,
+			...rest.slice(at)
+		];
+		if (wanted.join(" ") !== now.join(" ")) await orderPlacements(account, {
+			localization: target.localization,
+			group: group.group,
+			ids: wanted
+		});
+		state.previews[preview.key].placements[target.localization] = id;
+		saveState(stateFile, state);
+		placed++;
+		console.log(`${target.label}  placed in ${group.group}${earlier.length > 0 ? ", in place of appShots' earlier upload" : ""}, preview ${at + 1} of ${wanted.length}`);
+	}
+	const summary = [
+		placed > 0 ? `${counted(placed, "preview")} placed` : "",
+		sent > 0 ? `${sent} uploaded` : "",
+		there > 0 ? `${there} there already` : ""
+	].filter(Boolean);
+	console.log(`${summary.length > 0 ? summary.join(", ") : "Nothing placed"}.`);
+	if (late > 0) console.log(`Apple is still processing ${counted(late, "preview")}. Run 'appshots video push --resume' later to place ${late === 1 ? "it" : "them"}; nothing is uploaded again.`);
+	for (const note of notes) console.log(`  ! ${note}`);
+	if (skipped) process.exitCode = 1;
+	console.log(`Nothing was submitted for review. Apple can take up to 24 hours before a preview plays in App Store Connect. Look the version over and submit it yourself: https://appstoreconnect.apple.com/apps/${app.id}`);
+}
+var PUSH_TIMING, STATE_VERSION, shown$1, megabytes, counted, platformOf, hashOf, saveState;
+var init_push = __esmMin((() => {
+	init_fail();
+	init_prompt();
+	init_update();
+	init_util();
+	init_asc();
+	init_displays();
+	init_library();
+	init_locales();
+	init_push$1();
+	init_check();
+	init_specs();
+	init_timecode();
+	PUSH_TIMING = {
+		wait: 12e5,
+		first: 5e3,
+		most: 3e4
+	};
+	STATE_VERSION = 1;
+	shown$1 = (file) => path.relative(process.cwd(), file) || file;
+	megabytes = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
+	counted = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+	platformOf = (display) => display === "mac" ? "MAC_OS" : "IOS";
+	hashOf = (file) => new Promise((resolve, reject) => {
+		const hash = createHash("sha256");
+		createReadStream(file).on("error", reject).on("data", (chunk) => hash.update(chunk)).on("end", () => resolve(hash.digest("hex")));
+	});
+	saveState = (file, state) => writeAtomic(file, `${JSON.stringify(state, null, 2)}\n`);
+}));
+//#endregion
+//#region cli/src/video/command.mjs
+init_api();
+init_config();
+init_fail();
+init_proc();
+init_xcode();
+init_layers();
+init_plan$1();
+/** @typedef {Plan} Plan */
+/** @typedef {Record<string, string | true>} Flags */
+/**
+* The steps the other parts of the CLI hold, loaded when they run. Each import names its module outright, so that
+* the build puts it into the one file; a build made without one of them has an empty module in its place.
+* @type {Record<string, () => Promise<Record<string, unknown>>>}
+*/
+const STEPS = {
+	recordScenes: () => Promise.resolve().then(() => (init_record(), record_exports)),
+	readSidecar: () => Promise.resolve().then(() => (init_record(), record_exports)),
+	importFootage: () => Promise.resolve().then(() => (init_import(), import_exports)),
+	compose: () => Promise.resolve().then(() => (init_compose(), compose_exports)),
+	checkFiles: () => Promise.resolve().then(() => (init_check(), check_exports)),
+	contactSheet: () => Promise.resolve().then(() => (init_sheet(), sheet_exports)),
+	choosePoster: () => Promise.resolve().then(() => (init_poster(), poster_exports)),
+	findFfmpeg: () => Promise.resolve().then(() => (init_ffmpeg(), ffmpeg_exports)),
+	ffmpegStatus: () => Promise.resolve().then(() => (init_ffmpeg(), ffmpeg_exports)),
+	videoPush: () => Promise.resolve().then(() => (init_push(), push_exports)),
+	scaffoldRemotion: () => Promise.resolve().then(() => (init_remotion(), remotion_exports))
+};
+/**
+* A step by the name of the function that does it, or null when this build has none.
+* @param {keyof typeof STEPS} name
+* @returns {Promise<((...args: any[]) => any) | null>}
+*/
+async function optionalStep(name) {
+	let module;
+	try {
+		module = await STEPS[name]();
+	} catch (error) {
+		if (error?.code === "ERR_MODULE_NOT_FOUND") return null;
+		throw error;
+	}
+	const found = module[name];
+	return typeof found === "function" ? found : null;
+}
+/**
+* A step the sub-action cannot do without.
+* @param {keyof typeof STEPS} name
+* @param {string} action
+*/
+async function step(name, action) {
+	return await optionalStep(name) ?? fail(`'appshots video ${action}' is not available in this build of appshots. 'appshots update' brings this CLI up to date with the server's.`);
+}
+/**
+* @typedef {object} Action
+* @property {string[]} flags
+* @property {string} usage
+* @property {(rest: string[], flags: Flags) => Promise<unknown> | unknown} run
+*/
+/** @type {Record<string, Action>} */
+const VIDEO_ACTIONS = {
+	init: {
+		flags: [
+			"plan",
+			"display",
+			"lang",
+			"again"
+		],
+		usage: "init [project] [--plan <file>] [--display iphone,ipad,mac] [--lang <codes>] [--again]",
+		run: (rest, flags) => {
+			if (rest.length > 1) fail(usageOf("init"));
+			return initPlan(rest[0], flags);
+		}
+	},
+	plan: {
+		flags: ["plan", "json"],
+		usage: "plan [--plan <file>] [--json]",
+		run: (rest, flags) => rest.length > 0 ? fail(usageOf("plan")) : storyboard(flags)
+	},
+	record: {
+		flags: [
+			"plan",
+			"scene",
+			"lang",
+			"display",
+			"sim",
+			"device",
+			"mac",
+			"web",
+			"realtime",
+			"manual",
+			"seconds",
+			"window",
+			"again",
+			"reuse-footage"
+		],
+		usage: "record [--scene <ids>] [--lang <codes>] [--display <keys>] [--sim [name] | --device [name] | --mac [app] | --web <url>] [--realtime] [--manual] [--seconds <n>] [--window <WxH>] [--again] [--reuse-footage]",
+		run: async (rest, flags) => {
+			if (rest.length > 0) fail(usageOf("record"));
+			const recordScenes = await step("recordScenes", "record");
+			const plan = await loadPlan(flags);
+			return recordScenes(plan, picked(plan, flags));
+		}
+	},
+	import: {
+		flags: [
+			"plan",
+			"scene",
+			"lang",
+			"display"
+		],
+		usage: "import <file> --scene <id> [--lang <code>] [--display <key>]",
+		run: async (rest, flags) => {
+			if (rest.length !== 1) fail(usageOf("import"));
+			const importFootage = await step("importFootage", "import");
+			const plan = await loadPlan(flags);
+			return importFootage(plan, rest[0], picked(plan, flags));
+		}
+	},
+	layers: {
+		flags: [
+			"plan",
+			"lang",
+			"display"
+		],
+		usage: "layers [--lang <codes>] [--display <keys>]",
+		run: async (rest, flags) => {
+			if (rest.length > 0) fail(usageOf("layers"));
+			const given = readPlanFlag(flags);
+			const plan = resolvePlan(given, await fetchProject$1(given.project));
+			return layersCommand(plan, {
+				displays: selectedDisplays(plan, flags),
+				locales: selectedLocales(plan, flags)
+			});
+		}
+	},
+	compose: {
+		flags: [
+			"plan",
+			"lang",
+			"display",
+			"engine",
+			"draft",
+			"jobs"
+		],
+		usage: "compose [--lang <codes>] [--display <keys>] [--engine ffmpeg|remotion] [--draft] [--jobs <n>]",
+		run: async (rest, flags) => {
+			if (rest.length > 0) fail(usageOf("compose"));
+			const compose = await step("compose", "compose");
+			const plan = await loadPlan(flags);
+			return compose(plan, picked(plan, flags));
+		}
+	},
+	check: {
+		flags: [
+			"plan",
+			"display",
+			"lang",
+			"json"
+		],
+		usage: "check [files...] [--display <key>] [--json]",
+		run: (rest, flags) => checkPreviews(rest, flags)
+	},
+	sheet: {
+		flags: [
+			"plan",
+			"raw",
+			"every",
+			"lang",
+			"display",
+			"scene"
+		],
+		usage: "sheet [file] [--raw] [--every <seconds>] [--lang <codes>] [--display <keys>]",
+		run: (rest, flags) => sheet(rest, flags)
+	},
+	poster: {
+		flags: [
+			"plan",
+			"at",
+			"lang",
+			"display"
+		],
+		usage: "poster --at <seconds> [file] [--lang <codes>] [--display <keys>]",
+		run: (rest, flags) => poster(rest, flags)
+	},
+	remotion: {
+		flags: [
+			"plan",
+			"yes",
+			"no-install",
+			"again"
+		],
+		usage: "remotion [--yes] [--no-install] [--again]",
+		run: async (rest, flags) => {
+			if (rest.length > 0) fail(usageOf("remotion"));
+			return (await step("scaffoldRemotion", "remotion"))(workFolderOf(flags), {
+				yes: Boolean(flags.yes),
+				install: !flags["no-install"],
+				again: Boolean(flags.again)
+			});
+		}
+	},
+	push: {
+		flags: [
+			"plan",
+			"app",
+			"version",
+			"lang",
+			"display",
+			"replace",
+			"dry-run",
+			"no-wait",
+			"resume"
+		],
+		usage: "push [--app <bundle id>] [--version <v>] [--lang <codes>] [--display <keys>] [--replace] [--dry-run] [--no-wait] [--resume]",
+		run: async (rest, flags) => {
+			if (rest.length > 0) fail(usageOf("push"));
+			const videoPush = await step("videoPush", "push");
+			const plan = await loadPlan(flags);
+			return videoPush(plan, picked(plan, flags));
+		}
+	},
+	guide: {
+		flags: [],
+		usage: "guide",
+		run: () => guide()
+	}
+};
+/** Every flag a sub-action takes, for the command's entry: which one takes which is said by the sub-action. */
+const VIDEO_FLAGS = [...new Set(Object.values(VIDEO_ACTIONS).flatMap((action) => action.flags))];
+/** @param {string} action */
+const usageOf = (action) => `Usage: appshots video ${VIDEO_ACTIONS[action].usage}`;
+const VIDEO_USAGE = `Usage: appshots video ${Object.keys(VIDEO_ACTIONS).join(" | ")}. 'appshots help video' lists what each one takes.`;
+/**
+* `appshots video <action>`.
+* @param {Args} args
+*/
+async function video({ positional: [action, ...rest], flags }) {
+	const entry = action !== void 0 && Object.hasOwn(VIDEO_ACTIONS, action) ? VIDEO_ACTIONS[action] : null;
+	if (!entry) fail(VIDEO_USAGE);
+	const known = new Set(["help", ...entry.flags]);
+	for (const flag of Object.keys(flags)) if (VIDEO_FLAGS.includes(flag) && !known.has(flag)) console.error(`appshots: video ${action} takes no --${flag}, so it is left out. 'appshots help video' lists what each one takes.`);
+	return entry.run(rest, Object.fromEntries(Object.entries(flags).filter(([flag]) => known.has(flag))));
+}
+/** @param {Flags} flags */
+function readPlanFlag(flags) {
+	if (flags.plan === true) fail("--plan needs a file name, such as --plan appshots.video.json.");
+	return readPlan$1(typeof flags.plan === "string" ? flags.plan : PLAN_FILE$1);
+}
+/** @param {Flags} flags */
+const planFileOf = (flags) => path.resolve(typeof flags.plan === "string" ? flags.plan : PLAN_FILE$1);
+/**
+* appshots-video/ beside the plan, for a step that needs no plan.
+* @param {Flags} flags
+*/
+const workFolderOf = (flags) => path.join(path.dirname(planFileOf(flags)), WORK_FOLDER);
+/** @param {string} id */
+async function fetchProject$1(id) {
+	return (await (await request(loadConfig(), "GET", projectRoute(id))).json()).project;
+}
+/**
+* The plan --plan names, or appshots.video.json here. A plan that leaves its languages out has the project's, so
+* the project is asked for then; otherwise the steps run without the server.
+* @param {Flags} flags
+* @returns {Promise<Plan & { locales: string[] }>}
+*/
+async function loadPlan(flags) {
+	const plan = readPlanFlag(flags);
+	return plan.locales ? plan : resolvePlan(plan, await fetchProject$1(plan.project));
+}
+/**
+* The flags with --lang, --display and --scene checked against the plan before anything starts, and --lang
+* written as the plan writes its languages, for the steps that read them.
+* @param {Plan & { locales: string[] }} plan
+* @param {Flags} flags
+* @returns {Flags}
+*/
+function picked(plan, flags) {
+	const locales = selectedLocales(plan, flags);
+	selectedDisplays(plan, flags);
+	if (typeof flags.scene === "string") selectedScenes(plan, flags);
+	return typeof flags.lang === "string" ? {
+		...flags,
+		lang: locales.join(",")
+	} : flags;
+}
+/**
+* `appshots video plan`: checks the plan and prints its storyboard, or gives it as JSON. Without the server it
+* still runs, as far as a plan that names its languages goes; captions taken from slides then show as such.
+* @param {Flags} flags
+*/
+async function storyboard(flags) {
+	const plan = readPlanFlag(flags);
+	const fetched = await attempt(() => fetchProject$1(plan.project));
+	if (fetched.problem !== void 0 && !plan.locales) fail(`The plan takes its languages from project ${plan.project}, and that could not be read: ${fetched.problem}`);
+	if (fetched.problem !== void 0) console.error(`appshots: project ${plan.project} could not be read, so the captions taken from its slides are not shown: ${fetched.problem}`);
+	const project = fetched.value ?? null;
+	const resolved = project ? resolvePlan(plan, project) : plan;
+	const readSidecar = await optionalStep("readSidecar");
+	const board = buildStoryboard(resolved, {
+		project,
+		recording: readSidecar ? (display, locale, scene) => readSidecar(resolved.root, display, locale, scene.id) : () => null
+	});
+	console.log(flags.json ? JSON.stringify(board, null, 2) : storyboardText(board));
+}
+/**
+* The previews the compose made, for the displays and languages picked: out/<locale>/<display>/<name>.mp4.
+* @param {Plan & { locales: string[] }} plan
+* @param {Flags} flags
+*/
+function previews(plan, flags) {
+	const { out } = workFolders(plan);
+	const displays = selectedDisplays(plan, flags);
+	const found = selectedLocales(plan, flags).flatMap((locale) => displays.map((display) => ({
+		locale,
+		display,
+		file: path.join(out, locale, display, `${plan.name}.mp4`)
+	}))).filter(({ file }) => existsSync(file));
+	if (found.length === 0) fail(`There is no preview in ${path.relative(process.cwd(), out) || out} yet${flags.lang || flags.display ? " for what --lang and --display pick" : ""}. 'appshots video compose' makes them.`);
+	return found;
+}
+/** @param {string} file */
+const shown = (file) => path.relative(process.cwd(), file) || file;
+/**
+* `appshots video check [files...]`: checks videos against Apple's specification; without files, the plan's
+* previews. Ends with 1 when any of them has an error.
+* @param {string[]} files
+* @param {Flags} flags
+*/
+async function checkPreviews(files, flags) {
+	const checkFiles = await step("checkFiles", "check");
+	if (flags.display === true) fail("--display needs the display the files are for, such as --display iphone.");
+	if (files.length > 0) return checkFiles(files.map((file) => path.resolve(file)), {
+		display: flags.display,
+		json: Boolean(flags.json),
+		root: workFolderOf(flags)
+	});
+	if (!existsSync(planFileOf(flags))) fail(`Name the videos to check: ${usageOf("check")}. Without them it checks the previews of ${path.basename(planFileOf(flags))}, and there is none here.`);
+	const plan = await loadPlan(flags);
+	const found = previews(plan, flags);
+	const displays = [...new Set(found.map((each) => each.display))];
+	return checkFiles(found.map((each) => each.file), {
+		display: displays.length === 1 ? displays[0] : void 0,
+		json: Boolean(flags.json),
+		root: workFolders(plan).work
+	});
+}
+/**
+* `appshots video sheet [file]`: a contact sheet of a video, of each preview, or with --raw of the recordings of
+* each display and language, one block of rows per recording in the plan's order.
+* @param {string[]} rest
+* @param {Flags} flags
+*/
+async function sheet(rest, flags) {
+	if (rest.length > 1 || rest.length === 1 && flags.raw) fail(`${usageOf("sheet")}. A file or --raw, not both.`);
+	const every = flags.every === void 0 ? 1 : Number(flags.every);
+	if (!(every > 0 && every <= 60)) fail("--every takes the seconds between pictures, such as --every 1 or --every 0.5.");
+	const contactSheet = await step("contactSheet", "sheet");
+	const findFfmpeg = await step("findFfmpeg", "sheet");
+	/** @type {Array<{ files: string[], labels: string[], out: string }>} */
+	let sheets;
+	let root = workFolderOf(flags);
+	if (rest.length === 1) {
+		const file = path.resolve(rest[0]);
+		if (!existsSync(file)) fail(`There is no video at ${rest[0]}.`);
+		sheets = [{
+			files: [file],
+			labels: [path.basename(file)],
+			out: `${file.replace(/\.[^./]+$/, "")}.sheet.png`
+		}];
+	} else {
+		const plan = await loadPlan(flags);
+		root = workFolders(plan).work;
+		if (flags.raw) {
+			const readSidecar = await step("readSidecar", "sheet --raw");
+			const scenes = selectedScenes(plan, flags);
+			sheets = [];
+			for (const display of selectedDisplays(plan, flags)) for (const locale of selectedLocales(plan, flags)) {
+				const own = scenes.map((scene) => ({
+					scene,
+					sidecar: readSidecar(plan.root, display, locale, scene.id)
+				})).filter(({ sidecar }) => sidecar?.file && !sidecar.reuse);
+				if (own.length > 0) sheets.push({
+					files: own.map(({ sidecar }) => sidecar.file),
+					labels: own.map(({ scene }) => scene.id),
+					out: path.join(workFolders(plan).raw, display, locale, "sheet.png")
+				});
+			}
+			if (sheets.length === 0) fail("There are no recordings yet for what is picked. 'appshots video record' makes them.");
+		} else sheets = previews(plan, flags).map(({ file }) => ({
+			files: [file],
+			labels: [path.basename(file)],
+			out: `${file.replace(/\.mp4$/, "")}.sheet.png`
+		}));
+	}
+	if (flags.scene && !flags.raw) console.error("appshots: --scene picks recordings for --raw, so it is left out.");
+	const tools = await findFfmpeg({
+		root,
+		need: "sheet"
+	});
+	for (const each of sheets) {
+		const made = await contactSheet(each.files, each.out, { every }, tools);
+		const rows = made.blocks ?? [];
+		const order = each.files.length > 1 && rows.length === each.files.length ? `; top to bottom: ${rows.map((block, at) => `${each.labels[at]} (${block.rows} row${block.rows === 1 ? "" : "s"})`).join(", ")}` : "";
+		console.log(`${shown(made.file ?? each.out)}: a picture every ${every} s${order}`);
+	}
+}
+/**
+* `appshots video poster --at <seconds> [file]`: takes the poster of each preview, or of one, at another time,
+* and keeps that time for the upload.
+* @param {string[]} rest
+* @param {Flags} flags
+*/
+async function poster(rest, flags) {
+	if (rest.length > 1 || flags.at === void 0 || flags.at === true) fail(`${usageOf("poster")}. --at is the seconds into the preview of the frame that shows before it plays.`);
+	const seconds = Number(flags.at);
+	if (!(seconds >= 0)) fail("--at takes the seconds into the preview, such as --at 4.5.");
+	const choosePoster = await step("choosePoster", "poster");
+	const findFfmpeg = await step("findFfmpeg", "poster");
+	let files;
+	let root = workFolderOf(flags);
+	if (rest.length === 1) {
+		files = [path.resolve(rest[0])];
+		if (!existsSync(files[0])) fail(`There is no video at ${rest[0]}.`);
+	} else {
+		const plan = await loadPlan(flags);
+		root = workFolders(plan).work;
+		files = previews(plan, flags).map(({ file }) => file);
+	}
+	const tools = await findFfmpeg({
+		root,
+		need: "poster"
+	});
+	for (const file of files) {
+		const made = await choosePoster(file, seconds, tools);
+		console.log(`${shown(made.file)}: the frame at ${made.seconds.toFixed(2)} s (${made.timecode}), which 'appshots video push' gives App Store Connect as the poster`);
+	}
+}
+/** The ffmpeg line of 'appshots check', or null in a build without the video steps. It never asks or installs. */
+async function ffmpegLine() {
+	const status = await optionalStep("ffmpegStatus");
+	return status ? await status(path.join(process.cwd(), WORK_FOLDER)) : null;
+}
+/**
+* Whether the app this runs in may record the screen, which taking a Mac app's window needs. It asks macOS
+* without making it show the request. Null when that cannot be told.
+*/
+async function screenRecordingLine() {
+	const answer = (await run$1("osascript", [
+		"-l",
+		"JavaScript",
+		"-e",
+		"ObjC.bindFunction('CGPreflightScreenCaptureAccess', ['bool', []]); $.CGPreflightScreenCaptureAccess()"
+	])).stdout.trim();
+	if (answer === "true") return "allowed, which capturing or recording a Mac app's window needs";
+	if (answer === "false") return "not allowed for the app this runs in. Only capturing or recording a Mac app's window needs it: allow it under System Settings > Privacy & Security > Screen & System Audio Recording, then open the terminal again";
+	return null;
+}
+/** Whether this Xcode's devicectl can record a connected device's screen, for 'appshots video record --device'. */
+async function deviceRecordingLine() {
+	const result = await xcrun([
+		"devicectl",
+		"device",
+		"capture",
+		"--help"
+	], { timeout: 15e3 });
+	return /\bscreen-record\b/.test(`${result.stdout}\n${result.stderr}`) ? "devicectl can record a connected iPhone's or iPad's screen for 'appshots video record --device' (experimental; the simulator is the surer source)" : "this Xcode's devicectl cannot record a device's screen. Record it with QuickTime Player (File > New Movie Recording, the iPhone as camera) and bring it in with 'appshots video import'";
+}
+//#endregion
+//#region cli/src/check.mjs
+init_api();
+init_build();
+init_web$1();
+init_fail();
+init_proc();
+init_projects();
+init_sim$1();
+init_asc();
+init_toolkits();
+init_update();
+init_xcode();
+/**
+* One report of what there is to work with, so an agent sees it in a single call. Nothing missing makes it
+* fail: each line says what is there, or what to do about it. Everything is asked at once and printed in order,
+* so the report takes as long as its slowest question.
+*/
+async function check() {
+	const projects = xcodeProjects(projectDirs());
+	const mac = host.platform === "darwin";
+	const server = serverStatus();
+	const skill = skillStatus();
+	const store = storeStatus();
+	const version = mac ? xcode().then(({ env }) => run$1("xcodebuild", ["-version"], { env })) : null;
+	const schemes = projects.length === 1 ? attempt(() => schemesOf(projects[0])) : null;
+	const simulators = mac ? attempt(availableSimulators) : null;
+	const devices = mac ? attempt(() => connectedDevices({ timeout: 15e3 })) : null;
+	const ffmpeg = mac ? attempt(ffmpegLine) : null;
+	const screen = mac ? attempt(screenRecordingLine) : null;
+	const deviceRecording = devices ? devices.then(({ value }) => value && value.length > 0 ? attempt(deviceRecordingLine) : null) : null;
+	const settled = Promise.allSettled([
+		server,
+		skill,
+		store,
+		version,
+		schemes,
+		simulators,
+		devices,
+		ffmpeg,
+		screen,
+		deviceRecording
+	]);
+	try {
+		await report({
+			projects,
+			server,
+			skill,
+			store,
+			version,
+			schemes,
+			simulators,
+			devices,
+			ffmpeg,
+			screen,
+			deviceRecording
+		});
+	} finally {
+		await settled;
+	}
+}
+/**
+* @param {object} probes
+* @param {string[]} probes.projects
+* @param {Promise<string>} probes.server
+* @param {Promise<string | null>} probes.skill
+* @param {Promise<string>} probes.store
+* @param {Promise<Result> | null} probes.version
+* @param {Promise<{ value?: string[], problem?: string }> | null} probes.schemes
+* @param {Promise<{ value?: Simulator[], problem?: string }> | null} probes.simulators
+* @param {Promise<{ value?: Array<{ name: string, udid: string, model: string, transport: string }>, problem?: string }> | null} probes.devices
+* @param {Promise<{ value?: string | null, problem?: string }> | null} probes.ffmpeg
+* @param {Promise<{ value?: string | null, problem?: string }> | null} probes.screen
+* @param {Promise<{ value?: string, problem?: string } | null> | null} probes.deviceRecording
+*/
+async function report(probes) {
+	const { projects } = probes;
+	console.log(`Server: ${await probes.server}`);
+	const skill = await probes.skill;
+	if (skill) console.log(`Skill: ${skill}`);
+	console.log(`App Store Connect: ${await probes.store}`);
+	const kits = toolkits(process.cwd());
+	const known = kits.filter((kit) => !kit.unsure);
+	const starter = kits.some((kit) => kit.simulator) ? "boot" : "run";
+	const apart = projects.length === 0 && known.length > 0 && starter === "run";
+	const version = await probes.version;
+	const isXcode = version?.status === 0;
+	if (version && isXcode) {
+		const { dir, picked } = await xcode();
+		const note = picked ? ". xcode-select points at the Command Line Tools, so appshots uses this Xcode" : "";
+		console.log(`Xcode: ${dir.replace(/\/Contents\/Developer\/?$/, "")}, version ${version.stdout.match(/Xcode (\S+)/)?.[1] ?? "unknown"}${note}`);
+	} else if (version) console.log(apart ? "Xcode: not found, and this project needs none." : "Xcode: not found. Install Xcode from the App Store; the Command Line Tools alone cannot build an app or run a simulator.");
+	else console.log("Xcode: this is not a Mac. Simulators, devices and Mac windows need one. 'appshots capture --web <address>' takes a web app's pages here, and 'appshots upload' takes screenshots you already have.");
+	if (projects.length === 0 && known.length > 0) console.log("Project: no Xcode workspace or project here, and 'appshots run' builds only those. This app is captured as its toolkit runs it:");
+	else if (projects.length === 0) {
+		console.log("Project: nothing recognised in this folder. Run this in your app's folder. 'appshots run' builds an Xcode workspace or project, and --project <path> points at one elsewhere. An app made with anything else is started by its own command and captured where it runs: 'appshots capture' in the simulator, 'appshots capture --mac <app>' in a window on this Mac, 'appshots capture --web <address>' in a browser.");
+		const below = appFolders(process.cwd());
+		const list = below.slice(0, 8).map((entry) => `${entry.folder} (${entry.made.join(", ")})`).join(", ");
+		if (below.length > 0) console.log(`  Apps below this folder: ${list}${below.length > 8 ? `, and ${below.length - 8} more` : ""}. Run 'appshots check' in the one whose screens you want.`);
+	} else if (projects.length > 1) console.log(`Project: several in this folder, so 'appshots run' needs --project <path>: ${projects.map(fromHere).join(", ")}`);
+	else {
+		const [project] = projects;
+		const schemes = isXcode && probes.schemes ? await probes.schemes : { problem: "Its schemes cannot be read without Xcode." };
+		const scheme = schemes.value && obviousScheme(project, schemes.value);
+		if (schemes.problem !== void 0) console.log(`Project: ${fromHere(project)}. ${schemes.problem.replace(/\s+/g, " ")}`);
+		else if (schemes.value.length === 0) console.log(`Project: ${fromHere(project)}, no scheme. Open it in Xcode and share one under Product > Scheme > Manage Schemes.`);
+		else if (schemes.value.length === 1) console.log(`Project: ${fromHere(project)}, scheme ${scheme}`);
+		else console.log(`Project: ${fromHere(project)}, schemes ${schemes.value.join(", ")}. ${scheme ? `'appshots run' builds ${scheme}` : "Name the app's with 'appshots run --scheme <name>'"}`);
+	}
+	const simulators = isXcode && probes.simulators ? await probes.simulators : { problem: "unknown without Xcode" };
+	for (const kit of kits) {
+		const head = projects.length > 0 && kit.simulator ? ", so its own command starts the app rather than 'appshots run'" : "";
+		console.log(`Made with ${kit.name} (${kit.sign})${head}:`);
+		for (const line of toolkitLines(kit, simulators.value ? recommendedSimulator(simulators.value, "iphone") : null, isXcode)) console.log(line);
+	}
+	if (kits.some((kit) => kit.web) || projects.length === 0 && kits.length === 0) {
+		const browser = findBrowser();
+		console.log(browser ? `Browser: ${browser.name}, which draws the pages for 'appshots capture --web'` : "Browser: none found. 'appshots capture --web' draws pages with Chrome, Chromium, Edge or Brave. Install one, or point APPSHOTS_BROWSER at a Chromium browser's program.");
+	}
+	const ffmpeg = probes.ffmpeg ? await probes.ffmpeg : null;
+	if (ffmpeg?.problem !== void 0 || ffmpeg?.value) console.log(`ffmpeg: ${ffmpeg.problem ?? ffmpeg.value}`);
+	const screen = probes.screen ? (await probes.screen).value : null;
+	if (screen) console.log(`Screen Recording: ${screen}`);
+	if (apart) return;
+	if (simulators.problem !== void 0) console.log(`Simulators: ${simulators.problem.split("\n")[0]}`);
+	else {
+		const all = simulators.value;
+		const recommended = new Set();
+		const lines = ["Simulators:"];
+		for (const [kind, { label, flag, store }] of Object.entries(SIM_KINDS)) {
+			const simulator = recommendedSimulator(all, kind);
+			const command = `'appshots ${starter}${flag}'`;
+			if (!simulator) {
+				if (kind !== "duo") lines.push(`  ${label}: none. Add an iOS simulator in Xcode under Settings > Components.`);
+				continue;
+			}
+			recommended.add(simulator.udid);
+			const state = simulator.booted ? "booted" : `not booted, ${command} boots it`;
+			const model = simulator.fallback ? (await attempt(() => storeModel(kind))).value : null;
+			const create = model ? `; '${`appshots ${starter}${flag}`} --create' adds an ${model.type.name}` : "";
+			const note = simulator.fallback ? `. No ${store} is installed, which is the size the store asks for${create}` : "";
+			lines.push(`  ${label}: ${simulatorLabel(simulator)}${screenLabel(simulator)}, ${state}  (${simulator.udid})${note}`);
+		}
+		for (const simulator of all.filter((sim) => sim.booted && !recommended.has(sim.udid))) lines.push(`  Also booted: ${simulatorLabel(simulator)}${screenLabel(simulator)}  (${simulator.udid})`);
+		const booted = all.filter((sim) => sim.booted).sort((a, b) => Number(recommended.has(b.udid)) - Number(recommended.has(a.udid)));
+		const which = booted.length > 1 ? " --sim <simulator>" : "";
+		if (booted.length === 0) lines.push(starter === "run" ? "Apps: no simulator is booted. 'appshots run' boots one, then builds and installs the app in this folder." : "Apps: no simulator is booted. 'appshots boot' boots one, and the project's own command builds and installs the app there.");
+		else {
+			lines.push(`Apps: these are installed and start without a build, with 'appshots launch <bundle id>${which}'`);
+			const shown = booted.slice(0, 6);
+			const installed = await Promise.all(shown.map((simulator) => installedApps(simulator.udid).catch(() => null)));
+			for (const [at, simulator] of shown.entries()) {
+				const apps = installed[at];
+				const more = apps && apps.length > 8 ? `, and ${apps.length - 8} more` : "";
+				const list = apps?.slice(0, 8).map((app) => `${app.name} (${app.bundleId})`).join(", ");
+				if (!apps) lines.push(`  ${simulator.name}: it is busy and did not answer. 'appshots simctl listapps ${simulator.udid}' asks again`);
+				else lines.push(`  ${simulator.name}: ${list ? `${list}${more}` : starter === "run" ? "none of your own. 'appshots run' builds and installs the app in this folder" : "none of your own yet"}`);
+			}
+			if (booted.length > 6) lines.push(`  ${booted.length - 6} more booted simulators are not listed.`);
+		}
+		for (const line of lines) console.log(line);
+	}
+	const devices = isXcode && probes.devices ? await probes.devices : { problem: "unknown without Xcode" };
+	if (devices.problem !== void 0) console.log(`Devices: ${devices.problem.split("\n")[0]}`);
+	else if (devices.value.length === 0) console.log("Devices: none connected. To capture from an iPhone or iPad, plug it in, unlock it and trust this Mac.");
+	else {
+		console.log("Devices:");
+		for (const device of devices.value) console.log(`  ${device.name}  ${device.model}  ${device.transport}  (${device.udid})`);
+		const recording = probes.deviceRecording ? await probes.deviceRecording : null;
+		if (recording) console.log(`  Screen recording: ${recording.problem?.split("\n")[0] ?? recording.value}`);
+	}
+}
+//#endregion
+//#region cli/src/clean.mjs
+init_config();
+init_fail();
+/**
+* How much a file or folder takes on disk, in bytes.
+* @param {string} file
+* @returns {number}
+*/
+function sizeOf(file) {
+	let stat;
+	try {
+		stat = lstatSync(file);
+	} catch {
+		return 0;
+	}
+	if (!stat.isDirectory()) return stat.size;
+	let names = [];
+	try {
+		names = readdirSync(file);
+	} catch {}
+	return names.reduce((sum, name) => sum + sizeOf(path.join(file, name)), 0);
+}
+/** @param {number} bytes */
+const amount = (bytes) => bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
+/**
+* Removes what 'appshots run' keeps between builds: the build logs and, for --fresh, the builds themselves. With
+* --older-than only those of projects not built for that many days.
+* @param {Record<string, string | true>} flags
+*/
+function clean(flags) {
+	if (flags["older-than"] === true) fail("--older-than needs a number of days, as in: --older-than 30");
+	const days = flags["older-than"] === void 0 ? 0 : Number(String(flags["older-than"]).replace(/d$/i, ""));
+	if (!(days >= 0)) fail("--older-than needs a number of days, as in: --older-than 30");
+	const dry = Boolean(flags["dry-run"]);
+	let names = [];
+	try {
+		names = readdirSync(BUILD_CACHE);
+	} catch {}
+	const projects = new Map();
+	for (const name of names) {
+		const project = name.replace(/\.log$/, "");
+		let stat;
+		try {
+			stat = lstatSync(path.join(BUILD_CACHE, name));
+		} catch {
+			continue;
+		}
+		const entry = projects.get(project) ?? {
+			files: [],
+			used: 0
+		};
+		entry.files.push(path.join(BUILD_CACHE, name));
+		entry.used = Math.max(entry.used, stat.mtimeMs);
+		projects.set(project, entry);
+	}
+	const before = Date.now() - days * 864e5;
+	const old = [...projects.entries()].filter(([, entry]) => entry.used <= before).sort(([a], [b]) => a.localeCompare(b));
+	if (old.length === 0) {
+		console.log(projects.size === 0 ? `There are no builds in ${tilde(BUILD_CACHE)}.` : `None of the ${projects.size} builds in ${tilde(BUILD_CACHE)} is older than ${days} days.`);
+		return;
+	}
+	let freed = 0;
+	for (const [project, entry] of old) {
+		const size = entry.files.reduce((sum, file) => sum + sizeOf(file), 0);
+		freed += size;
+		const age = Math.floor((Date.now() - entry.used) / 864e5);
+		console.log(`  ${project}  (last built ${age === 0 ? "today" : age === 1 ? "a day ago" : `${age} days ago`}, ${amount(size)})`);
+		if (!dry) for (const file of entry.files) rmSync(file, {
+			recursive: true,
+			force: true
+		});
+	}
+	const count = `${old.length} ${old.length === 1 ? "build" : "builds"}`;
+	console.log(dry ? `Would remove ${count} from ${tilde(BUILD_CACHE)}, ${amount(freed)}. Run it again without --dry-run to do it.` : `Removed ${count} from ${tilde(BUILD_CACHE)}, ${amount(freed)} freed. Xcode's own build folder is left as it is.`);
 }
 //#endregion
 //#region cli/src/setup.mjs
+init_api();
+init_config();
+init_fail();
+init_proc();
+init_prompt();
+init_update();
 /** The file of this command as it is installed: the built one, also when this runs from the sources in cli/src. */
 function selfFile() {
 	const here = fileURLToPath(import.meta.url);
@@ -4069,7 +13052,7 @@ function sizeRank(screen, display) {
 * The width and height a PNG gives in its header, or null for a file that is no PNG.
 * @param {string} file
 */
-function pngSize$1(file) {
+function pngSize(file) {
 	const head = Buffer.alloc(24);
 	const fd = openSync(file, "r");
 	try {
@@ -4085,6 +13068,9 @@ function pngSize$1(file) {
 }
 //#endregion
 //#region cli/src/capture-plan/jobs.mjs
+init_fail();
+init_sim$1();
+init_util();
 /** @typedef {Plan} Plan */
 /** @typedef {PlanDevice} PlanDevice */
 /** @typedef {PlanScreen} PlanScreen */
@@ -4244,6 +13230,9 @@ function reachLabel(plan, job, built) {
 }
 //#endregion
 //#region cli/src/capture-plan/fastlane.mjs
+init_fail();
+init_upload();
+init_util();
 /** @typedef {Config} Config */
 /**
 * Splits the name fastlane snapshot gives a file into the simulator it was taken on and the name the UI test gave
@@ -4319,7 +13308,7 @@ function fastlaneShots(dir, locales, { only = null, ids = null } = {}) {
 			}
 			const file = path.join(dir, relative);
 			const parts = splitSnapshotName(path.parse(entry).name);
-			const size = pngSize$1(file);
+			const size = pngSize(file);
 			const display = size ? displayOfSize(size.width, size.height) : null;
 			const kind = display ? PLAN_DISPLAYS[display].kind : size ? kindOfName(parts.device) : null;
 			if (!size || !kind) {
@@ -4391,6 +13380,7 @@ async function importFastlane(config, { project, locales, dir, only, ids, dryRun
 }
 //#endregion
 //#region cli/src/capture-plan/read.mjs
+init_fail();
 /** The file `shoot --plan` reads when it is not given another. */
 const PLAN_FILE = "appshots.capture.json";
 const KIND_LABELS = {
@@ -4715,6 +13705,10 @@ function readPlan(file) {
 }
 //#endregion
 //#region cli/src/capture-plan/uitest.mjs
+init_config();
+init_fail();
+init_util();
+init_xcode();
 /** How long one UI test may take to bring its screen up and end, building nothing. */
 const TEST_TIMEOUT = 6e5;
 /**
@@ -4857,6 +13851,16 @@ async function runUITest({ project, scheme, test, simulator, locale }, take) {
 }
 //#endregion
 //#region cli/src/capture-plan/run.mjs
+init_api();
+init_build();
+init_sim$2();
+init_config();
+init_fail();
+init_projects();
+init_sim$1();
+init_upload();
+init_util();
+init_xcode();
 /** @typedef {Plan} Plan */
 /** @typedef {Job} Job */
 /** @typedef {Simulator} Simulator */
@@ -5161,7 +14165,7 @@ async function shootPlan(args) {
 	for (const device of working) {
 		const simulator = simulators.get(device);
 		const mine = launched.filter((job) => job.device === device);
-		if (app && mine.some((job) => !job.screen.app)) await install(simulator, app.file);
+		if (app && mine.some((job) => !job.screen.app)) await install$1(simulator, app.file);
 		await checkInstalled(simulator, [...new Set(mine.map((job) => screenApp(plan, job.screen, run.bundleId)).filter((each) => each !== void 0))], plan);
 	}
 	/** @type {string[]} */
@@ -5230,6 +14234,15 @@ async function shootPlan(args) {
 }
 //#endregion
 //#region cli/src/shoot.mjs
+init_api();
+init_mac$1();
+init_sim$2();
+init_config();
+init_fail();
+init_shot();
+init_sim$1();
+init_upload();
+init_util();
 const USAGE = "Usage: appshots shoot <project> <names...> [--sim <name>] [--device <name>] [--mac <app>] [--clean] [--out <dir>]";
 /**
 * The keys a person presses, one at a time, from a terminal in raw mode.
@@ -5355,515 +14368,9 @@ async function shoot(args, { keys } = {}) {
 	if (at < names.length) console.log(`Stopped before: ${names.slice(at).join(", ")}`);
 }
 //#endregion
-//#region cli/src/store/locales.mjs
-/**
-* The languages a store page can have, by the codes App Store Connect knows them by. The Studio offers the same
-* list (web/src/languages.tsx).
-*/
-const ASC_LOCALES = [
-	"ar-SA",
-	"bn-BD",
-	"ca",
-	"zh-Hans",
-	"zh-Hant",
-	"hr",
-	"cs",
-	"da",
-	"nl-NL",
-	"en-AU",
-	"en-CA",
-	"en-GB",
-	"en-US",
-	"fi",
-	"fr-FR",
-	"fr-CA",
-	"de-DE",
-	"el",
-	"gu-IN",
-	"he",
-	"hi",
-	"hu",
-	"id",
-	"it",
-	"ja",
-	"kn-IN",
-	"ko",
-	"ms",
-	"ml-IN",
-	"mr-IN",
-	"no",
-	"or-IN",
-	"pl",
-	"pt-BR",
-	"pt-PT",
-	"pa-IN",
-	"ro",
-	"ru",
-	"sk",
-	"sl-SI",
-	"es-MX",
-	"es-ES",
-	"sv",
-	"ta-IN",
-	"te-IN",
-	"th",
-	"tr",
-	"uk",
-	"ur-PK",
-	"vi"
-];
-const REGIONS = {
-	en: "en-US",
-	de: "de-DE",
-	fr: "fr-FR",
-	es: "es-ES",
-	pt: "pt-BR",
-	nl: "nl-NL",
-	zh: "zh-Hans",
-	ar: "ar-SA",
-	bn: "bn-BD",
-	gu: "gu-IN",
-	kn: "kn-IN",
-	ml: "ml-IN",
-	mr: "mr-IN",
-	or: "or-IN",
-	pa: "pa-IN",
-	ta: "ta-IN",
-	te: "te-IN",
-	sl: "sl-SI",
-	ur: "ur-PK"
-};
-const ALIASES = {
-	"zh-cn": "zh-Hans",
-	"zh-sg": "zh-Hans",
-	"zh-tw": "zh-Hant",
-	"zh-hk": "zh-Hant",
-	"zh-mo": "zh-Hant",
-	"es-419": "es-MX",
-	"es-us": "es-MX",
-	nb: "no",
-	nn: "no",
-	iw: "he",
-	in: "id"
-};
-/** @param {string} a @param {string} b */
-const same = (a, b) => a.toLowerCase() === b.toLowerCase();
-/**
-* The code App Store Connect has for a language a project names, or null when it has none: de is de-DE, de-AT
-* is de-DE as well, zh-TW is zh-Hant, ja-JP is ja.
-* @param {string} code
-* @returns {string | null}
-*/
-function ascLocale(code) {
-	const lower = code.toLowerCase();
-	const exact = ASC_LOCALES.find((entry) => same(entry, lower));
-	if (exact) return exact;
-	if (lower in ALIASES) return ALIASES[lower];
-	const longer = ASC_LOCALES.filter((entry) => entry.includes("-") && lower.startsWith(`${entry.toLowerCase()}-`)).sort((a, b) => b.length - a.length)[0];
-	if (longer) return longer;
-	const bare = lower.split("-")[0];
-	return ALIASES[bare] ?? REGIONS[bare] ?? ASC_LOCALES.find((entry) => same(entry, bare)) ?? null;
-}
-/**
-* Whether two codes mean one language: the same code, or the same language where one of them names no region.
-* @param {string} a
-* @param {string} b
-*/
-const sameLanguage = (a, b) => same(a, b) || (!a.includes("-") || !b.includes("-")) && a.toLowerCase().split("-")[0] === b.toLowerCase().split("-")[0];
-/**
-* @typedef {object} StoreLocale
-* @property {string | null} code The language of the store page, or the one it would be added as; null when App
-*   Store Connect has no such language.
-* @property {boolean} listed Whether the store page has it already.
-* @property {string[]} [others] The other languages of the page it could have been, when there was a choice.
-*/
-/**
-* The language of the store page a folder or a text is for. `to` is the one the user named; otherwise the same
-* code, the only one of the same language, the app's primary language among several (en for an app made in
-* en-US with an en-GB page as well), or the code App Store Connect has for it.
-* @param {string} code
-* @param {string[]} listed The languages the store page has.
-* @param {{ primary?: string, to?: string }} [options]
-* @returns {StoreLocale}
-*/
-function storeLocale(code, listed, { primary, to } = {}) {
-	const find = (wanted) => listed.find((entry) => same(entry, wanted));
-	if (to) {
-		const there = find(to);
-		return there ? {
-			code: there,
-			listed: true
-		} : {
-			code: ascLocale(to),
-			listed: false
-		};
-	}
-	const exact = find(code);
-	if (exact) return {
-		code: exact,
-		listed: true
-	};
-	const close = listed.filter((entry) => sameLanguage(entry, code));
-	if (close.length === 1) return {
-		code: close[0],
-		listed: true
-	};
-	const canonical = ascLocale(code);
-	if (close.length > 1) {
-		const chosen = close.find((entry) => primary && same(entry, primary)) ?? close.find((entry) => canonical && same(entry, canonical));
-		if (chosen) return {
-			code: chosen,
-			listed: true,
-			others: close.filter((entry) => entry !== chosen)
-		};
-		return {
-			code: null,
-			listed: false,
-			others: close
-		};
-	}
-	const there = canonical ? find(canonical) : void 0;
-	if (there) return {
-		code: there,
-		listed: true
-	};
-	return {
-		code: canonical,
-		listed: false
-	};
-}
-//#endregion
-//#region cli/src/store/push.mjs
-/** How many screenshots go to Apple at once. More only meets "too many requests" sooner. */
-const SENDS = 3;
-/**
-* @param {Record<string, string | true>} flags
-* @param {string} name
-* @param {string} example
-*/
-function listFlag(flags, name, example) {
-	if (flags[name] === void 0) return null;
-	if (typeof flags[name] !== "string") fail(`--${name} needs a value, such as --${name} ${example}.`);
-	return flags[name].split(",").map((part) => part.trim()).filter(Boolean);
-}
-/**
-* The size a PNG says it has, from its first bytes. Null for a file that is no PNG.
-* @param {string} file
-*/
-function pngSize(file) {
-	const head = Buffer.alloc(24);
-	const fd = openSync(file, "r");
-	let read = 0;
-	try {
-		read = readSync(fd, head, 0, 24, 0);
-	} finally {
-		closeSync(fd);
-	}
-	if (read < 24 || head.readUInt32BE(0) !== 2303741511) return null;
-	return {
-		width: head.readUInt32BE(16),
-		height: head.readUInt32BE(20)
-	};
-}
-/**
-* The languages --lang picks out of the files, and the store languages it puts them onto. `en=en-GB` puts the
-* folder en onto en-GB; `en-US,en-GB` puts it onto both; a plain `de` only picks.
-* @param {Record<string, string | true>} flags
-*/
-function languageFlag(flags) {
-	const entries = listFlag(flags, "lang", "de-DE,fr-FR");
-	if (!entries) return null;
-	return entries.map((entry) => {
-		const [from, to, more] = entry.split("=").map((part) => part.trim());
-		if (more !== void 0 || !from || to === "") fail(`--lang takes codes, or a code of the files with the store language it goes onto, as in: --lang en=en-GB`);
-		if (to === void 0) return {
-			from,
-			to: null
-		};
-		const code = ascLocale(to);
-		if (!code) fail(`App Store Connect has no language "${to}". It has the codes the Studio offers under Languages, such as en-GB or de-DE.`);
-		return {
-			from,
-			to: code
-		};
-	});
-}
-/**
-* What a folder of 'appshots pull' holds for the store: per language, the files of each folder that has a display
-* in App Store Connect, in the order of their names. Banners and the header and search results images are not
-* screenshots, so they are not among them.
-* @param {string} root
-* @param {Record<string, string | true>} flags
-*/
-function exportSets(root, flags) {
-	const folders = (dir) => readdirSync(dir).filter((name) => !name.startsWith(".") && statSync(path.join(dir, name)).isDirectory());
-	const order = Object.keys(STORE_DISPLAYS);
-	const languages = languageFlag(flags);
-	const only = listFlag(flags, "only", "iphone,ipad");
-	for (const part of only ?? []) {
-		if (part in STORE_BY_HAND || part === "duo") fail(`App Store Connect's API has no display for the ${STORE_BY_HAND["iphone-duo"]} yet, so its screenshots go in by hand.`);
-		if (![
-			"iphone",
-			"ipad",
-			"mac"
-		].includes(part) && !(part in STORE_DISPLAYS)) fail(`--only takes iphone, ipad, mac, or folders of the export: ${order.join(", ")}.`);
-	}
-	const sets = [];
-	const byHand = new Set();
-	/** @type {Map<string, string[]>} The store languages a folder goes onto, where --lang names them. */
-	const targets = new Map();
-	let creatives = false;
-	const found = folders(root).sort();
-	for (const locale of found) {
-		const picked = languages?.filter((entry) => sameLanguage(entry.from, locale));
-		if (languages && picked?.length === 0) continue;
-		const onto = (picked ?? []).map((entry) => entry.to ?? (entry.from.includes("-") && !locale.includes("-") ? entry.from : null)).filter(Boolean);
-		if (onto.length > 0) targets.set(locale, [...new Set(onto)]);
-		const taken = new Set();
-		for (const target of folders(path.join(root, locale)).sort((a, b) => order.indexOf(a) - order.indexOf(b))) {
-			if (target === "creative-assets") creatives = true;
-			if (target in STORE_BY_HAND && !only) byHand.add(target);
-			const [display, width, height] = STORE_DISPLAYS[target] ?? [];
-			if (!display || taken.has(display) || only && !only.some((part) => target === part || target.startsWith(`${part}-`))) continue;
-			const dir = path.join(root, locale, target);
-			const files = readdirSync(dir).filter((name) => /\.(png|jpe?g)$/i.test(name) && !name.startsWith(".")).sort((a, b) => a.localeCompare(b, void 0, { numeric: true })).map((name) => path.join(dir, name));
-			if (files.length === 0) continue;
-			if (files.length > 10) fail(`${dir} holds ${files.length} screenshots, and App Store Connect takes ten per display.`);
-			for (const file of files) {
-				const size = pngSize(file);
-				if (size && (size.width !== width || size.height !== height)) fail(`${file} is ${size.width} x ${size.height}, and the pictures of ${target} are ${width} x ${height}. Nothing was changed.`);
-			}
-			taken.add(display);
-			sets.push({
-				locale,
-				target,
-				display,
-				files
-			});
-		}
-	}
-	const missing = (languages ?? []).map((entry) => entry.from).filter((code) => !found.some((locale) => sameLanguage(code, locale)));
-	if (missing.length > 0) fail(`There is no language ${missing.join(", ")} among the files. They hold: ${found.join(", ") || "none"}.`);
-	if (sets.length > 0) return {
-		sets,
-		byHand: [...byHand],
-		creatives,
-		targets
-	};
-	if (found.some((name) => name in STORE_DISPLAYS)) fail(`${root} holds the folders of one language. --from takes the folder above it, the one with a folder per language.`);
-	fail(only ? `Nothing among the files is for ${only.join(", ")}.` : byHand.size > 0 ? `The files hold screenshots for the ${STORE_BY_HAND["iphone-duo"]} only, and App Store Connect's API has no display for it yet. They go in by hand.` : `There are no store screenshots in ${root}. Render the project first: --render does it.`);
-}
-/**
-* Sends one file where Apple says and tells it the file is there. Returns the screenshot's id.
-* @param {Account} account
-* @param {string} set
-* @param {string} file
-* @param {Buffer} data What is in the file, read once for its checksum and for this.
-* @param {string} checksum
-*/
-async function uploadScreenshot(account, set, file, data, checksum) {
-	const name = path.basename(file);
-	const body = { data: {
-		type: "appScreenshots",
-		attributes: {
-			fileName: name,
-			fileSize: data.length
-		},
-		relationships: { appScreenshotSet: { data: {
-			type: "appScreenshotSets",
-			id: set
-		} } }
-	} };
-	const reserved = (await apple(account, "POST", "/v1/appScreenshots", `take ${name}`, body)).data;
-	await sendParts(reserved.attributes?.uploadOperations ?? [], (offset, length) => data.subarray(offset, offset + length), name, "Run the command again: it starts that display over.");
-	await apple(account, "PATCH", `/v1/appScreenshots/${reserved.id}`, `finish ${name}`, { data: {
-		type: "appScreenshots",
-		id: reserved.id,
-		attributes: {
-			uploaded: true,
-			sourceFileChecksum: checksum
-		}
-	} });
-	return reserved.id;
-}
-/**
-* Apple checks each file once it has arrived. Waits for that, three minutes at most, and returns what it refused.
-* @param {Account} account
-* @param {Array<{ label: string, set: string, names: Map<string, string> }>} uploads
-*/
-async function settle(account, uploads) {
-	const state = (shot) => shot.attributes?.assetDeliveryState?.state;
-	const refused = [];
-	const until = Date.now() + 18e4;
-	let waiting = uploads;
-	while (waiting.length > 0) {
-		const answers = await Promise.all(waiting.map((upload) => appleList(account, `/v1/appScreenshotSets/${upload.set}/appScreenshots?limit=200`, "check the uploads")));
-		const still = [];
-		for (const [at, upload] of waiting.entries()) {
-			const shots = answers[at].filter((shot) => upload.names.has(shot.id));
-			if (shots.some((shot) => state(shot) !== "COMPLETE" && state(shot) !== "FAILED")) {
-				still.push(upload);
-				continue;
-			}
-			for (const shot of shots.filter((entry) => state(entry) === "FAILED")) {
-				const why = (shot.attributes.assetDeliveryState.errors ?? []).map((error) => error.description || error.code).filter(Boolean).join(" ");
-				refused.push(`${upload.label}  ${upload.names.get(shot.id)}: ${why || "refused without a reason"}`);
-			}
-		}
-		waiting = still;
-		if (waiting.length === 0 || Date.now() > until) break;
-		await pause(3e3);
-	}
-	return {
-		refused,
-		late: waiting.reduce((sum, upload) => sum + upload.names.size, 0)
-	};
-}
-/** @param {number} count */
-const screenshots = (count) => `${count} ${count === 1 ? "screenshot" : "screenshots"}`;
-/**
-* @param {string | undefined} project
-* @param {Record<string, string | true>} flags
-*/
-async function storePush(project, flags) {
-	if (flags.from === true || !project && flags.from === void 0) fail("Usage: appshots store push <project> --app <bundle id> [--version <number>] [--render] [--from <folder>] [--lang <codes>] [--only <devices or folders>] [--add-languages] [--dry-run]");
-	const dry = Boolean(flags["dry-run"]);
-	const account = storeAccount(flags);
-	const app = await storeApp(account, flags.app);
-	let root;
-	if (typeof flags.from === "string") {
-		root = path.resolve(flags.from);
-		if (!existsSync(root) || !statSync(root).isDirectory()) fail(`No such folder: ${root}`);
-	} else {
-		const dir = mkdtempSync(path.join(tmpdir(), "appshots-store-"));
-		root = dir;
-		process.on("exit", () => rmSync(dir, {
-			recursive: true,
-			force: true
-		}));
-		await fetchExport(loadConfig(), project, root, flags.render);
-	}
-	const { sets, byHand, creatives, targets } = exportSets(root, flags);
-	const versions = [];
-	for (const platform of new Set(sets.map((set) => platformOf(set.display)))) versions.push(await storeVersion(account, app, platform, flags));
-	const notes = [];
-	const choices = [];
-	let skipped = 0;
-	const plans = [];
-	for (const version of versions) {
-		const listed = await versionLanguages(account, version);
-		const codes = listed.map((entry) => entry.attributes.locale);
-		const mine = sets.filter((set) => platformOf(set.display) === version.platform);
-		const onto = [];
-		const seen = new Map();
-		const system = STORE_PLATFORMS[version.platform];
-		for (const locale of new Set(mine.map((set) => set.locale))) for (const to of targets.get(locale) ?? [void 0]) {
-			const found = storeLocale(locale, codes, {
-				primary: app.primaryLocale,
-				to
-			});
-			if (!found.listed && found.others) {
-				notes.push(`${locale}: version ${version.number} for ${system} has ${found.others.join(" and ")}, and either could be meant. Say which with --lang ${locale}=${found.others[0]}.`);
-				skipped++;
-				continue;
-			}
-			if (!found.listed && !flags["add-languages"]) {
-				const as = found.code && found.code !== locale ? ` as ${found.code}` : "";
-				notes.push(`${locale}: version ${version.number} for ${system} has no such language on its store page. It has ${codes.join(", ")}. --add-languages adds it${as}.`);
-				skipped++;
-				continue;
-			}
-			if (!found.code) fail(`${locale} is not a language App Store Connect has, so it cannot be added there. Put its screenshots onto one it has with --lang ${locale}=<code>, such as --lang ${locale}=en-US. Nothing was changed.`);
-			const code = found.code;
-			if (seen.has(code)) fail(`${seen.get(code)} and ${locale} would both go onto ${code}. Leave one out with --lang. Nothing was changed.`);
-			seen.set(code, locale);
-			if (code !== locale) choices.push(`${locale} goes onto ${code}${found.others ? `; the store page has ${found.others.join(" and ")} as well, which --lang ${locale}=${found.others[0]} picks` : ""}`);
-			onto.push({
-				locale,
-				code
-			});
-		}
-		plans.push({
-			version,
-			listed,
-			mine,
-			onto
-		});
-	}
-	if (dry) console.log("Dry run: nothing is changed.");
-	for (const version of versions) if (!version.id && !dry) await createVersion(account, app, version);
-	else console.log(`${app.name} ${version.number} for ${STORE_PLATFORMS[version.platform]}${version.id ? "" : ": this version would be created, with the languages and screenshots of the one before it"}`);
-	for (const line of new Set(choices)) console.log(line);
-	const uploads = [];
-	let unchanged = 0;
-	for (const plan of plans) {
-		const { version, mine } = plan;
-		const listed = version.before && !dry ? await versionLanguages(account, version) : plan.listed;
-		for (const { locale, code } of plan.onto) {
-			let language = listed.find((entry) => entry.attributes.locale === code);
-			if (!language) {
-				if (!dry) language = await addLanguage(account, version, code);
-				console.log(`${code}  ${dry ? "would be added" : "added"} to the store page`);
-			}
-			const there = language ? await appleList(account, `/v1/appStoreVersionLocalizations/${language.id}/appScreenshotSets?limit=200`, `list the displays of ${code}`) : [];
-			for (const set of mine.filter((entry) => entry.locale === locale)) {
-				const label = `${code.padEnd(8)} ${set.target.padEnd(11)}`;
-				let display = there.find((entry) => entry.attributes.screenshotDisplayType === set.display);
-				const old = display ? await appleList(account, `/v1/appScreenshotSets/${display.id}/appScreenshots?limit=200`, `list the screenshots of ${code}`) : [];
-				const data = set.files.map((file) => readFileSync(file));
-				const sums = data.map((bytes) => createHash("md5").update(bytes).digest("hex"));
-				if (old.length === sums.length && old.every((shot, at) => shot.attributes.sourceFileChecksum === sums[at] && !["FAILED", "AWAITING_UPLOAD"].includes(shot.attributes.assetDeliveryState?.state))) {
-					console.log(`${label}  unchanged, the same ${screenshots(old.length)} are there`);
-					unchanged += old.length;
-					continue;
-				}
-				const instead = old.length > 0 ? `, in place of the ${old.length} there` : "";
-				if (dry) {
-					console.log(`${label}  would upload ${screenshots(sums.length)}${instead}`);
-					continue;
-				}
-				await pool(old, SENDS, (shot) => apple(account, "DELETE", `/v1/appScreenshots/${shot.id}`, "remove a screenshot"));
-				display ??= (await apple(account, "POST", "/v1/appScreenshotSets", `open the display ${set.target}`, { data: {
-					type: "appScreenshotSets",
-					attributes: { screenshotDisplayType: set.display },
-					relationships: { appStoreVersionLocalization: { data: {
-						type: "appStoreVersionLocalizations",
-						id: language.id
-					} } }
-				} })).data;
-				const ids = await pool(set.files, SENDS, (file, at) => uploadScreenshot(account, display.id, file, data[at], sums[at]));
-				const names = new Map(ids.map((id, at) => [id, path.basename(set.files[at])]));
-				if (sums.length > 1) await apple(account, "PATCH", `/v1/appScreenshotSets/${display.id}/relationships/appScreenshots`, "put the screenshots in order", { data: ids.map((id) => ({
-					type: "appScreenshots",
-					id
-				})) });
-				uploads.push({
-					label,
-					set: display.id,
-					names
-				});
-				console.log(`${label}  uploaded ${screenshots(sums.length)}${instead}`);
-			}
-		}
-	}
-	for (const target of byHand) notes.push(`${target}: App Store Connect's API has no display for the ${STORE_BY_HAND[target]} yet. Drag those files onto it by hand.`);
-	if (creatives) notes.push("The header and search results images are not uploaded. They go onto the Header and Search Results tab by hand.");
-	const sent = uploads.reduce((sum, upload) => sum + upload.names.size, 0);
-	if (sent > 0) {
-		console.log("Waiting for Apple to check them...");
-		const { refused, late } = await settle(account, uploads);
-		for (const line of refused) console.log(`  ! ${line}`);
-		if (late > 0) console.log(`  ! Apple is still checking ${screenshots(late)}. They show in App Store Connect when it is done.`);
-		if (refused.length > 0) process.exitCode = 1;
-		console.log(`${screenshots(sent)} uploaded${refused.length > 0 ? `, ${refused.length} of them refused by Apple` : ""}${unchanged > 0 ? `, ${unchanged} were there already` : ""}.`);
-	} else if (!dry) console.log(unchanged > 0 ? "Nothing to upload: App Store Connect has these screenshots already." : "Nothing was uploaded.");
-	for (const note of notes) console.log(`  ! ${note}`);
-	if (skipped > 0) process.exitCode = 1;
-	if (dry) return console.log("Run it again without --dry-run to do it.");
-	console.log(`Nothing was submitted for review. Look the version over and submit it yourself: https://appstoreconnect.apple.com/apps/${app.id}`);
-}
-//#endregion
 //#region cli/src/tools.mjs
+init_api();
+init_fail();
 /** @typedef {Config} Config */
 /**
 * @param {Config} config
@@ -5927,6 +14434,10 @@ async function call(config, name, input, flags) {
 }
 //#endregion
 //#region cli/src/store/text.mjs
+init_fail();
+init_asc();
+init_displays();
+init_locales();
 /** The texts of a store page and how many characters each may have. The first two belong to the app, the rest to a version. */
 const STORE_TEXTS = {
 	name: 30,
@@ -6092,6 +14603,19 @@ async function storeText(flags) {
 }
 //#endregion
 //#region cli/src/commands.mjs
+init_api();
+init_web$1();
+init_config();
+init_fail();
+init_plan();
+init_proc();
+init_pull();
+init_shot();
+init_sim$1();
+init_asc();
+init_push$1();
+init_update();
+init_upload();
 /**
 * @typedef {object} Command
 * @property {string[]} flags The options it takes, so that one it does not take is pointed out rather than ignored.
@@ -6303,6 +14827,10 @@ const COMMANDS = {
 			}
 		}
 	},
+	video: {
+		flags: VIDEO_FLAGS,
+		run: (args) => video(args)
+	},
 	open: {
 		flags: [],
 		run: async ({ positional }) => {
@@ -6476,6 +15004,11 @@ started by that toolkit's own command, and 'appshots check' says which.
         --set '<JSON>' | @file.json | -      Write the ones given, in that same shape. Takes --version,
                                              --add-languages and --dry-run as push does
         --platform <ios|mac>                 Which version's texts, for an app that has both
+  appshots video <command>               App previews for the App Store: record the app on this Mac, have
+                                         the server draw the captions in the project's style, cut them
+                                         together, check the result against Apple's rules and put it
+                                         into App Store Connect. 'appshots help video' lists the
+                                         commands, and 'appshots video guide' the steps in order
   appshots open [project]                Open the Studio in the browser
   appshots tools [tool]                  List the server's tools, or one tool's arguments
   appshots call <tool> [arguments]       Call one. Arguments are JSON: inline, @file.json, or - for stdin
@@ -6488,8 +15021,75 @@ started by that toolkit's own command, and 'appshots check' says which.
 Server and token come from APPSHOTS_URL / APPSHOTS_TOKEN, or from 'appshots setup' or 'appshots login'.
 The token is a personal one from Connect in the Studio. The App Store Connect key comes from
 'appshots store login', or from ASC_ISSUER_ID, ASC_KEY_ID and ASC_KEY_PATH.`;
+const VIDEO_HELP = `appshots video: app previews for the App Store, cut on this Mac from recordings of the app.
+The plan is appshots.video.json in this folder (--plan <file> names another one), and the work goes into
+appshots-video/ beside it. --lang <codes> and --display <keys> narrow a command to some of the plan's
+languages and displays. 'appshots video guide' prints the steps an agent follows, in order.
+
+  appshots video init [project]          Write appshots.video.json from the project's slides: the first
+                                         slide's headline on the intro card, then a scene for each slide
+                                         that shows a screen. Then give each scene its drive
+      --display <keys>                     iphone, ipad or mac (default: the screenshots' devices)
+      --lang <codes>                       Only these of the project's languages
+      --again                              Write it anew over the one there, losing what was changed
+  appshots video plan [--json]           Check the plan and print the storyboard: each scene with its
+                                         caption, when it starts and how long it runs, the length of
+                                         each display's preview, the time recording takes, what to fix
+  appshots video record                  Record each scene in each language on each display that has no
+                                         recording yet: an iPhone on the 6.9-inch simulator, an iPad on
+                                         the 13-inch one, with a clean status bar
+      --scene <ids>                        Only these scenes
+      --sim [name]                         On this simulator
+      --device [name]                      On a connected iPhone or iPad (experimental)
+      --mac [app]                          A Mac app's window; --window <width>x<height> sizes it first
+      --web <url>                          A web app's page, frame by frame; --realtime records it as it
+                                           plays, for a page with video or WebGL
+      --manual                             Drive each scene by hand; recording stops on Return
+      --seconds <n>                        Record each scene this long at most
+      --again                              Record again what has a recording
+      --reuse-footage                      Record the primary language only, and show it in the others
+                                           with their own captions
+  appshots video import <file> --scene <id> [--lang <code>] [--display <key>]
+                                         Take a recording made elsewhere, with QuickTime or Xcode, as a
+                                         scene's footage
+  appshots video layers                  Have the server draw the captions, cards, background and touch
+                                         ring of each display in the project's style. A new set uses one
+                                         render; the same text again is free
+  appshots video compose                 Cut the previews, each with its poster and its check, into
+                                         appshots-video/out/<lang>/<display>/
+      --engine <ffmpeg|remotion>           remotion after 'appshots video remotion'
+      --draft                              Quicker, to look at; push does not take it
+      --jobs <n>                           How many scenes are cut at once
+  appshots video check [files...] [--display <key>] [--json]
+                                         Check videos against Apple's specification, or the plan's
+                                         previews without files. Ends with 1 when one has an error
+  appshots video sheet [file] [--raw] [--every <seconds>]
+                                         A contact sheet, a picture a second: of a video, of each
+                                         preview, or with --raw of each language's recordings
+  appshots video poster --at <seconds> [file]
+                                         Take the poster at another time, and keep that time for push
+  appshots video remotion [--yes] [--no-install]
+                                         Explain Remotion's licence, then write a Remotion project into
+                                         appshots-video/remotion/ and install it there. --yes only once
+                                         the user has agreed to the licence
+  appshots video push [--app <bundle id>] [--version <v>]
+                                         Put the previews into the App Store Connect version being
+                                         prepared. Nothing is ever submitted for review or released
+      --replace                            Take the place of appShots' own earlier previews
+      --dry-run                            Change nothing and say what would be done
+      --no-wait                            Stop once uploaded; --resume goes on from there
+  appshots video guide                   Print the playbook`;
+/**
+* What 'appshots help <command>' and 'appshots <command> --help' print: the command's own page where it has one,
+* the whole list otherwise.
+* @param {string | undefined} topic
+*/
+const helpFor = (topic) => topic === "video" ? VIDEO_HELP : HELP;
 //#endregion
 //#region cli/src/main.mjs
+init_fail();
+init_update();
+init_xcode();
 async function main() {
 	const [command, ...rest] = process.argv.slice(2);
 	if (command === "simctl") {
@@ -6500,7 +15100,7 @@ async function main() {
 		return;
 	}
 	const args = parseArgs(rest);
-	if (!command || command === "help" || command === "--help" || args.flags.help) return console.log(HELP);
+	if (!command || command === "help" || command === "--help" || args.flags.help) return console.log(helpFor(command === "help" ? args.positional[0] : command));
 	const entry = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : void 0;
 	if (!entry) fail(`Unknown command "${command}". Run 'appshots help'.`);
 	for (const flag of unknownFlags(args.flags, entry.flags)) console.error(`appshots: ${command} takes no --${flag}, so it is left out. 'appshots help' lists what each command takes.`);

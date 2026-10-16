@@ -9,6 +9,7 @@ import { availableSimulators, installedApps, recommendedSimulator, screenLabel, 
 import { storeStatus } from "./store/asc.mjs";
 import { appFolders, toolkitLines, toolkits } from "./toolkits.mjs";
 import { skillStatus } from "./update.mjs";
+import { deviceRecordingLine, ffmpegLine, screenRecordingLine } from "./video/command.mjs";
 import { xcode } from "./xcode.mjs";
 
 /**
@@ -27,10 +28,15 @@ export async function check() {
   const simulators = mac ? attempt(availableSimulators) : null;
   // A device that is locked or asleep can keep devicectl waiting, and this is meant to be quick.
   const devices = mac ? attempt(() => connectedDevices({ timeout: 15000 })) : null;
+  // What app preview videos need: ffmpeg to cut them, Screen Recording for a Mac app's window, and devicectl's
+  // screen recording for a device, asked only when one is connected.
+  const ffmpeg = mac ? attempt(ffmpegLine) : null;
+  const screen = mac ? attempt(screenRecordingLine) : null;
+  const deviceRecording = devices ? devices.then(({ value }) => (value && value.length > 0 ? attempt(deviceRecordingLine) : null)) : null;
   // Whatever is not printed in the end is still waited for, so that nothing is left running.
-  const settled = Promise.allSettled([server, skill, store, version, schemes, simulators, devices]);
+  const settled = Promise.allSettled([server, skill, store, version, schemes, simulators, devices, ffmpeg, screen, deviceRecording]);
   try {
-    await report({ projects, server, skill, store, version, schemes, simulators, devices });
+    await report({ projects, server, skill, store, version, schemes, simulators, devices, ffmpeg, screen, deviceRecording });
   } finally {
     await settled;
   }
@@ -46,6 +52,9 @@ export async function check() {
  * @param {Promise<{ value?: string[], problem?: string }> | null} probes.schemes
  * @param {Promise<{ value?: import("./sim.mjs").Simulator[], problem?: string }> | null} probes.simulators
  * @param {Promise<{ value?: Array<{ name: string, udid: string, model: string, transport: string }>, problem?: string }> | null} probes.devices
+ * @param {Promise<{ value?: string | null, problem?: string }> | null} probes.ffmpeg
+ * @param {Promise<{ value?: string | null, problem?: string }> | null} probes.screen
+ * @param {Promise<{ value?: string, problem?: string } | null> | null} probes.deviceRecording
  */
 async function report(probes) {
   const { projects } = probes;
@@ -103,6 +112,10 @@ async function report(probes) {
     const browser = findBrowser();
     console.log(browser ? `Browser: ${browser.name}, which draws the pages for 'appshots capture --web'` : "Browser: none found. 'appshots capture --web' draws pages with Chrome, Chromium, Edge or Brave. Install one, or point APPSHOTS_BROWSER at a Chromium browser's program.");
   }
+  const ffmpeg = probes.ffmpeg ? await probes.ffmpeg : null;
+  if (ffmpeg?.problem !== undefined || ffmpeg?.value) console.log(`ffmpeg: ${ffmpeg.problem ?? ffmpeg.value}`);
+  const screen = probes.screen ? (await probes.screen).value : null;
+  if (screen) console.log(`Screen Recording: ${screen}`);
   // Nothing below concerns an app that never runs in a simulator or on a device.
   if (apart) return;
 
@@ -161,5 +174,7 @@ async function report(probes) {
   } else {
     console.log("Devices:");
     for (const device of devices.value) console.log(`  ${device.name}  ${device.model}  ${device.transport}  (${device.udid})`);
+    const recording = probes.deviceRecording ? await probes.deviceRecording : null;
+    if (recording) console.log(`  Screen recording: ${recording.problem?.split("\n")[0] ?? recording.value}`);
   }
 }

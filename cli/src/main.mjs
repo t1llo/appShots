@@ -2,7 +2,7 @@
 import { parseArgs, unknownFlags } from "./args.mjs";
 import { COMMANDS } from "./commands.mjs";
 import { Failure, fail } from "./fail.mjs";
-import { HELP } from "./help.mjs";
+import { helpFor } from "./help.mjs";
 import { staleNotice } from "./update.mjs";
 import { xcrun } from "./xcode.mjs";
 
@@ -14,7 +14,7 @@ async function main() {
     return;
   }
   const args = parseArgs(rest);
-  if (!command || command === "help" || command === "--help" || args.flags.help) return console.log(HELP);
+  if (!command || command === "help" || command === "--help" || args.flags.help) return console.log(helpFor(command === "help" ? args.positional[0] : command));
   const entry = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : undefined;
   if (!entry) fail(`Unknown command "${command}". Run 'appshots help'.`);
   for (const flag of unknownFlags(args.flags, entry.flags)) console.error(`appshots: ${command} takes no --${flag}, so it is left out. 'appshots help' lists what each command takes.`);

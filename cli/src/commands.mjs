@@ -19,6 +19,7 @@ import { storeText } from "./store/text.mjs";
 import { call, tools } from "./tools.mjs";
 import { update } from "./update.mjs";
 import { upload, uploadAll } from "./upload.mjs";
+import { VIDEO_FLAGS, video } from "./video/command.mjs";
 
 /**
  * @typedef {object} Command
@@ -132,6 +133,7 @@ export const COMMANDS = {
       }
     },
   },
+  video: { flags: VIDEO_FLAGS, run: (args) => video(args) },
   open: {
     flags: [],
     run: async ({ positional }) => {

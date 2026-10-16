@@ -81,10 +81,12 @@ export async function fetchLayers(plan, { display, locales = plan.locales }) {
   if (answer.status === 202 || (manifest.job && !manifest.layers)) {
     const job = await follow(config, manifest.job, display);
     const set = job.result?.set ?? job.set ?? manifest.set;
-    // The finished job answers with the set, or the same request does, now that it is drawn.
-    if (job.result?.layers) manifest = { ...job.result, charged: true };
-    else if (set) manifest = { ...(await (await request(config, "GET", projectRoute(plan.project, `/video-layers/${encodeURIComponent(set)}`))).json()), charged: true };
+    // The finished job answers with the set, or the same request does, now that it is drawn and costs nothing.
+    // Either way it was this job that drew it.
+    if (job.result?.layers) manifest = job.result;
+    else if (set) manifest = await (await request(config, "GET", projectRoute(plan.project, `/video-layers/${encodeURIComponent(set)}`))).json();
     else manifest = await (await request(config, "POST", route, { body: JSON.stringify({ ...body, background: false }), headers: { "content-type": "application/json" } })).json();
+    manifest = { ...manifest, charged: true };
   }
   if (typeof manifest.set !== "string" || !/^[0-9a-f]{8,64}$/.test(manifest.set) || !Array.isArray(manifest.layers)) fail(`The server answered the layers of ${display} with something that is not a set of layers. Is it an appShots server, and up to date?`);
 

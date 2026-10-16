@@ -142,6 +142,11 @@ started by that toolkit's own command, and 'appshots check' says which.
         --set '<JSON>' | @file.json | -      Write the ones given, in that same shape. Takes --version,
                                              --add-languages and --dry-run as push does
         --platform <ios|mac>                 Which version's texts, for an app that has both
+  appshots video <command>               App previews for the App Store: record the app on this Mac, have
+                                         the server draw the captions in the project's style, cut them
+                                         together, check the result against Apple's rules and put it
+                                         into App Store Connect. 'appshots help video' lists the
+                                         commands, and 'appshots video guide' the steps in order
   appshots open [project]                Open the Studio in the browser
   appshots tools [tool]                  List the server's tools, or one tool's arguments
   appshots call <tool> [arguments]       Call one. Arguments are JSON: inline, @file.json, or - for stdin
@@ -154,3 +159,69 @@ started by that toolkit's own command, and 'appshots check' says which.
 Server and token come from APPSHOTS_URL / APPSHOTS_TOKEN, or from 'appshots setup' or 'appshots login'.
 The token is a personal one from Connect in the Studio. The App Store Connect key comes from
 'appshots store login', or from ASC_ISSUER_ID, ASC_KEY_ID and ASC_KEY_PATH.`;
+
+export const VIDEO_HELP = `appshots video: app previews for the App Store, cut on this Mac from recordings of the app.
+The plan is appshots.video.json in this folder (--plan <file> names another one), and the work goes into
+appshots-video/ beside it. --lang <codes> and --display <keys> narrow a command to some of the plan's
+languages and displays. 'appshots video guide' prints the steps an agent follows, in order.
+
+  appshots video init [project]          Write appshots.video.json from the project's slides: the first
+                                         slide's headline on the intro card, then a scene for each slide
+                                         that shows a screen. Then give each scene its drive
+      --display <keys>                     iphone, ipad or mac (default: the screenshots' devices)
+      --lang <codes>                       Only these of the project's languages
+      --again                              Write it anew over the one there, losing what was changed
+  appshots video plan [--json]           Check the plan and print the storyboard: each scene with its
+                                         caption, when it starts and how long it runs, the length of
+                                         each display's preview, the time recording takes, what to fix
+  appshots video record                  Record each scene in each language on each display that has no
+                                         recording yet: an iPhone on the 6.9-inch simulator, an iPad on
+                                         the 13-inch one, with a clean status bar
+      --scene <ids>                        Only these scenes
+      --sim [name]                         On this simulator
+      --device [name]                      On a connected iPhone or iPad (experimental)
+      --mac [app]                          A Mac app's window; --window <width>x<height> sizes it first
+      --web <url>                          A web app's page, frame by frame; --realtime records it as it
+                                           plays, for a page with video or WebGL
+      --manual                             Drive each scene by hand; recording stops on Return
+      --seconds <n>                        Record each scene this long at most
+      --again                              Record again what has a recording
+      --reuse-footage                      Record the primary language only, and show it in the others
+                                           with their own captions
+  appshots video import <file> --scene <id> [--lang <code>] [--display <key>]
+                                         Take a recording made elsewhere, with QuickTime or Xcode, as a
+                                         scene's footage
+  appshots video layers                  Have the server draw the captions, cards, background and touch
+                                         ring of each display in the project's style. A new set uses one
+                                         render; the same text again is free
+  appshots video compose                 Cut the previews, each with its poster and its check, into
+                                         appshots-video/out/<lang>/<display>/
+      --engine <ffmpeg|remotion>           remotion after 'appshots video remotion'
+      --draft                              Quicker, to look at; push does not take it
+      --jobs <n>                           How many scenes are cut at once
+  appshots video check [files...] [--display <key>] [--json]
+                                         Check videos against Apple's specification, or the plan's
+                                         previews without files. Ends with 1 when one has an error
+  appshots video sheet [file] [--raw] [--every <seconds>]
+                                         A contact sheet, a picture a second: of a video, of each
+                                         preview, or with --raw of each language's recordings
+  appshots video poster --at <seconds> [file]
+                                         Take the poster at another time, and keep that time for push
+  appshots video remotion [--yes] [--no-install]
+                                         Explain Remotion's licence, then write a Remotion project into
+                                         appshots-video/remotion/ and install it there. --yes only once
+                                         the user has agreed to the licence
+  appshots video push [--app <bundle id>] [--version <v>]
+                                         Put the previews into the App Store Connect version being
+                                         prepared. Nothing is ever submitted for review or released
+      --replace                            Take the place of appShots' own earlier previews
+      --dry-run                            Change nothing and say what would be done
+      --no-wait                            Stop once uploaded; --resume goes on from there
+  appshots video guide                   Print the playbook`;
+
+/**
+ * What 'appshots help <command>' and 'appshots <command> --help' print: the command's own page where it has one,
+ * the whole list otherwise.
+ * @param {string | undefined} topic
+ */
+export const helpFor = (topic) => (topic === "video" ? VIDEO_HELP : HELP);
