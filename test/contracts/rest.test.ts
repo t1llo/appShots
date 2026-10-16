@@ -184,10 +184,16 @@ describe("public addresses", () => {
       assert.notEqual(local.etag, other.etag, route);
       assert.equal((await asHost(route, "docs-2.example.com")).etag, other.etag, route);
     }
-    const refused = await asHost("/install.sh", 'odd"host');
-    assert.equal(refused.status, 400);
-    assert.match(refused.text, /Set PUBLIC_URL/);
+    for (const host of ['odd"host', "evil.example/phish"]) {
+      const refused = await asHost("/install.sh", host);
+      assert.equal(refused.status, 400, host);
+      assert.match(refused.text, /Set PUBLIC_URL/);
+      const llms = await asHost("/llms.txt", host);
+      assert.equal(llms.status, 200, host);
+      assert.ok(llms.text.includes("http://localhost:") && !llms.text.includes(`://${host.split(/["/]/)[0]}`), host);
+    }
     assert.equal((await asHost("/install.sh", `localhost:${port}`)).status, 200);
+    assert.equal((await asHost("/install.sh", `[::1]:${port}`)).status, 200);
   });
 
   test("/llms.txt says whether people sign in as this server is set up", async () => {

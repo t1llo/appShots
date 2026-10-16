@@ -8,8 +8,11 @@ export function securityHeaders(_req: Request, res: Response, next: NextFunction
   next();
 }
 
-/** An address that can stand in a page, a script or a link as it is: a scheme, a host and port, maybe a path. */
-const PLAIN_ADDRESS = /^https?:\/\/[\w.:[\]-]+(\/[\w./~-]*)?$/;
+/**
+ * An address that can stand in a page, a script or a link as it is: a scheme, a host name or bracketed IPv6 address,
+ * and maybe a port. No path: a Host header never carries one, and links are made by adding a path to the address.
+ */
+const PLAIN_ADDRESS = /^https?:\/\/(?:[\w.-]+|\[[\da-fA-F:.]+\])(?::\d{1,5})?$/;
 
 /**
  * The address this server is reached at: PUBLIC_URL, or what the request says. Without PUBLIC_URL that is whatever
