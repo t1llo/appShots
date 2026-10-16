@@ -202,7 +202,7 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/check \
 ```
 
 - `ok` says whether the render would start. When it would not, `refused` gives each reason in the words the render would answer with, and the status is still 200: the check itself went through.
-- `warnings` are the ones the render would give, such as a screenshot or image name nothing is uploaded under.
+- `warnings` are the ones the render would give before it draws: a screenshot or image name nothing is uploaded under, and copy or logos App Review turns away, such as a price or "free". How the copy fits, such as a headline that had to shrink, is measured only as it is drawn, so the render alone warns about it.
 - `plan` is what it would draw: the languages, the sizes, the slides of each device counted from 0 (a device with a set of its own counts in that set), the header, search results and banner images, and how many pictures the browser draws, every language counted. It is left out when what was asked for cannot be drawn.
 - `background` is taken and ignored, so the body you are about to render with can be sent as it is. Only a body that does not have the shape above, such as an unknown size or a negative slide, is refused with status 400, and an unknown project is a 404. Everything else a render would refuse with 400, such as a language the project lacks, a slide it does not have or an account without renders left, comes back in `refused` with status 200.
 

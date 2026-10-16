@@ -117,7 +117,7 @@ Sets the wide pictures of `project`: `header`, `search` or `universal` for App S
 
 ### check_project
 
-Takes the arguments of `render` and says what a render with them would do, without drawing anything or using a render: whether it would be refused and why, in the words the render would use; what it would draw, by device, language and size; and what it would warn about, such as a screenshot or image name nothing is uploaded under. An agent calls it before each render and fixes what it names, so no render goes to a set that cannot come out right. A refusal here is an answer, not a failed call: only an unknown project, or an argument `render` would not take, fails.
+Takes the arguments of `render` and says what a render with them would do, without drawing anything or using a render: whether it would be refused and why, in the words the render would use; what it would draw, by device, language and size; and what it would warn about, such as a screenshot or image name nothing is uploaded under, or copy App Review turns away. How the copy fits is measured only as it is drawn, so those warnings come from the render alone. `previews` and `preview`, which say how a render answers, are taken and ignored. An agent calls it before each render and fixes what it names, so no render goes to a set that cannot come out right. A refusal here is an answer, not a failed call: only an unknown project, or an argument `render` would not take, fails.
 
 ### render
 
