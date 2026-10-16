@@ -103,7 +103,8 @@ export const registerRenderTools: RegisterTools = (server, tools) => {
         // Without pictures, the words have to say what the pictures would have shown.
         const shown = previews !== false;
         if (!shown) {
-          lines.push("", ...fitSummary(result.fit));
+          const summary = fitSummary(result.fit);
+          if (summary.length) lines.push("", ...summary);
           if (result.sheets.length) lines.push("", `Contact sheets: ${result.sheets.map((sheet) => `${base}/files/${id}/out/${sheet.path}`).join(", ")}`);
         }
         const listed = shown && preview === "store" ? listingSet(result.files) : undefined;
