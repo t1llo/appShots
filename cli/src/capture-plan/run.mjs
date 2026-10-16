@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { projectRoute, request } from "../api.mjs";
 import { build, pickScheme } from "../build.mjs";
-import { captureSettled, withCleanStatusBar } from "../capture/sim.mjs";
+import { BLANK_WAIT, captureSettled, withCleanStatusBar } from "../capture/sim.mjs";
 import { loadConfig } from "../config.mjs";
 import { attempt, fail } from "../fail.mjs";
 import { fromHere, xcodeProjects } from "../projects.mjs";
@@ -131,9 +131,12 @@ async function take(run, job, simulator) {
     await xcrun(["simctl", "terminate", simulator.udid, before]);
     run.started.delete(simulator.udid);
   }
+  let blank = false;
   if (screen.uitest && run.xcodeProject && run.scheme) {
     const options = { project: run.xcodeProject, scheme: run.scheme, test: screen.uitest, simulator, locale: job.locale };
-    await runUITest(options, () => captureSettled(simulator, job.file, wait));
+    await runUITest(options, async () => {
+      blank = await captureSettled(simulator, job.file, wait);
+    });
   } else {
     // Noted before it is started: a launch or a link that fails or runs out of time can have brought it up all the same.
     if (front) run.started.set(simulator.udid, front);
@@ -147,8 +150,10 @@ async function take(run, job, simulator) {
       const result = await xcrun(["simctl", "openurl", simulator.udid, screen.url]);
       if (result.status !== 0) fail(`Could not open ${screen.url} on ${simulator.name}${app ? `. Does ${app} take that link?` : ""}\n${result.stderr.trim()}`);
     }
-    await captureSettled(simulator, job.file, wait);
+    blank = await captureSettled(simulator, job.file, wait);
   }
+  // Most likely the launch screen or a page still loading, which a later run would skip once it was uploaded.
+  if (blank) fail(`${simulator.name} still showed nothing ${BLANK_WAIT / 1000} seconds after the start, so ${job.name} was not uploaded. Run the plan again, or give the screen a "wait" in seconds to take it as it is.`);
   await upload(run.config, run.project, job.file, job.name, job.device.kind, job.locale);
 }
 

@@ -7,7 +7,7 @@ import { blankScreen } from "./blank.mjs";
 /** @typedef {{ name: string, udid: string }} Booted */
 
 /** How long after a launch a screen that is still blank is taken as it is. */
-const BLANK_WAIT = 15000;
+export const BLANK_WAIT = 15000;
 
 // Full battery and signal, no carrier, and Wi-Fi, as Apple's own screenshots show them.
 const CLEAN = ["--dataNetwork", "wifi", "--wifiMode", "active", "--wifiBars", "3", "--cellularMode", "active", "--cellularBars", "4", "--operatorName", "", "--batteryState", "charged", "--batteryLevel", "100"];
@@ -62,7 +62,13 @@ export async function withCleanStatusBar(simulator, work) {
  * @param {string} file
  */
 async function screenshot(simulator, file) {
-  const result = await xcrun(["simctl", "io", simulator.udid, "screenshot", file]);
+  const take = () => xcrun(["simctl", "io", simulator.udid, "screenshot", file]);
+  let result = await take();
+  // Just after a boot simctl can fail once with nothing but its notes to say, and take the next one.
+  if (result.status !== 0) {
+    await pause(1000);
+    result = await take();
+  }
   if (result.status !== 0) fail(`Could not capture ${simulator.name}:\n${result.stderr.trim()}`);
 }
 
@@ -77,28 +83,41 @@ export async function captureSim(simulator, file) {
 
 /**
  * Captures an app that has just been started once its screen has come to rest: two frames in a row the same, the
- * first a second after the launch. A screen that keeps moving, such as one with a video, is taken as it is after
- * four seconds, and one still blank after fifteen. `wait`, when given, is a fixed time instead.
+ * first a second after the launch. A screen that keeps moving, such as one with a video, is taken as it is four
+ * seconds after the launch or after it was last blank, and one still blank after fifteen. `wait`, when given, is a
+ * fixed time instead.
  * @param {Booted} simulator
  * @param {string} file
  * @param {number | null} wait Seconds, or null to wait for the screen.
+ * @returns {Promise<boolean>} Whether the screen still showed nothing when it was taken.
  */
 export async function captureSettled(simulator, file, wait) {
   if (wait !== null) {
     await pause(wait * 1000);
-    return captureSim(simulator, file);
+    await captureSim(simulator, file);
+    return false;
   }
   const started = Date.now();
   await pause(1000);
   let last = null;
+  let blank = false;
+  // When the screen last showed nothing, and how many frames since have shown something: the first one drawn can be
+  // half way through a fade, so it is compared with the next one at least.
+  let since = started;
+  let drawn = 0;
   for (let frames = 1; ; frames++) {
     await screenshot(simulator, file);
     const frame = readFileSync(file);
     // A launch screen of one colour can stay up for seconds before the app draws, and is waited out longer.
-    const blank = blankScreen(frame) === true;
+    blank = blankScreen(frame) === true;
+    if (blank) {
+      since = Date.now();
+      drawn = 0;
+    } else drawn++;
     // A slow simulator takes a while over each frame, so the second one is late enough by then.
-    if ((last?.equals(frame) && !blank) || (frames >= 2 && Date.now() - started > (blank ? BLANK_WAIT : 4000))) break;
+    if (blank ? frames >= 2 && Date.now() - started > BLANK_WAIT : last?.equals(frame) || (drawn >= 2 && Date.now() - since > 4000)) break;
     last = frame;
   }
   console.log(`Captured ${simulator.name} -> ${file}`);
+  return blank;
 }

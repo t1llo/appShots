@@ -166,7 +166,7 @@ appshots capture --name home --project <project> --device          # the plugged
    appshots launch <bundle id> --capture stats --to <project> -- <launch arguments>
    ```
 
-   It starts the app again with those arguments, waits until the screen stops changing, four seconds at most (`--wait 5` for a slow screen), takes the screenshot with the 9:41 status bar, and uploads it. Add `--dark` or `--light`, `--lang de`, and `--sim "<name>"` when several simulators are booted. Run these one after the other, not at the same time.
+   It starts the app again with those arguments, waits until the screen stops changing, four seconds at most once the app has drawn and up to fifteen before that (`--wait 5` for a slow screen), takes the screenshot with the 9:41 status bar, and uploads it. If it warns that the screen still showed nothing, run it again. Add `--dark` or `--light`, `--lang de`, and `--sim "<name>"` when several simulators are booted. Run these one after the other, not at the same time.
 
 3. **How to land on a screen,** in this order. Take the first that works:
 

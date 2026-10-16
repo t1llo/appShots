@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { deflateSync } from "node:zlib";
 
 /**
  * A home folder of its own for the CLI, so a test never reads or writes the real config or skill. The CLI reads
@@ -80,3 +81,41 @@ export async function quietly(work) {
 
 /** A 1x1 PNG, for a screenshot whose content does not matter. */
 export const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+
+/**
+ * A PNG as simctl writes one, its rows stored with each of the five filters in turn so that undoing them is tested.
+ * @param {number} width
+ * @param {number} height
+ * @param {(x: number, y: number) => [number, number, number]} paint
+ */
+export function png(width, height, paint) {
+  const stride = width * 4;
+  const raw = Buffer.alloc(height * (stride + 1));
+  let above = new Uint8Array(stride);
+  for (let y = 0; y < height; y++) {
+    const row = new Uint8Array(stride);
+    for (let x = 0; x < width; x++) row.set([...paint(x, y), 255], x * 4);
+    const filter = y % 5;
+    raw[y * (stride + 1)] = filter;
+    for (let i = 0; i < stride; i++) {
+      const left = i >= 4 ? row[i - 4] : 0;
+      const up = above[i];
+      const corner = i >= 4 ? above[i - 4] : 0;
+      const guess = left + up - corner;
+      const paeth = Math.abs(guess - left) <= Math.abs(guess - up) && Math.abs(guess - left) <= Math.abs(guess - corner) ? left : Math.abs(guess - up) <= Math.abs(guess - corner) ? up : corner;
+      const predicted = [0, left, up, (left + up) >> 1, paeth][filter];
+      raw[y * (stride + 1) + 1 + i] = (row[i] - predicted) & 255;
+    }
+    above = row;
+  }
+  const chunk = (kind, data) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    return Buffer.concat([length, Buffer.from(kind, "latin1"), data, Buffer.alloc(4)]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 6, 0, 0, 0], 8);
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+}

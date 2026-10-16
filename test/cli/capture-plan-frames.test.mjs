@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, test } from "node:test";
-import { deflateSync } from "node:zlib";
-import { cliHome, PIXEL } from "./helpers.mjs";
+import { cliHome, PIXEL, png } from "./helpers.mjs";
 
 const home = await cliHome("capture-plan-frames");
 after(() => home.remove());
@@ -13,44 +12,6 @@ const { host, setRunner } = await import("../../cli/src/proc.mjs");
 const { blankScreen } = await import("../../cli/src/capture/blank.mjs");
 const { captureSettled } = await import("../../cli/src/capture/sim.mjs");
 host.platform = "darwin";
-
-/**
- * A PNG as simctl writes one, its rows stored with each of the five filters in turn so that undoing them is tested.
- * @param {number} width
- * @param {number} height
- * @param {(x: number, y: number) => [number, number, number]} paint
- */
-function png(width, height, paint) {
-  const stride = width * 4;
-  const raw = Buffer.alloc(height * (stride + 1));
-  let above = new Uint8Array(stride);
-  for (let y = 0; y < height; y++) {
-    const row = new Uint8Array(stride);
-    for (let x = 0; x < width; x++) row.set([...paint(x, y), 255], x * 4);
-    const filter = y % 5;
-    raw[y * (stride + 1)] = filter;
-    for (let i = 0; i < stride; i++) {
-      const left = i >= 4 ? row[i - 4] : 0;
-      const up = above[i];
-      const corner = i >= 4 ? above[i - 4] : 0;
-      const guess = left + up - corner;
-      const paeth = Math.abs(guess - left) <= Math.abs(guess - up) && Math.abs(guess - left) <= Math.abs(guess - corner) ? left : Math.abs(guess - up) <= Math.abs(guess - corner) ? up : corner;
-      const predicted = [0, left, up, (left + up) >> 1, paeth][filter];
-      raw[y * (stride + 1) + 1 + i] = (row[i] - predicted) & 255;
-    }
-    above = row;
-  }
-  const chunk = (kind, data) => {
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(data.length);
-    return Buffer.concat([length, Buffer.from(kind, "latin1"), data, Buffer.alloc(4)]);
-  };
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(width, 0);
-  header.writeUInt32BE(height, 4);
-  header.set([8, 6, 0, 0, 0], 8);
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
-}
 
 /** A status bar and a home indicator on a screen of one colour, as an app shows before its first frame. */
 const launching = (x, y) => (y < 30 || (y > 780 && x > 150 && x < 250) ? [0, 0, 0] : [250, 250, 250]);
@@ -69,17 +30,74 @@ test("a screen of one colour below the status bar is blank, and one with anythin
   assert.equal(blankScreen(Buffer.from("not a picture")), null);
 });
 
-test("a launch screen that stays the same is waited out, and the screen taken once the app has drawn it", async (t) => {
-  const frames = [BLANK, BLANK, BLANK, DRAWN, DRAWN];
-  let shots = 0;
+/**
+ * Lets simctl write these frames in turn, the last one again and again, each one `step` milliseconds later than the
+ * one before as far as the capture's clock goes, so that seconds of waiting pass at once.
+ * @param {import("node:test").TestContext} t
+ * @param {Buffer[]} frames
+ * @param {number} [step]
+ */
+function simulate(t, frames, step = 0) {
+  const now = Date.now.bind(Date);
+  let ahead = 0;
+  const seen = { shots: 0 };
+  t.mock.method(Date, "now", () => now() + ahead);
   const before = setRunner(async (command, args) => {
-    if (args[1] === "io") writeFileSync(args[4], frames[Math.min(shots++, frames.length - 1)]);
+    if (args[1] === "io") {
+      writeFileSync(args[4], frames[Math.min(seen.shots++, frames.length - 1)]);
+      ahead += step;
+    }
     return { status: 0, signal: null, stdout: "", stderr: "", timedOut: false };
   });
   t.after(() => setRunner(before));
   t.mock.method(console, "log", () => {});
+  return seen;
+}
+
+const SIM = { name: "Bench", udid: "11111111-0000-0000-0000-000000000001" };
+
+test("a launch screen that stays the same is waited out, and the screen taken once the app has drawn it", async (t) => {
+  const seen = simulate(t, [BLANK, BLANK, BLANK, DRAWN, DRAWN]);
   const file = path.join(home.home, "home.png");
-  await captureSettled({ name: "Bench", udid: "11111111-0000-0000-0000-000000000001" }, file, null);
-  assert.equal(shots, 5);
+  assert.equal(await captureSettled(SIM, file, null), false);
+  assert.equal(seen.shots, 5);
   assert.deepEqual(readFileSync(file), DRAWN);
+});
+
+test("a screen drawn after a long launch screen is compared with the next frame before it is taken", async (t) => {
+  // Half way through the fade from the launch screen, a moment before the screen is up.
+  const fading = png(400, 800, (x, y) => (y > 200 && y < 220 && x > 20 && x < 300 ? [150, 150, 150] : launching(x, y)));
+  const seen = simulate(t, [BLANK, BLANK, BLANK, fading, DRAWN, DRAWN], 1500);
+  const file = path.join(home.home, "late.png");
+  assert.equal(await captureSettled(SIM, file, null), false);
+  assert.equal(seen.shots, 6);
+  assert.deepEqual(readFileSync(file), DRAWN);
+});
+
+test("a screen still blank after fifteen seconds is taken as it is, and said to be", async (t) => {
+  const seen = simulate(t, [BLANK], 4000);
+  const file = path.join(home.home, "blank.png");
+  assert.equal(await captureSettled(SIM, file, null), true);
+  assert.equal(seen.shots, 4);
+});
+
+test("a screenshot simctl fails once is taken again, and one it fails twice is not", async (t) => {
+  t.mock.method(console, "log", () => {});
+  let failures = 1;
+  const calls = [];
+  const before = setRunner(async (command, args) => {
+    calls.push(args[1]);
+    if (args[1] !== "io") return { status: 0, signal: null, stdout: "", stderr: "", timedOut: false };
+    if (failures-- > 0) return { status: 1, signal: null, stdout: "", stderr: "Detected file type from extension: PNG\nNote: No display specified, using the default.", timedOut: false };
+    writeFileSync(args[4], DRAWN);
+    return { status: 0, signal: null, stdout: "", stderr: "", timedOut: false };
+  });
+  t.after(() => setRunner(before));
+  const file = path.join(home.home, "retry.png");
+  assert.equal(await captureSettled(SIM, file, 0), false);
+  assert.deepEqual(calls, ["io", "io"]);
+  assert.deepEqual(readFileSync(file), DRAWN);
+
+  failures = 2;
+  await assert.rejects(captureSettled(SIM, file, 0), /Could not capture Bench:\nDetected file type/);
 });

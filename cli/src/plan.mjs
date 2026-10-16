@@ -1,6 +1,6 @@
 import { hasLanguage } from "./api.mjs";
 import { build, findXcodeProject, pickScheme } from "./build.mjs";
-import { captureSettled, withCleanStatusBar } from "./capture/sim.mjs";
+import { BLANK_WAIT, captureSettled, withCleanStatusBar } from "./capture/sim.mjs";
 import { loadConfig } from "./config.mjs";
 import { fail } from "./fail.mjs";
 import { fromHere } from "./projects.mjs";
@@ -66,10 +66,11 @@ async function startApp(simulator, bundleId, plan) {
 
   const shot = shotTarget({ name: plan.capture, out: plan.out });
   // The status bar is set before the app starts, so the launch animation and the first data are all there is to wait for.
-  await withCleanStatusBar(simulator, async () => {
+  const blank = await withCleanStatusBar(simulator, async () => {
     await start();
-    await captureSettled(simulator, shot.file, plan.wait);
+    return captureSettled(simulator, shot.file, plan.wait);
   });
+  if (blank) console.error(`appshots: ${simulator.name} still showed nothing ${BLANK_WAIT / 1000} seconds after the start, so ${shot.file} is likely the launch screen. Take it again, with --wait <seconds> for a slow screen.`);
   if (plan.config && plan.to) await upload(plan.config, plan.to, shot.file, shot.name, plan.device, plan.language);
   console.log(`Next: appshots launch ${bundleId} --capture <name> --to ${plan.to ?? "<project>"}${which} -- <launch arguments>`);
 }

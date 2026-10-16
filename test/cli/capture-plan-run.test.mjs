@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
-import { cliHome, PIXEL, quietly, stubServer } from "./helpers.mjs";
+import { cliHome, PIXEL, png, quietly, stubServer } from "./helpers.mjs";
 
 // A Mac with an iPhone and an iPad simulator, and a server with one project in English and German, all stood in for.
 const home = await cliHome("capture-plan");
@@ -354,6 +354,28 @@ test("an app a failed launch or link may have brought up is closed before the ne
     "launch <phone> com.example.notes",
   ]);
   assert.deepEqual(uploads(), ["settings?device=iphone&locale=en", "home?device=iphone&locale=en"]);
+});
+
+test("a screen still blank after fifteen seconds is not uploaded, and one with its own wait is taken as it is", async (t) => {
+  const file = writePlan({ ...NOTES, wait: undefined, locales: ["en"], screens: [{ id: "home" }, { id: "splash", wait: 0 }] });
+  // Each frame comes four seconds after the one before, as far as the capture's clock goes.
+  const now = Date.now.bind(Date);
+  let ahead = 0;
+  t.mock.method(Date, "now", () => now() + ahead);
+  const blank = png(400, 800, () => [250, 250, 250]);
+  const before = setRunner(async (command, args, options) => {
+    if (args[1] !== "io") return runner(command, args, options);
+    writeFileSync(args[4], blank);
+    ahead += 4000;
+    return { status: 0, signal: null, stdout: "", stderr: "", timedOut: false };
+  });
+  t.after(() => setRunner(before));
+  t.mock.method(console, "error", () => {});
+  await assert.rejects(shootWith(["--plan", file]), (error) => {
+    assert.equal(error.message.split("\n").slice(0, 2).join("\n"), '1 of 2 screenshots not taken:\n  home (iphone-6.9, en): iPhone 18 Pro Max still showed nothing 15 seconds after the start, so home was not uploaded. Run the plan again, or give the screen a "wait" in seconds to take it as it is.');
+    return true;
+  });
+  assert.deepEqual(uploads(), ["splash?device=iphone&locale=en"]);
 });
 
 test("a screen that fails is reported at the end, and a device is given up after three in a row", async (t) => {

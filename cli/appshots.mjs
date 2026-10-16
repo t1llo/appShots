@@ -889,13 +889,18 @@ async function withCleanStatusBar(simulator, work) {
 * @param {string} file
 */
 async function screenshot(simulator, file) {
-	const result = await xcrun([
+	const take = () => xcrun([
 		"simctl",
 		"io",
 		simulator.udid,
 		"screenshot",
 		file
 	]);
+	let result = await take();
+	if (result.status !== 0) {
+		await pause(1e3);
+		result = await take();
+	}
 	if (result.status !== 0) fail(`Could not capture ${simulator.name}:\n${result.stderr.trim()}`);
 }
 /**
@@ -908,28 +913,39 @@ async function captureSim(simulator, file) {
 }
 /**
 * Captures an app that has just been started once its screen has come to rest: two frames in a row the same, the
-* first a second after the launch. A screen that keeps moving, such as one with a video, is taken as it is after
-* four seconds, and one still blank after fifteen. `wait`, when given, is a fixed time instead.
+* first a second after the launch. A screen that keeps moving, such as one with a video, is taken as it is four
+* seconds after the launch or after it was last blank, and one still blank after fifteen. `wait`, when given, is a
+* fixed time instead.
 * @param {Booted} simulator
 * @param {string} file
 * @param {number | null} wait Seconds, or null to wait for the screen.
+* @returns {Promise<boolean>} Whether the screen still showed nothing when it was taken.
 */
 async function captureSettled(simulator, file, wait) {
 	if (wait !== null) {
 		await pause(wait * 1e3);
-		return captureSim(simulator, file);
+		await captureSim(simulator, file);
+		return false;
 	}
 	const started = Date.now();
 	await pause(1e3);
 	let last = null;
+	let blank = false;
+	let since = started;
+	let drawn = 0;
 	for (let frames = 1;; frames++) {
 		await screenshot(simulator, file);
 		const frame = readFileSync(file);
-		const blank = blankScreen(frame) === true;
-		if (last?.equals(frame) && !blank || frames >= 2 && Date.now() - started > (blank ? BLANK_WAIT : 4e3)) break;
+		blank = blankScreen(frame) === true;
+		if (blank) {
+			since = Date.now();
+			drawn = 0;
+		} else drawn++;
+		if (blank ? frames >= 2 && Date.now() - started > 15e3 : last?.equals(frame) || drawn >= 2 && Date.now() - since > 4e3) break;
 		last = frame;
 	}
 	console.log(`Captured ${simulator.name} -> ${file}`);
+	return blank;
 }
 //#endregion
 //#region cli/src/shot.mjs
@@ -3509,10 +3525,10 @@ async function startApp(simulator, bundleId, plan) {
 		name: plan.capture,
 		out: plan.out
 	});
-	await withCleanStatusBar(simulator, async () => {
+	if (await withCleanStatusBar(simulator, async () => {
 		await start();
-		await captureSettled(simulator, shot.file, plan.wait);
-	});
+		return captureSettled(simulator, shot.file, plan.wait);
+	})) console.error(`appshots: ${simulator.name} still showed nothing ${BLANK_WAIT / 1e3} seconds after the start, so ${shot.file} is likely the launch screen. Take it again, with --wait <seconds> for a slow screen.`);
 	if (plan.config && plan.to) await upload(plan.config, plan.to, shot.file, shot.name, plan.device, plan.language);
 	console.log(`Next: appshots launch ${bundleId} --capture <name> --to ${plan.to ?? "<project>"}${which} -- <launch arguments>`);
 }
@@ -4969,13 +4985,16 @@ async function take(run, job, simulator) {
 		]);
 		run.started.delete(simulator.udid);
 	}
+	let blank = false;
 	if (screen.uitest && run.xcodeProject && run.scheme) await runUITest({
 		project: run.xcodeProject,
 		scheme: run.scheme,
 		test: screen.uitest,
 		simulator,
 		locale: job.locale
-	}, () => captureSettled(simulator, job.file, wait));
+	}, async () => {
+		blank = await captureSettled(simulator, job.file, wait);
+	});
 	else {
 		if (front) run.started.set(simulator.udid, front);
 		if (app) {
@@ -5003,8 +5022,9 @@ async function take(run, job, simulator) {
 			]);
 			if (result.status !== 0) fail(`Could not open ${screen.url} on ${simulator.name}${app ? `. Does ${app} take that link?` : ""}\n${result.stderr.trim()}`);
 		}
-		await captureSettled(simulator, job.file, wait);
+		blank = await captureSettled(simulator, job.file, wait);
 	}
+	if (blank) fail(`${simulator.name} still showed nothing ${BLANK_WAIT / 1e3} seconds after the start, so ${job.name} was not uploaded. Run the plan again, or give the screen a "wait" in seconds to take it as it is.`);
 	await upload(run.config, run.project, job.file, job.name, job.device.kind, job.locale);
 }
 /**

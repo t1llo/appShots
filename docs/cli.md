@@ -43,7 +43,7 @@ appshots run --capture home --to streaks
 | `--lang <code>` | Starts the app in this language, such as `de` or `pt-BR`. A screenshot taken with `--capture` is filed under that language in the project |
 | `--capture <name>` | Takes the screenshot as well, with a clean status bar |
 | `--to <project>` | Uploads that screenshot to this project |
-| `--wait <seconds>` | How long the app gets to settle before the capture. Left out, the capture waits until the screen stops changing, four seconds at most, and up to fifteen while the app has drawn nothing yet |
+| `--wait <seconds>` | How long the app gets to settle before the capture. Left out, the capture waits until the screen stops changing: up to fifteen seconds while the app has drawn nothing yet, then four at most. A screen still blank after that is taken with a warning |
 | `-- <arguments>` | Handed to the app as they are, such as `-- -appshots stats` |
 
 ```bash
@@ -131,7 +131,7 @@ appshots shoot --plan --again                      # take again what the project
 | `locales` | The languages, of those the project has. Default: all of them |
 | `appearances` | `light`, `dark` or both. The second one is added to the screen's name, as in `home-dark`. Left out, the simulator stays as it is |
 | `statusBar` | `clean`, the default, for 9:41 with full battery and signal, or `as-is` |
-| `wait` | Seconds each screen gets before it is taken. Left out, it is taken once it stops changing, four seconds at most, and up to fifteen while the app has drawn nothing yet |
+| `wait` | Seconds each screen gets before it is taken. Left out, it is taken once it stops changing: up to fifteen seconds while the app has drawn nothing yet, then four at most. A screen still blank after that is not uploaded, and counts as not taken |
 | `out` | Where the PNGs are kept, as `<out>/<language>/<display>/<id>.png`. Default `raw-shots` next to the plan |
 | `screens[].id` | The screenshot's name, which the slides refer to |
 | `screens[].launch` | `args`, launch arguments after the app's, and `url`, a link opened once the app runs. A list on its own is `args`. A link with no app to start is opened by whatever the simulator opens it with |
