@@ -137,7 +137,7 @@ export function selection(plan, flags) {
   if (languages) for (const locale of locales) if (!languages.includes(locale)) fail(`The plan has no language "${locale}". Its languages: ${languages.join(", ")}`);
   const primary = languages?.[0] ?? locales[0];
   const reuse = plan.footage === "primary" || Boolean(flags["reuse-footage"]);
-  const seconds = flags.seconds === undefined ? null : Number(flags.seconds);
+  const seconds = flags.seconds === undefined ? null : typeof flags.seconds === "string" ? Number(flags.seconds) : NaN;
   if (seconds !== null && !(seconds >= 1 && seconds <= 120)) fail("--seconds needs a number of seconds from 1 to 120, as in: --seconds 8");
   return {
     // The older iPhone and iPad sizes are cut from the current ones' footage, so it is recorded once.
