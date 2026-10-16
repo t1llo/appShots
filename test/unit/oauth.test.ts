@@ -135,6 +135,8 @@ test("documents are fetched from public addresses only", async () => {
     "::",
     "fd12::1",
     "fe80::1",
+    "::127.0.0.1",
+    "::a9fe:a9fe",
     "::ffff:127.0.0.1",
     "::ffff:10.0.0.1",
     "64:ff9b::a00:1",
