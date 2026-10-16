@@ -131,7 +131,7 @@ What keeps the context small:
 
 - **The skill is short.** `SKILL.md` stays under 12 KB, about three thousand tokens. The full text of each step is in a reference file beside it, which the agent reads only when it gets there. See [The skill](/docs/skill).
 - **The design guide has a short topic.** `get_design_guide` with the topic `core` is about two thousand tokens instead of eleven thousand, and says which topic to read for anything else. The topic `fields` lists every field a slide takes. See [MCP tools](/docs/mcp).
-- **The tool list is small,** about six thousand tokens for every tool. Every tool of every MCP server the agent has takes room in each request, so turn off the servers a set does not need. With the least room, leave out MCP altogether: through the `appshots` command, the tool list never enters the context, and `appshots tools <tool>` shows one tool's arguments when the agent needs them.
+- **The tool list is small,** about seven thousand tokens for every tool. Every tool of every MCP server the agent has takes room in each request, so turn off the servers a set does not need. With the least room, leave out MCP altogether: through the `appshots` command, the tool list never enters the context, and `appshots tools <tool>` shows one tool's arguments when the agent needs them.
 - **A check costs nothing.** `check_project` says what a render would refuse or warn about, without using one of your renders, so a smaller model can find its mistakes before it spends one.
 
 Start a new session for each set, so that nothing from earlier work takes up the room.
