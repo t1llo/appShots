@@ -220,6 +220,7 @@ html,body{background:transparent}
 .boards{width:max-content}
 .ab{position:relative;overflow:hidden;color:var(--text);font-family:var(--body);font-synthesis:none;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision}
 .ab .headline{line-height:1.12}
+.ab[hidden]{display:none}
 .hide{visibility:hidden}
 .cap-board{display:flex;flex-direction:column;align-items:center;padding:var(--top) calc(var(--u)*7) var(--bottom)}
 .cap-board.at-bottom{justify-content:flex-end}
@@ -268,12 +269,14 @@ const VIDEO_SCRIPT = `(async () => {
   }
   const RUNGS = [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5];
   const linesOf = (el) => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight));
+  // A word wider than the line overflows it. An emphasis marker's padding reaches a little past the copy and does not count.
+  const overflows = (el) => el.scrollWidth > el.clientWidth + parseFloat(getComputedStyle(el).fontSize) * 0.2;
   const layers = {};
   for (const board of document.querySelectorAll('section[data-layer]')) {
     const blocks = [...board.querySelectorAll('[data-fit]')];
     const set = (i) => board.style.setProperty('--ts', String(RUNGS[i]));
     const fits = () =>
-      board.scrollHeight <= board.clientHeight + 1 && blocks.every((el) => el.scrollWidth <= el.clientWidth + 1 && linesOf(el) <= Number(el.dataset.fit));
+      board.scrollHeight <= board.clientHeight + 1 && blocks.every((el) => !overflows(el) && linesOf(el) <= Number(el.dataset.fit));
     // Copy that does not fit at the smallest size fails the page rather than leaving the video with a cut caption.
     let lo = 0;
     let hi = blocks.length ? RUNGS.length - 1 : 0;
