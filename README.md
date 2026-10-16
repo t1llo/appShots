@@ -28,6 +28,7 @@ This repository is that same app, under the GPL-3.0 licence. To keep your screen
 - **Header and search results assets**: the wide images of App Store Connect's Header and Search Results tab, with the copy kept inside the safe area.
 - **Banners** for the top of a README, a GitHub social preview, a link preview or a post.
 - **Mockups**: every screenshot in its device on a transparent background, for a website or a deck.
+- **App preview videos**: 15 to 30 seconds of real recordings of your app from the simulator, a device, its Mac window or a browser, with a caption in your set's style over each moment and in every language. They are recorded, cut with ffmpeg and checked against Apple's rules on your Mac; the footage never reaches the server, which only draws the captions and cards. Remotion can animate them, as a project in your own repository. See [docs/video.md](docs/video.md).
 - **The upload to App Store Connect**: one command puts every language into its language and every size onto its display, in the version you are preparing or a new one, and can change the texts of the store page. It runs on your Mac with an API key of your own, which never reaches the server, and it submits nothing.
 
 It comes with seventeen layouts, 41 fonts, 199 icons, badges, feature cards and backgrounds that can take their colours from the screenshot. The fonts are bundled and the device frames are drawn in CSS, so nothing is fetched while rendering.
@@ -54,7 +55,7 @@ The banner for the top of a README.
 | --- | --- | --- |
 | Server | Docker or `npm start` | Renders slides, stores projects, serves the home page, the Studio (the editor in the browser), the docs, the REST API and the MCP endpoint at `/mcp` |
 | MCP endpoint | Part of the server | Lets an agent create projects, write slides and render them |
-| `appshots` CLI | Your Mac | Captures the simulator, a connected device, the window of a Mac app or the pages of a web app and uploads the screenshot; a container cannot see your simulator or your USB devices, so this part stays local. Also reaches the server's tools for agents without MCP |
+| `appshots` CLI | Your Mac | Captures the simulator, a connected device, the window of a Mac app or the pages of a web app and uploads the screenshot; a container cannot see your simulator or your USB devices, so this part stays local. Runs a capture plan unattended, records and cuts app preview videos, and reaches the server's tools for agents without MCP |
 | `appshots` skill | Your agent, on your Mac | Does the whole job in an app's repository: reads how the app is run, runs it, captures the screens, writes the copy and builds the set. Works in Claude Code, Codex, OpenCode, Pi and anything else that reads a skill or follows a file |
 
 ## Quick start
