@@ -111,6 +111,31 @@ appshots call render '{"project": "streaks"}'
 
 The skill does this by itself when the session has no working `appshots` MCP server. See [The appshots command](/docs/cli).
 
+## Local models
+
+An agent that runs on a model on your own machine, such as one served by Ollama or LM Studio, can make a set too. What the model needs:
+
+| | |
+| --- | --- |
+| Tool calling | **Required.** The model has to call the server's tools, or run the `appshots` command, and read what comes back. Pick one whose description says it supports tool calling or function calling. Without it, no set gets made. |
+| Context | **32k tokens recommended.** Smaller works for a short set, but the agent then has less room for what it reads along the way and loses track sooner. |
+| Vision | **Optional.** With it, the agent looks at the screenshots and at the contact sheet each render returns, and fixes what it sees. Without it, it works from the screenshot names and what the tools say, and you check the set in the [Studio](/docs/studio). |
+
+Connect the agent with the [one command](#the-one-command), as for any other. Which model it runs on makes no difference to the setup:
+
+- **OpenCode:** the command with `opencode` at the end. It adds the MCP server to OpenCode for every model, local ones included. Pick the model in OpenCode's own settings.
+- **Pi:** the command with `pi` at the end. Pi has no MCP, so the skill reaches the server through the `appshots` command.
+- **Another agent:** the command with `other` at the end installs the skill and the command. If the agent speaks MCP, add `{{SERVER}}/mcp` in its settings as a Streamable HTTP server with the header `Authorization: Bearer <your token>`. Then tell it: "Read `~/.agents/skills/appshots/SKILL.md` and follow it".
+
+What keeps the context small:
+
+- **The skill is short.** `SKILL.md` stays under 12 KB, about three thousand tokens. The full text of each step is in a reference file beside it, which the agent reads only when it gets there. See [The skill](/docs/skill).
+- **The design guide has a short topic.** `get_design_guide` with the topic `core` is about two thousand tokens instead of eleven thousand, and says which topic to read for anything else. The topic `fields` lists every field a slide takes. See [MCP tools](/docs/mcp).
+- **The tool list is small,** about six thousand tokens for every tool. Every tool of every MCP server the agent has takes room in each request, so turn off the servers a set does not need. With the least room, leave out MCP altogether: through the `appshots` command, the tool list never enters the context, and `appshots tools <tool>` shows one tool's arguments when the agent needs them.
+- **A check costs nothing.** `check_project` says what a render would refuse or warn about, without using one of your renders, so a smaller model can find its mistakes before it spends one.
+
+Start a new session for each set, so that nothing from earlier work takes up the room.
+
 ## Check that it works
 
 ```bash
