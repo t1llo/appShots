@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "scene": "inbox",
+  "locale": "de",
+  "display": "iphone",
+  "source": "sim",
+  "model": "iPhone 17 Pro Max",
+  "os": "27.0",
+  "size": [1320, 2868],
+  "scale": 3,
+  "orientation": "portrait",
+  "wall": 7.84,
+  "driverOffset": 0.21,
+  "touches": [[1.4, 201, 640], [3.1, 96, 1210]],
+  "trim": [0.6, 7.2],
+  "reuse": null,
+  "planHash": "9f2c41d0",
+  "recordedAt": "2026-10-15T21:00:00Z"
+}

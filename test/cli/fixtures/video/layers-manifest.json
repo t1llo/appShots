@@ -1,0 +1,26 @@
+{
+  "set": "b3f1a9c04d7e2a61",
+  "charged": true,
+  "size": [886, 1920],
+  "warnings": [
+    { "locale": "de", "layer": "caption-search", "kind": "fit", "detail": "shrunk to 64 %" },
+    { "locale": "de", "layer": "caption-share", "kind": "fallback", "detail": "drawn in en" }
+  ],
+  "layers": [
+    { "id": "plate", "locale": null, "kind": "plate", "file": "/files/p_example/video/b3f1a9c04d7e2a61/plate.png", "width": 886, "height": 1920 },
+    { "id": "touch", "locale": null, "kind": "touch", "file": "/files/p_example/video/b3f1a9c04d7e2a61/touch.png", "width": 80, "height": 80 },
+    { "id": "intro-logo", "locale": null, "kind": "intro-logo", "file": "/files/p_example/video/b3f1a9c04d7e2a61/intro-logo.png", "width": 886, "height": 1920 },
+    { "id": "outro-logo", "locale": null, "kind": "outro-logo", "file": "/files/p_example/video/b3f1a9c04d7e2a61/outro-logo.png", "width": 886, "height": 1920 },
+    { "id": "intro-text", "locale": "en", "kind": "intro-text", "file": "/files/p_example/video/b3f1a9c04d7e2a61/en/intro-text.png", "width": 886, "height": 1920, "box": [96, 1080, 694, 180], "text": "Notes that keep up", "fallback": false, "fit": 1 },
+    { "id": "caption-inbox", "locale": "en", "kind": "caption", "file": "/files/p_example/video/b3f1a9c04d7e2a61/en/caption-inbox.png", "width": 886, "height": 1920, "box": [64, 132, 758, 236], "text": "Everything in one place", "fallback": false, "fit": 1 },
+    { "id": "caption-search", "locale": "en", "kind": "caption", "file": "/files/p_example/video/b3f1a9c04d7e2a61/en/caption-search.png", "width": 886, "height": 1920, "box": [64, 132, 758, 236], "text": "Find any note in a second", "fallback": false, "fit": 1 },
+    { "id": "caption-share", "locale": "en", "kind": "caption", "file": "/files/p_example/video/b3f1a9c04d7e2a61/en/caption-share.png", "width": 886, "height": 1920, "box": [64, 132, 758, 160], "text": "Share in one tap", "fallback": false, "fit": 1 },
+    { "id": "outro-text", "locale": "en", "kind": "outro-text", "file": "/files/p_example/video/b3f1a9c04d7e2a61/en/outro-text.png", "width": 886, "height": 1920, "box": [96, 1040, 694, 300], "text": "Your notes, everywhere\nSubscription required", "fallback": false, "fit": 1 },
+    { "id": "intro-text", "locale": "de", "kind": "intro-text", "file": "/files/p_example/video/b3f1a9c04d7e2a61/de/intro-text.png", "width": 886, "height": 1920, "box": [96, 1080, 694, 180], "text": "Notizen, die mithalten", "fallback": false, "fit": 1 },
+    { "id": "caption-inbox", "locale": "de", "kind": "caption", "file": "/files/p_example/video/b3f1a9c04d7e2a61/de/caption-inbox.png", "width": 886, "height": 1920, "box": [64, 132, 758, 236], "text": "Alles an einem Ort", "fallback": false, "fit": 1 },
+    { "id": "caption-search", "locale": "de", "kind": "caption", "file": "/files/p_example/video/b3f1a9c04d7e2a61/de/caption-search.png", "width": 886, "height": 1920, "box": [64, 132, 758, 236], "text": "Jede Notiz in einer Sekunde finden", "fallback": false, "fit": 0.64 },
+    { "id": "caption-share", "locale": "de", "kind": "caption", "file": "/files/p_example/video/b3f1a9c04d7e2a61/de/caption-share.png", "width": 886, "height": 1920, "box": [64, 132, 758, 160], "text": "Share in one tap", "fallback": true, "fit": 1 },
+    { "id": "outro-text", "locale": "de", "kind": "outro-text", "file": "/files/p_example/video/b3f1a9c04d7e2a61/de/outro-text.png", "width": 886, "height": 1920, "box": [96, 1040, 694, 300], "text": "Deine Notizen, überall\nSubscription required", "fallback": false, "fit": 1 }
+  ],
+  "zip": "/api/projects/p_example/video-layers/b3f1a9c04d7e2a61/layers.zip"
+}

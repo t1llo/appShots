@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "project": "p_example",
+  "app": { "platform": "ios", "bundleId": "com.example.notes" },
+  "displays": ["iphone", "ipad"],
+  "locales": ["en", "de"],
+  "intro": { "headline": { "slide": 1 } },
+  "outro": { "lines": [{ "slide": 4, "field": "sub" }], "disclosure": ["subscription"] },
+  "scenes": [
+    { "id": "inbox", "caption": { "slide": 2 }, "launch": { "args": ["-AppshotsDemo", "inbox"] }, "drive": { "uitest": "NotesUITests/PreviewTests/testInbox" }, "trim": "auto" },
+    { "id": "search", "caption": { "slide": 3 }, "launch": { "args": ["-AppshotsDemo", "search"] }, "drive": { "wait": 6 } },
+    { "id": "share", "caption": "Share in one tap", "drive": "manual", "record": { "seconds": 8 } }
+  ],
+  "poster": { "scene": "inbox" }
+}
