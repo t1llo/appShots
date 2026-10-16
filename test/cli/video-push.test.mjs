@@ -339,6 +339,25 @@ test("a version that is not being prepared is refused, as this command makes non
   assert.deepEqual(asc.violations, []);
 });
 
+test("an app with no version for a platform says so, and --display leaves its previews out", async () => {
+  const root = project([
+    { locale: "en", display: "iphone" },
+    { locale: "en", display: "mac" },
+  ]);
+  asc.reset({ platforms: ["IOS"] });
+  await refused(planOf(root), {}, /^Demo has no macOS version in App Store Connect\. Mac previews go onto the macOS version of an app: add that platform there first, or leave them out with --display iphone\. Nothing was changed\.$/);
+  assert.deepEqual(asc.writes(), []);
+  const { code } = await push(planOf(root), { display: "iphone" });
+  assert.equal(code, 0);
+  assert.deepEqual(asc.page("en-US", IPHONE), [nameOf(root, "en", "iphone")]);
+
+  asc.reset({ platforms: ["MAC_OS"] });
+  await refused(planOf(root), {}, /^Demo has no iOS version in App Store Connect\. iPhone and iPad previews go onto the iOS version of an app: add that platform there first, or leave them out with --display mac\. Nothing was changed\.$/);
+  await refused(planOf(root), { display: "iphone" }, /add that platform there first\. Nothing was changed\.$/);
+  assert.deepEqual(asc.writes(), []);
+  assert.deepEqual(asc.violations, []);
+});
+
 test("drafts, files that fail the check and files without a record of it never reach App Store Connect", async () => {
   const cases = [
     [{ locale: "en", display: "iphone", draft: true }, /is a draft, which App Store Connect does not take/],

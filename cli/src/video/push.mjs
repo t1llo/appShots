@@ -221,18 +221,23 @@ function posterMoves(video, preview, notes) {
  * @param {import("../store/asc.mjs").App} app
  * @param {string} platform
  * @param {Record<string, string | true>} flags
+ * @param {string[]} others The displays of the previews that go onto the other platform.
  */
-async function openVersion(account, app, platform, flags) {
+async function openVersion(account, app, platform, flags, others) {
   if (flags.version === true) fail("--version needs a number, such as --version 1.3.");
   const wanted = typeof flags.version === "string" ? flags.version.trim() : "";
   const system = STORE_PLATFORMS[/** @type {keyof typeof STORE_PLATFORMS} */ (platform)];
   const versions = await storeVersions(account, app, platform);
+  // No command makes the first version of a platform, as that adds the platform to the app.
+  if (versions.length === 0) {
+    const leave = others.length > 0 ? `, or leave them out with --display ${others.join(",")}` : "";
+    fail(`${app.name} has no ${system} version in App Store Connect. ${platform === "MAC_OS" ? "Mac previews go onto the macOS version of an app" : "iPhone and iPad previews go onto the iOS version of an app"}: add that platform there first${leave}. Nothing was changed.`);
+  }
   const open = versions.find((version) => STORE_OPEN.has(versionState(version)));
   /** @param {any} version */
   const say = (version) => `${version.attributes.versionString} (${plainState(versionState(version))})`;
   if (!open) {
-    const latest = versions[0] ? `: the latest is ${say(versions[0])}` : "";
-    fail(`No version of ${app.name} for ${system} is being prepared${latest}. Previews go into a version being prepared, and this command makes none: create the next one in App Store Connect, or with 'appshots store push <project> --version <number>'. Nothing was changed.`);
+    fail(`No version of ${app.name} for ${system} is being prepared: the latest is ${say(versions[0])}. Previews go into a version being prepared, and this command makes none: create the next one in App Store Connect, or with 'appshots store push <project> --version <number>'. Nothing was changed.`);
   }
   if (wanted && open.attributes.versionString !== wanted) {
     const named = versions.find((version) => version.attributes.versionString === wanted);
@@ -300,7 +305,10 @@ export async function videoPush(plan, flags) {
 
   // Every version, the library and what it takes are settled before anything changes.
   const versions = new Map();
-  for (const platform of new Set(previews.map((preview) => platformOf(preview.display)))) versions.set(platform, await openVersion(account, app, platform, flags));
+  for (const platform of new Set(previews.map((preview) => platformOf(preview.display)))) {
+    const others = [...new Set(previews.filter((preview) => platformOf(preview.display) !== platform).map((preview) => preview.display))];
+    versions.set(platform, await openVersion(account, app, platform, flags, others));
+  }
   const library = await assetLibrary(account, app);
   const ref = await referenceData(account);
   const refused = [];

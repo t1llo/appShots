@@ -309,10 +309,11 @@ export async function libraryStandIn(publicKey) {
     violations,
     state,
     /**
-     * A fresh store: a version of each platform in the state given, with its languages.
-     * @param {{ ios?: string | null, mac?: string | null, locales?: string[], macLocales?: string[], processAfter?: number }} [options]
+     * A fresh store: a version of each platform in the state given, with its languages. An app made only for the
+     * platforms named has no version at all of the other.
+     * @param {{ ios?: string | null, mac?: string | null, locales?: string[], macLocales?: string[], processAfter?: number, platforms?: string[] }} [options]
      */
-    reset({ ios = "PREPARE_FOR_SUBMISSION", mac = "PREPARE_FOR_SUBMISSION", locales = ["en-US", "de-DE"], macLocales = locales, processAfter = 1 } = {}) {
+    reset({ ios = "PREPARE_FOR_SUBMISSION", mac = "PREPARE_FOR_SUBMISSION", locales = ["en-US", "de-DE"], macLocales = locales, processAfter = 1, platforms = ["IOS", "MAC_OS"] } = {}) {
       violations.length = 0;
       server.requests.length = 0;
       state.versions = [];
@@ -324,6 +325,7 @@ export async function libraryStandIn(publicKey) {
       state.loseCommits = 0;
       state.listsById = true;
       for (const [platform, versionState, codes] of /** @type {const} */ ([["IOS", ios, locales], ["MAC_OS", mac, macLocales]])) {
+        if (!platforms.includes(platform)) continue;
         // An older version that is on the App Store, under the one given.
         state.versions.push({ id: `${platform}-1.0`, platform, versionString: "1.0", appVersionState: "READY_FOR_DISTRIBUTION", createdDate: "2026-06-01T00:00:00Z" });
         if (versionState) state.versions.push({ id: `${platform}-1.1`, platform, versionString: "1.1", appVersionState: versionState, createdDate: "2026-09-01T00:00:00Z" });
