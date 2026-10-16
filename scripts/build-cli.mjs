@@ -4,7 +4,7 @@
 // runs on Node 18 with nothing installed. Run `npm run build:cli` after changing cli/src; `npm run check:cli`
 // fails when the file in the repository is not what the sources make.
 
-import { chmodSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { rolldown } from "rolldown";
 
@@ -30,6 +30,26 @@ const BANNER = `// Generated from cli/src by \`npm run build:cli\`. Do not edit 
 
 /** What cli/src/assets.mjs reads its files from when it runs from the sources, and the build fills in. */
 const ASSETS_MARKER = "const INLINED = null;";
+
+// The video command loads each of its steps when it runs, so a build made while one of them is not written yet
+// still comes out whole: that step builds as an empty module, and the command says it is not in this build. Only
+// those steps may be missing; any other import that is not there fails the build as before.
+const videoDir = path.join(root, "cli", "src", "video");
+const absent = new Set();
+/** @type {import("rolldown").Plugin} */
+const optionalSteps = {
+  name: "optional-video-steps",
+  resolveId(source, importer, { kind }) {
+    if (kind !== "dynamic-import" || !importer || !source.startsWith(".")) return null;
+    const file = path.resolve(path.dirname(importer), source);
+    if (!file.startsWith(videoDir + path.sep) || existsSync(file)) return null;
+    // Relative to the repository, as the bundle names its modules and must not carry where it was built.
+    const id = path.relative(root, file).split(path.sep).join("/");
+    absent.add(id);
+    return `\0absent:${id}`;
+  },
+  load: (id) => (id.startsWith("\0absent:") ? "export {};" : null),
+};
 
 /**
  * The files of cli/assets by their path there, with "/" between folders, in a fixed order. Hidden files, such as
@@ -73,12 +93,14 @@ export async function bundleCli(input) {
     cwd: root,
     // Node's own modules stay imports; nothing else may, as the file has to stand alone.
     external: [/^node:/],
-    plugins: [inlineAssets()],
+    plugins: [inlineAssets(), optionalSteps],
   });
   const { output } = await bundle.generate({
     format: "esm",
     banner: BANNER,
     comments: { jsdoc: true, legal: true, annotation: false },
+    // What is loaded when it runs goes into the same file, as everything else does.
+    codeSplitting: false,
   });
   await bundle.close();
 
@@ -105,4 +127,5 @@ if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === import.me
   if (before !== code) writeFileSync(out, code);
   chmodSync(out, 0o755);
   console.log(`${before === code ? "Unchanged" : "Wrote"} ${path.relative(root, out)} (${Math.round(code.length / 1024)} KB)`);
+  if (absent.size > 0) console.log(`Built without ${[...absent].sort().join(", ")}: the video steps they hold say they are not in this build.`);
 }
