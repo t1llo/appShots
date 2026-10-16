@@ -54,6 +54,7 @@ export const MAX_TOUCHES = 12;
  * @property {string} [scene]
  * @property {string} [locale]
  * @property {string | null} [reuse] The locale whose recording this one stands for.
+ * @property {string} [file] The movie it is about, as readSidecar finds it.
  * @property {string} [source] "sim", "device", "mac", "web" or "import".
  * @property {[number, number]} [size] The recording's pixels.
  * @property {"portrait" | "landscape"} [orientation] The orientation the plan asked for.

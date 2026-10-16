@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -96,7 +96,8 @@ function project({ displays = ["iphone"], locales = ["en", "de"], intro = true, 
         layers.push({ id: String(kind), locale, kind: String(kind) });
       }
       for (const scene of scenes) {
-        const raw = path.join(root, "raw", display, locale);
+        // The older iPhone and iPad sizes are cut from the current one's recordings, as the recorder keeps them.
+        const raw = path.join(root, "raw", doubles.footageDisplay(display), locale);
         mkdirSync(raw, { recursive: true });
         const recorded = display === "mac" ? [2880, 1800] : display.startsWith("ipad") ? [2064, 2752] : [1320, 2868];
         const sidecar = { version: 1, scene: scene.id, locale, display, source: display === "mac" ? "mac" : "sim", size: recorded, orientation: "portrait", wall, touches: [[1.5, 400, 900]], reuse: null };
@@ -118,8 +119,13 @@ function project({ displays = ["iphone"], locales = ["en", "de"], intro = true, 
   const checks = [];
   /** @type {Array<{ display: string, locales: string[] | undefined }>} */
   const fetched = [];
+  /** @type {any[]} */
+  const found = [];
   setParts({
-    findFfmpeg: async () => ({ ...tools, ffmpeg }),
+    findFfmpeg: async (/** @type {any} */ options) => {
+      found.push(options);
+      return { ...tools, ffmpeg };
+    },
     fetchLayers: async (/** @type {any} */ _plan, /** @type {any} */ { display, locales: asked }) => {
       fetched.push({ display, locales: asked });
       return manifests[display];
@@ -138,7 +144,7 @@ function project({ displays = ["iphone"], locales = ["en", "de"], intro = true, 
       writeFileSync(out, PIXEL);
     },
   });
-  return { base, root, plan: full, planFile, flags: /** @type {Record<string, string | true>} */ ({ plan: planFile }), posters, checks, fetched, manifests };
+  return { base, root, plan: full, planFile, flags: /** @type {Record<string, string | true>} */ ({ plan: planFile }), posters, checks, fetched, found, manifests };
 }
 
 test("compose makes a preview per display and language, with its poster and check.json, from segments built per scene", async () => {
@@ -159,6 +165,8 @@ test("compose makes a preview per display and language, with its poster and chec
   assert.equal(results[0].seconds, 19.9);
   assert.deepEqual(results[0].check, { errors: [], warnings: [] });
   assert.deepEqual(p.fetched, [{ display: "iphone", locales: ["en", "de"] }]);
+  // ffmpeg.mjs puts its own question before an install, which a bare Return answers with no.
+  assert.deepEqual(p.found, [{ root: p.root }]);
 
   const made = calls();
   assert.equal(made.filter(isJoin).length, 2);
@@ -174,13 +182,15 @@ test("compose makes a preview per display and language, with its poster and chec
     assert.ok(existsSync(path.join(out, "preview.mp4")));
     assert.ok(existsSync(path.join(out, "preview.poster.png")));
     const record = JSON.parse(readFileSync(path.join(out, "preview.check.json"), "utf8"));
+    assert.equal(record.version, 1);
     assert.equal(record.file, "preview.mp4");
-    assert.equal(record.draft, false);
-    assert.equal(record.seconds, 19.9);
-    assert.deepEqual(record.result, { errors: [], warnings: [] });
+    // The size of the file it was written for, so a record of an earlier file of that name is not taken for it.
+    assert.equal(record.bytes, statSync(path.join(out, "preview.mp4")).size);
+    assert.deepEqual([record.display, record.locale, record.draft, record.seconds], ["iphone", locale, false, 19.9]);
+    assert.deepEqual([record.errors, record.warnings, record.cut], [[], [], []]);
     assert.match(record.key, /^[0-9a-f]{16}$/);
     // The first scene starts at 1.1 s, and its caption has faded in by 0.85 s into it; one second later.
-    assert.deepEqual(record.poster, { at: 2.966666666666667, file: "preview.poster.png" });
+    assert.deepEqual(record.poster, { seconds: 2.966666666666667, timecode: "00:00:02:29" });
   }
   assert.deepEqual(
     p.posters.map((poster) => poster.at),
@@ -231,6 +241,8 @@ test("--jobs sets how many segments are built at once", async () => {
 
   rmSync(path.join(p.root, "work"), { recursive: true, force: true });
   rmSync(log, { force: true });
+  // Long enough that three stand-ins started together overlap, however slowly a busy machine starts each.
+  process.env.FAKE_DELAY = "1500";
   await quietly(() => compose(p.plan, { ...p.flags, jobs: "3" }));
   assert.ok(overlaps(calls().filter((call) => !isJoin(call))), "several at once");
 
@@ -323,7 +335,7 @@ test("a preview that fails the check fails the compose, after its files and chec
     printed = await quietly(() => compose(p.plan, p.flags));
   }, /1 of 1 preview does not pass Apple's specification: .*preview\.mp4/);
   const record = JSON.parse(readFileSync(path.join(p.root, "out", "en", "iphone", "preview.check.json"), "utf8"));
-  assert.deepEqual(record.result.errors, [{ rule: "frame rate", value: "25/1", expected: "30/1" }]);
+  assert.deepEqual(record.errors, [{ rule: "frame rate", value: "25/1", expected: "30/1" }]);
   assert.equal(printed, "");
 });
 
@@ -412,4 +424,122 @@ test("a stage that fails stops the compose and names it", async () => {
   process.env.FAKE_FAIL = "search.mov";
   await assert.rejects(quietly(() => compose(p.plan, { ...p.flags, jobs: "1" })), /ffmpeg failed on stage 1, scene "search" \(iphone, en\) \(exit status 1\):\nError while filtering/);
   assert.ok(!readdirSync(path.join(p.root, "work")).some((name) => name.includes("partial")));
+});
+
+test("a preview for an older iPhone is cut from the iPhone's recordings", async () => {
+  const p = project({ displays: ["iphone-5.5"], locales: ["en"] });
+  assert.ok(existsSync(path.join(p.root, "raw", "iphone", "en", "inbox.mov")));
+  /** @type {any[]} */
+  let results = [];
+  await quietly(async () => {
+    results = await compose(p.plan, p.flags);
+  });
+  assert.equal(path.relative(p.root, results[0].file), path.join("out", "en", "iphone-5.5", "preview.mp4"));
+  const inbox = calls().find((call) => call.args.includes(path.join(p.root, "raw", "iphone", "en", "inbox.mov")));
+  assert.ok(inbox, calls().map((call) => call.args.join(" ")).join("\n"));
+  assert.ok(inbox.args.join(" ").includes("1080:1920"), inbox.args.join(" "));
+
+  // A sidecar that does not name its movie is looked up in the same folder.
+  rmSync(path.join(p.root, "work"), { recursive: true, force: true });
+  rmSync(log, { force: true });
+  setParts({
+    readSidecar: (/** @type {[string, string, string, string]} */ ...args) => {
+      const { file, ...rest } = /** @type {any} */ (doubles.readSidecar(...args));
+      return rest;
+    },
+  });
+  await quietly(() => compose(p.plan, p.flags));
+  assert.ok(calls().some((call) => call.args.includes(path.join(p.root, "raw", "iphone", "en", "inbox.mov"))));
+});
+
+test("a compose again moves the poster the plan moved, without encoding the preview again", async () => {
+  const p = project({ locales: ["en"] });
+  await quietly(() => compose(p.plan, p.flags));
+  const record = path.join(p.root, "out", "en", "iphone", "preview.check.json");
+  const first = JSON.parse(readFileSync(record, "utf8"));
+  rmSync(log, { force: true });
+
+  const printed = await quietly(() => compose({ ...p.plan, poster: { time: 12 } }, p.flags));
+  assert.equal(calls().length, 0);
+  assert.match(printed, /preview\.mp4 is unchanged/);
+  assert.match(printed, /poster at 12 s/);
+  assert.deepEqual(
+    p.posters.map((poster) => poster.at),
+    [2.966666666666667, 12],
+  );
+  const moved = JSON.parse(readFileSync(record, "utf8"));
+  assert.deepEqual(moved.poster, { seconds: 12, timecode: "00:00:12:00" });
+  // The video, and so what the check found of it, is the one that was there.
+  assert.deepEqual([moved.key, moved.bytes, moved.probe], [first.key, first.bytes, first.probe]);
+
+  // Nothing moved this time: no poster, and the record stays as it is.
+  const again = await quietly(() => compose({ ...p.plan, poster: { time: 12 } }, p.flags));
+  assert.doesNotMatch(again, /poster at/);
+  assert.equal(p.posters.length, 2);
+  assert.equal(JSON.parse(readFileSync(record, "utf8")).checkedAt, moved.checkedAt);
+
+  // A poster that is gone is exported again.
+  rmSync(path.join(p.root, "out", "en", "iphone", "preview.poster.png"));
+  await quietly(() => compose({ ...p.plan, poster: { time: 12 } }, p.flags));
+  assert.ok(existsSync(path.join(p.root, "out", "en", "iphone", "preview.poster.png")));
+});
+
+test("a poster chosen with 'video poster --at' stays where it was put, through a compose that reuses the preview or encodes it again", async () => {
+  const p = project({ locales: ["en"] });
+  await quietly(() => compose(p.plan, p.flags));
+  const record = path.join(p.root, "out", "en", "iphone", "preview.check.json");
+  // What 'video poster --at 10' leaves: the record as it was, with the time it chose.
+  const choose = (/** @type {number} */ seconds) => writeFileSync(record, JSON.stringify({ ...JSON.parse(readFileSync(record, "utf8")), poster: { seconds, timecode: "00:00:10:00", chosen: true } }));
+  choose(10);
+  p.posters.length = 0;
+  rmSync(log, { force: true });
+
+  await quietly(() => compose(p.plan, p.flags));
+  assert.equal(calls().length, 0);
+  assert.deepEqual(p.posters, []);
+  assert.deepEqual(JSON.parse(readFileSync(record, "utf8")).poster, { seconds: 10, timecode: "00:00:10:00", chosen: true });
+
+  // A new caption makes a new video, and the poster stays at the time that was chosen.
+  writeFileSync(path.join(p.root, "layers", p.manifests.iphone.set, "en", "caption-search.png"), Buffer.concat([PIXEL, Buffer.from("other words")]));
+  await quietly(() => compose(p.plan, p.flags));
+  assert.ok(calls().some(isJoin));
+  assert.deepEqual(
+    p.posters.map((poster) => poster.at),
+    [10],
+  );
+  assert.deepEqual(JSON.parse(readFileSync(record, "utf8")).poster, { seconds: 10, timecode: "00:00:10:00", chosen: true });
+
+  // A preview that came out shorter than the time keeps its poster on its last frame. 19.9 s is 597 frames.
+  choose(25);
+  writeFileSync(path.join(p.root, "layers", p.manifests.iphone.set, "en", "caption-search.png"), Buffer.concat([PIXEL, Buffer.from("more words")]));
+  await quietly(() => compose(p.plan, p.flags));
+  assert.equal(p.posters.at(-1)?.at, 596 / 30);
+  assert.equal(JSON.parse(readFileSync(record, "utf8")).poster.chosen, true);
+});
+
+test("what the check cannot see in the file, the cut's warnings, goes into the record and the lines, and fails nothing", async () => {
+  const p = project({ locales: ["en"], captionStyle: "band" });
+  const inbox = p.manifests.iphone.layers.find((/** @type {any} */ layer) => layer.id === "caption-inbox" && layer.locale === "en");
+  inbox.fit = 0.6;
+  /** @type {any[]} */
+  let results = [];
+  // Cards of 2.5 and 2 s, and the first scene comes in at 2.5 − 0.4 s.
+  const printed = await quietly(async () => {
+    results = await compose({ ...p.plan, intro: { seconds: 2.5 } }, p.flags);
+  });
+  const rules = ["cards", "first-app-frame", "caption-style", "caption-fit"];
+  assert.deepEqual(
+    results[0].check.warnings.map((/** @type {any} */ rule) => rule.rule),
+    rules,
+  );
+  assert.deepEqual(results[0].check.errors, []);
+  for (const rule of rules) assert.match(printed, new RegExp(`warning: ${rule} is`));
+  assert.match(printed, /first-app-frame is 2\.10 s/);
+  const record = JSON.parse(readFileSync(path.join(p.root, "out", "en", "iphone", "preview.check.json"), "utf8"));
+  assert.deepEqual(
+    record.cut.map((/** @type {any} */ rule) => rule.rule),
+    rules,
+  );
+  // The file's own findings stay apart from the cut's, as 'video check' adds the one to the other.
+  assert.deepEqual(record.warnings, []);
 });

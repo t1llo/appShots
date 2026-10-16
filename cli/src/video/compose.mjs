@@ -6,14 +6,13 @@
 // not built again, and a preview whose segments did not change is not encoded again.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fail } from "../fail.mjs";
-import { confirm } from "../prompt.mjs";
-import { pool, readJson } from "../util.mjs";
+import { pool } from "../util.mjs";
 import { keptAudio, musicOf, previewAudio } from "./audio.mjs";
-import { checkProbe } from "./check.mjs";
+import { checkCut, checkProbe, previewsIn, readCheckRecord, writeCheckRecord } from "./check.mjs";
 import { runFfmpeg } from "./encode.mjs";
 import { findFfmpeg } from "./ffmpeg.mjs";
 import { FADE, cardArgs, finalCodec, joinArgs, joinPoints, passArgs, sceneArgs, segmentCodec } from "./graph.mjs";
@@ -25,6 +24,7 @@ import { probe } from "./probe.mjs";
 import { readSidecar } from "./record/index.mjs";
 import { composeRemotion } from "./remotion.mjs";
 import { PREVIEW_SPECS } from "./specs.mjs";
+import { timecode } from "./timecode.mjs";
 
 /** Changes when a segment made from the same inputs and the same command would come out different. */
 const SEGMENT_VERSION = 1;
@@ -43,7 +43,7 @@ const LONGEST = 30;
  * What compose takes from the other video modules. A test stands in for them through setParts, as it stands in
  * for programs through setRunner.
  */
-const parts = { findFfmpeg, fetchLayers, readSidecar, sceneSeconds, captionLayerId, probe, checkProbe, posterFrame, composeRemotion, specs: PREVIEW_SPECS };
+const parts = { findFfmpeg, fetchLayers, readSidecar, sceneSeconds, captionLayerId, probe, checkProbe, checkCut, posterFrame, composeRemotion, specs: PREVIEW_SPECS };
 
 /**
  * Puts other parts in place, such as a test's, and returns the ones they replace.
@@ -182,14 +182,23 @@ function layerFile(ctx, layer) {
 }
 
 /**
- * The recording a sidecar belongs to: raw/<display>/<locale>/<scene>.<ext>, in the language whose footage it
- * reuses, if any. An imported file keeps the extension it came with.
+ * The display whose recordings a display is cut from. The older iPhone and iPad sizes have none of their own:
+ * they are cut from the current one's, which lie under raw/iphone/ and raw/ipad/.
+ * @param {string} display
+ */
+const footageDisplay = (display) => (display.startsWith("iphone") ? "iphone" : display.startsWith("ipad") ? "ipad" : display);
+
+/**
+ * The recording a sidecar belongs to: the movie readSidecar found with it, or else
+ * raw/<display>/<locale>/<scene>.<ext>, in the language whose footage it reuses, if any. An imported file keeps
+ * the extension it came with.
  * @param {Context} ctx
  * @param {string} scene
  * @param {import("./normalise.mjs").Sidecar} sidecar
  */
 function footageOf(ctx, scene, sidecar) {
-  const folder = path.join(ctx.root, "raw", ctx.display, sidecar.reuse || sidecar.locale || ctx.locale);
+  if (typeof sidecar.file === "string" && existsSync(sidecar.file)) return sidecar.file;
+  const folder = path.join(ctx.root, "raw", footageDisplay(ctx.display), sidecar.reuse || sidecar.locale || ctx.locale);
   const name = (existsSync(folder) ? readdirSync(folder) : []).find((entry) => entry.startsWith(`${scene}.`) && !entry.endsWith(".json") && !entry.slice(scene.length + 1).includes("."));
   if (!name) fail(`The recording of scene "${scene}" is missing from ${folder}, though its sidecar is there. Record it again: appshots video record --scene ${scene} --lang ${ctx.locale} --display ${ctx.display} --again`);
   return path.join(folder, name);
@@ -333,11 +342,7 @@ export async function buildSegments(ctx, { captions }) {
  * @param {number} overlap The transition's frames.
  */
 export function posterTime(plan, jobs, overlap) {
-  const { offsets, total } = joinPoints(
-    jobs.map((job) => job.frames),
-    overlap,
-  );
-  const starts = [0, ...offsets];
+  const { starts, total } = startsOf(jobs, overlap);
   const poster = plan.poster;
   let frame;
   if (poster && typeof poster.time === "number") frame = toFrames(poster.time);
@@ -351,14 +356,40 @@ export function posterTime(plan, jobs, overlap) {
 }
 
 /**
- * Writes a file under another name first and then puts it in place, so a reader never finds half of it.
- * @param {string} file
- * @param {string} text
+ * The frame each segment starts on in the preview, and the preview's frames.
+ * @param {Job[]} jobs
+ * @param {number} overlap The transition's frames.
  */
-function writeWhole(file, text) {
-  const partial = `${file}.${process.pid}.partial`;
-  writeFileSync(partial, text);
-  renameSync(partial, file);
+function startsOf(jobs, overlap) {
+  const { offsets, total } = joinPoints(
+    jobs.map((job) => job.frames),
+    overlap,
+  );
+  return { starts: [0, ...offsets], total };
+}
+
+/**
+ * What the check cannot see in the file and the compose knows of its cut: the cards' lengths, when the app first
+ * shows, the caption style, the captions the server had to squeeze or borrow, and how many previews the folder
+ * holds.
+ * @param {Context} ctx
+ * @param {Job[]} jobs
+ * @param {number} overlap The transition's frames.
+ * @param {string} folder
+ */
+function cutOf(ctx, jobs, overlap, folder) {
+  const { starts } = startsOf(jobs, overlap);
+  const seconds = (/** @type {string} */ kind) => (jobs.find((job) => job.kind === kind)?.frames ?? 0) / FPS;
+  const first = jobs.findIndex((job) => job.kind === "scene");
+  return parts.checkCut({
+    intro: seconds("intro"),
+    outro: seconds("outro"),
+    ...(first >= 0 ? { firstApp: starts[first] / FPS } : {}),
+    captionStyle: ctx.plan.captionStyle,
+    layers: ctx.layers,
+    locale: ctx.locale,
+    previews: previewsIn(folder),
+  });
 }
 
 /** Rules whose name says the file is a draft: a draft is meant to be one, so that rule fails no compose. */
@@ -386,7 +417,6 @@ async function composeOne({ ctx, jobs, frames }, { engine, music, name, draft, e
   const folder = path.join(root, "out", locale, display);
   mkdirSync(folder, { recursive: true });
   const file = path.join(folder, `${name}.mp4`);
-  const record = path.join(folder, `${name}.check.json`);
   const posterFile = path.join(folder, `${name}.poster.png`);
   const transition = transitionOf(ctx.plan);
   const codec = finalCodec({ encoder, draft });
@@ -409,28 +439,44 @@ async function composeOne({ ctx, jobs, frames }, { engine, music, name, draft, e
   if (segments.length > built) console.log(`  ${segments.length - built} of ${segments.length} segments unchanged`);
 
   const key = contentKey(PREVIEW_VERSION, tools, args, root);
-  const before = readJson(record);
-  if (before?.key === key && before.result && existsSync(file)) {
-    console.log(`  ${shown} is unchanged`);
-    printCheck(before.result);
-    return { locale, display, file, seconds: frames / FPS, check: before.result };
+  // The record beside the preview that is there; readCheckRecord gives none for a file it was not written for.
+  const before = readCheckRecord(file);
+  const reused = before?.key === key;
+  if (reused) console.log(`  ${shown} is unchanged`);
+  else {
+    const partial = path.join(folder, `.${name}.${process.pid}.partial.mp4`);
+    await runFfmpeg(tools, [...args, "-f", "mp4", partial], { label: `stage 2, the preview (${display}, ${locale})`, out: partial });
+    renameSync(partial, file);
+    console.log(`  ${shown}`);
   }
 
-  const partial = path.join(folder, `.${name}.${process.pid}.partial.mp4`);
-  await runFfmpeg(tools, [...args, "-f", "mp4", partial], { label: `stage 2, the preview (${display}, ${locale})`, out: partial });
-  renameSync(partial, file);
-  console.log(`  ${shown}`);
+  // A poster chosen with 'video poster --at' stays where it was put, on the last frame if the preview got shorter.
+  const chosen = before?.poster?.chosen === true;
+  const at = chosen ? Math.min(Math.max(toFrames(before.poster.seconds), 0), frames - 1) / FPS : posterTime(ctx.plan, jobs, transition.frames);
+  // The plan's poster can change without the video, so a preview that is reused may still need its poster again.
+  const posterMoved = !reused || typeof before.poster?.seconds !== "number" || Math.abs(before.poster.seconds - at) >= 0.5 / FPS || !existsSync(posterFile);
+  if (posterMoved) {
+    await parts.posterFrame(file, at, posterFile, tools);
+    console.log(`  poster at ${num(at)} s: ${path.relative(process.cwd(), posterFile)}`);
+  }
 
-  const at = posterTime(ctx.plan, jobs, transition.frames);
-  await parts.posterFrame(file, at, posterFile, tools);
-  console.log(`  poster at ${num(at)} s: ${path.relative(process.cwd(), posterFile)}`);
-
-  const probed = await parts.probe(file, tools);
-  const result = parts.checkProbe(probed, display, { draft });
-  printCheck(result);
-  const stored = { version: 1, key, file: path.basename(file), display, locale, draft, seconds: frames / FPS, poster: { at, file: path.basename(posterFile) }, result, probe: probed };
-  writeWhole(record, `${JSON.stringify(stored, null, 2)}\n`);
-  return { locale, display, file, seconds: frames / FPS, check: result };
+  let probed;
+  let verdict;
+  if (reused) {
+    probed = before.probe;
+    verdict = { errors: before.errors, warnings: before.warnings };
+  } else {
+    probed = await parts.probe(file, tools);
+    verdict = parts.checkProbe(probed, display, { draft, file });
+  }
+  const cut = cutOf(ctx, jobs, transition.frames, folder);
+  const { errors, warnings } = verdict;
+  printCheck({ errors, warnings: [...warnings, ...cut] });
+  if (!reused || posterMoved || JSON.stringify(before.cut ?? []) !== JSON.stringify(cut)) {
+    const poster = { seconds: at, timecode: timecode(at), ...(chosen ? { chosen: true } : {}) };
+    writeCheckRecord(file, { key, display, locale, draft, seconds: frames / FPS, poster, errors, warnings, cut, probe: probed });
+  }
+  return { locale, display, file, seconds: frames / FPS, check: { errors, warnings: [...warnings, ...cut] } };
 }
 
 /**
@@ -458,7 +504,8 @@ export async function compose(plan, flags) {
   if (displays.length === 0) fail("The plan names no displays. Add some to it, such as \"displays\": [\"iphone\"].");
   if (!Array.isArray(plan.scenes) || plan.scenes.length === 0) fail("The plan has no scenes to compose.");
   const music = engine === "ffmpeg" ? musicOf(plan, base) : null;
-  const tools = await parts.findFfmpeg({ root, ask: confirm });
+  // ffmpeg.mjs asks before it installs ffmpeg, and only a person at a terminal, with no as the answer to Return.
+  const tools = await parts.findFfmpeg({ root });
   const encoder = encoderOf(tools);
   if (music) {
     const probed = await parts.probe(music.file, tools);

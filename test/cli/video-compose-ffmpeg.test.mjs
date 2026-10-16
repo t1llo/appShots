@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -225,7 +225,8 @@ function assertPreview(result, size) {
   const poster = file.replace(/\.mp4$/, ".poster.png");
   assert.deepEqual(pngSize(poster), size, shown);
   const record = JSON.parse(readFileSync(file.replace(/\.mp4$/, ".check.json"), "utf8"));
-  assert.deepEqual(record.result.errors, [], shown);
+  assert.deepEqual(record.errors, [], shown);
+  assert.equal(record.bytes, statSync(file).size, shown);
 }
 
 const scenes = [
@@ -282,7 +283,7 @@ test("an iPad preview in two languages, the second on the first's footage, and a
   for (const result of results) assertPreview(result, [1200, 1600]);
   // "search" comes in at 45 + 165 − 2 × 15 frames, and the poster is a second into it.
   const record = JSON.parse(readFileSync(results[0].file.replace(/\.mp4$/, ".check.json"), "utf8"));
-  assert.equal(record.poster.at, 7);
+  assert.deepEqual(record.poster, { seconds: 7, timecode: "00:00:07:00" });
   // The captions differ by language, so the frames under them do too.
   const [english, german] = results.map((result) => pixel(result.file, 120, 600, 80));
   assert.notDeepEqual(english, german);

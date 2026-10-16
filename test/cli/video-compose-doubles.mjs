@@ -5,7 +5,7 @@
 // They follow the signatures the parts share, and do no more than the compose tests need.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
 
@@ -132,6 +132,56 @@ export function checkProbe(probed, display, { draft = false } = {}) {
   return { errors, warnings };
 }
 
+/**
+ * The warnings of how a preview is cut, which the file alone does not show.
+ * @param {{ intro?: number, outro?: number, firstApp?: number, captionStyle?: string, layers?: any, locale?: string, previews?: number }} [cut]
+ */
+export function checkCut({ intro = 0, outro = 0, firstApp, captionStyle, layers, locale, previews } = {}) {
+  /** @type {Array<{ rule: string, value: unknown, expected: string }>} */
+  const warnings = [];
+  if (intro + outro > 4) warnings.push({ rule: "cards", value: `${(intro + outro).toFixed(2)} s`, expected: "4 s or less for the intro and outro together" });
+  if (firstApp !== undefined && firstApp > 2) warnings.push({ rule: "first-app-frame", value: `${firstApp.toFixed(2)} s`, expected: "the app within the first 2 s" });
+  if (captionStyle === "band") warnings.push({ rule: "caption-style", value: "band", expected: "panel or shadow" });
+  for (const layer of layers?.layers ?? []) {
+    if (layer.kind !== "caption" || (locale !== undefined && layer.locale !== locale)) continue;
+    if (typeof layer.fit === "number" && layer.fit < 0.7) warnings.push({ rule: "caption-fit", value: `${layer.id}: shrunk to ${Math.round(layer.fit * 100)} %`, expected: "70 % of the size or more" });
+    if (layer.fallback) warnings.push({ rule: "caption-fallback", value: `${layer.id}: another language's text`, expected: `a caption in ${locale}` });
+  }
+  if (previews !== undefined && previews > 3) warnings.push({ rule: "previews", value: previews, expected: "at most 3 previews for one display and language" });
+  return warnings;
+}
+
+/** @param {string} folder */
+export function previewsIn(folder) {
+  return existsSync(folder) ? readdirSync(folder).filter((name) => /\.(mp4|mov|m4v)$/i.test(name)).length : 0;
+}
+
+/** @param {string} file */
+export const checkFileOf = (file) => `${file.replace(/\.(mp4|mov|m4v)$/i, "")}.check.json`;
+
+/**
+ * The record beside a preview, or null when there is none or it is of another file of that name.
+ * @param {string} file
+ */
+export function readCheckRecord(file) {
+  try {
+    const record = JSON.parse(readFileSync(checkFileOf(file), "utf8"));
+    return record?.version === 1 && record.bytes === statSync(file).size ? record : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} file
+ * @param {Record<string, unknown>} record
+ */
+export function writeCheckRecord(file, record) {
+  const whole = { version: 1, file: path.basename(file), bytes: statSync(file).size, ...record, checkedAt: new Date().toISOString() };
+  writeFileSync(checkFileOf(file), `${JSON.stringify(whole, null, 2)}\n`);
+  return whole;
+}
+
 /** @param {string} file @param {number} seconds @param {string} out @param {{ ffmpeg: string }} tools */
 export async function posterFrame(file, seconds, out, tools) {
   execFileSync(tools.ffmpeg, ["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", file, "-ss", seconds.toFixed(3), "-frames:v", "1", out]);
@@ -193,6 +243,14 @@ export async function recordScenes() {
 }
 
 /**
+ * The display a display's footage is recorded under: the older iPhone and iPad sizes use the current one's.
+ * @param {string} display
+ */
+export const footageDisplay = (display) => (display.startsWith("iphone") ? "iphone" : display.startsWith("ipad") ? "ipad" : display);
+
+/**
+ * A scene's sidecar with `file`, its movie, from raw/<footage display>/<locale>/; a language that reuses another's
+ * footage gets that one's under its own language. Null without a sidecar or a movie.
  * @param {string} root
  * @param {string} display
  * @param {string} locale
@@ -200,11 +258,18 @@ export async function recordScenes() {
  */
 export function readSidecar(root, display, locale, scene) {
   const read = (/** @type {string} */ language) => {
-    const file = path.join(root, "raw", display, language, `${scene}.json`);
-    return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null;
+    const folder = path.join(root, "raw", footageDisplay(display), language);
+    const file = path.join(folder, `${scene}.json`);
+    if (!existsSync(file)) return null;
+    const sidecar = JSON.parse(readFileSync(file, "utf8"));
+    if (sidecar.reuse) return sidecar;
+    const movie = (existsSync(folder) ? readdirSync(folder) : []).find((name) => name.startsWith(`${scene}.`) && !name.endsWith(".json"));
+    return movie ? { ...sidecar, file: path.join(folder, movie) } : null;
   };
-  const sidecar = read(locale);
-  return sidecar?.reuse ? read(sidecar.reuse) : sidecar;
+  const own = read(locale);
+  if (!own?.reuse) return own;
+  const used = read(own.reuse);
+  return used && !used.reuse ? { ...used, locale, reuse: own.reuse } : null;
 }
 
 // --- cli/src/video/layers.mjs
