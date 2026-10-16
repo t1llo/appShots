@@ -32,7 +32,7 @@ export async function startRender(queryClient: QueryClient, project: string): Pr
   writeQuery(queryClient, rendersQuery.queryKey, (current) => ({ jobs: [job, ...(current?.jobs ?? [])], rendersLeft }));
 }
 
-/** The account's renders, asked for again on the Studio's clock (state/live.ts), so a render an agent starts shows up too. */
+/** The account's renders, kept current by state/live.ts, so a render an agent starts shows up too. */
 export function useRenders() {
   return useQuery(rendersQuery);
 }

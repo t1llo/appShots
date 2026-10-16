@@ -15,7 +15,7 @@ import { HistoryDrawer } from "./project/History.tsx";
 import type { ProjectView } from "./project/ProjectBar.tsx";
 import { ProjectPage } from "./project/ProjectPage.tsx";
 import { RenderList, useRenderNotes, useRenders } from "./renders.tsx";
-import { useLiveClock } from "./state/live.ts";
+import { useLive } from "./state/live.ts";
 import { forgetDraft } from "./state/useDraft.ts";
 import { Icon, Menu, Questions, Toasts } from "./ui/index.ts";
 
@@ -54,8 +54,9 @@ function Message({ title, text, children }: { title: string; text: string; child
 
 function Shell() {
   const meta = useQuery(metaQuery);
-  // Asked for again on the Studio's clock, so projects that an agent creates through MCP show up without a reload.
-  useLiveClock();
+  // Kept current from the server's stream of changes, or on a clock without one, so projects that an agent creates
+  // through MCP show up without a reload.
+  useLive();
   const projects = useQuery(projectsQuery);
   const renders = useRenders();
   useRenderNotes(renders.data?.jobs);
