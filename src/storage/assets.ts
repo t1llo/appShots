@@ -1,6 +1,6 @@
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
-import sharp from "sharp";
+import sharp, { type Metadata } from "sharp";
 import { InputError, NotFoundError } from "../domain/errors.ts";
 import type { Project } from "../schema.ts";
 import { type DeviceKind, deviceKindOf } from "../sizes.ts";
@@ -126,14 +126,14 @@ interface Box {
 
 /**
  * A capture of a Mac window comes with see-through round corners, and with the window's shadow around it unless that
- * was left out. Finds the window in a picture's decoded RGBA pixels: the box around its solid ones. Null for a
- * picture that is no such capture.
+ * was left out. Finds the window in a picture's opacity, one byte a pixel: the box around its solid pixels. Null for
+ * a picture that is no such capture.
  */
-function windowBox(pixels: Uint8Array, width: number, height: number): Box | null {
-  const alpha = (x: number, y: number) => pixels[(y * width + x) * 4 + 3]!;
-  if (alpha(0, 0) >= 128) return null;
+function windowBox(alpha: Uint8Array, width: number, height: number): Box | null {
+  const at = (x: number, y: number) => alpha[y * width + x]!;
+  if (at(0, 0) >= 128) return null;
   const solidRow = (y: number) => {
-    for (let x = 0; x < width; x++) if (alpha(x, y) >= SOLID) return true;
+    for (let x = 0; x < width; x++) if (at(x, y) >= SOLID) return true;
     return false;
   };
   let top = 0;
@@ -146,12 +146,12 @@ function windowBox(pixels: Uint8Array, width: number, height: number): Box | nul
   let [left, right] = [width, -1];
   for (let y = top; y <= bottom; y++) {
     for (let x = 0; x < left; x++) {
-      if (alpha(x, y) < SOLID) continue;
+      if (at(x, y) < SOLID) continue;
       left = x;
       break;
     }
     for (let x = width - 1; x > right; x--) {
-      if (alpha(x, y) < SOLID) continue;
+      if (at(x, y) < SOLID) continue;
       right = x;
       break;
     }
@@ -169,23 +169,30 @@ interface Encoded extends ShotMeta {
 }
 
 /**
- * Decodes a screenshot once and encodes it as PNG. One with see-through parts is decoded to its pixels first: a
- * window is looked for in them where it may be a Mac's, and they are encoded as they are or cut down to the window.
+ * Encodes a screenshot as PNG. Of one with see-through parts only the opacity is decoded first, a quarter of its
+ * pixels' bytes: a window is looked for in it where it may be a Mac's, and the corner is measured. The picture is
+ * then encoded from the upload, as it is or cut down to the window, so its depth and colours stay as they were.
  */
-async function encodeShot(data: Buffer, hasAlpha: boolean, device?: DeviceKind): Promise<Encoded> {
-  if (!hasAlpha) {
-    const { data: png, info } = await openImage(data).rotate().png().toBuffer({ resolveWithObject: true });
+async function encodeShot(data: Buffer, header: Metadata, device?: DeviceKind): Promise<Encoded> {
+  const encode = (box?: Box) => {
+    const image = openImage(data).rotate();
+    return (box ? image.extract(box) : image).png().toBuffer({ resolveWithObject: true });
+  };
+  // The opacity is the last channel of a picture in colour or in grey.
+  const opacity = header.hasAlpha ? ({ 2: 1, 4: 3 } as const)[header.channels as 2 | 4] : undefined;
+  if (opacity === undefined) {
+    const { data: png, info } = await encode();
     return { png, width: info.width, height: info.height, corner: 0, window: false };
   }
-  const { data: pixels, info } = await openImage(data).rotate().raw().toBuffer({ resolveWithObject: true });
-  const { width, height, channels } = info;
+  const { data: alpha, info } = await openImage(data).rotate().extractChannel(opacity).raw().toBuffer({ resolveWithObject: true });
+  const { width, height } = info;
   // Only a Mac window is captured with see-through corners, so one is a Mac's whatever its shape.
-  const box = channels === 4 && (!device || device === "mac") ? windowBox(pixels, width, height) : null;
+  const box = header.channels === 4 && (!device || device === "mac") ? windowBox(alpha, width, height) : null;
   const kept = box ?? { left: 0, top: 0, width, height };
-  const corner = cornerFrom((d) => pixels[((kept.top + d) * width + kept.left + d) * channels + channels - 1]!, cornerSide(kept.width, kept.height));
-  const image = sharp(pixels, { raw: { width, height, channels } });
+  const corner = cornerFrom((d) => alpha[(kept.top + d) * width + kept.left + d]!, cornerSide(kept.width, kept.height));
   const whole = kept.width === width && kept.height === height;
-  return { png: await (whole ? image : image.extract(kept)).png().toBuffer(), width: kept.width, height: kept.height, corner, window: box !== null };
+  const { data: png } = await encode(whole ? undefined : kept);
+  return { png, width: kept.width, height: kept.height, corner, window: box !== null };
 }
 
 // ---------------------------------------------------------------- screenshots
@@ -267,7 +274,7 @@ export async function saveShot(space: Space, id: string, name: string, data: Buf
   await assertRoom(space, 1);
   let encoded: Encoded;
   try {
-    encoded = await encodeShot(data, header.hasAlpha, device);
+    encoded = await encodeShot(data, header, device);
   } catch (error) {
     throw decodeError(error, NOT_A_SCREENSHOT);
   }

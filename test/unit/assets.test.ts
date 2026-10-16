@@ -102,6 +102,16 @@ test("a Mac window keeps its corner when it is moved (store-13)", async (t) => {
   assert.equal(moved!.corner, saved.corner);
 });
 
+test("a Mac window is found in a 16-bit capture and in one in grey", async () => {
+  const { id } = await createProject(space, { name: "Depths" });
+  const window = await macWindow(1600, 1000);
+  const deep = await saveShot(space, id, "deep", await sharp(window).toColourspace("rgb16").png().toBuffer());
+  assert.deepEqual([deep.width, deep.height, deep.corner], [1520, 920, (await saveShot(space, id, "plain", window)).corner]);
+  // A picture in grey with see-through parts is kept whole: only a colour capture is cut down to its window.
+  const grey = await saveShot(space, id, "grey", await sharp(window).toColourspace("b-w").png().toBuffer());
+  assert.deepEqual([grey.width, grey.height], [1600, 1000]);
+});
+
 test("a screenshot moved into a language counts against that language's limit (store-13)", async () => {
   const limited = limitedSpace("moves", 1);
   const { id } = await createProject(limited, { name: "Moves", locales: ["en-US", "de-DE"] });
