@@ -88,7 +88,7 @@ export function findBrowser() {
  * @param {(talk: { send: (method: string, params?: object, sessionId?: string) => Promise<any>, listen: (listener: (message: any) => void) => void }) => Promise<T>} work
  * @returns {Promise<T>}
  */
-async function withBrowser(browser, profile, work) {
+export async function withBrowser(browser, profile, work) {
   const dir = profile ? path.resolve(profile) : mkdtempSync(path.join(tmpdir(), "appshots-web-"));
   mkdirSync(dir, { recursive: true });
   const options = [

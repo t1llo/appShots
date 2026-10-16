@@ -47,6 +47,7 @@ import { webSource } from "./web.mjs";
  * @property {(scene: any) => Promise<import("./drive.mjs").UiTests>} [tests] Builds what a UI test needs.
  * @property {(job: WebJob) => Promise<import("./session.mjs").Take>} [take] Records and drives in one, for a
  *   page whose time it runs itself.
+ * @property {string} [help] What to do when its recorder fails, said after why.
  *
  * @typedef {object} WebJob
  * @property {any} scene
@@ -170,11 +171,12 @@ export function sourceKind(plan, display, flags) {
 }
 
 /**
- * Seconds a scene records for at most, and how long the app is left to settle first.
+ * Seconds a scene records for at most, and how long the app is left to settle first. A scene that nothing
+ * drives is recorded for as long as the plan estimates it, unless it says otherwise.
  * @param {any} scene
  * @param {number | null} seconds --seconds, which goes for every scene.
  */
-const timing = (scene, seconds) => ({ seconds: seconds ?? scene.record?.seconds ?? 12, settle: scene.record?.settle ?? 1.5 });
+const timing = (scene, seconds) => ({ seconds: seconds ?? scene.record?.seconds ?? (scene.drive === undefined ? 6 : 12), settle: scene.record?.settle ?? 1.5 });
 
 /**
  * Records every scene × language × display the flags pick that has no recording yet, or all of them with
@@ -225,6 +227,8 @@ export async function recordScenes(plan, flags) {
               checkStop(signal);
               const { seconds, settle } = timing(scene, picked.seconds);
               const drive = flags.manual ? "manual" : scene.drive;
+              // A recorder that records for a set length gets no more than the scene's driver takes.
+              const length = drive && typeof drive === "object" && "wait" in drive ? Math.min(seconds, drive.wait + 0.5) : seconds;
               const file = workingFile(root, display, locale, scene.id, source.extension);
               console.log(`Recording ${scene.id} (${locale}, ${display}) on ${source.label}…`);
               await source.open(scene, locale);
@@ -233,7 +237,7 @@ export async function recordScenes(plan, flags) {
                 ? await source.take({ scene, locale, file, seconds, settle, signal })
                 : await recordTake({
                     file,
-                    record: (into) => /** @type {NonNullable<Source["record"]>} */ (source.record)(into, { seconds }),
+                    record: (into) => /** @type {NonNullable<Source["record"]>} */ (source.record)(into, { seconds: length }),
                     name: source.kind === "sim" ? "simctl" : source.kind === "device" ? "devicectl" : "screencapture",
                     drive,
                     context: {
@@ -248,8 +252,9 @@ export async function recordScenes(plan, flags) {
                     },
                     settle,
                     signal,
+                    help: source.help,
                   });
-              const kept = await keepTake(take, { root, scene: scene.id, locale, display, source: source.kind, model: source.model, os: source.os, scale: source.scale, orientation: display === "mac" ? "landscape" : (plan.orientation ?? "portrait"), padded: source.padded, trim: scene.trim === "auto", planHash: hash }, /** @type {any} */ (tools));
+              const kept = await keepTake(take, { root, scene: scene.id, locale, display, source: source.kind, model: source.model, os: source.os, scale: source.scale, orientation: display === "mac" ? "landscape" : (plan.orientation ?? "portrait"), padded: source.padded, trim: scene.trim === "auto", planHash: hash, help: source.help }, /** @type {any} */ (tools));
               written.push(kept);
               const touches = kept.touches.length > 0 ? `, ${kept.touches.length} touch${kept.touches.length === 1 ? "" : "es"}` : "";
               const trim = kept.trim ? `, trimmed to ${kept.trim[0]}–${kept.trim[1]} s` : "";
@@ -267,7 +272,7 @@ export async function recordScenes(plan, flags) {
     interruption.exit(error.code);
     throw error;
   }
-  if (picked.reuse) written.push(...pointAtPrimary(root, picked, again));
+  if (picked.reuse) written.push(...pointAtPrimary(root, { displays: picked.footage, scenes: picked.scenes.map((scene) => scene.id), locales: picked.locales, primary: picked.primary }, again));
   const reused = written.filter((each) => each.reuse).length;
   console.log(written.length - reused > 0 || reused > 0 ? `Recorded ${written.length - reused} scene${written.length - reused === 1 ? "" : "s"}${reused > 0 ? `, ${reused} reusing the ${picked.primary} footage` : ""}. Next: appshots video sheet --raw` : "Every scene has a recording already. --again records them once more.");
   return written;
@@ -277,23 +282,22 @@ export async function recordScenes(plan, flags) {
  * Writes the sidecars of the languages that use the primary language's footage: each points at it, and is
  * otherwise a copy of what that footage's sidecar said when it was written.
  * @param {string} root
- * @param {ReturnType<typeof selection>} picked
- * @param {boolean} again
+ * @param {{ displays: string[], scenes: string[], locales: string[], primary: string }} which
+ * @param {boolean} again Whether a language that has footage of its own is pointed at the primary one too.
  */
-function pointAtPrimary(root, picked, again) {
+export function pointAtPrimary(root, { displays, scenes, locales, primary }, again) {
   const written = [];
-  for (const display of picked.footage) {
-    for (const scene of picked.scenes) {
-      const used = readSidecar(root, display, picked.primary, scene.id);
+  for (const display of displays) {
+    for (const scene of scenes) {
+      const used = readSidecar(root, display, primary, scene);
       if (!used || used.reuse) continue;
-      for (const locale of picked.locales) {
-        if (locale === picked.primary) continue;
+      for (const locale of locales) {
+        if (locale === primary) continue;
         const dir = rawDir(root, display, locale);
-        // A language that has footage of its own keeps it, unless it is to be recorded again.
-        if (!again && existsSync(path.join(dir, `${scene.id}.json`))) continue;
+        if (!again && existsSync(path.join(dir, `${scene}.json`))) continue;
         const { file, ...fields } = used;
-        const data = sidecar({ ...fields, locale, reuse: picked.primary });
-        writeJson(path.join(dir, `${scene.id}.json`), data);
+        const data = sidecar({ ...fields, locale, reuse: primary });
+        writeJson(path.join(dir, `${scene}.json`), data);
         written.push(data);
       }
     }

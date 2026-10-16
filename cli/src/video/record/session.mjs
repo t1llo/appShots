@@ -13,7 +13,7 @@ import { sidecarTouches, touchLog } from "./touches.mjs";
  */
 
 /** The kinds of movie a scene's recording may be, the one simctl makes first. An import keeps its own. */
-export const MOVIES = [".mov", ".mp4", ".m4v"];
+export const MOVIES = [".mov", ".mp4", ".m4v", ".mkv", ".webm"];
 
 /**
  * The display whose footage a display uses. The older iPhone and iPad sizes are cut from the same recording as
@@ -239,7 +239,8 @@ export async function withInterrupt(work) {
     return await work(controller.signal);
   } catch (error) {
     // Whatever failed once the stop began failed because of it: a build or a program the terminal stopped too.
-    if (controller.signal.aborted && !(error instanceof Interrupted)) throw new Interrupted(code);
+    // What was stopped below here does not know which signal it was, so the code is set here.
+    if (controller.signal.aborted) throw new Interrupted(code);
     throw error;
   } finally {
     process.off("SIGINT", onInt);
@@ -322,12 +323,21 @@ const TAIL = 500;
  * @param {import("./drive.mjs").DriveContext} take.context
  * @param {number} take.settle Seconds to wait before the recording starts.
  * @param {AbortSignal} take.signal
+ * @param {string} [take.help] What to do when the recorder fails, said after why.
  * @returns {Promise<Take>}
  */
-export async function recordTake({ file, record, name, drive, context, settle, signal }) {
+export async function recordTake({ file, record, name, drive, context, settle, signal, help }) {
   await pauseUnlessStopped(settle * 1000, signal);
   rmSync(file, { force: true });
-  const recorder = await record(file);
+  let recorder;
+  try {
+    recorder = await record(file);
+  } catch (error) {
+    rmSync(file, { force: true });
+    if (signal.aborted) throw new Interrupted(130);
+    if (help && error instanceof Failure && !(error instanceof Interrupted)) fail(`${error.message}\n${help}`);
+    throw error;
+  }
   /** @type {import("./drive.mjs").Driving | null} */
   let driving = null;
   let finished = false;
@@ -348,12 +358,12 @@ export async function recordTake({ file, record, name, drive, context, settle, s
     if (!("result" in outcome)) await driving.stop();
     const result = await driving.done;
     if ("interrupted" in outcome) throw new Interrupted(130);
-    if ("lost" in outcome) fail(`${name} stopped recording by itself.${recorder.running.said() ? `\n${recorder.running.said()}` : ""}`);
+    if ("lost" in outcome) fail(`${name} stopped recording by itself.${recorder.running.said() ? `\n${recorder.running.said()}` : ""}${help ? `\n${help}` : ""}`);
     if (result.failed) fail(result.failed);
     if (drive !== undefined && drive !== "manual" && !("wait" in drive) && "result" in outcome) await pauseUnlessStopped(TAIL, signal);
     const exit = await recorder.stop();
     finished = true;
-    if (exit.status !== 0) fail(`${name} could not finish the recording${exit.signal ? ` (${exit.signal})` : ` (exit code ${exit.status})`}.${recorder.running.said() ? `\n${recorder.running.said()}` : ""}`);
+    if (exit.status !== 0) fail(`${name} could not finish the recording${exit.signal ? ` (${exit.signal})` : ` (exit code ${exit.status})`}.${recorder.running.said() ? `\n${recorder.running.said()}` : ""}${help ? `\n${help}` : ""}`);
     return {
       file,
       wall: (exit.stopped - recorder.started) / 1000,
@@ -393,6 +403,7 @@ export function touchFolder() {
  * @property {boolean} padded Whether the movie drops still frames, so the clock has to restore its length.
  * @property {boolean} trim Whether the plan says "auto".
  * @property {string} planHash
+ * @property {string} [help] What to do when the movie is empty, said after why.
  */
 
 /**
@@ -410,8 +421,8 @@ export async function keepTake(take, keep, tools) {
     if (!movie || movie.streams === 0) {
       fail(
         empty
-          ? `The recording of ${keep.scene} came out empty. A recorder stopped any other way than with Ctrl+C or SIGINT leaves no movie; record the scene again.`
-          : `The recording of ${keep.scene} holds no video that ffprobe can read. Record the scene again.`,
+          ? `The recording of ${keep.scene} came out empty. A recorder stopped any other way than with Ctrl+C or SIGINT leaves no movie; record the scene again.${keep.help ? `\n${keep.help}` : ""}`
+          : `The recording of ${keep.scene} holds no video that ffprobe can read. Record the scene again.${keep.help ? `\n${keep.help}` : ""}`,
       );
     }
     if (movie.streams > 1) fail(`The recording of ${keep.scene} holds ${movie.streams} videos, where one is expected.`);
@@ -419,7 +430,9 @@ export async function keepTake(take, keep, tools) {
     // that keeps its time and is still this short has nothing in it.
     if (!keep.padded && movie.duration < 0.5) fail(`The recording of ${keep.scene} is only ${round2(movie.duration)} seconds long. Record the scene again.`);
     if (keep.padded && movie.duration < 0.5 && take.wall > 2) console.log(`  ! Little moved on screen while ${keep.scene} recorded. Look at it with 'appshots video sheet --raw'.`);
-    const trim = keep.trim ? await autoTrim(take.file, { wall: take.wall, padded: keep.padded }, tools) : null;
+    // A movie that keeps its time knows its length better than the clock around the recorder does.
+    const wall = keep.padded ? take.wall : movie.duration;
+    const trim = keep.trim ? await autoTrim(take.file, { wall, padded: keep.padded }, tools) : null;
     const scale = keep.scale(movie.size);
     const data = sidecar({
       scene: keep.scene,
@@ -431,9 +444,9 @@ export async function keepTake(take, keep, tools) {
       size: movie.size,
       scale,
       orientation: keep.orientation,
-      wall: take.wall,
+      wall,
       driverOffset: take.driverOffset,
-      touches: sidecarTouches(take.touches, { driverStart: take.driverStart, offset: take.driverOffset, scale, wall: take.wall }),
+      touches: sidecarTouches(take.touches, { driverStart: take.driverStart, offset: take.driverOffset, scale, wall }),
       trim,
       planHash: keep.planHash,
     });
