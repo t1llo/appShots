@@ -42,7 +42,7 @@ appshots video layers
 appshots video compose
 ```
 
-1. `init` writes `appshots.video.json`, the plan, from the slides of the project `streaks`: the first slide's headline on the intro card, then a scene for each slide that shows a screen, with that slide's headline as its caption. It also writes `appshots-video/`, the folder the work goes into.
+1. `init` writes `appshots.video.json`, the plan, from the slides of the project `streaks`: the first slide's headline on the intro card, then a scene for each of up to four more slides that show a screen, named after the screenshot, with that slide's headline as its caption. It also writes `appshots-video/`, the folder the work goes into, with a `.gitignore` that keeps the large files out of Git.
 2. Say in the plan how the app gets through each scene. See [Drivers](#drivers).
 3. `plan` checks the plan and prints the storyboard.
 4. `record` records each scene in each language.
@@ -53,7 +53,7 @@ Then look at them, and put them into App Store Connect with `appshots video push
 
 ## The plan
 
-`appshots.video.json` holds the whole preview. Commit it with your app. `--plan <file>` makes any video command use another one, and the work then goes into `appshots-video/` beside that file.
+`appshots.video.json` holds the whole preview. Commit it with your app. `--plan <file>` makes a video command read another one, and the work then goes into `appshots-video/` beside that file.
 
 ```json
 {
