@@ -13,6 +13,7 @@ after(() => home.remove());
 const { setRunner } = await import("../../cli/src/proc.mjs");
 const { ffmpegStatus, findFfmpeg, homebrew, lacking, NEEDS, toolEnv } = await import("../../cli/src/video/ffmpeg.mjs");
 const { Failure } = await import("../../cli/src/fail.mjs");
+const { confirm } = await import("../../cli/src/prompt.mjs");
 
 /** ffmpeg's -encoders and -filters lists, shortened, in the layout ffmpeg prints them. */
 const ENCODERS = (names) => `Encoders:\n V..... = Video\n A..... = Audio\n ------\n${names.map((name) => ` V....D ${name.padEnd(20)} ${name} encoder`).join("\n")}\n`;
@@ -73,6 +74,34 @@ function programs(folder, ...names) {
 
 const brewRan = () => script.calls.some((call) => call.includes("/brew "));
 
+/**
+ * Runs `work` with a stand-in for process.stdin: a terminal where `answer` is typed, then Return, or for null a
+ * pipe, as an agent's shell has. Gives back what it ended with, a value or an error, and what it printed.
+ * @param {string | null} answer
+ * @param {() => Promise<unknown>} work
+ */
+async function withStdin(answer, work) {
+  const real = /** @type {PropertyDescriptor} */ (Object.getOwnPropertyDescriptor(process, "stdin"));
+  const stdin = Object.assign(new PassThrough(), { isTTY: answer !== null });
+  Object.defineProperty(process, "stdin", { value: stdin, configurable: true });
+  try {
+    if (answer !== null) setTimeout(() => stdin.write(`${answer}\n`), 20);
+    /** @type {any} */
+    let outcome = null;
+    const printed = await quietly(async () => {
+      outcome = await work().then(
+        (value) => value,
+        (error) => error,
+      );
+    });
+    return { outcome, printed };
+  } finally {
+    Object.defineProperty(process, "stdin", real);
+  }
+}
+
+const QUESTION = "ffmpeg is needed to cut the video and is not on this Mac. Install it with Homebrew now (brew install ffmpeg, about 100 MB)? [y/N] ";
+
 test("ffmpeg on the PATH is found with the ffprobe beside it, and says what it can do", async () => {
   const bin = programs(path.join(dir, "bin"), "ffmpeg", "ffprobe");
   programs(path.join(dir, "other"), "ffprobe");
@@ -116,84 +145,74 @@ test("APPSHOTS_FFMPEG and APPSHOTS_FFPROBE come first, and one that is not there
   await assert.rejects(findFfmpeg({}), (error) => error instanceof Failure && error.message.includes(`APPSHOTS_FFMPEG is ${path.join(dir, "nowhere", "ffmpeg")}`));
 });
 
-test("Remotion's ffmpeg in the work folder is the last place, and runs with its own libraries", async () => {
+test("Remotion's ffmpeg in the work folder is the last place to read a video and take its poster, and runs with its own libraries", async () => {
   const root = path.join(dir, "appshots-video");
   const compositor = programs(path.join(root, "remotion", "node_modules", "@remotion", `compositor-${process.platform}-${process.arch}`), "ffmpeg", "ffprobe");
-  const tools = await findFfmpeg({ root });
+  const tools = await findFfmpeg({ root, need: "probe" });
   assert.equal(tools.ffmpeg, path.join(compositor, "ffmpeg"));
   assert.equal(tools.from, "Remotion");
   const env = /** @type {NodeJS.ProcessEnv} */ (toolEnv(tools));
   assert.equal(env[process.platform === "darwin" ? "DYLD_LIBRARY_PATH" : "LD_LIBRARY_PATH"], compositor);
   assert.equal(env.HOME, process.env.HOME);
   // The plan's folder works as well as the work folder in it.
-  assert.equal((await findFfmpeg({ root: dir })).ffmpeg, tools.ffmpeg);
+  assert.equal((await findFfmpeg({ root: dir, need: "poster" })).ffmpeg, tools.ffmpeg);
 });
 
-test("without ffmpeg and without a terminal, it fails with what to ask the user, and installs nothing", { skip: process.stdin.isTTY && "stdin is a terminal" }, async () => {
+test("a compose passes Remotion's ffmpeg over and offers Homebrew's, as the steps that cut run what they are given as it is", async () => {
+  const root = path.join(dir, "appshots-video");
+  programs(path.join(root, "remotion", "node_modules", "@remotion", `compositor-${process.platform}-${process.arch}`), "ffmpeg", "ffprobe");
   programs(homebrew.bins[0], "brew");
-  await assert.rejects(findFfmpeg({}), (error) => error instanceof Failure && error.message === "ffmpeg is not installed. Ask the user whether to install it, then run: brew install ffmpeg");
+  // Even one that says it has every filter: it would not start without its libraries' folder in its environment.
+  const { outcome } = await withStdin(null, () => findFfmpeg({ root, ask: confirm }));
+  assert.ok(outcome instanceof Failure);
+  assert.equal(outcome.message, "ffmpeg is not installed. Ask the user whether to install it, then run: brew install ffmpeg");
+  assert.match(await ffmpegStatus(root), /compositor-[^/]+\/ffmpeg, version 9\.0\.2, Remotion's, which can read a preview and take its poster, but not cut one\. 'brew install ffmpeg' installs one that can/);
   assert.equal(brewRan(), false);
 });
 
-test("a command that only reports never asks", async () => {
+test("without ffmpeg and without a terminal, it fails with what to ask the user, and installs nothing", async () => {
   programs(homebrew.bins[0], "brew");
-  let asked = false;
-  await assert.rejects(findFfmpeg({ ask: false }), (error) => error instanceof Failure && /Ask the user whether to install it, then run: brew install ffmpeg/.test(error.message));
-  await assert.rejects(findFfmpeg({ ask: async () => ((asked = true), null) }), (error) => error instanceof Failure && /Ask the user/.test(error.message));
-  assert.equal(asked, true);
+  // The recording and the compose pass the CLI's yes-or-no helper, which says no without a terminal: that is
+  // nobody's answer, so the agent is told to ask the user rather than that the user said no.
+  for (const ask of [true, confirm]) {
+    const { outcome, printed } = await withStdin(null, () => findFfmpeg({ ask }));
+    assert.ok(outcome instanceof Failure);
+    assert.equal(outcome.message, "ffmpeg is not installed. Ask the user whether to install it, then run: brew install ffmpeg");
+    assert.equal(printed, "");
+  }
   assert.equal(brewRan(), false);
 });
 
-test("a no installs nothing and says how to do it later", async () => {
+test("a command that only reports never asks, even at a terminal", async () => {
   programs(homebrew.bins[0], "brew");
-  /** @type {string[]} */
-  const questions = [];
-  await assert.rejects(findFfmpeg({ ask: async (question) => (questions.push(question), false) }), (error) => error instanceof Failure && /Install it with 'brew install ffmpeg' when you want to/.test(error.message));
-  assert.deepEqual(questions, ["ffmpeg is needed to cut the video and is not on this Mac. Install it with Homebrew now (brew install ffmpeg, about 100 MB)?"]);
+  const { outcome, printed } = await withStdin("y", () => findFfmpeg({ ask: false }));
+  assert.ok(outcome instanceof Failure && /Ask the user whether to install it, then run: brew install ffmpeg/.test(outcome.message));
+  assert.equal(printed, "");
+  assert.equal(brewRan(), false);
+});
+
+test("at a terminal the question is asked there, and Return alone is a no whoever asks", async () => {
+  programs(homebrew.bins[0], "brew");
+  for (const [answer, ask] of /** @type {const} */ ([["", true], ["n", true], ["", confirm]])) {
+    const { outcome, printed } = await withStdin(answer, () => findFfmpeg({ ask }));
+    assert.ok(outcome instanceof Failure && /Install it with 'brew install ffmpeg' when you want to/.test(outcome.message), `"${answer}" is a no`);
+    assert.ok(printed.includes(QUESTION), printed);
+    assert.ok(!printed.includes("[Y/n]"));
+  }
   assert.equal(brewRan(), false);
 });
 
 test("a yes runs brew install ffmpeg, and the ffmpeg it puts there is used", async () => {
   const brew = path.join(programs(homebrew.bins[0], "brew"), "brew");
   installs = () => programs(homebrew.bins[0], "ffmpeg", "ffprobe");
-  const tools = await findFfmpeg({ ask: async () => true });
+  const { outcome, printed } = await withStdin("y", () => findFfmpeg({ ask: confirm }));
+  assert.ok(printed.includes(QUESTION));
   assert.ok(script.calls.includes(`${brew} install ffmpeg`));
-  assert.equal(tools.ffmpeg, path.join(homebrew.bins[0], "ffmpeg"));
-});
-
-test("at a terminal, the question is asked there: y installs, Return alone does not", async () => {
-  const brew = path.join(programs(homebrew.bins[0], "brew"), "brew");
-  const real = Object.getOwnPropertyDescriptor(process, "stdin");
-  /** @param {string} answer */
-  const answering = async (answer) => {
-    const terminal = Object.assign(new PassThrough(), { isTTY: true });
-    Object.defineProperty(process, "stdin", { value: terminal, configurable: true });
-    try {
-      setTimeout(() => terminal.write(`${answer}\n`), 20);
-      let outcome = null;
-      const printed = await quietly(async () => {
-        outcome = await findFfmpeg({}).then(
-          (tools) => tools,
-          (error) => error,
-        );
-      });
-      return { outcome, printed };
-    } finally {
-      Object.defineProperty(process, "stdin", /** @type {PropertyDescriptor} */ (real));
-    }
-  };
-  const no = await answering("");
-  assert.ok(no.outcome instanceof Failure);
-  assert.match(no.printed, /Install it with Homebrew now \(brew install ffmpeg, about 100 MB\)\? \[y\/N\]/);
-  assert.equal(brewRan(), false);
-  installs = () => programs(homebrew.bins[0], "ffmpeg", "ffprobe");
-  const yes = await answering("y");
-  assert.equal(/** @type {any} */ (yes.outcome).ffmpeg, path.join(homebrew.bins[0], "ffmpeg"));
-  assert.ok(script.calls.includes(`${brew} install ffmpeg`));
+  assert.equal(outcome.ffmpeg, path.join(homebrew.bins[0], "ffmpeg"));
 });
 
 test("without Homebrew it fails with where to read how to get ffmpeg", async () => {
-  await assert.rejects(findFfmpeg({ ask: async () => true }), (error) => error instanceof Failure && /no Homebrew/.test(error.message) && /troubleshooting/.test(error.message));
+  await assert.rejects(findFfmpeg({}), (error) => error instanceof Failure && /no Homebrew/.test(error.message) && /troubleshooting/.test(error.message));
   assert.equal(script.calls.length, 0);
 });
 

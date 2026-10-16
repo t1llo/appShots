@@ -13,11 +13,11 @@ import { promptLine } from "../prompt.mjs";
  * @property {Set<string>} filters
  * @property {"libx264" | "h264_videotoolbox" | null} h264 The H.264 encoder to cut with: x264 where there is one.
  * @property {NodeJS.ProcessEnv} [env] What the programs need in their environment besides the user's, when they
- *   are Remotion's: they load their libraries from their own folder. toolEnv() adds it.
+ *   are Remotion's: they load their libraries from their own folder. toolEnv() adds it. Only the probe, the poster
+ *   and the sheet are ever given Remotion's programs, and they run them with it.
  * @property {"APPSHOTS_FFMPEG" | "PATH" | "Homebrew" | "Remotion"} from Where they were found.
  *
  * @typedef {"compose" | "sheet" | "poster" | "probe"} Need
- * @typedef {(question: string) => Promise<boolean | null>} Ask A yes or no, or null when there is nobody to ask.
  */
 
 /** The oldest ffmpeg with xfade, which joins the scenes. Nothing else needs a recent one. */
@@ -120,10 +120,15 @@ function remotionTools(scope, packages) {
 /**
  * Where ffmpeg and ffprobe are, in this order: APPSHOTS_FFMPEG and APPSHOTS_FFPROBE, the PATH, Homebrew's folders,
  * then Remotion's in the work folder. An ffprobe is looked for beside the ffmpeg first, so the two match.
+ *
+ * Remotion's are passed over for a compose. Its build has none of the filters a compose needs (no xfade, overlay
+ * or fps), so the user is better offered Homebrew's than refused; and the steps that record and cut run the
+ * programs they are given as they are, while Remotion's only start with the environment toolEnv() gives them.
  * @param {string | undefined} root
+ * @param {Need} need
  * @returns {{ ffmpeg: string, ffprobe: string, env?: NodeJS.ProcessEnv, from: Tools["from"] } | null}
  */
-function locate(root) {
+function locate(root, need) {
   const given = process.env.APPSHOTS_FFMPEG;
   const givenProbe = process.env.APPSHOTS_FFPROBE;
   for (const [name, file] of [["APPSHOTS_FFMPEG", given], ["APPSHOTS_FFPROBE", givenProbe]]) {
@@ -143,7 +148,7 @@ function locate(root) {
     const ffprobe = givenProbe ?? (ffmpeg && beside(ffmpeg)) ?? find("ffprobe");
     if (ffmpeg && ffprobe) return { ffmpeg, ffprobe, from };
   }
-  const remotion = inRemotion(root);
+  const remotion = need === "compose" ? null : inRemotion(root);
   return remotion ? { ...remotion, from: "Remotion" } : null;
 }
 
@@ -219,27 +224,20 @@ export function lacking(tools, need) {
 }
 
 /**
- * Asks the person at the Terminal for a yes; Return alone is a no. Null without a terminal.
- * @type {Ask}
- */
-async function askTerminal(question) {
-  if (!process.stdin.isTTY) return null;
-  return /^y(es)?$/i.test(await promptLine(`${question} [y/N] `, NO_TERMINAL));
-}
-
-/**
- * Installs ffmpeg with Homebrew, after a yes. Nothing is installed without one: without a terminal, or with
- * `ask: false`, it fails with what to ask the user instead.
- * @param {Ask | boolean} ask
+ * Installs ffmpeg with Homebrew, after a yes from the person at the Terminal; Return alone is a no. Nothing is
+ * installed without one: without a terminal, or with `ask: false`, it fails with what to ask the user instead.
+ * @param {unknown} ask
  * @param {Need} need
  */
 async function install(ask, need) {
   const brew = findBrew();
   if (!brew) fail(NO_HOMEBREW);
+  // The terminal is checked here rather than left to the caller's helper: confirm() says no without one, and an
+  // agent then needs the sentence that tells it to ask the user, not the one for a user who said no.
+  if (ask === false || !process.stdin.isTTY) fail(NO_TERMINAL);
   const question = `ffmpeg is needed to ${PURPOSE[need]} and is not on this Mac. Install it with Homebrew now (${INSTALL}, about 100 MB)?`;
-  const answer = ask === false ? null : await (typeof ask === "function" ? ask : askTerminal)(question);
-  if (answer === null) fail(NO_TERMINAL);
-  if (!answer) fail(`ffmpeg is needed to ${PURPOSE[need]}. Install it with '${INSTALL}' when you want to, then run this again.`);
+  const answer = await promptLine(`${question} [y/N] `, NO_TERMINAL);
+  if (!/^y(es)?$/i.test(answer)) fail(`ffmpeg is needed to ${PURPOSE[need]}. Install it with '${INSTALL}' when you want to, then run this again.`);
   const result = await run(brew, ["install", "ffmpeg"], { timeout: 0, stdio: "inherit" });
   if (result.status !== 0) fail(`'${INSTALL}' did not finish${result.status === null ? "" : ` (exit ${result.status})`}. Run it in a Terminal to see why, then try again.`);
 }
@@ -249,16 +247,17 @@ async function install(ask, need) {
  * offers to install Homebrew's after a yes; it never installs without one.
  * @param {object} [options]
  * @param {string} [options.root] The work folder, appshots-video/, where Remotion's ffmpeg may be.
- * @param {Ask | boolean} [options.ask] Who answers the install question: a function, the person at the Terminal
- *   (true, the default) or nobody (false), when the command only reports.
+ * @param {boolean | ((question: string) => Promise<boolean>)} [options.ask] Whether the person at the Terminal
+ *   may be asked: true, the default, or a yes-or-no helper such as confirm, which counts as true; false when the
+ *   command only reports. The question is always put here, so that Return alone is a no whoever passed it.
  * @param {Need} [options.need] What the programs are for; a compose asks the most of them.
  * @returns {Promise<Tools>}
  */
 export async function findFfmpeg({ root, ask = true, need = "compose" } = {}) {
-  let found = locate(root);
+  let found = locate(root, need);
   if (!found) {
     await install(ask, need);
-    found = locate(root);
+    found = locate(root, need);
     if (!found) fail(`Homebrew installed ffmpeg, but appshots does not find it in ${homebrew.bins.join(" or ")}. Open a new Terminal and run this again, or point APPSHOTS_FFMPEG at it.`);
   }
   const key = `${found.ffmpeg}\n${found.ffprobe}`;
@@ -283,7 +282,7 @@ export async function findFfmpeg({ root, ask = true, need = "compose" } = {}) {
  * @param {string} [root]
  */
 export async function ffmpegStatus(root) {
-  const located = await attempt(() => locate(root));
+  const located = await attempt(() => locate(root, "probe"));
   if (located.problem !== undefined) return located.problem;
   if (!located.value) {
     return findBrew()
@@ -295,6 +294,7 @@ export async function ffmpegStatus(root) {
   const tools = found.value;
   const missing = lacking(tools, "compose");
   const what = `${tools.ffmpeg}${tools.version ? `, version ${tools.version}` : ""}${tools.from === "Remotion" ? ", Remotion's" : ""}`;
+  if (tools.from === "Remotion") return `${what}, which can read a preview and take its poster, but not cut one. '${INSTALL}' installs one that can, and 'appshots video compose' asks before it does.`;
   if (missing.length > 0) return `${what}, which cannot cut a preview: that needs ${missing.join(", ")}. ${tools.from === "Homebrew" ? "'brew upgrade ffmpeg'" : `'${INSTALL}'`} brings one that can.`;
   return `${what}, with ${tools.h264} and every filter 'appshots video compose' needs`;
 }
