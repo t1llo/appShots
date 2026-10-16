@@ -5,21 +5,12 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { createContext, type FormEvent, useContext, useEffect, useState } from "react";
 import { api, detailQuery, errorText, type Meta, type Project, projectsQuery } from "./api.ts";
 import { LanguageList } from "./languages.tsx";
+import { forgetDraft, openProject } from "./state/useDraft.ts";
 import { track } from "./track.ts";
 import { Confirm, CopyBlock, Dialog, Field, toast } from "./ui/index.ts";
 
 type Named = { id: string; name: string };
 export type DialogKind = "new" | "connect" | { rename: Named } | { remove: Named };
-
-/**
- * The project that is open in the Studio, which holds edits the server has not seen yet. Renaming it goes through
- * its draft, and before it is deleted its saving is stopped; `quiesce` hands back how to start it again.
- */
-export const openProject: { id: string | null; rename: (name: string) => void; quiesce: () => Promise<() => void> } = {
-  id: null,
-  rename: () => {},
-  quiesce: async () => () => {},
-};
 
 export const OpenDialog = createContext<(kind: DialogKind) => void>(() => {});
 export const useOpenDialog = () => useContext(OpenDialog);
@@ -167,6 +158,8 @@ function DeleteProject({ project, close }: { project: Named; close: () => void }
     const resume = openProject.id === project.id ? await openProject.quiesce() : null;
     try {
       await api("DELETE", `/projects/${project.id}`);
+      // Whichever page it was last open on, its draft has nowhere to go now.
+      forgetDraft(project.id);
       await queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey });
       close();
       if (open) await navigate({ to: "/" });

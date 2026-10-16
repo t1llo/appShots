@@ -1,11 +1,11 @@
 // The open project as the Studio's pages see it. Each project has one draft store, shared by its slides, assets and
 // mockups pages, which saves through the API and goes on saving while the user moves from page to page.
 
-import type { QueryClient } from "@tanstack/react-query";
-import { useEffect, useSyncExternalStore } from "react";
-import { ApiError, type Detail, detailQuery, type DeviceKind, errorText, type Project, projectsQuery, revisionOf, saveProject, type TargetId } from "../api.ts";
-import { openProject } from "../dialogs.tsx";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import { ApiError, type Detail, detailQuery, type DeviceKind, errorText, type Project, projectsQuery, restoreProject, revisionOf, revisionsQuery, saveProject, type TargetId } from "../api.ts";
 import { type DraftState, DraftStore, KEEPALIVE_LIMIT, type Remote, SaveError } from "./draft.ts";
+import { hush } from "./live.ts";
 import { writeQuery } from "./sequence.ts";
 
 /** The part of a project the Studio edits and sends back. */
@@ -104,6 +104,27 @@ export function forgetDraft(id: string): void {
   }
 }
 
+/**
+ * Makes an earlier revision of a project current again. The server keeps it as a new revision, and the draft takes
+ * it as its new base: what was not saved yet gives way to it, as one step that undo takes back. Saving waits
+ * meanwhile, so no save of those edits lands after the restore. A project whose stored file cannot be read has no
+ * draft: the project that comes back is put in place of the error it gave.
+ */
+export async function restoreRevision(queryClient: QueryClient, id: string, revision: number, store?: ProjectStore): Promise<Detail> {
+  await store?.pause();
+  try {
+    const detail = await restoreProject(id, revision);
+    writeQuery(queryClient, detailQuery(id).queryKey, detail);
+    store?.replace(remoteOf(detail));
+    renamed(queryClient, detail.project);
+    void queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey });
+    void queryClient.invalidateQueries({ queryKey: revisionsQuery(id).queryKey });
+    return detail;
+  } finally {
+    store?.resume();
+  }
+}
+
 let watching = false;
 /**
  * Leaving the Studio sends what is not saved yet, in a request that outlives the page, and asks first where that
@@ -161,15 +182,42 @@ export function useUndoKeys(store: ProjectStore): void {
   }, [store]);
 }
 
-/** Lets the rename and delete dialogs reach the open project: a rename goes through its draft, a delete stops its saving first. */
+/**
+ * The project that is open in the Studio, which holds edits the server has not seen yet. Renaming it goes through
+ * its draft, and before it is deleted its saving is stopped; `quiesce` hands back how to start it again.
+ */
+export const openProject: { id: string | null; rename: (name: string) => void; quiesce: () => Promise<() => void> } = {
+  id: null,
+  rename: () => {},
+  quiesce: async () => () => {},
+};
+
+/**
+ * Lets the rename and delete dialogs reach the open project: a rename goes through its draft, and a delete first
+ * stops its saving and the asking for it, so the page does not see it gone before it has moved on. A page that goes
+ * saves what waits for a pause in typing at once.
+ */
 export function useOpenProject(store: ProjectStore, id: string, rename: (name: string) => void): void {
+  const queryClient = useQueryClient();
+  const wake = useRef<(() => void) | null>(null);
   useEffect(() => {
     openProject.id = id;
     openProject.rename = rename;
     openProject.quiesce = async () => {
-      await store.pause();
-      return () => store.resume();
+      wake.current = hush(id);
+      await Promise.all([store.pause(), queryClient.cancelQueries({ queryKey: detailQuery(id).queryKey })]);
+      return () => {
+        wake.current?.();
+        store.resume();
+      };
     };
     return () => void (openProject.id = null);
   });
+  useEffect(
+    () => () => {
+      wake.current?.();
+      void store.flush();
+    },
+    [store],
+  );
 }

@@ -9,8 +9,17 @@ import { rendersQuery, working } from "../renders.tsx";
 
 const TICK_MS = 1000;
 
+/** Projects the clock leaves alone for now, such as one being deleted, whose page would otherwise see it gone. */
+const hushed = new Set<string>();
+
+/** Stops asking for a project on the clock, and hands back how to start again. */
+export function hush(id: string): () => void {
+  hushed.add(id);
+  return () => void hushed.delete(id);
+}
+
 /** An open project's detail, unless the project is gone: polling a deleted project would only fail again. */
-const openDetail = (query: Query) => query.queryKey[0] === "project" && query.queryKey.length === 2 && !isGone(query.state.error);
+const openDetail = (query: Query) => query.queryKey[0] === "project" && query.queryKey.length === 2 && !hushed.has(query.queryKey[1] as string) && !isGone(query.state.error);
 
 /**
  * Runs the clock while the Studio is open. The renders are asked for every second while one works, even with the

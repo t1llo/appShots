@@ -339,6 +339,31 @@ export class DraftStore<D extends object> {
     this.#set({ conflicts: [] });
   }
 
+  /** Puts the draft back to the copy the server has, for edits it keeps turning down. Undo takes it back. */
+  revert(): void {
+    this.replace(this.#state.base);
+  }
+
+  /**
+   * Makes a copy the server made current on purpose, such as an earlier revision brought back, the base and the
+   * draft at once. Edits not saved yet give way to it instead of being merged into it, as one step that undo takes
+   * back, edits and all. Saving is paused while the server makes such a copy, so no save of those edits lands after it.
+   */
+  replace(remote: Remote<D>): void {
+    if (this.#state.save.kind === "gone") return;
+    const before = this.#state.draft;
+    const draft = share(before, remote.doc);
+    this.#cancel();
+    this.#failures = this.#refusals = 0;
+    this.#lastEdit = -Infinity;
+    if (draft !== before) {
+      this.#undo.push({ before, after: draft, open: false });
+      if (this.#undo.length > UNDO_LIMIT) this.#undo.shift();
+      this.#redo = [];
+    }
+    this.#set({ base: remote, draft, conflicts: [], save: this.#inflight ? { kind: "saving" } : { kind: "saved" } });
+  }
+
   /**
    * For a page that is closing: sends what is not saved yet in a request that outlives the page, and says whether
    * the browser should ask first. It should when a save is under way or failing, or the edits are too large to send so.

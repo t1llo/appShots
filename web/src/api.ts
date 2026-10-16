@@ -64,6 +64,26 @@ export interface ProjectEntry {
   ownSets?: DeviceKind[];
   locales: string[];
   updatedAt: string;
+  /** Set on a project whose stored file cannot be read: what is wrong with it. Its history can bring it back. */
+  damaged?: string;
+}
+
+/** One version of a project as its history keeps it. */
+export interface Revision {
+  revision: number;
+  /** When it was written. */
+  time: string;
+  /** Who wrote it: studio, mcp or api, and unknown for one written before the history was kept. */
+  actor: string;
+  /** Bytes. */
+  size: number;
+}
+
+export interface Revisions {
+  /** The revision that is current, or null for a project whose stored file cannot be read. */
+  revision: number | null;
+  /** Newest first: every change is one, the last 50 of them. */
+  revisions: Revision[];
 }
 
 export interface Shot {
@@ -172,8 +192,11 @@ export class ApiError extends Error {
 /** Whether a request failed because what it asked for is not there, such as a project deleted elsewhere. */
 export const isGone = (error: unknown) => error instanceof ApiError && error.status === 404;
 
+/** Sent with every change, so the project's history can say it was made in the Studio. */
+const CLIENT = { "x-appshots-client": "studio" };
+
 export async function api<T = unknown>(method: string, route: string, body?: unknown, init?: RequestInit): Promise<T> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = method === "GET" ? {} : { ...CLIENT };
   let payload: BodyInit | undefined;
   if (body instanceof Blob) {
     payload = body;
@@ -222,9 +245,15 @@ async function withRevision(response: Response): Promise<Detail> {
  * else wrote since, and that ApiError's body carries the project as the server has it now.
  */
 export async function saveProject(id: string, changes: object, revision: number | null, keepalive = false): Promise<Detail> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = { "content-type": "application/json", ...CLIENT };
   if (revision != null) headers["if-match"] = `"${revision}"`;
   return withRevision(await answered(await fetch(`/api/projects/${id}`, { method: "PUT", headers, body: JSON.stringify(changes), keepalive })));
+}
+
+/** Makes an earlier revision of a project current again, as a new revision, and answers with the project as it is then. */
+export async function restoreProject(id: string, revision: number): Promise<Detail> {
+  const headers = { "content-type": "application/json", ...CLIENT };
+  return withRevision(await answered(await fetch(`/api/projects/${id}/restore`, { method: "POST", headers, body: JSON.stringify({ revision }) })));
 }
 
 /** A file the server makes on request, such as a mockup, by the address the server gave for it. */
@@ -244,6 +273,9 @@ export const projectsQuery = queryOptions({ queryKey: ["projects"], queryFn: seq
 // Fresh for a moment, so the page that opens right after the route has loaded a project does not fetch it twice.
 export const detailQuery = (id: string) =>
   queryOptions({ queryKey: ["project", id], queryFn: sequenced(async (signal) => withRevision(await answered(await fetch(`/api/projects/${id}`, { signal })))), staleTime: 2000 });
+
+export const revisionsQuery = (id: string) =>
+  queryOptions({ queryKey: ["project", id, "revisions"], queryFn: ({ signal }) => api<Revisions>("GET", `/projects/${id}/revisions`, undefined, { signal }) });
 
 /** The mockups of a project in one language. `drawn` names what they were drawn from, so a change there fetches them again. */
 export const mockupsQuery = (id: string, locale: string, drawn: string) =>
