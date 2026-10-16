@@ -159,7 +159,8 @@ export async function referenceData(account) {
 /**
  * The group an app preview of a display and size goes into, from the reference data, or null when no group an
  * App Store version has takes that size. Of several, the one of the display class the display is recorded for
- * wins; then a group that takes this size alone over one that takes others as well; then the largest screen.
+ * wins; then a group that takes this size alone, upright or turned, over one that takes others as well; then the
+ * largest screen.
  * @param {RefData} ref
  * @param {{ display: string, width: number, height: number }} preview
  * @returns {Group | null}
@@ -168,8 +169,13 @@ export function previewGroup(ref, { display, width, height }) {
   const platform = placementPlatform(display);
   /** @param {number} value @param {number | undefined} least @param {number | undefined} most */
   const within = (value, least, most) => (least === undefined || value >= least) && (most === undefined || value <= most);
+  /** @param {any} spec @param {number} across @param {number} down */
+  const takes = (spec, across, down) => (spec.compatiblePlacementTypes ?? [PREVIEW]).includes(PREVIEW) && within(across, spec.dimensions?.minWidth, spec.dimensions?.maxWidth) && within(down, spec.dimensions?.minHeight, spec.dimensions?.maxHeight);
   /** @param {any} spec */
-  const fits = (spec) => (spec.compatiblePlacementTypes ?? [PREVIEW]).includes(PREVIEW) && within(width, spec.dimensions?.minWidth, spec.dimensions?.maxWidth) && within(height, spec.dimensions?.minHeight, spec.dimensions?.maxHeight);
+  const fits = (spec) => takes(spec, width, height);
+  // A group whose every spec is this size, upright or turned, is for this size; one that takes others is shared.
+  /** @param {any} spec */
+  const ownSize = (spec) => fits(spec) || takes(spec, height, width);
   const specs = new Map(ref.videoSpecs.map((spec) => [spec.specId, spec]));
   const groups = new Map(ref.placementProfileGroups.map((group) => [group.placementProfileGroupId, group]));
   const classes = new Map(ref.displayClasses.map((entry) => [entry.displayClassId, entry]));
@@ -187,7 +193,7 @@ export function previewGroup(ref, { display, width, height }) {
     const spec = taken.find(fits);
     if (!spec) continue;
     const screen = Math.max(0, ...(classes.get(group.displayClassId)?.screenDimensions ?? []).map(Number).filter(Number.isFinite));
-    candidates.push({ group: mapping.placementGroupId, displayClass: group.displayClassId ?? null, spec, limit: limitOf(mapping.placementGroupId) ?? 3, own: taken.every(fits), screen });
+    candidates.push({ group: mapping.placementGroupId, displayClass: group.displayClassId ?? null, spec, limit: limitOf(mapping.placementGroupId) ?? 3, own: taken.every(ownSize), screen });
   }
   candidates.sort((a, b) => Number(b.displayClass === preferred) - Number(a.displayClass === preferred) || Number(b.own) - Number(a.own) || b.screen - a.screen);
   if (candidates.length === 0) return null;
