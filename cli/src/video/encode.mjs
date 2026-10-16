@@ -107,7 +107,7 @@ export function runFfmpeg(tools, args, { label, out, stall = stallLimit(), onPro
           remove();
           return reject(
             new Failure(
-              `ffmpeg stopped making progress on ${label} for ${Math.round(stall / 1000)} s and was stopped. Run the compose again with --jobs 1; if it stalls again, this is the command that stalled:\n${commandLine(tools.ffmpeg, argv)}\nffmpeg's last lines:\n${tail() || "(none)"}`,
+              `ffmpeg stopped making progress on ${label} for ${Math.round(stall / 100) / 10} s and was stopped. Run the compose again with --jobs 1; if it stalls again, this is the command that stalled:\n${commandLine(tools.ffmpeg, argv)}\nffmpeg's last lines:\n${tail() || "(none)"}`,
             ),
           );
         }
