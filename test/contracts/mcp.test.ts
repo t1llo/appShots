@@ -23,7 +23,7 @@ const TOOLS: Record<string, string[]> = {
   set_slides: ["project", "slides", "device", "theme"],
   update_slide: ["project", "slide", "of", "changes", "remove"],
   set_creative_assets: ["project", "header", "search", "universal", "readme", "social", "link", "post", "remove"],
-  render: ["project", "slides", "creatives", "targets", "locales"],
+  render: ["project", "slides", "creatives", "targets", "locales", "previews", "preview"],
   render_mockups: ["project", "screenshots", "locale", "device", "width"],
   list_revisions: ["project"],
   restore_project: ["project", "revision"],

@@ -4,10 +4,11 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import sharp from "sharp";
 import { z } from "zod";
 import { rendersLeft } from "../../accounts.ts";
-import { type RenderedSheet, renderProject } from "../../render.ts";
+import { fitSummary } from "../../domain/lint.ts";
+import { listingSet, type RenderedSheet, renderProject, storeListing } from "../../render.ts";
 import { localeSchema } from "../../schema.ts";
 import { DEVICE_KINDS, PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, TARGET_IDS, TARGETS } from "../../sizes.ts";
-import { outDir } from "../../store.ts";
+import { getProject, outDir } from "../../store.ts";
 import { projectInput as project, type RegisterTools, slideNumber } from "../context.ts";
 import { guard } from "../result.ts";
 
@@ -53,7 +54,7 @@ export const registerRenderTools: RegisterTools = (server, tools) => {
     {
       title: "Render screenshots",
       description:
-        "Renders the slides to PNGs at exact App Store sizes, and the header and search results assets and the banners if the project has any. Returns images to review plus download links. Pass `slides` or `creatives` to re-render only those while iterating.",
+        "Renders the slides to PNGs at exact App Store sizes, and the header and search results assets and the banners if the project has any. Returns images to review plus download links, and warnings where the copy had to shrink, runs long, or breaks the store's rules. Pass `slides` or `creatives` to re-render only those while iterating.",
       inputSchema: {
         project,
         slides: z.array(slideNumber).optional().describe("Slide numbers to render; all when omitted"),
@@ -63,9 +64,17 @@ export const registerRenderTools: RegisterTools = (server, tools) => {
           .describe("Header and search results assets and banners to render. Left out, all of them are rendered along with the slides; given alone, the slides are left as they are; [] skips them."),
         targets: z.array(z.enum(TARGET_IDS)).optional().describe("Sizes for this render only; defaults to the project's export sizes. While iterating, one size per device is enough, such as [\"iphone-6.9\"]"),
         locales: z.array(localeSchema).optional().describe("Defaults to every project locale"),
+        previews: z
+          .boolean()
+          .optional()
+          .describe("false answers with no images: the links, the warnings, and how small each language's copy was set. For a render of many languages, or to check copy after an edit. Default true"),
+        preview: z
+          .enum(["store"])
+          .optional()
+          .describe("store shows, in place of the contact sheets, the first three slides as the App Store shows them: in a search result and on the product page, light and dark"),
       },
     },
-    ({ project: id, slides, creatives, targets, locales }) =>
+    ({ project: id, slides, creatives, targets, locales, previews, preview }) =>
       guard(tools, "render", async () => {
         const result = await renderProject(space, id, { targets, locales, creatives, slides: slides?.map((n) => n - 1) });
         const count = result.files.length + result.creatives.length;
@@ -91,10 +100,25 @@ export const registerRenderTools: RegisterTools = (server, tools) => {
         const left = rendersLeft(space.id);
         if (left != null) lines.push("", left === 0 ? "That was this account's last render. The person who runs the server can give it more." : `Renders left on this account: ${left}.`);
         if (result.warnings.length) lines.push("", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`));
-        const sheets = pickSheets(result.sheets);
-        if (sheets.left.length) lines.push("", `Contact sheets not shown here, to keep the answer small: ${sheets.left.map((sheet) => `${base}/files/${id}/out/${sheet.path}`).join(", ")}`);
+        // Without pictures, the words have to say what the pictures would have shown.
+        const shown = previews !== false;
+        if (!shown) {
+          lines.push("", ...fitSummary(result.fit));
+          if (result.sheets.length) lines.push("", `Contact sheets: ${result.sheets.map((sheet) => `${base}/files/${id}/out/${sheet.path}`).join(", ")}`);
+        }
+        const listed = shown && preview === "store" ? listingSet(result.files) : undefined;
+        if (shown && preview === "store" && !listed) lines.push("", "No slides were rendered, so there is no store preview: it shows the first three slides of a set.");
+        if (listed) lines.push("", `The store preview shows the first three slides of ${listed.target}, ${listed.locale}: a search result and the product page, light and dark. The store's own text and buttons are drawn as plain shapes.`);
+        const sheets = pickSheets(listed ? [] : result.sheets);
+        if (shown && !listed && sheets.left.length) lines.push("", `Contact sheets not shown here, to keep the answer small: ${sheets.left.map((sheet) => `${base}/files/${id}/out/${sheet.path}`).join(", ")}`);
+        if (listed && result.sheets.length) lines.push("", `Contact sheets: ${result.sheets.map((sheet) => `${base}/files/${id}/out/${sheet.path}`).join(", ")}`);
 
         const content: CallToolResult["content"] = [{ type: "text", text: lines.join("\n") }];
+        if (!shown) return { content };
+        if (listed) {
+          const data = await storeListing(space, await getProject(space, id), listed);
+          content.push({ type: "image", data: data.toString("base64"), mimeType: "image/jpeg" });
+        }
         for (const sheet of sheets.shown) {
           const data = await readFile(path.join(outDir(space, id), sheet.path));
           content.push({ type: "image", data: data.toString("base64"), mimeType: "image/jpeg" });

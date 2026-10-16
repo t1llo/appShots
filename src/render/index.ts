@@ -8,6 +8,7 @@
 //   encode.ts     the PNGs and contact sheets, made while the browser draws the next page
 //   ../storage/outputs.ts  how a finished run's pictures are put in place
 //   mockup.ts     a screenshot in its device on a transparent background
+//   listing.ts    the first slides of a set as a search result and a product page show them
 //   analysis.ts   what is read off a screenshot to draw around it
 //   engine.ts     the browser itself, and the one scheduler that hands it out
 
@@ -18,6 +19,7 @@ import type { Lane, QueueStats } from "./scheduler.ts";
 export { closeBrowser, prewarm } from "./engine.ts";
 export type { RenderedCreative, RenderedFile, RenderedSheet, RenderJob, RenderResult, RenderState } from "./jobs.ts";
 export { cancelRender, frozenFor, getRender, listRenders, renderProject, startRender } from "./jobs.ts";
+export { listingSet, storeListing } from "./listing.ts";
 export type { Mockup } from "./mockup.ts";
 export { mockupSheet, renderMockup } from "./mockup.ts";
 export type { RenderRequest } from "./plan.ts";
