@@ -300,7 +300,7 @@ With `"background": true`, a new set answers at once with status 202, the run as
 
 `GET /api/renders/<job id>` follows it, as it does a render, and `DELETE /api/renders/<job id>` cancels it. When `state` is `done`, fetch the set with `GET /api/projects/:id/video-layers/<set>`. A set drawn before is answered at once, with status 200, background or not. One account has at most two runs of layers waiting or running at a time.
 
-`/files/:id/video/…` pictures never change, as a set's id says what is in it, so they are sent with `Cache-Control: private, max-age=31536000, immutable`. Everything under `/api` is sent as `private, no-cache`.
+`/files/:id/video/…` pictures never change, as a set's id says what is in it, so they are sent with `Cache-Control: private, max-age=31536000, immutable`. No answer under `/api` is kept by a shared cache: answers are sent with `private, no-cache` or `private, no-store`, and errors with `no-store`.
 
 ## What a token cannot do
 

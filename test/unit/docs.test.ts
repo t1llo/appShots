@@ -126,6 +126,13 @@ test("the options the command line page gives video record and video push are th
   }
 });
 
+test("the command line page names the video commands that take no --plan", () => {
+  const sentence = /Every one but ([^.]*?) takes `--plan <file>`/.exec(section(page("cli"), "App preview videos"));
+  assert.ok(sentence, "no sentence on --plan");
+  const without = Object.entries(VIDEO_ACTIONS).filter(([, action]) => !action.flags.includes("plan")).map(([name]) => name);
+  assert.deepEqual(spans(sentence[1]!).sort(), without.sort());
+});
+
 test("the layer routes the API page lists are the server's", async () => {
   const source = await readFile(path.join(root, "src", "http", "routes", "video.ts"), "utf8");
   const mounted: Record<string, string> = { api: "/api", files: "/files" };

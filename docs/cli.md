@@ -255,7 +255,7 @@ appshots video push --dry-run
 | `appshots video push` | Puts the previews into the App Store Connect version being prepared. See the options below |
 | `appshots video guide` | Prints the steps an agent follows, in order |
 
-Every one of them takes `--plan <file>` for another plan, and most take `--lang <codes>` and `--display <keys>` to work on some of the plan's languages and displays only.
+Every one but `guide` takes `--plan <file>` for another plan, and most take `--lang <codes>` and `--display <keys>` to work on some of the plan's languages and displays only.
 
 | Option of `record` | What it does |
 | --- | --- |
