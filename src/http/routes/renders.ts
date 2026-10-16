@@ -31,11 +31,15 @@ export function renderRoutes(log: Log): Router {
       // moment later.
       const project = await getProject(space, id);
       resolveLocales(project, request.locales);
-      const { job, finished } = startRender(space, id, request, project.name);
+      const { job, finished, read } = startRender(space, id, request, project.name);
       finished.catch((error: unknown) => {
         if (!(error instanceof InputError || error instanceof NotFoundError)) log.error(error);
       });
-      return void res.status(202).json({ job, rendersLeft: rendersLeft(space.id) });
+      // The answer is the run as it was accepted, sent once it has read the screenshots: one deleted after the
+      // answer is missing from the run, not from its plan.
+      const accepted = { ...job };
+      await read;
+      return void res.status(202).json({ job: accepted, rendersLeft: rendersLeft(space.id) });
     }
     const result = await renderProject(space, id, request);
     res.json({ ...result, outputs: await listOutputs(space, id), creativeOutputs: await creativeOutputs(space, id), rendersLeft: rendersLeft(space.id) });

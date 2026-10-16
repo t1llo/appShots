@@ -121,10 +121,11 @@ export function frozenFor(space: Space, job: unknown): Frozen | undefined {
 
 /**
  * Queues a render and returns at once with the run. Refuses when the account has two waiting already or no
- * renders left. `finished` settles when the run does, and somebody has to catch what it throws. `name` is what
+ * renders left. `finished` settles when the run does, and somebody has to catch what it throws. `read` settles
+ * once the run has read the project and its screenshots, so a change made after it is not drawn. `name` is what
  * the run is called until the project has been read.
  */
-export function startRender(space: Space, id: string, request: RenderRequest = {}, name = id): { job: RenderJob; finished: Promise<RenderResult> } {
+export function startRender(space: Space, id: string, request: RenderRequest = {}, name = id): { job: RenderJob; finished: Promise<RenderResult>; read: Promise<void> } {
   const count = waiting.get(space.id) ?? 0;
   if (count >= MAX_WAITING) throw new InputError("Two renders are already under way for this account. Try again when one has finished.");
   const settle = holdRender(space.id);
@@ -177,7 +178,7 @@ export function startRender(space: Space, id: string, request: RenderRequest = {
     });
   runs.set(job.id, run);
   forget();
-  return { job, finished: run.finished };
+  return { job, finished: run.finished, read: loaded.then(() => undefined, () => undefined) };
 }
 
 /** Renders and waits for it. */
