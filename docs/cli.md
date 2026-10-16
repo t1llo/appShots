@@ -65,6 +65,7 @@ Without `--sim`, `run` and `boot` pick the simulator whose screenshots have the 
 | `appshots devices` | Lists booted simulators and connected devices |
 | `appshots capture` | Takes one screenshot |
 | `appshots shoot <project> <names…>` | Names each screen in turn, waits for Return while you open it, then captures and uploads |
+| `appshots shoot --plan [file]` | Takes every screen of a [capture plan](#capture-plans) unattended, and uploads them |
 
 Options of `capture`, which `shoot` takes too:
 
@@ -92,6 +93,92 @@ With `--web`:
 | `--viewport <width>x<height>` | The page's size in points instead of the device's |
 | `--profile <dir>` | Keeps cookies and storage in this folder between captures |
 | `--user-agent <text>` | The browser the page is told it is in. Left out, Safari on the device it is drawn as, or Chrome for `--as mac` |
+
+## Capture plans
+
+A capture plan lists an app's screens and how each one is reached. `appshots shoot --plan` takes all of them with nobody at the Terminal: on each simulator the plan asks for, in each language and appearance, and uploads them to the project. The plan is a file in the app's repository, `appshots.capture.json` next to the Xcode project unless you name another, so the next set is one command again.
+
+```bash
+appshots shoot --plan --dry-run                    # what it would take, on which simulator, and how
+appshots shoot --plan                              # take it
+appshots shoot --plan --only home,stats --lang de  # some screens, some languages
+appshots shoot --plan --again                      # take again what the project has already
+```
+
+```json
+{
+  "project": "notes",
+  "app": { "xcode": ".", "scheme": "Notes", "args": ["-demo"] },
+  "devices": ["iphone", "ipad"],
+  "locales": ["en", "de"],
+  "appearances": ["light", "dark"],
+  "screens": [
+    { "id": "home" },
+    { "id": "board", "launch": { "args": ["-tab", "board"], "url": "notes://board/sample" } },
+    { "id": "share", "uitest": "NotesUITests/ScreenshotTests/testShare", "devices": ["iphone"] },
+    { "id": "website", "app": "com.apple.mobilesafari", "launch": { "url": "https://appshots.example.com" } }
+  ]
+}
+```
+
+| Field | What it is |
+| --- | --- |
+| `project` | The project the screenshots go to. One named on the command line, `appshots shoot <project> --plan`, goes first |
+| `app.bundleId` | The app's bundle id, for an app that is installed on the simulators already |
+| `app.xcode`, `app.scheme` | The Xcode workspace or project, or the folder it is in, from the plan's folder. The plan then builds the app once, installs it on each simulator and starts it by the bundle id the build says. The scheme only where the choice is not obvious |
+| `app.args` | Launch arguments the app gets on every screen, such as a demo mode |
+| `devices` | The displays, one per family. `iphone`, `duo` and `ipad` are the sizes the store asks for first, and a display's own name, such as `iphone-6.5` or `ipad-11`, is that size. Each is taken on a simulator whose screenshots have its size; `{ "display": "ipad-13", "sim": "<name or udid>" }` picks the simulator. Default `["iphone"]` |
+| `locales` | The languages, of those the project has. Default: all of them |
+| `appearances` | `light`, `dark` or both. The second one is added to the screen's name, as in `home-dark`. Left out, the simulator stays as it is |
+| `statusBar` | `clean`, the default, for 9:41 with full battery and signal, or `as-is` |
+| `wait` | Seconds each screen gets before it is taken. Left out, it is taken once it stops changing, four seconds at most |
+| `out` | Where the PNGs are kept, as `<out>/<language>/<display>/<id>.png`. Default `raw-shots` next to the plan |
+| `screens[].id` | The screenshot's name, which the slides refer to |
+| `screens[].launch` | `args`, launch arguments after the app's, and `url`, a link opened once the app runs. A list on its own is `args`. A link with no app to start is opened by whatever the simulator opens it with |
+| `screens[].app` | The bundle id of another app the screen is in, such as `com.apple.Preferences` |
+| `screens[].uitest` | A UI test that brings the screen up, as `Target/Class/method`. See below |
+| `screens[].wait`, `screens[].devices` | The screen's own wait, and the plan's displays it is taken on when not all of them |
+
+Each launch is in the screen's language, with `-AppleLanguages` and `-AppleLocale` as `appshots launch --lang` does it. What the project has already under a screen's name, family and language is skipped, so a run that stopped half way goes on where it stopped, and a screenshot deleted in the Studio is taken again. A screen that fails does not stop the others. After three failures in a row on one simulator its remaining screens are left, and the command lists what it did not take and exits with 1. A simulator the run booted keeps running.
+
+### Screens a UI test brings up
+
+A screen that takes taps to reach, and no launch argument or link, can be brought up by a UI test. The plan builds the tests once and runs each one on its own with `xcodebuild test-without-building`, with `-testLanguage` set to the screen's language. The test says when the screen is up and waits while it is taken:
+
+```swift
+import XCTest
+
+/// Lets appshots take the screenshot, and waits until it has. Does nothing outside `appshots shoot --plan`.
+func appshotsReady(timeout: TimeInterval = 120) {
+    guard let folder = ProcessInfo.processInfo.environment["APPSHOTS_SIGNAL"] else { return }
+    FileManager.default.createFile(atPath: folder + "/ready", contents: nil)
+    let end = Date().addingTimeInterval(timeout)
+    while !FileManager.default.fileExists(atPath: folder + "/done") && Date() < end {
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+}
+
+final class ScreenshotTests: XCTestCase {
+    func testShare() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-demo"]
+        app.launch()
+        app.buttons["Share"].tap()
+        appshotsReady()
+    }
+}
+```
+
+`APPSHOTS_LOCALE` holds the language code too, for a test that passes it to the app itself.
+
+### What fastlane snapshot took
+
+```bash
+appshots shoot <project> --fastlane fastlane/screenshots --dry-run
+appshots shoot <project> --fastlane fastlane/screenshots
+```
+
+With `--fastlane`, nothing is captured: what fastlane snapshot wrote is uploaded instead, each language folder such as `en-US` into the project's language, and each picture into its family by its size. frameit's `_framed` pictures are left out, and where simulators of one family took the same screen, the larger display's picture is kept. With `--plan` as well, the project comes from the plan, and a picture named like `01Home` goes to the plan's screen `home`.
 
 ## Upload and download
 

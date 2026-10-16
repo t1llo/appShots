@@ -190,6 +190,25 @@ appshots capture --name home --project <project> --device          # the plugged
       Put it where the root view sets its first tab or route, fill in sample content there if the app would be empty, run `appshots run` once more, and from then on every screen is `appshots launch <bundle id> --capture <name> --to <project> -- -appshots <name>`. Tell the user which file you changed.
    4. Otherwise ask the user to open that screen, and capture it as in B.
 
+4. **Write a capture plan when the screens can be reached without you.** When the app has launch arguments or deep links for its screens (from 3), or a UI test target that reaches them, write `appshots.capture.json` next to the Xcode project instead of a `launch` per screenshot, all the more for several languages, both appearances or iPhone and iPad:
+
+   ```json
+   {
+     "project": "<project>",
+     "app": { "xcode": ".", "args": ["-demo"] },
+     "devices": ["iphone", "ipad"],
+     "locales": ["en", "de"],
+     "screens": [
+       { "id": "home" },
+       { "id": "stats", "launch": ["-appshots", "stats"] },
+       { "id": "detail", "launch": { "url": "<scheme>://detail/sample" } },
+       { "id": "share", "uitest": "AppUITests/ScreenshotTests/testShare" }
+     ]
+   }
+   ```
+
+   `app.bundleId` instead of `app.xcode` for an app that is installed already; `"appearances": ["light", "dark"]` adds a `-dark` screenshot of each. A UI test calls `appshotsReady()` once its screen is up; the appShots docs have those few lines under Command line, Capture plans. Run `appshots shoot --plan --dry-run` and read what it would take and how, then `appshots shoot --plan` with a long timeout: it builds once, boots what it needs, takes every screen in every language and uploads it. Run it again after a fix and it takes only what the project lacks (`--again` takes all again, `--only home,stats` some). Tell the user about the file, as it makes the next set one command. If the repository uses fastlane snapshot already, `appshots shoot <project> --fastlane fastlane/screenshots` uploads what that wrote instead.
+
 ### D. A Mac app
 
 A Mac app runs on this Mac, not in a simulator, so `appshots run`, `launch` and `--clean` are not for it. That goes for an Xcode Mac app as for one made with Tauri, Electron or Flutter for macOS.

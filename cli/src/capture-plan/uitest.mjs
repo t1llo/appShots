@@ -107,6 +107,6 @@ export async function runUITest({ project, scheme, test, simulator, locale }, ta
     rmSync(signal, { recursive: true, force: true });
   }
   const result = await running;
-  if (!taken) fail(`The UI test ${test} ended without saying that its screen was up. Call appshotsReady() in it once the screen shows, as docs/cli.md describes.\n${tail(log)}\nFull log: ${log}`);
+  if (!taken) fail(`The UI test ${test} ended without saying that its screen was up. Call appshotsReady() in it once the screen shows, as the appShots docs show under Command line, Capture plans.\n${tail(log)}\nFull log: ${log}`);
   if (result.status !== 0) console.error(`appshots: the UI test ${test} failed after the screenshot was taken. Full log: ${log}`);
 }

@@ -280,7 +280,7 @@ export function readPlan(file) {
   try {
     text = readFileSync(file, "utf8");
   } catch {
-    fail(`No capture plan at ${file}. Write one as docs/cli.md describes (Capture plans), or name it: --plan <file>.`);
+    fail(`No capture plan at ${file}. Write one as the appShots docs describe under Command line, Capture plans, or name it: --plan <file>.`);
   }
   let json;
   try {

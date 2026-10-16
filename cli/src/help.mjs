@@ -84,8 +84,8 @@ started by that toolkit's own command, and 'appshots check' says which.
   appshots shoot [project] --plan [file] Take every screen a capture plan lists, unattended: on each of
                                          its simulators, in each language and appearance, reached by
                                          launch arguments, a link or a UI test, and upload them. The
-                                         plan is appshots.capture.json unless named; docs/cli.md has
-                                         its fields. What the project has already is skipped
+                                         plan is appshots.capture.json unless named; the docs' Command
+                                         line page has its fields. What the project has is skipped
       --only <ids>                         Only these screens, such as home,stats
       --lang <codes>                       Only these of the plan's languages, such as en,de
       --again                              Take again what the project has already

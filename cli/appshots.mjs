@@ -4591,7 +4591,7 @@ function readPlan(file) {
 	try {
 		text = readFileSync(file, "utf8");
 	} catch {
-		fail(`No capture plan at ${file}. Write one as docs/cli.md describes (Capture plans), or name it: --plan <file>.`);
+		fail(`No capture plan at ${file}. Write one as the appShots docs describe under Command line, Capture plans, or name it: --plan <file>.`);
 	}
 	let json;
 	try {
@@ -4742,7 +4742,7 @@ async function runUITest({ project, scheme, test, simulator, locale }, take) {
 		});
 	}
 	const result = await running;
-	if (!taken) fail(`The UI test ${test} ended without saying that its screen was up. Call appshotsReady() in it once the screen shows, as docs/cli.md describes.\n${tail(log)}\nFull log: ${log}`);
+	if (!taken) fail(`The UI test ${test} ended without saying that its screen was up. Call appshotsReady() in it once the screen shows, as the appShots docs show under Command line, Capture plans.\n${tail(log)}\nFull log: ${log}`);
 	if (result.status !== 0) console.error(`appshots: the UI test ${test} failed after the screenshot was taken. Full log: ${log}`);
 }
 //#endregion
@@ -6271,8 +6271,8 @@ started by that toolkit's own command, and 'appshots check' says which.
   appshots shoot [project] --plan [file] Take every screen a capture plan lists, unattended: on each of
                                          its simulators, in each language and appearance, reached by
                                          launch arguments, a link or a UI test, and upload them. The
-                                         plan is appshots.capture.json unless named; docs/cli.md has
-                                         its fields. What the project has already is skipped
+                                         plan is appshots.capture.json unless named; the docs' Command
+                                         line page has its fields. What the project has is skipped
       --only <ids>                         Only these screens, such as home,stats
       --lang <codes>                       Only these of the plan's languages, such as en,de
       --again                              Take again what the project has already
