@@ -328,34 +328,40 @@ function contents(page: Page): string {
 }
 
 /**
- * Answers that are made from the pages and the server's address, kept once made: they change only with a new
- * build of the shell, and the address is the same for nearly every request. `from` is what one was made from.
+ * Answers that are made from the pages, kept once made: they change only with a new build of the shell. `from` is
+ * what one was made from. They keep {{SERVER}} in them and get the address as they are sent, so a server reached
+ * under any number of Host names keeps one copy of each page, not one for every name it was asked under.
  */
-const made = new Map<string, { from: string; text: string; etag: string }>();
+const made = new Map<string, { from: string; text: string; hash: string }>();
 
-function cached(key: string, from: string, make: () => string): { text: string; etag: string } {
+const digest = (text: string) => createHash("sha1").update(text).digest("base64url");
+
+function cached(key: string, from: string, make: () => string): { text: string; hash: string } {
   const kept = made.get(key);
   if (kept?.from === from) return kept;
-  // Without PUBLIC_URL each Host asked for is an address of its own; a server reached by many starts over.
-  if (made.size >= 500) made.clear();
   const text = make();
-  const entry = { from, text, etag: `W/"${createHash("sha1").update(text).digest("base64url").slice(0, 27)}"` };
+  const entry = { from, text, hash: digest(text).slice(0, 27) };
   made.set(key, entry);
   return entry;
 }
 
-/** Sends a kept answer with its ETag, so a reader that has it already gets a 304. */
-function sendKept(req: Request, res: Response, answer: { text: string; etag: string }): void {
-  res.set({ ETag: answer.etag, "Cache-Control": "no-cache" });
+/**
+ * Sends a kept answer with `server` in place of {{SERVER}}. Its ETag stands for both, so a reader that has the
+ * page as this address gives it gets a 304, and one that has it from another address gets it again.
+ */
+function sendKept(req: Request, res: Response, answer: { text: string; hash: string }, server: string): void {
+  res.set({ ETag: `W/"${answer.hash}.${digest(server).slice(0, 11)}"`, "Cache-Control": "no-cache" });
   if (req.fresh) return void res.status(304).end();
-  res.send(answer.text);
+  res.send(answer.text.replaceAll("{{SERVER}}", server));
 }
 
 function sendDoc(req: Request, res: Response, base: string, page: Page | null): void {
   const frame = shell("docs.html");
   if (!frame) return void res.status(503).type("text").send("The web pages have not been built yet. Run: npm run build");
   if (!page) return void res.status(404).set("Cache-Control", "no-cache").type("html").send(docHtml(req, frame, base, null));
-  sendKept(req, res.type("html"), cached(`html ${page.name} ${base}`, frame, () => docHtml(req, frame, base, page)));
+  // Kept with {{SERVER}} in its links and its JSON-LD alike. The address is an origin or a plain host and port,
+  // which escaping leaves as it is, so the one escaped copy reads right in both.
+  sendKept(req, res.type("html"), cached(`html ${page.name}`, frame, () => docHtml(req, frame, "{{SERVER}}", page)), escapeHtml(base));
 }
 
 /** A page inside the shell, or the page that says there is none. */
@@ -395,8 +401,7 @@ function docHtml(req: Request, frame: string, base: string, page: Page | null): 
 /** Registers everything above. `baseUrl` gives the address this server is reached at. */
 export function siteRoutes(app: Express, baseUrl: (req: Request) => string): void {
   const sendMarkdown = (req: Request, res: Response, page: Page) => {
-    const base = baseUrl(req);
-    sendKept(req, res.type("text/markdown"), cached(`md ${page.name} ${base}`, "", () => asMarkdown(page).replaceAll("{{SERVER}}", base)));
+    sendKept(req, res.type("text/markdown"), cached(`md ${page.name}`, "", () => asMarkdown(page)), baseUrl(req));
   };
   const send = (req: Request, res: Response, page: Page | null) => {
     // An agent that asks for Markdown gets it at the page's own address too.
@@ -459,11 +464,10 @@ export function siteRoutes(app: Express, baseUrl: (req: Request) => string): voi
     res.type("text/markdown").set("Cache-Control", "no-cache").send(`${lines.join("\n")}\n`);
   });
   app.get("/llms-full.txt", (req, res) => {
-    const base = baseUrl(req);
     const make = () => {
-      const all = pages.map((page) => `${asMarkdown(page).replace(/^# .*\n/, (title) => `${title}\nSource: ${base}${page.url}\n`)}`).join("\n---\n\n");
-      return `# appShots documentation\n\n> ${SUMMARY}\n\n---\n\n${all}`.replaceAll("{{SERVER}}", base);
+      const all = pages.map((page) => `${asMarkdown(page).replace(/^# .*\n/, (title) => `${title}\nSource: {{SERVER}}${page.url}\n`)}`).join("\n---\n\n");
+      return `# appShots documentation\n\n> ${SUMMARY}\n\n---\n\n${all}`;
     };
-    sendKept(req, res.type("text/markdown"), cached(`full ${base}`, "", make));
+    sendKept(req, res.type("text/markdown"), cached("full", "", make), baseUrl(req));
   });
 }

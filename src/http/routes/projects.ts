@@ -5,6 +5,7 @@ import { config } from "../../config.ts";
 import { CREATIVE_CAPACITY } from "../../creative.ts";
 import { BACKGROUNDS, BADGE_TONES, BADGE_TYPES, BADGES_SHOWN, CARD_ICONS, CARD_LOOKS, CREATIVE_LAYOUTS, EMPHASIS, FEATURE_LAYOUTS, REVIEWS_SHOWN, DEVICE_COLOR_IDS, DEVICE_STYLES, FEATURE_STYLES, LAYOUT_SPREAD, STATUS_BARS, POINT_STYLES, ICON_ROW_SIZE_IDS, ICON_ROW_STYLES, ICON_ROW_TONES, FONT_IDS, FONTS, ICON_GROUPS, ICON_IDS, LAYOUT_SHOTS, LAYOUTS, LOGO_SHAPES, LOGO_SIZE_IDS } from "../../design.ts";
 import { deviceCatalog } from "../../domain/devices.ts";
+import { unknownFields } from "../../schema.ts";
 import { type Actor, type Ctx, type Warning, warningTexts } from "../../services/context.ts";
 import * as service from "../../services/projects.ts";
 import type { Detail } from "../../services/projects.ts";
@@ -60,6 +61,9 @@ async function change<T extends { warnings?: Warning[] } | undefined>(req: Reque
   const all = [...(detail.warnings ?? []), ...warningTexts(result?.warnings ?? [])];
   sendDetail(res, { ...(all.length ? { ...detail, warnings: all } : detail), ...extra(result) });
 }
+
+/** What PATCH /projects/:id/slides/:index takes. */
+const slideEdit = z.object({ changes: z.record(z.string(), z.unknown()).optional(), remove: z.array(z.string()).optional(), of: z.enum(DEVICE_KINDS).optional() });
 
 /** What the Studio needs to know about this server, and the projects themselves. */
 export function projectRoutes(): Router {
@@ -117,7 +121,8 @@ export function projectRoutes(): Router {
     res.json(await usageOf(spaceOf(res)));
   });
   api.post("/projects", async (req, res) => {
-    res.status(201).json(await service.create(contextOf(req, res), req.body));
+    // A new project has no revision a change could have been made on, so If-Match is not read.
+    res.status(201).json(await service.create({ space: spaceOf(res), actor: actorOf(req) }, req.body));
   });
   api.get("/projects/:id", async (req, res) => {
     sendDetail(res, await service.detail(spaceOf(res), req.params.id));
@@ -131,11 +136,18 @@ export function projectRoutes(): Router {
    */
   api.patch("/projects/:id/slides/:index", async (req, res) => {
     const index = z.coerce.number().int().min(0).max(9).parse(req.params.index);
-    const body = z.object({ changes: z.record(z.string(), z.unknown()).optional(), remove: z.array(z.string()).optional(), of: z.enum(DEVICE_KINDS).optional() }).parse(req.body ?? {});
+    const body = slideEdit.parse(req.body ?? {});
+    // A slide field sent beside `changes` instead of inside it would otherwise be dropped without a word.
+    const misplaced = unknownFields(slideEdit, req.body ?? {});
+    if (!body.changes && !body.remove) throw new InputError(misplaced.length ? `Put the slide's fields under "changes": ${misplaced.join(", ")}.` : 'Give the fields to set under "changes", or those to clear under "remove".');
+    const ignored: Warning[] = misplaced.length ? [{ kind: "field", names: misplaced, text: `Ignored, because a slide change takes only changes, remove and of: ${misplaced.join(", ")}.` }] : [];
     await change(
       req,
       res,
-      (ctx) => updateSlide(ctx, req.params.id, { index, of: body.of }, body),
+      async (ctx) => {
+        const result = await updateSlide(ctx, req.params.id, { index, of: body.of }, body);
+        return { ...result, warnings: [...result.warnings, ...ignored] };
+      },
       (result) => ({ slide: result.slide }),
     );
   });
@@ -146,8 +158,8 @@ export function projectRoutes(): Router {
   /** Makes an earlier version current again, as a new revision. Works on a damaged project too. */
   api.post("/projects/:id/restore", async (req, res) => {
     const { revision } = z.object({ revision: z.number().int().min(0) }).parse(req.body);
-    // The names the restored version uses without having them are the MCP tool's to mention.
-    await change(req, res, async (ctx) => void (await service.restore(ctx, req.params.id, revision)));
+    // Says which screenshots and images the restored version names that are not uploaded, as the MCP tool does.
+    await change(req, res, (ctx) => service.restore(ctx, req.params.id, revision));
   });
   api.delete("/projects/:id", async (req, res) => {
     await service.remove(spaceOf(res), req.params.id);

@@ -59,7 +59,7 @@ curl -s -X PATCH {{SERVER}}/api/projects/streaks/slides/2 \
   -d '{"changes":{"headline":"See your *progress*","device":{"offsetY":6}}}'
 ```
 
-It answers like `GET`, with the slide as it is now under `slide`. A slide that is not there is a 400, such as `Slide 4 does not exist; the project has 3.` Under `warnings` it names a field the slide does not have, a screenshot that is not uploaded yet and a name in `remove` that slides do not have. It takes `If-Match` like `PUT`.
+It answers like `GET`, with the slide as it is now under `slide`. A slide that is not there is a 400, such as `Slide 4 does not exist; the project has 3.` So is a body with neither `changes` nor `remove`, such as `{"headline": "…"}` with the slide's field outside `changes`. Under `warnings` it names a field the slide does not have, a screenshot that is not uploaded yet, a name in `remove` that slides do not have and a field of the body other than these three. It takes `If-Match` like `PUT`.
 
 ### Revisions
 
@@ -83,7 +83,7 @@ curl -s -X PUT {{SERVER}}/api/projects/streaks \
 
 `GET /api/projects/:id/revisions` answers `{ "revision": 8, "revisions": [ … ] }`, with one entry per version kept, newest first: its `revision`, the `time` it was saved, the `actor` that saved it (`studio`, `api` or `mcp`, and `unknown` for one saved before revisions were counted; the Studio says it is the Studio with the header `X-Appshots-Client: studio`) and its `size` in bytes. `revision` is `null` while the project is damaged.
 
-`POST /api/projects/:id/restore` with `{ "revision": 4 }` saves revision 4 again as a new revision, so a restore can be undone the same way. It answers like `GET`, and takes `If-Match` too. It is also how a damaged project gets its work back: it opens again at the version restored.
+`POST /api/projects/:id/restore` with `{ "revision": 4 }` saves revision 4 again as a new revision, so a restore can be undone the same way. It answers like `GET`, and takes `If-Match` too. Under `warnings` it names the screenshots and images the restored version uses that are not uploaded. It is also how a damaged project gets its work back: it opens again at the version restored.
 
 ## Screenshots
 
@@ -212,7 +212,7 @@ These need no token:
 | `/healthz` | Answers when the server is up |
 | `/skill.md` | The skill, as the server hands it out |
 | `/skill.json` | A short hash of the skill and one of the command, which `appshots` compares its own copies with |
-| `/install.sh` | The setup script |
+| `/install.sh` | The setup script. Without `PUBLIC_URL`, a request whose `Host` is not a plain name and port is a 400 |
 | `/cli/appshots.mjs` | The `appshots` command |
 | `/docs/<page>.md` | Any page of these docs as Markdown. Pages come with an `ETag`, so a reader that sends it back in `If-None-Match` gets a 304 while the page is the same |
 | `/llms.txt`, `/llms-full.txt` | The docs as an index, and in one file, for language models |

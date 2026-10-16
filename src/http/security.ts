@@ -13,14 +13,18 @@ const PLAIN_ADDRESS = /^https?:\/\/[\w.:[\]-]+(\/[\w./~-]*)?$/;
 
 /**
  * The address this server is reached at: PUBLIC_URL, or what the request says. Without PUBLIC_URL that is whatever
- * Host the request claims, which ends up in the skill, the docs and the MCP answers; one that is not a plain host
- * name and port gets the server's own local address instead.
+ * Host the request claims, which ends up in the skill, the docs and the MCP answers; null when it is not a plain
+ * host name and port.
  */
-export function baseUrl(req: Request): string {
+export function claimedUrl(req: Request): string | null {
   if (config.publicUrl) return config.publicUrl;
-  const claimed = `${req.protocol}://${req.get("host")}`;
-  return PLAIN_ADDRESS.test(claimed) ? claimed : `http://localhost:${config.port}`;
+  const host = req.get("host");
+  const claimed = `${req.protocol}://${host}`;
+  return host && PLAIN_ADDRESS.test(claimed) ? claimed : null;
 }
+
+/** The address this server is reached at, as claimedUrl() gives it, or the server's own local address. */
+export const baseUrl = (req: Request): string => claimedUrl(req) ?? `http://localhost:${config.port}`;
 
 /** The visitor's address: what the reverse proxy reports, or what CLIENT_IP_HEADER carries when a CDN stands in front of it. */
 export function visitorAddress(req: Request): string | undefined {

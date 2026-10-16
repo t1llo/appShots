@@ -4,7 +4,7 @@ import path from "node:path";
 import express, { type Router } from "express";
 import { FONTS, ICON_IDS } from "../../design.ts";
 import { ICONS } from "../../icons.ts";
-import { baseUrl } from "../security.ts";
+import { baseUrl, claimedUrl } from "../security.ts";
 
 const root = path.resolve(import.meta.dirname, "..", "..", "..");
 
@@ -54,9 +54,10 @@ export async function publicRoutes(): Promise<Router> {
     res.type("text/markdown").set("Cache-Control", "no-cache").send((await skill()).text.replaceAll("{{SERVER}}", baseUrl(req)));
   });
   routes.get("/install.sh", (req, res) => {
-    const server = baseUrl(req);
-    // The address ends up inside a shell script, and without PUBLIC_URL it is whatever Host the request claimed.
-    if (!/^https?:\/\/[\w.:[\]-]+(\/[\w./~-]*)?$/.test(server)) return void res.status(400).type("text").send("Set PUBLIC_URL to use the installer.\n");
+    // The address ends up inside a shell script, and one that points somewhere other than where it was asked is no
+    // use: an odd Host gets no script rather than one for the server's local address.
+    const server = claimedUrl(req);
+    if (!server) return void res.status(400).type("text").send("Set PUBLIC_URL to use the installer.\n");
     res.type("text/plain").set("Cache-Control", "no-cache").send(installer.replaceAll("{{SERVER}}", server));
   });
   routes.get("/cli/appshots.mjs", (_req, res) => {

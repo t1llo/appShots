@@ -162,6 +162,34 @@ describe("public addresses", () => {
     assert.equal(await statusOf({ "If-None-Match": etag, Host: `localhost:${port}` }), 200);
   });
 
+  test("a docs page carries the address each request gives it, and an odd Host gets no installer", async () => {
+    const { port } = new URL(server.url);
+    // fetch() sets Host itself, so these go out by hand.
+    const asHost = (route: string, host: string) =>
+      new Promise<{ status: number; etag: string | undefined; text: string }>((resolve, reject) => {
+        const request = http.get({ host: "127.0.0.1", port, path: route, headers: { Host: host } }, (response) => {
+          let text = "";
+          response.setEncoding("utf8").on("data", (chunk: string) => (text += chunk));
+          response.on("end", () => resolve({ status: response.statusCode!, etag: response.headers.etag, text }));
+        });
+        request.on("error", reject);
+      });
+    for (const route of ["/docs/api.md", "/llms-full.txt"]) {
+      const local = await asHost(route, `localhost:${port}`);
+      const other = await asHost(route, "docs-2.example.com");
+      assert.ok(local.text.includes(`http://localhost:${port}/`), route);
+      assert.ok(!local.text.includes("docs-2.example.com"), route);
+      assert.ok(other.text.includes("http://docs-2.example.com/"), route);
+      assert.ok(!other.text.includes(`localhost:${port}`) && !other.text.includes("{{SERVER}}"), route);
+      assert.notEqual(local.etag, other.etag, route);
+      assert.equal((await asHost(route, "docs-2.example.com")).etag, other.etag, route);
+    }
+    const refused = await asHost("/install.sh", 'odd"host');
+    assert.equal(refused.status, 400);
+    assert.match(refused.text, /Set PUBLIC_URL/);
+    assert.equal((await asHost("/install.sh", `localhost:${port}`)).status, 200);
+  });
+
   test("/llms.txt says whether people sign in as this server is set up", async () => {
     const answer = await call("/llms.txt");
     assert.match(answer.body, /without signing in/);
@@ -311,6 +339,17 @@ describe("projects", () => {
     assertError(await call(`/api/projects/${id}/slides/0`, send("PATCH", { of: "ipad", changes: { headline: "x" } })), 400, /no slide set of its own/);
     assertError(await call(`/api/projects/${id}/slides/one`, send("PATCH", { changes: {} })), 400);
     assertError(await call(`/api/projects/nope/slides/0`, send("PATCH", { changes: {} })), 404);
+  });
+
+  test("a PATCH with the slide's fields outside changes is refused, and one beside them named", async () => {
+    const id = await createProject({ name: "Misplaced", slides: THREE_SLIDES });
+    assertError(await call(`/api/projects/${id}/slides/1`, send("PATCH", { headline: "Misplaced" })), 400, /^Put the slide's fields under "changes": headline\.$/);
+    assertError(await call(`/api/projects/${id}/slides/1`, send("PATCH", {})), 400, /"changes"/);
+    assert.equal((await call(`/api/projects/${id}`)).body.revision, 1);
+    const answer = await call(`/api/projects/${id}/slides/1`, send("PATCH", { changes: { headline: "Inside" }, subheadline: "Outside" }));
+    assert.equal(answer.status, 200);
+    assert.equal(answer.body.slide.headline, "Inside");
+    assert.deepEqual(answer.body.warnings, ["Ignored, because a slide change takes only changes, remove and of: subheadline."]);
   });
 
   test("a project can be created whole", async () => {
@@ -696,6 +735,20 @@ describe("revisions", () => {
     assertError(await call(`/api/projects/${id}/restore`, send("POST", { revision: 99 })), 404, /keeps no revision 99/);
     assertError(await call(`/api/projects/${id}/restore`, send("POST", {})), 400);
     assertError(await call("/api/projects/nope/revisions"), 404);
+  });
+
+  test("a restore names what the restored version uses that is not uploaded", async () => {
+    const id = await createProject({ name: "Restored Names", slides: THREE_SLIDES });
+    await call(`/api/projects/${id}`, send("PUT", { slides: [{ layout: "statement", headline: "Plain" }] }));
+    const restored = await call(`/api/projects/${id}/restore`, send("POST", { revision: 1 }));
+    assert.equal(restored.status, 200);
+    assert.equal(restored.body.revision, 3);
+    assert.deepEqual(restored.body.warnings, ["Not uploaded yet, so these will render as placeholders: home."]);
+  });
+
+  test("a new project is made whatever If-Match says, as it has no revision yet", async () => {
+    const created = await call("/api/projects", { method: "POST", headers: { "Content-Type": "application/json", "If-Match": "not a revision" }, body: JSON.stringify({ name: "Unmatched" }) });
+    assert.equal(created.status, 201);
   });
 
   test("a damaged project is listed, restored from its history or deleted", async () => {
