@@ -25,12 +25,13 @@ const TOOLS: Record<string, string[]> = {
   set_slides: ["project", "slides", "device", "theme"],
   update_slide: ["project", "slide", "of", "changes", "remove"],
   set_creative_assets: ["project", "header", "search", "universal", "readme", "social", "link", "post", "remove"],
+  check_project: ["project", "slides", "creatives", "targets", "locales"],
   render: ["project", "slides", "creatives", "targets", "locales", "previews", "preview"],
   render_mockups: ["project", "screenshots", "locale", "device", "width"],
   list_revisions: ["project"],
   restore_project: ["project", "revision"],
 };
-const READ_ONLY = ["get_design_guide", "list_projects", "get_project", "list_revisions"];
+const READ_ONLY = ["get_design_guide", "list_projects", "get_project", "list_revisions", "check_project"];
 const DESCRIBE_KEYS = ["id", "name", "locales", "theme", "slides", "deviceSlides", "creativeAssets", "mockups", "screenshots", "images", "exportSizes", "studio"];
 
 const THREE_SLIDES = [
@@ -306,6 +307,27 @@ describe("tools", () => {
     assertRefused(await callTool(server, "render", { project: "mcp-app", creatives: ["social"] }), /no .* asset yet/);
     assertRefused(await callTool(server, "render", { project: "mcp-app", targets: ["iphone-99"] }));
     assertRefused(await callTool(server, "render", { project: "nope" }), /No project "nope"/);
+  });
+
+  test("check_project says what render would refuse or warn about, and uses no render", async () => {
+    const empty = textOf(await callTool(server, "check_project", { project: "mcp-empty" }));
+    assert.match(empty, /^A render of this would be refused:\n- This project has nothing to render yet\./);
+    assert.match(empty, /\nChecking used no render\.$/);
+    assert.match(textOf(await callTool(server, "check_project", { project: "mcp-app", creatives: ["social"] })), /would be refused:\n- .*no .* asset yet/);
+    assert.match(textOf(await callTool(server, "check_project", { project: "mcp-app", slides: [9] })), /would be refused:\n- Slide 9 does not exist/);
+
+    await callTool(server, "create_project", { name: "MCP Check" });
+    await callTool(server, "set_slides", { project: "mcp-check", slides: [{ headline: "Here", screenshot: "nowhere", logo: { image: "no-logo" } }, { layout: "statement", headline: "Two" }] });
+    const result = await callTool(server, "check_project", { project: "mcp-check", slides: [1] });
+    assertSucceeded(result);
+    const check = textOf(result);
+    assert.match(check, /^A render of this would start\.\nIt would draw iPhone slides 1 in en, at the sizes iphone-6\.9\b.*\.\n/);
+    assert.match(check, /\nIt would warn:\n- Slide 1: no image named "no-logo".*\n- Slide 1: no screenshot named "nowhere" has been uploaded, so a placeholder was drawn\./);
+    assert.match(textOf(await callTool(server, "check_project", { project: "mcp-check" })), /It would draw iPhone slides 1, 2 in en,/);
+
+    assertRefused(await callTool(server, "check_project", { project: "nope" }), /No project "nope"/);
+    assertRefused(await callTool(server, "check_project", { project: "mcp-check", targets: ["iphone-99"] }));
+    assert.deepEqual((await rest("/api/renders")).jobs.filter((job: { project: string }) => job.project === "mcp-check"), []);
   });
 
   test("render_mockups needs screenshots, and the ones it names", async () => {

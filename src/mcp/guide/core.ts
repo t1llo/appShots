@@ -42,8 +42,9 @@ export const CORE_TOPIC: Topic = {
 2. Screenshots come from the user's Mac. This server cannot take them itself. With the user's CLI: \`appshots upload <project> <files or folders>\` sends screenshots that exist; \`appshots capture --name home --project <project> --clean\` takes the booted simulator. A Mac app: topic mac. A web app: topic web. Anything else: topic uploading.
 3. \`get_project\` lists the screenshot names. A slide shows one by naming it in \`screenshot\`.
 4. \`set_slides\` with the whole set in one call: up to 10 slides, and what they share in \`theme\`.
-5. \`render\` draws the set and returns a contact sheet per device. Look at it, change what is off with \`update_slide\` (slides count from 1), and render once more.
-6. The user downloads the PNGs from ${base}/#/<project>, or runs \`appshots pull <project>\`. \`appshots store push\` puts them into App Store Connect from the user's Mac (topic workflow).${renderBudget(space)}
+5. \`check_project\` says what a render would refuse or warn about, such as a screenshot name nothing is uploaded under. It uses no render, so call it before every render and fix what it names.
+6. \`render\` draws the set and returns a contact sheet per device. Look at it, change what is off with \`update_slide\` (slides count from 1), and render once more.
+7. The user downloads the PNGs from ${base}/#/<project>, or runs \`appshots pull <project>\`. \`appshots store push\` puts them into App Store Connect from the user's Mac (topic workflow).${renderBudget(space)}
 
 ### A set
 \`\`\`json

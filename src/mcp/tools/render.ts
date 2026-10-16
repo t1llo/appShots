@@ -7,10 +7,11 @@ import { rendersLeft } from "../../accounts.ts";
 import { fitSummary } from "../../domain/lint.ts";
 import { listingSet, type RenderedSheet, renderProject, storeListing } from "../../render.ts";
 import { localeSchema } from "../../schema.ts";
-import { DEVICE_KINDS, PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, TARGET_IDS, TARGETS } from "../../sizes.ts";
+import { type RenderCheck, checkRender } from "../../services/check.ts";
+import { DEVICE_KINDS, DEVICE_LABELS, type DeviceKind, PLACEMENT_IDS, PLACEMENTS, type PlacementId, sourceOf, TARGET_IDS, TARGETS } from "../../sizes.ts";
 import { getProject, outDir } from "../../store.ts";
 import { projectInput as project, type RegisterTools, slideNumber } from "../context.ts";
-import { guard } from "../result.ts";
+import { guard, text } from "../result.ts";
 
 /** How many contact sheets a render answers with. Each is a large image in the model's context. */
 const SHEETS_SHOWN = 4;
@@ -46,8 +47,51 @@ async function creativePreview(file: string, placement: PlacementId): Promise<st
   return data.toString("base64");
 }
 
+/** A check of a render as the tool answers it: whether it would start, what it would draw, what it would warn about. */
+export function describeCheck(check: RenderCheck): string {
+  const lines: string[] = [];
+  if (check.ok) lines.push("A render of this would start.");
+  else lines.push("A render of this would be refused:", ...check.refused.map((reason) => `- ${reason}`));
+  if (check.plan) {
+    const { plan } = check;
+    const runs = (indexes: number[]) => indexes.map((index) => index + 1).join(", ");
+    const slides = Object.entries(plan.slides).map(([device, indexes]) => `${DEVICE_LABELS[device as DeviceKind]} slides ${runs(indexes)}`);
+    const creatives = plan.creatives.length ? [plan.creatives.join(", ")] : [];
+    lines.push(`It would draw ${[...slides, ...creatives].join("; ")} in ${plan.locales.join(", ")}, at the sizes ${plan.targets.join(", ")}.`);
+  }
+  if (check.warnings.length) lines.push("", "It would warn:", ...check.warnings.map((warning) => `- ${warning}`));
+  lines.push("", `Checking used no render.${check.rendersLeft == null ? "" : ` Renders left on this account: ${check.rendersLeft}.`}`);
+  return lines.join("\n");
+}
+
 export const registerRenderTools: RegisterTools = (server, tools) => {
   const { base, space } = tools;
+
+  // What render and its check both take, so that a call can be checked and then made as it is. Render also takes how
+  // it answers, which a check strips and has no use for.
+  const request = {
+    project,
+    slides: z.array(slideNumber).optional().describe("Slide numbers to render; all when omitted"),
+    creatives: z
+      .array(z.enum(PLACEMENT_IDS))
+      .optional()
+      .describe("Header and search results assets and banners to render. Left out, all of them are rendered along with the slides; given alone, the slides are left as they are; [] skips them."),
+    targets: z.array(z.enum(TARGET_IDS)).optional().describe("Sizes for this render only; defaults to the project's export sizes. While iterating, one size per device is enough, such as [\"iphone-6.9\"]"),
+    locales: z.array(localeSchema).optional().describe("Defaults to every project locale"),
+  };
+
+  server.registerTool(
+    "check_project",
+    {
+      title: "Check before rendering",
+      description:
+        "Says what `render` would do with the same arguments, without drawing anything or using a render: whether it would be refused and why, what it would draw, and what it would warn about, such as a screenshot or image name nothing is uploaded under. Call it before every render and fix what it names.",
+      inputSchema: request,
+      annotations: { readOnlyHint: true },
+    },
+    ({ project: id, slides, creatives, targets, locales }) =>
+      guard(tools, "check_project", async () => text(describeCheck(await checkRender(space, id, { targets, locales, creatives, slides: slides?.map((n) => n - 1) })))),
+  );
 
   server.registerTool(
     "render",
@@ -56,14 +100,7 @@ export const registerRenderTools: RegisterTools = (server, tools) => {
       description:
         "Renders the slides to PNGs at exact App Store sizes, and the header and search results assets and the banners if the project has any. Returns images to review plus download links, and warnings where the copy had to shrink, runs long, or breaks the store's rules. Pass `slides` or `creatives` to re-render only those while iterating.",
       inputSchema: {
-        project,
-        slides: z.array(slideNumber).optional().describe("Slide numbers to render; all when omitted"),
-        creatives: z
-          .array(z.enum(PLACEMENT_IDS))
-          .optional()
-          .describe("Header and search results assets and banners to render. Left out, all of them are rendered along with the slides; given alone, the slides are left as they are; [] skips them."),
-        targets: z.array(z.enum(TARGET_IDS)).optional().describe("Sizes for this render only; defaults to the project's export sizes. While iterating, one size per device is enough, such as [\"iphone-6.9\"]"),
-        locales: z.array(localeSchema).optional().describe("Defaults to every project locale"),
+        ...request,
         previews: z
           .boolean()
           .optional()

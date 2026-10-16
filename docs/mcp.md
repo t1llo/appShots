@@ -24,7 +24,7 @@ A token, or an app you let in, reaches the projects of the account it belongs to
 2. `create_project`, or `list_projects` and `get_project` to continue one.
 3. Upload the raw screenshots. This goes through the [command line](/docs/cli) or the [HTTP API](/docs/api), because MCP has no way to send files. A project in several languages can hold each screenshot once per language.
 4. `set_slides`. For an app on more than one device, once more for each of the others with `device`, so every device has a set composed for its own canvas.
-5. `render`, and look at the pictures it returns.
+5. `check_project`, which says what a render would refuse or warn about and uses no render. Then `render`, and look at the pictures it returns.
 6. `update_slide` for the fixes, then `render` again. A change that made things worse is undone with `list_revisions` and `restore_project`.
 
 Uploading the result to App Store Connect is not among the tools. It needs your App Store Connect key, which stays on your Mac, so the [command line](/docs/app-store-connect) does it.
@@ -114,6 +114,10 @@ A field slides do not have, such as a misspelt `headlne`, is left out, and the a
 ### set_creative_assets
 
 Sets the wide pictures of `project`: `header`, `search` or `universal` for App Store Connect, and the banners `readme`, `social`, `link` and `post` for outside the store. Each one given replaces that picture, and the others stay. `remove` deletes them by name. See [Header and search results](/docs/store-assets) and [Banners](/docs/banners).
+
+### check_project
+
+Takes the arguments of `render` and says what a render with them would do, without drawing anything or using a render: whether it would be refused and why, in the words the render would use; what it would draw, by device, language and size; and what it would warn about, such as a screenshot or image name nothing is uploaded under. An agent calls it before each render and fixes what it names, so no render goes to a set that cannot come out right. A refusal here is an answer, not a failed call: only an unknown project, or an argument `render` would not take, fails.
 
 ### render
 

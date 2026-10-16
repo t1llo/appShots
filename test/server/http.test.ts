@@ -205,6 +205,19 @@ describe("accounts", () => {
     assert.equal(((await (await server.fetch("/api/renders", as("u0"))).json()) as { rendersLeft: unknown }).rendersLeft, null);
   });
 
+  test("a check says an account without renders would be refused, in the render's words", async () => {
+    const created = await server.fetch("/api/projects", as("u2", { method: "POST", body: JSON.stringify({ name: "Spent", slides: [{ layout: "statement", headline: "One" }] }) }));
+    const { id } = (await created.json()) as { id: string };
+    const check = (await (await server.fetch(`/api/projects/${id}/check`, as("u2", { method: "POST", body: "{}" }))).json()) as { ok: boolean; refused: string[]; plan: unknown; rendersLeft: number };
+    assert.equal(check.ok, false);
+    assert.deepEqual(check.refused, ["This account has used all of its 0 renders. The person who runs this server can give it more."]);
+    assert.ok(check.plan, "says what it would draw all the same");
+    assert.equal(check.rendersLeft, 0);
+    const render = await server.fetch(`/api/projects/${id}/render`, as("u2", { method: "POST", body: "{}" }));
+    assert.equal(render.status, 400);
+    assert.equal(((await render.json()) as { error: string }).error, check.refused[0]);
+  });
+
   test("a token works from the moment it is made until it is revoked", async () => {
     const made = await server.fetch("/api/account/tokens", as("u2", { method: "POST", body: JSON.stringify({ name: "Laptop" }) }));
     assert.equal(made.status, 201);
@@ -221,6 +234,42 @@ describe("accounts", () => {
     const deleted = await server.fetch("/api/account", as("u2", { method: "DELETE", body: JSON.stringify({ confirm: " Two@Example.com " }) }));
     assert.equal(deleted.status, 204);
     assert.equal((await server.fetch("/api/projects", as("u2"))).status, 401);
+  });
+});
+
+describe("checking a render", () => {
+  let server: TestServer;
+  let data: TmpData;
+  before(async () => {
+    data = await tmpData("check");
+    const users = [{ id: "u3", email: "three@example.com", name: "three", createdAt: "2026-01-01T00:00:00.000Z", epoch: 1, tokens: [] }];
+    await writeFile(path.join(data.dir, "accounts.json"), JSON.stringify({ signup: "open", signupChosen: true, allowed: [], users, spent: {} }));
+    await writeFile(path.join(data.dir, "secret.key"), SECRET);
+    server = await startServer({ dataDir: data.dir, env: { ...SIGN_IN, USER_RENDER_CREDITS: "2" } });
+  });
+  after(async () => {
+    await server?.stop();
+    await data?.remove();
+  });
+
+  test("uses none of the account's renders, over the HTTP API and as an MCP tool", async () => {
+    const as = (init: RequestInit = {}): RequestInit => ({ ...init, headers: { Cookie: sessionCookie("u3", 1, SESSION_TTL), Origin: server.url, "Content-Type": "application/json" } });
+    const created = await server.fetch("/api/projects", as({ method: "POST", body: JSON.stringify({ name: "Counted", slides: [{ layout: "statement", headline: "One" }] }) }));
+    const { id } = (await created.json()) as { id: string };
+    for (let i = 0; i < 3; i++) {
+      const check = (await (await server.fetch(`/api/projects/${id}/check`, as({ method: "POST", body: "{}" }))).json()) as { ok: boolean; rendersLeft: number };
+      assert.deepEqual([check.ok, check.rendersLeft], [true, 2]);
+    }
+    const made = await server.fetch("/api/account/tokens", as({ method: "POST", body: JSON.stringify({ name: "Agent" }) }));
+    const { token } = (await made.json()) as { token: string };
+    const mcp = await server.fetch("/mcp", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "check_project", arguments: { project: id } } }),
+    });
+    const answer = await mcp.text();
+    assert.match(answer, /A render of this would start\..*Checking used no render\. Renders left on this account: 2\./s);
+    assert.equal(((await (await server.fetch("/api/renders", as())).json()) as { rendersLeft: number }).rendersLeft, 2);
   });
 });
 

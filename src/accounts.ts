@@ -372,6 +372,14 @@ export function rendersLeft(spaceId: string): number | null {
 /** The same for one account, with how many it has made. */
 export const rendersOf = (user: User) => ({ made: user.renders ?? 0, left: rendersLeft(user.id) });
 
+/** Why a space cannot start a render now, in the words a render is refused with. Undefined while it can. */
+export function outOfRenders(spaceId: string): string | undefined {
+  const user = counted(spaceId);
+  if (!user || rendersLeft(spaceId) !== 0) return undefined;
+  const ask = config.operator.email ? `Write to ${config.operator.email} to get more.` : "The person who runs this server can give it more.";
+  return `This account has used all of its ${plural(allowanceOf(user))}. ${ask}`;
+}
+
 /**
  * Sets one render aside for a run that is about to be queued, and refuses when none is left. Call what it returns
  * when the run has ended: with true the render is used up, with false it goes back.
@@ -379,10 +387,8 @@ export const rendersOf = (user: User) => ({ made: user.renders ?? 0, left: rende
 export function holdRender(spaceId: string): (used: boolean) => Promise<void> {
   const user = counted(spaceId);
   if (!user) return async () => {};
-  if (rendersLeft(spaceId) === 0) {
-    const ask = config.operator.email ? `Write to ${config.operator.email} to get more.` : "The person who runs this server can give it more.";
-    throw new InputError(`This account has used all of its ${plural(allowanceOf(user))}. ${ask}`);
-  }
+  const refused = outOfRenders(spaceId);
+  if (refused) throw new InputError(refused);
   held.set(user.id, (held.get(user.id) ?? 0) + 1);
   return async (used) => {
     const still = (held.get(user.id) ?? 1) - 1;

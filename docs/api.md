@@ -134,6 +134,7 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/render \
 | Request | What it does |
 | --- | --- |
 | `POST /api/projects/:id/render` | Renders and answers when it is done. Body, all optional: `targets`, `locales`, `slides`, `creatives`, `background`. Without `targets`, every size the project exports |
+| `POST /api/projects/:id/check` | Says what a render with the same body would do, without drawing anything or using a render. See [Check first](#check-first) |
 | `GET /api/renders` | Your renders that are waiting, running or ended in the last hour, newest first, and `rendersLeft` |
 | `GET /api/renders/:job` | One of them |
 | `DELETE /api/renders/:job` | Cancels one that is waiting or running. It keeps nothing it drew |
@@ -178,6 +179,32 @@ curl -s -X POST {{SERVER}}/api/projects/streaks/render \
 Ask `GET /api/renders/<id>` until `state` is no longer `queued` or `running`. It ends as `done`, `failed` (with `error`) or `cancelled`. `done` of `total` is how many pictures are drawn so far. Then fetch `export.zip`. The render draws the project as it was when you asked, so changes made while it runs are not in it. Its files replace the old ones all at once when it is done; one that fails or is cancelled leaves the old ones as they were.
 
 `locales` takes the project's own languages, matched without regard to case, and `de` finds `de-DE`. A language the project does not have is refused with status 400 before anything is drawn or counted.
+
+### Check first
+
+`POST /api/projects/:id/check` takes the body of a render and answers with what that render would do. It draws nothing, queues nothing and uses no render, so it can be asked before every render:
+
+```bash
+curl -s -X POST {{SERVER}}/api/projects/streaks/check \
+  -H "Authorization: Bearer $APPSHOTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"locales":["en-US"]}'
+```
+
+```json
+{
+  "ok": true,
+  "refused": [],
+  "warnings": ["Slide 3: no screenshot named \"stats\" has been uploaded, so a placeholder was drawn."],
+  "plan": { "locales": ["en-US"], "targets": ["iphone-6.9"], "slides": { "iphone": [0, 1, 2] }, "creatives": [], "pictures": 3 },
+  "rendersLeft": 6
+}
+```
+
+- `ok` says whether the render would start. When it would not, `refused` gives each reason in the words the render would answer with, and the status is still 200: the check itself went through.
+- `warnings` are the ones the render would give, such as a screenshot or image name nothing is uploaded under.
+- `plan` is what it would draw: the languages, the sizes, the slides of each device counted from 0 (a device with a set of its own counts in that set), the header, search results and banner images, and how many pictures the browser draws, every language counted. It is left out when what was asked for cannot be drawn.
+- `background` is taken and ignored, so the body you are about to render with can be sent as it is. A body a render would refuse with status 400 is refused here the same way, and an unknown project is a 404.
 
 ### Counted renders
 

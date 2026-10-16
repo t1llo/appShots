@@ -544,6 +544,48 @@ describe("rendering, without drawing", () => {
     assertError(await call(`/api/projects/${id}/render`, send("POST", { creatives: ["readme"] })), 400, /no .* asset yet/);
   });
 
+  test("a check says what a render with the same body would do, and starts none", async () => {
+    const before = (await call("/api/renders")).body.jobs.length;
+    const answer = await call(`/api/projects/${id}/check`, send("POST", { background: true }));
+    assert.equal(answer.status, 200);
+    assert.match(answer.headers.get("cache-control")!, /private|no-store/);
+    assertKeys(answer.body, ["ok", "refused", "warnings", "plan", "rendersLeft"]);
+    assert.equal(answer.body.ok, true);
+    assert.deepEqual(answer.body.refused, []);
+    assert.deepEqual(answer.body.warnings, []);
+    assert.equal(answer.body.rendersLeft, null);
+    const { plan } = answer.body;
+    assert.deepEqual({ ...plan, targets: undefined, pictures: undefined }, { locales: ["en-US", "de-DE"], slides: { iphone: [0, 1, 2] }, creatives: [], targets: undefined, pictures: undefined });
+    assert.ok(plan.targets.includes("iphone-6.9") && plan.pictures >= 6, JSON.stringify(plan));
+    assert.deepEqual((await call(`/api/projects/${id}/check`, send("POST", { slides: [2], locales: ["de"] }))).body.plan.slides, { iphone: [2] });
+
+    // What the render refuses is answered, with the render's own words, as a check that went through.
+    const refused = async (body: unknown, pattern: RegExp) => {
+      const check = await call(`/api/projects/${id}/check`, send("POST", body));
+      assert.equal(check.status, 200);
+      assert.equal(check.body.ok, false);
+      assert.match(check.body.refused.join(" "), pattern);
+      assert.equal(check.body.plan, undefined);
+    };
+    await refused({ slides: [3] }, /^Slide 4 does not exist; the project has 3\.$/);
+    await refused({ locales: ["fr"] }, /no language "fr"/);
+    await refused({ creatives: ["readme"] }, /no .* asset yet/);
+    const empty = await createProject({ name: "Nothing To Check" });
+    assert.match((await call(`/api/projects/${empty}/check`, send("POST", {}))).body.refused[0], /nothing to render yet/);
+
+    // A screenshot nothing is uploaded under is a warning, as the render gives it.
+    await call(`/api/projects/${empty}`, send("PUT", { slides: [{ headline: "Missing", screenshot: "missing" }] }));
+    const warned = (await call(`/api/projects/${empty}/check`, send("POST", {}))).body;
+    assert.equal(warned.ok, true);
+    assert.deepEqual(warned.warnings, ['Slide 1: no screenshot named "missing" has been uploaded, so a placeholder was drawn.']);
+
+    // A body the render would not take is not taken here either, and a project that is not there is a 404.
+    assertError(await call(`/api/projects/${id}/check`, send("POST", { slides: [-1] })), 400);
+    assertError(await call(`/api/projects/${id}/check`, send("POST", { targets: ["iphone-99"] })), 400);
+    assertError(await call("/api/projects/no-such-project/check", send("POST", {})), 404);
+    assert.equal((await call("/api/renders")).body.jobs.length, before);
+  });
+
   test("a background render answers 202 with the job and ends in /api/renders", async () => {
     const empty = await createProject({ name: "Background" });
     const answer = await call(`/api/projects/${empty}/render`, send("POST", { background: true }));

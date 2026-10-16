@@ -4,6 +4,7 @@ import { rendersLeft } from "../../accounts.ts";
 import { cancelRender, getRender, listRenders, renderProject, resolveLocales, startRender } from "../../render.ts";
 import { localeSchema } from "../../schema.ts";
 import { PLACEMENT_IDS, TARGET_IDS } from "../../sizes.ts";
+import { checkRender } from "../../services/check.ts";
 import { getProject, InputError, listOutputs, NotFoundError } from "../../store.ts";
 import type { Log } from "../errors.ts";
 import { spaceOf } from "../auth.ts";
@@ -43,6 +44,13 @@ export function renderRoutes(log: Log): Router {
     }
     const result = await renderProject(space, id, request);
     res.json({ ...result, outputs: await listOutputs(space, id), creativeOutputs: await creativeOutputs(space, id), rendersLeft: rendersLeft(space.id) });
+  });
+
+  // What a render with the same body would do, without drawing anything or using a render. `background` is taken and
+  // ignored, so a client can send the body it is about to render with.
+  api.post("/projects/:id/check", async (req, res) => {
+    const { background: _, ...request } = renderBody.parse(req.body ?? {});
+    res.json(await checkRender(spaceOf(res), req.params.id, request));
   });
 
   // The account's renders: the ones waiting or under way, and the finished ones of the last hour.
