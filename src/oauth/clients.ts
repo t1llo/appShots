@@ -178,21 +178,23 @@ interface Kept {
   until: number;
 }
 
-const documents = new Map<string, Kept>();
 const MAX_DOCUMENTS = 500;
 const HOUR = 3600 * 1000;
 
 /** How long a document is kept: as long as it says, from a minute to a day, an hour when it does not say. */
 const keepFor = (maxAge: number | null) => (maxAge === null ? HOUR : Math.min(24 * HOUR, Math.max(60_000, maxAge * 1000)));
 
-async function fetchDocument(id: string): Promise<Kept> {
+/** Fetches a metadata document: fetchJson, unless a test stands in for the apps' websites. */
+export type DocumentFetcher = (address: string) => Promise<{ body: unknown; maxAge: number | null }>;
+
+/** Reads a metadata document into a client, or into the reason it cannot be one. */
+async function readDocument(id: string, fetchDocument: DocumentFetcher): Promise<Kept> {
   const now = Date.now();
   try {
-    const { body, maxAge } = await fetchJson(id);
-    const fail = (_code: string, message: string) => new PageError(message);
+    const { body, maxAge } = await fetchDocument(id);
     if (!isRecord(body)) throw new PageError("The document is not a JSON object.");
     if (body.client_id !== id) throw new PageError("The client_id in the document is not the address it was fetched from.");
-    const metadata = checkMetadata(body, true, fail);
+    const metadata = checkMetadata(body, true, (_code, message) => new PageError(message));
     const client: Client = {
       id,
       name: metadata.name,
@@ -210,32 +212,40 @@ async function fetchDocument(id: string): Promise<Kept> {
   }
 }
 
-/**
- * The app behind a client id. For a metadata document, the copy kept from an earlier fetch while it lasts. One that
- * does not list `redirectUri` is fetched again once it is a minute old, in case the app has added the address since.
- * `visitor` is whoever asked, whose fetches are counted: the address of a document is theirs to choose.
- */
-export async function findClient(id: string, visitor: string | undefined, redirectUri?: string): Promise<Client> {
-  if (!isDocumentId(id)) {
-    const client = registeredClient(id);
-    if (!client) throw new PageError("This app is not registered with appShots, or its registration ran out. Remove appShots from the app and add it again.");
-    return { id: client.id, name: client.name, redirectUris: client.redirectUris, authMethod: client.authMethod, refresh: client.grantTypes.includes("refresh_token") };
-  }
-  const problem = documentIdProblem(id);
-  if (problem) throw new PageError(`The app's client id ${problem}.`);
-  const now = Date.now();
-  let kept = documents.get(id);
-  const stale = kept?.client && redirectUri !== undefined && !redirectFor(kept.client, redirectUri) && now - kept.fetchedAt > 60_000;
-  if (!kept || kept.until <= now || stale) {
-    if (!allow(`client-document:${visitor}`, 20, 10 * 60_000)) throw new PageError("Too many apps were looked up from your address. Wait a few minutes and try again.");
-    kept = await fetchDocument(id);
-    documents.delete(id);
-    documents.set(id, kept);
-    if (documents.size > MAX_DOCUMENTS) documents.delete(documents.keys().next().value!);
-  }
-  if (!kept.client) throw new PageError(`The app's details at ${id} cannot be used. ${kept.problem}`);
-  return kept.client;
+/** The apps an authorization request can come from, with the metadata documents fetched so far. */
+export function clientDirectory(fetchDocument: DocumentFetcher = fetchJson) {
+  const documents = new Map<string, Kept>();
+  return {
+    /**
+     * The app behind a client id. For a metadata document, the copy kept from an earlier fetch while it lasts. One
+     * that does not list `redirectUri` is fetched again once it is a minute old, in case the app added the address
+     * since. `visitor` is whoever asked, whose fetches are counted: the address of a document is theirs to choose.
+     */
+    async find(id: string, visitor: string | undefined, redirectUri?: string): Promise<Client> {
+      if (!isDocumentId(id)) {
+        const client = registeredClient(id);
+        if (!client) throw new PageError("This app is not registered with appShots, or its registration ran out. Remove appShots from the app and add it again.");
+        return { id: client.id, name: client.name, redirectUris: client.redirectUris, authMethod: client.authMethod, refresh: client.grantTypes.includes("refresh_token") };
+      }
+      const problem = documentIdProblem(id);
+      if (problem) throw new PageError(`The app's client id ${problem}.`);
+      const now = Date.now();
+      let kept = documents.get(id);
+      const stale = kept?.client && redirectUri !== undefined && !redirectFor(kept.client, redirectUri) && now - kept.fetchedAt > 60_000;
+      if (!kept || kept.until <= now || stale) {
+        if (!allow(`client-document:${visitor}`, 20, 10 * 60_000)) throw new PageError("Too many apps were looked up from your address. Wait a few minutes and try again.");
+        kept = await readDocument(id, fetchDocument);
+        documents.delete(id);
+        documents.set(id, kept);
+        if (documents.size > MAX_DOCUMENTS) documents.delete(documents.keys().next().value!);
+      }
+      if (!kept.client) throw new PageError(`The app's details at ${id} cannot be used. ${kept.problem}`);
+      return kept.client;
+    },
+  };
 }
+
+export type ClientDirectory = ReturnType<typeof clientDirectory>;
 
 // ---------------------------------------------------------------- authenticating at the token endpoint
 

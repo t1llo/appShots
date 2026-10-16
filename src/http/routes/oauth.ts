@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import express, { type NextFunction, type Request, type RequestHandler, type Response, type Router } from "express";
 import { allow, AuthError, endSessions, logInWithGoogle, safeEqual, seal, sessionHolder, signupMode, unseal, userSession } from "../../accounts.ts";
 import { config } from "../../config.ts";
-import { isDocumentId, register } from "../../oauth/clients.ts";
+import { clientDirectory, type DocumentFetcher, isDocumentId, register } from "../../oauth/clients.ts";
 import { OAuthError, PageError } from "../../oauth/errors.ts";
 import { type Approval, approvalOf, checkAuthorization, issueCode, RedirectError, revoke, token } from "../../oauth/flow.ts";
 import { AUTHORIZATION_SERVER, authorizationServer, originOf, PROTECTED_RESOURCE, protectedResource } from "../../oauth/metadata.ts";
@@ -139,8 +139,9 @@ const params = [express.urlencoded({ extended: false, limit: "16kb" }), express.
  * page, the token endpoint and revocation. src/oauth has the rules; this is the HTTP around them. Mounted only while
  * sign-in is on: without accounts there is nobody to sign in, and /mcp is open.
  */
-export function authorizationRoutes(log: Log): Router {
+export function authorizationRoutes(log: Log, fetchDocument?: DocumentFetcher): Router {
   const routes = express.Router();
+  const clients = clientDirectory(fetchDocument);
   const originHere = (req: Request) => originOf(baseUrl(req));
 
   routes.use([PROTECTED_RESOURCE, AUTHORIZATION_SERVER, "/oauth/register", "/oauth/token", "/oauth/revoke"], openToApps);
@@ -160,7 +161,7 @@ export function authorizationRoutes(log: Log): Router {
     const here = originHere(req);
     let asked;
     try {
-      asked = await checkAuthorization(req.query, here, visitorAddress(req));
+      asked = await checkAuthorization(req.query, here, visitorAddress(req), clients);
     } catch (error) {
       if (error instanceof PageError) return sendProblem(res, 400, error.message);
       if (error instanceof RedirectError) {

@@ -19,10 +19,13 @@ import { renderPageRoutes } from "./http/routes/render-pages.ts";
 import { renderRoutes } from "./http/routes/renders.ts";
 import { siteRoutes } from "./http/routes/site.ts";
 import { allowedHost, privateCache, securityHeaders } from "./http/security.ts";
+import type { DocumentFetcher } from "./oauth/clients.ts";
 
 export interface AppDeps {
   /** Where the server reports what went wrong on its side. The console unless a test listens in. */
   log?: Log;
+  /** How an app's OAuth metadata document is fetched: over HTTPS from its address, unless a test stands in for it. */
+  fetchClientDocument?: DocumentFetcher;
 }
 
 /**
@@ -53,7 +56,7 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
   // MCP clients sign in with OAuth while sign-in is on: the discovery documents and the authorization server.
   if (config.auth) {
     app.use(AUTHORIZATION_PATHS, allowedHost);
-    app.use(authorizationRoutes(log));
+    app.use(authorizationRoutes(log, deps.fetchClientDocument));
   }
 
   // Everything below acts on an account's projects.

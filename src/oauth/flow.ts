@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { hasAccess, safeEqual, type User, userById } from "../accounts.ts";
-import { authenticate, type Client, findClient, redirectFor, redirectHost } from "./clients.ts";
+import { authenticate, type Client, type ClientDirectory, redirectFor, redirectHost } from "./clients.ts";
 import { OAuthError, PageError } from "./errors.ts";
 import { canonicalResource, covers, mcpResource, SCOPE } from "./metadata.ts";
 import {
@@ -62,7 +62,7 @@ export class RedirectError extends OAuthError {
  * Checks an authorization request. Until the client and its redirect URI are known, a problem throws PageError, for
  * the person in the browser to read. After that it throws RedirectError, for the app.
  */
-export async function checkAuthorization(query: Record<string, unknown>, origin: string, visitor: string | undefined): Promise<Asked> {
+export async function checkAuthorization(query: Record<string, unknown>, origin: string, visitor: string | undefined, clients: ClientDirectory): Promise<Asked> {
   let clientId: string | undefined;
   let asked: string | undefined;
   try {
@@ -72,7 +72,7 @@ export async function checkAuthorization(query: Record<string, unknown>, origin:
     throw new PageError((error as Error).message);
   }
   if (!clientId) throw new PageError("The app sent no client_id.");
-  const client = await findClient(clientId, visitor, asked);
+  const client = await clients.find(clientId, visitor, asked);
   const redirectUri = redirectFor(client, asked);
   if (!redirectUri) {
     throw new PageError(
