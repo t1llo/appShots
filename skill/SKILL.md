@@ -35,7 +35,7 @@ A set takes about ten minutes when the user supplies or opens the screens, and a
 
 - Use the `appshots` commands for everything on the Mac. No scripts, UI tests, fastlane, Playwright or Puppeteer of your own, and no `xcodebuild` or `xcrun simctl`, except to start an app that `appshots run` does not build.
 - Build at most once per device. Two tries per screen, then ask the user to open it.
-- Read ten files at most. Render the whole set once, then two rounds of fixes at most.
+- Read ten of the app's files at most; this skill's reference files do not count. Render the whole set once, then two rounds of fixes at most.
 - Make only what was asked for. Past the time above, stop, say what holds things up, and ask how to go on.
 
 ## 1. Check the setup
