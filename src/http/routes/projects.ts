@@ -4,52 +4,23 @@ import { isAdmin, rendersLeft } from "../../accounts.ts";
 import { config } from "../../config.ts";
 import { CREATIVE_CAPACITY } from "../../creative.ts";
 import { BACKGROUNDS, BADGE_TONES, BADGE_TYPES, BADGES_SHOWN, CARD_ICONS, CARD_LOOKS, CREATIVE_LAYOUTS, EMPHASIS, FEATURE_LAYOUTS, REVIEWS_SHOWN, DEVICE_COLOR_IDS, DEVICE_STYLES, FEATURE_STYLES, LAYOUT_SPREAD, STATUS_BARS, POINT_STYLES, ICON_ROW_SIZE_IDS, ICON_ROW_STYLES, ICON_ROW_TONES, FONT_IDS, FONTS, ICON_GROUPS, ICON_IDS, LAYOUT_SHOTS, LAYOUTS, LOGO_SHAPES, LOGO_SIZE_IDS } from "../../design.ts";
-import { defaultTargets } from "../../render.ts";
-import { creativesSchema, deviceSlidesSchema, localesSchema, mockupsSchema, repeatedLocales, slideSchema, targetsSchema, themeSchema, unknownFields } from "../../schema.ts";
+import { deviceCatalog } from "../../domain/devices.ts";
+import { type Actor, type Ctx, type Warning, warningTexts } from "../../services/context.ts";
+import * as service from "../../services/projects.ts";
+import type { Detail } from "../../services/projects.ts";
+import { updateSlide } from "../../services/slides.ts";
 import { DEVICE_KINDS, DEVICE_LABELS, PLACEMENTS, TARGETS } from "../../sizes.ts";
-import { projects, type WriteOptions } from "../../storage/projects.ts";
-import { ConflictError, createProject, deleteProject, getProject, InputError, listCreativeOutputs, listOutputs, projectSummary, readImages, readShots, type Space, updateProject, usageOf } from "../../store.ts";
+import { ConflictError, InputError, usageOf } from "../../store.ts";
 import { identityOf, spaceOf } from "../auth.ts";
 
-const projectPatch = z.object({
-  name: z.string().min(1).max(80).optional(),
-  locales: localesSchema.optional(),
-  targets: targetsSchema.nullable().optional(),
-  theme: themeSchema.optional(),
-  slides: z.array(slideSchema).max(10).optional(),
-  deviceSlides: deviceSlidesSchema.optional(),
-  creatives: creativesSchema.optional(),
-  mockups: mockupsSchema.optional(),
-});
-
-/**
- * Renders of assets the project no longer defines stay on disk until the next full render, but are not offered. Nor
- * are those of a language it no longer has, which go with the next render, as its slides do.
- */
-export async function creativeOutputs(space: Space, id: string) {
-  const [project, outputs] = await Promise.all([getProject(space, id), listCreativeOutputs(space, id)]);
-  const languages = new Set(project.locales.map((code) => code.toLowerCase()));
-  return outputs.filter((output) => project.creatives[output.placement] && languages.has(output.locale.toLowerCase()));
-}
-
-/**
- * A project with everything it has. `orphanedShots` are the screenshots of languages it no longer has: kept, so that
- * adding the language again brings them back, but drawn for no other language, and listed so they can be deleted.
- */
-async function projectDetail(space: Space, id: string) {
-  const withShots = projects.get(space, id).then(async (stored) => ({ ...stored, files: await readShots(space, id, stored.project.locales) }));
-  const [{ project, revision, warnings: stored, files }, art, outputs, creatives] = await Promise.all([withShots, readImages(space, id), listOutputs(space, id), creativeOutputs(space, id)]);
-  const { shots, orphaned } = files;
-  const unreadable = (kind: string) => (file: string) => `The ${kind} ${file} cannot be read and is left out. Upload it again or delete it.`;
-  const warnings = [...stored, ...files.unreadable.map(unreadable("screenshot")), ...art.unreadable.map(unreadable("image"))];
-  return { project, revision, shots, orphanedShots: orphaned, images: art.images, outputs, creativeOutputs: creatives, defaultTargets: defaultTargets(shots, project.targets), ...(warnings.length ? { warnings } : {}) };
-}
+// The projects themselves are read and changed by the services in src/services/, which the MCP tools call too.
+export { creativeOutputs } from "../../services/projects.ts";
 
 /**
  * The revision is the ETag, for the If-Match of the next change. Not kept by anything: an upload changes the
  * screenshots without a new revision, so a cached copy would be answered 304 while out of date.
  */
-function sendDetail(res: Response, detail: Awaited<ReturnType<typeof projectDetail>>) {
+function sendDetail(res: Response, detail: Detail) {
   res.set({ ETag: `"${detail.revision}"`, "Cache-Control": "private, no-store" }).json(detail);
 }
 
@@ -62,29 +33,32 @@ function ifMatch(req: Request): number | undefined {
   return Number(match[1]);
 }
 
-/** Who saves, for the history. Browsers say where a request comes from; the CLI and scripts do not. */
-const actorOf = (req: Request) => (req.get("sec-fetch-site") ? "studio" : "api");
+/**
+ * Who saves, for the history. The Studio says so in a header; a Studio page loaded before it did is still told by
+ * the browser saying where the request comes from, which the CLI and scripts do not.
+ */
+const actorOf = (req: Request): Actor => (req.get("x-appshots-client")?.trim().toLowerCase() === "studio" || req.get("sec-fetch-site") ? "studio" : "api");
 
-/** Fields the detail carries that are not changed by sending them back. */
-const STORED_ONLY = new Set(["id", "createdAt", "updatedAt", "schemaVersion", "revision"]);
+/** The service context of a request: its account, who makes the change, and the revision it was made on. */
+const contextOf = (req: Request, res: Response): Ctx => ({ space: spaceOf(res), actor: actorOf(req), ifRevision: ifMatch(req) });
 
 /**
  * Makes a change and answers with the project. One made on a revision that is no longer current is answered 409,
  * with the project as it is now, so the caller can make it again on that.
  */
-async function change(req: Request<{ id: string }>, res: Response, work: (options: WriteOptions) => Promise<unknown>, warnings: string[] = []) {
-  const space = spaceOf(res);
-  const options = { ifRevision: ifMatch(req), actor: actorOf(req) };
+async function change<T extends { warnings?: Warning[] } | undefined>(req: Request<{ id: string }>, res: Response, work: (ctx: Ctx) => Promise<T>, extra: (result: T) => object = () => ({})) {
+  const ctx = contextOf(req, res);
+  let result: T;
   try {
-    await work(options);
+    result = await work(ctx);
   } catch (error) {
     if (!(error instanceof ConflictError)) throw error;
-    const current = await projectDetail(space, req.params.id);
+    const current = await service.detail(ctx.space, req.params.id);
     return void res.status(409).set({ ETag: `"${current.revision}"`, "Cache-Control": "private, no-store" }).json({ error: error.message, revision: error.revision, project: current });
   }
-  const detail = await projectDetail(space, req.params.id);
-  const all = [...(detail.warnings ?? []), ...warnings];
-  sendDetail(res, all.length ? { ...detail, warnings: all } : detail);
+  const detail = await service.detail(ctx.space, req.params.id);
+  const all = [...(detail.warnings ?? []), ...warningTexts(result?.warnings ?? [])];
+  sendDetail(res, { ...(all.length ? { ...detail, warnings: all } : detail), ...extra(result) });
 }
 
 /** What the Studio needs to know about this server, and the projects themselves. */
@@ -124,6 +98,8 @@ export function projectRoutes(): Router {
       iconRowSizes: ICON_ROW_SIZE_IDS,
       icons: ICON_IDS,
       iconGroups: ICON_GROUPS,
+      /** Every device model by device, with its display sizes and the export sizes drawn for it. */
+      deviceCatalog: deviceCatalog(),
       authEnabled: config.auth,
       /** Null only while sign-in is off. */
       account: user ? { email: user.email, name: user.name, admin: isAdmin(user) } : null,
@@ -134,39 +110,47 @@ export function projectRoutes(): Router {
 
   // A project whose project.json cannot be read is listed too, with `damaged`, so it can be restored or deleted.
   api.get("/projects", async (_req, res) => {
-    res.json((await projects.list(spaceOf(res))).map(projectSummary));
+    res.json(await service.list(spaceOf(res)));
   });
   /** How much the caller keeps here: what the settings page shows. */
   api.get("/usage", async (_req, res) => {
     res.json(await usageOf(spaceOf(res)));
   });
   api.post("/projects", async (req, res) => {
-    const body = projectPatch.extend({ name: z.string().min(1).max(80) }).parse(req.body);
-    res.status(201).json(await createProject(spaceOf(res), body, { actor: actorOf(req) }));
+    res.status(201).json(await service.create(contextOf(req, res), req.body));
   });
   api.get("/projects/:id", async (req, res) => {
-    sendDetail(res, await projectDetail(spaceOf(res), req.params.id));
+    sendDetail(res, await service.detail(spaceOf(res), req.params.id));
   });
   api.put("/projects/:id", async (req, res) => {
-    const patch = projectPatch.parse(req.body);
-    // Fields a project does not have are left out, as before, but said so: a misspelt one would otherwise go unnoticed.
-    const ignored = unknownFields(projectPatch, req.body).filter((field) => !STORED_ONLY.has(field));
-    const warnings = ignored.length ? [`Ignored, because a project has no such field: ${ignored.join(", ")}.`] : [];
-    const repeated = patch.locales ? repeatedLocales(req.body.locales) : [];
-    if (repeated.length) warnings.push(`Each language is kept once, in the first of its spellings: left out ${repeated.join(", ")} from locales.`);
-    await change(req, res, (options) => updateProject(spaceOf(res), req.params.id, patch, options), warnings);
+    await change(req, res, (ctx) => service.update(ctx, req.params.id, req.body));
+  });
+  /**
+   * Changes one slide, as the MCP tool update_slide does: `changes` merged over it, `remove` cleared. `:index` counts
+   * from 0, and `of` picks a device's own set. Answers like GET, with the slide changed under `slide`.
+   */
+  api.patch("/projects/:id/slides/:index", async (req, res) => {
+    const index = z.coerce.number().int().min(0).max(9).parse(req.params.index);
+    const body = z.object({ changes: z.record(z.string(), z.unknown()).optional(), remove: z.array(z.string()).optional(), of: z.enum(DEVICE_KINDS).optional() }).parse(req.body ?? {});
+    await change(
+      req,
+      res,
+      (ctx) => updateSlide(ctx, req.params.id, { index, of: body.of }, body),
+      (result) => ({ slide: result.slide }),
+    );
   });
   /** The versions kept of a project, newest first: every change is one, the last 50 of them. */
   api.get("/projects/:id/revisions", async (req, res) => {
-    res.json(await projects.revisions(spaceOf(res), req.params.id));
+    res.json(await service.revisions(spaceOf(res), req.params.id));
   });
   /** Makes an earlier version current again, as a new revision. Works on a damaged project too. */
   api.post("/projects/:id/restore", async (req, res) => {
     const { revision } = z.object({ revision: z.number().int().min(0) }).parse(req.body);
-    await change(req, res, (options) => projects.restore(spaceOf(res), req.params.id, revision, options));
+    // The names the restored version uses without having them are the MCP tool's to mention.
+    await change(req, res, async (ctx) => void (await service.restore(ctx, req.params.id, revision)));
   });
   api.delete("/projects/:id", async (req, res) => {
-    await deleteProject(spaceOf(res), req.params.id);
+    await service.remove(spaceOf(res), req.params.id);
     res.status(204).end();
   });
 

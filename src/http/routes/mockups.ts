@@ -1,31 +1,13 @@
-import express, { type Request, type Router } from "express";
+import express, { type Router } from "express";
 import { mockupName, mockupShots, mockupStage } from "../../mockup.ts";
 import { renderMockup } from "../../render.ts";
-import { type Mockups, mockupsSchema, type Project } from "../../schema.ts";
-import { getProject, InputError, listShots, NotFoundError, shotLocale } from "../../store.ts";
+import { mockupLocale, previewSettings as mockupSettings } from "../../services/mockups.ts";
+import { getProject, InputError, listShots, NotFoundError } from "../../store.ts";
 import { writeZip } from "../../zip.ts";
 import { spaceOf } from "../auth.ts";
 
-/** The settings a mockup is drawn with: the project's own, with what the request sets laid over them. */
-export function mockupSettings(project: Project, query: Request["query"]): Mockups {
-  if (typeof query.settings === "string") {
-    let given: unknown;
-    try {
-      given = JSON.parse(query.settings);
-    } catch {
-      throw new InputError("`settings` has to be JSON, such as {\"device\":{\"style\":\"clay\"}}.");
-    }
-    return mockupsSchema.parse(given);
-  }
-  if (query.width == null) return project.mockups;
-  return mockupsSchema.parse({ ...project.mockups, width: Number(query.width) });
-}
-
-/** The language a mockup request asks for: one of the project's, the first when it names none. */
-function mockupLocale(project: Project, wanted: unknown): string {
-  if (wanted == null || wanted === "") return project.locales[0]!;
-  return shotLocale(project, String(wanted)) ?? project.locales[0]!;
-}
+// The settings a mockup is drawn with, and its language, are the services' (src/services/mockups.ts), as for the MCP tool.
+export { mockupSettings };
 
 /** Device mockups of a project's screenshots: the list, one as PNG, and all of them as a ZIP. */
 export function mockupRoutes(): Router {

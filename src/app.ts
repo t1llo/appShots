@@ -63,7 +63,7 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
   app.use(["/api", "/mcp", "/files", "/render"], allowedHost);
   app.use(requireAuth);
 
-  app.use(mcpRoutes());
+  app.use(mcpRoutes(log));
 
   const api = express.Router();
   api.use(privateCache);

@@ -177,7 +177,7 @@ export const slideSchema = z.object({
  * is always centred, because it has to stay inside the placement's safe area.
  */
 export const creativeSchema = z.object({
-  layout: z.enum(CREATIVE_LAYOUT_IDS).optional().describe("Default fan"),
+  layout: z.enum(CREATIVE_LAYOUT_IDS).optional().describe("Default fan for header, search and universal; split for the banners (readme, social, link, post)"),
   eyebrow: text.optional().describe("Small uppercase line above the headline"),
   headline: text.optional(),
   subheadline: text.optional(),
