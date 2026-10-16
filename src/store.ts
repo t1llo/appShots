@@ -4,7 +4,7 @@ import type { Project } from "./schema.ts";
 import { PLACEMENT_IDS, PLACEMENTS, type PlacementId } from "./sizes.ts";
 import { listSets } from "./storage/outputs.ts";
 import { outDir, projectDir, type Space } from "./storage/paths.ts";
-import { type NewProject, projects, type WriteOptions } from "./storage/projects.ts";
+import { type Damaged, type NewProject, projects, type Stored, type WriteOptions } from "./storage/projects.ts";
 import { usageChanged } from "./storage/usage.ts";
 
 // The functions the server, the MCP tools and the renderer call keep their names and shapes here. Projects are read
@@ -21,6 +21,16 @@ export { findShot } from "./domain/standins.ts";
 /** The projects that can be opened, newest change first. The repository's list also names the damaged ones. */
 export async function listProjects(space: Space): Promise<Project[]> {
   return (await projects.list(space)).flatMap((entry) => ("project" in entry ? [entry.project] : []));
+}
+
+/**
+ * A project as the lists show it, to the Studio, the CLI and agents alike. One that cannot be read has the same
+ * keys, so a client that does not know `damaged` still lists it and can delete it.
+ */
+export function projectSummary(entry: Stored | Damaged) {
+  if (!("project" in entry)) return { id: entry.id, name: entry.id, slides: 0, ownSets: [] as string[], locales: [] as string[], updatedAt: entry.updatedAt, damaged: entry.damaged };
+  const { project } = entry;
+  return { id: project.id, name: project.name, slides: project.slides.length, ownSets: Object.keys(project.deviceSlides), locales: project.locales, updatedAt: project.updatedAt };
 }
 
 export async function getProject(space: Space, id: string): Promise<Project> {

@@ -2,8 +2,8 @@ import { z } from "zod";
 import { defaultTargets } from "../render.ts";
 import { allSlides, creativesSchema, deviceSlidesSchema, localesSchema, mockupsSchema, type Project, repeatedLocales, slideSchema, targetsSchema, themeSchema, unknownFields } from "../schema.ts";
 import type { Space } from "../storage/paths.ts";
-import { type Damaged, projects, type Stored } from "../storage/projects.ts";
-import { createProject, deleteProject, listCreativeOutputs, listImages, listOutputs, listShots, readImages, readShots, type Shot, type StoredImage, updateProject } from "../store.ts";
+import { projects, type Stored } from "../storage/projects.ts";
+import { createProject, deleteProject, listCreativeOutputs, listImages, listOutputs, listShots, projectSummary, readImages, readShots, type Shot, type StoredImage, updateProject } from "../store.ts";
 import { deviceShape } from "../template.ts";
 import { type Ctx, type Warning, writeOptions } from "./context.ts";
 
@@ -24,19 +24,9 @@ const newProject = projectPatch.extend({ name: z.string().min(1).max(80) });
 /** Fields the HTTP API's answer carries that are not changed by sending them back, so not misspelt either. */
 const STORED_ONLY = new Set(["id", "createdAt", "updatedAt", "schemaVersion", "revision"]);
 
-/**
- * A project as the lists show it, to the Studio, the CLI and agents alike. One that cannot be read has the same
- * keys, so a client that does not know `damaged` still lists it and can delete it.
- */
-export function summary(entry: Stored | Damaged) {
-  if (!("project" in entry)) return { id: entry.id, name: entry.id, slides: 0, ownSets: [] as string[], locales: [] as string[], updatedAt: entry.updatedAt, damaged: entry.damaged };
-  const { project } = entry;
-  return { id: project.id, name: project.name, slides: project.slides.length, ownSets: Object.keys(project.deviceSlides), locales: project.locales, updatedAt: project.updatedAt };
-}
-
-/** The projects of the account, newest change first, a damaged one among them. */
+/** The projects of the account, newest change first, a damaged one among them, each as projectSummary() lists it. */
 export async function list(space: Space) {
-  return (await projects.list(space)).map(summary);
+  return (await projects.list(space)).map(projectSummary);
 }
 
 /**
