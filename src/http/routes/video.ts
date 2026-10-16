@@ -1,11 +1,11 @@
 import path from "node:path";
 import express, { type Router } from "express";
 import { rendersLeft } from "../../accounts.ts";
-import { getProject, InputError, NotFoundError, safeJoin } from "../../store.ts";
+import { getProject, InputError, NotFoundError } from "../../store.ts";
 import { videoRenderRoutes } from "../../video/pages.ts";
 import { videoLayersBody } from "../../video/request.ts";
 import { videoService } from "../../video/service.ts";
-import { SET_ID, setDir, setEntries } from "../../video/store.ts";
+import { layerFile, setDir, setEntries } from "../../video/store.ts";
 import { writeZip } from "../../zip.ts";
 import { spaceOf } from "../auth.ts";
 import type { Log } from "../errors.ts";
@@ -76,10 +76,11 @@ export function videoFileRoutes(): Router {
     const space = spaceOf(res);
     await getProject(space, req.params.id);
     const relative = (req.params.file as unknown as string[]).join("/");
-    if (!SET_ID.test(req.params.set) || !relative.endsWith(".png")) throw new NotFoundError("Not found");
+    if (!relative.endsWith(".png")) throw new NotFoundError("Not found");
+    const file = layerFile(space, req.params.id, req.params.set, relative);
+    // The set folder goes in as the root, so only the part below it is checked for hidden names, as in files.ts.
     const dir = setDir(space, req.params.id, req.params.set);
-    const file = path.relative(dir, safeJoin(dir, relative));
-    res.set("Cache-Control", "private, max-age=31536000, immutable").sendFile(file, { root: dir });
+    res.set("Cache-Control", "private, max-age=31536000, immutable").sendFile(path.relative(dir, file), { root: dir });
   });
   return files;
 }
