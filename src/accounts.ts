@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { config } from "./config.ts";
+import { endGrantsOf } from "./oauth/store.ts";
 import { writeFileAtomic } from "./storage/atomic.ts";
 import { InputError, NotFoundError, type Space } from "./store.ts";
 
@@ -268,6 +269,9 @@ export function allow(key: string, limit: number, windowMs: number): boolean {
 
 const byEmail = (email: string) => state.users.find((user) => user.email === email);
 
+/** The account with this id, for what refers to one by its id: an app's grant. */
+export const userById = (id: string) => state.users.find((user) => user.id === id);
+
 /**
  * Signs in a Google identity whose address Google has verified, creating the account on first use.
  * The address decides who somebody is here: it is what the admin put on the list.
@@ -287,12 +291,14 @@ export async function logInWithGoogle(profile: { sub: string; email: string; nam
   const sameAddress = byEmail(email);
   if (sameAddress) {
     // The address now signs in as a Google identity this account has not seen: an account from the days of
-    // passwords, or an address that went to somebody new. Whoever held it before loses their sessions and tokens.
+    // passwords, or an address that went to somebody new. Whoever held it before loses their sessions and tokens,
+    // and the apps they connected.
     sameAddress.googleSub = profile.sub;
     sameAddress.tokens = [];
     sameAddress.epoch++;
     indexTokens();
     await save();
+    await endGrantsOf(sameAddress.id);
     return sameAddress;
   }
   const user: User = { id: randomId("u"), email, name: cleanName(profile.name, email), googleSub: profile.sub, createdAt: new Date().toISOString(), epoch: 1, tokens: [] };
@@ -320,6 +326,7 @@ export async function deleteUser(id: string): Promise<void> {
     state.spent[sha256(user.googleSub)] = { renders: user.renders ?? 0, ...(user.renderAllowance != null ? { renderAllowance: user.renderAllowance } : {}) };
   }
   await save();
+  await endGrantsOf(user.id);
   await rm(userRoot(user.id), { recursive: true, force: true });
 }
 

@@ -1,7 +1,10 @@
 import type { NextFunction, Request, Response } from "express";
 import { mainSpace, renewedSession, safeEqual, SESSION_TTL, sessionHolder, spaceById, spaceOfUser, type User, userByToken } from "../accounts.ts";
 import { config } from "../config.ts";
+import { userByAccessToken } from "../oauth/flow.ts";
+import { challenge, originOf } from "../oauth/metadata.ts";
 import type { Space } from "../store.ts";
+import { baseUrl } from "./security.ts";
 
 export const SESSION_COOKIE = "appshots_session";
 export const OAUTH_COOKIE = "appshots_oauth";
@@ -31,7 +34,9 @@ export function identify(req: Request): Identity | null {
   }
   const header = req.get("authorization");
   if (header?.startsWith("Bearer ")) {
-    const user = userByToken(header.slice(7).trim());
+    // An API token, or an access token an app got over OAuth, which works only where it was meant to.
+    const token = header.slice(7).trim();
+    const user = userByToken(token) ?? userByAccessToken(token, originOf(baseUrl(req)), req.path);
     return user && { space: spaceOfUser(user), user, session: false };
   }
   const holder = sessionHolder(cookie(req, SESSION_COOKIE));
@@ -63,8 +68,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   // Only a browser navigation prefers HTML; curl and fetch send */* and should get the 401.
   const wantsPage = req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/mcp") && req.accepts(["json", "html"]) === "html";
   if (wantsPage) return res.redirect("/");
-  // Refused before the routes that mark their answers private, so it says so itself.
-  res.status(401).set({ "WWW-Authenticate": "Bearer", "Cache-Control": "no-store" }).json({ error: "Unauthorized: send Authorization: Bearer <token>" });
+  // Refused before the routes that mark their answers private, so it says so itself. The header tells an MCP client
+  // where to sign in with OAuth (RFC 9728), and whether the token it sent was the trouble.
+  const sent = req.get("authorization")?.startsWith("Bearer ") === true;
+  res
+    .status(401)
+    .set({ "WWW-Authenticate": challenge(originOf(baseUrl(req)), req.path, sent), "Cache-Control": "no-store" })
+    .json({ error: "Unauthorized: send Authorization: Bearer <token>" });
 }
 
 export const identityOf = (res: Response) => res.locals.identity as Identity;

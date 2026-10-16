@@ -12,7 +12,7 @@ import { exportRoutes } from "./http/routes/exports.ts";
 import { fileRoutes } from "./http/routes/files.ts";
 import { mcpRoutes } from "./http/routes/mcp.ts";
 import { mockupRoutes } from "./http/routes/mockups.ts";
-import { logout, oauthRoutes } from "./http/routes/oauth.ts";
+import { AUTHORIZATION_PATHS, authorizationRoutes, logout, oauthRoutes } from "./http/routes/oauth.ts";
 import { projectRoutes } from "./http/routes/projects.ts";
 import { publicRoutes } from "./http/routes/public.ts";
 import { renderPageRoutes } from "./http/routes/render-pages.ts";
@@ -50,6 +50,11 @@ export async function createApp(deps: AppDeps = {}): Promise<Express> {
   siteRoutes(app);
   app.use("/auth", oauthRoutes(log));
   app.post("/logout", logout);
+  // MCP clients sign in with OAuth while sign-in is on: the discovery documents and the authorization server.
+  if (config.auth) {
+    app.use(AUTHORIZATION_PATHS, allowedHost);
+    app.use(authorizationRoutes(log));
+  }
 
   // Everything below acts on an account's projects.
   app.use(["/api", "/mcp", "/files", "/render"], allowedHost);
