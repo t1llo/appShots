@@ -12052,11 +12052,20 @@ async function optionalStep(name) {
 	try {
 		module = await STEPS[name]();
 	} catch (error) {
-		if (error?.code === "ERR_MODULE_NOT_FOUND") return null;
+		if (missingHere(error)) return null;
 		throw error;
 	}
 	const found = module[name];
 	return typeof found === "function" ? found : null;
+}
+/**
+* Whether an import failed because a module this file names is not there. Node says which file named it only in the
+* message, as "Cannot find module '<file>' imported from <this file>".
+* @param {unknown} error
+*/
+function missingHere(error) {
+	const { code, message } = error ?? {};
+	return code === "ERR_MODULE_NOT_FOUND" && typeof message === "string" && message.includes(` imported from ${fileURLToPath(import.meta.url)}`);
 }
 /**
 * A step the sub-action cannot do without.
@@ -12185,7 +12194,7 @@ const VIDEO_ACTIONS = {
 			"display",
 			"scene"
 		],
-		usage: "sheet [file] [--raw] [--every <seconds>] [--lang <codes>] [--display <keys>]",
+		usage: "sheet [file] [--raw] [--scene <ids>] [--every <seconds>] [--lang <codes>] [--display <keys>]",
 		run: (rest, flags) => sheet(rest, flags)
 	},
 	poster: {
@@ -15072,12 +15081,15 @@ languages and displays. 'appshots video guide' prints the steps an agent follows
   appshots video sheet [file] [--raw] [--every <seconds>]
                                          A contact sheet, a picture a second: of a video, of each
                                          preview, or with --raw of each language's recordings
+      --scene <ids>                        With --raw, only these scenes' recordings
   appshots video poster --at <seconds> [file]
                                          Take the poster at another time, and keep that time for push
   appshots video remotion [--yes] [--no-install]
                                          Explain Remotion's licence, then write a Remotion project into
                                          appshots-video/remotion/ and install it there. --yes only once
                                          the user has agreed to the licence
+      --again                              Write its template files anew, after showing what changes
+                                           and asking
   appshots video push [--app <bundle id>] [--version <v>]
                                          Put the previews into the App Store Connect version being
                                          prepared. Nothing is ever submitted for review or released
